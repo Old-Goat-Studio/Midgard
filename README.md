@@ -59,7 +59,8 @@ Other presets: `linux-arm64-release` (on an ARM host) and `android-arm64` (needs
 
 ## Licence
 
-Midgard is open source under the [Apache License 2.0](LICENSE). Games made with Midgard can use
+Midgard is created by Richard E Rogers and published by **Old Goat Studio**, open source under
+the [Apache License 2.0](LICENSE). Games made with Midgard can use
 any licence, including commercial ones. Third-party components are listed in
 [`tools/third_party.json`](tools/third_party.json). See [CONTRIBUTING.md](CONTRIBUTING.md) to
 get involved.

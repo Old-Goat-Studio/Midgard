@@ -17,7 +17,7 @@ def test_game_notices_exclude_editor_and_build_components():
     assert "sqlite3" in text and "nlohmann-json" in text
     assert "PySide6" not in text  # LGPL Qt is editor-only and never ships in games
     assert "pytest" not in text
-    assert "The Midgard Authors" in text
+    assert "Old Goat Studio" in text
 
 
 def test_editor_notices_include_qt():
