@@ -69,9 +69,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Ninja (Linux, x86_64 and arm64)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
       - uses: seanmiddleditch/gha-setup-ninja@v5
+        if: runner.os == 'Windows'
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
+      - name: Use the system's cmake and ninja for vcpkg on ARM
+        if: runner.arch == 'ARM64'
+        run: echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> "$GITHUB_ENV"
       - name: Cache vcpkg binaries
         uses: actions/cache@v4
         with:
@@ -95,7 +102,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: seanmiddleditch/gha-setup-ninja@v5
+      - name: Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
       - name: Use the runner's latest NDK
         run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
       - name: Cache vcpkg binaries
