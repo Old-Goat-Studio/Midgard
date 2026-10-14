@@ -25,7 +25,7 @@ and when someone represents the project elsewhere.
 
 ## Reporting and enforcement
 
-Report problems privately to the maintainers at **[maintainer contact to be added]**. Reports
+Report problems privately to the maintainers at **[dictator@oldgoatstudio.org](mailto:dictator@oldgoatstudio.org)**. Reports
 are handled confidentially. Maintainers may remove, edit or reject contributions, and warn,
 suspend or ban people who break this code of conduct, in proportion to what happened.
 
