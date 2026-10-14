@@ -9,6 +9,21 @@
   "dependencies": [
     "nlohmann-json",
     "sqlite3",
-    "doctest"
+    "doctest",
+    {
+      "name": "sdl3",
+      "default-features": false,
+      "features": [
+        "vulkan",
+        { "name": "x11", "platform": "linux" },
+        { "name": "wayland", "platform": "linux" }
+      ]
+    },
+    "volk",
+    "vulkan-headers",
+    "vulkan-memory-allocator",
+    "glm",
+    "stb",
+    { "name": "glslang", "host": true, "features": ["tools"] }
   ]
 }

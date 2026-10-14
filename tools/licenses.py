@@ -66,8 +66,13 @@ def problems() -> list[str]:
         role, lic = c["ships_in"], c["license"]
         if role not in allowed:
             found.append(f"{c['name']}: unknown ships_in '{role}'")
-        elif lic not in allowed[role]:
-            found.append(f"{c['name']}: licence {lic} is not allowed for '{role}'")
+            continue
+        # "A AND B": every part must be allowed. "A OR B": at least one part must be.
+        terms = [t.strip().strip("()") for t in lic.split(" AND ")]
+        for term in terms:
+            choices = [c_.strip().strip("()") for c_ in term.split(" OR ")]
+            if not any(choice in allowed[role] for choice in choices):
+                found.append(f"{c['name']}: licence {term} is not allowed for '{role}'")
     found += [f"{p}: missing '{SPDX}' header" for p in missing_headers()]
     return found
 
