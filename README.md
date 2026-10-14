@@ -2,6 +2,8 @@
 
 # Midgard
 
+[![CI](https://github.com/Old-Goat-Studio/Midgard/actions/workflows/ci.yml/badge.svg)](https://github.com/Old-Goat-Studio/Midgard/actions/workflows/ci.yml)
+
 **A 3D game engine with an action-focused editor, for RPG-style action games.**
 
 Midgard has two halves:

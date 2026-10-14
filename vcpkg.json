@@ -3,6 +3,7 @@
   "name": "midgard",
   "version": "0.1.0",
   "description": "Midgard game engine",
+  "homepage": "https://github.com/Old-Goat-Studio/Midgard",
   "license": "Apache-2.0",
   "builtin-baseline": "44ccfd88b3eca6929d6d16398c7b19945c29a5f6",
   "dependencies": [

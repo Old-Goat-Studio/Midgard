@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://midgard.example/schema/manifest/1.0",
+  "$id": "https://github.com/Old-Goat-Studio/Midgard/blob/main/schema/manifest.schema.json",
   "title": "Midgard package manifest",
   "description": "Describes a cooked Midgard package: what it is, what built it, which target it is for and where the game starts. Contract v0 (format_version 1.0).",
   "type": "object",

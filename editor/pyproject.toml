@@ -17,6 +17,10 @@ dependencies = [
     "jsonschema>=4.21",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Old-Goat-Studio/Midgard"
+Issues = "https://github.com/Old-Goat-Studio/Midgard/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
