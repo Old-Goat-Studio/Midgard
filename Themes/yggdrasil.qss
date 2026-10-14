@@ -1,0 +1,89 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Yggdrasil: Midgard's signature dark theme, coloured after the logo.
+   night #141b2d · panel #1d2740 · raised #24304d · line #2b3550 · bark #6b4a2f
+   text #e8e1cf · muted #a9a28f · disabled #8a8574 · leaf #6f9a3a · knotwork gold #c9a227 */
+
+QWidget {
+    background-color: #141b2d;
+    color: #e8e1cf;
+    selection-background-color: #6f9a3a;
+    selection-color: #0c1220;
+}
+QWidget:disabled { color: #8a8574; }
+.QWidget { background-color: transparent; }
+
+QToolTip { background-color: #24304d; color: #e8e1cf; border: 1px solid #c9a227; padding: 4px; }
+
+/* Menus */
+QMenuBar { background-color: #1d2740; border-bottom: 1px solid #2b3550; }
+QMenuBar::item { padding: 4px 10px; background: transparent; }
+QMenuBar::item:selected { background-color: #2f3d5f; border-radius: 3px; }
+QMenu { background-color: #1d2740; border: 1px solid #2b3550; padding: 4px 0; }
+QMenu::item { padding: 4px 24px 4px 26px; }
+QMenu::item:selected { background-color: #2f3d5f; }
+QMenu::item:disabled { color: #8a8574; }
+QMenu::separator { height: 1px; background: #2b3550; margin: 4px 8px; }
+QMenu::indicator { width: 10px; height: 10px; left: 8px; border-radius: 5px; }
+QMenu::indicator:checked { background-color: #c9a227; }
+QMenu::right-arrow { image: url(renoir:arrow-right-e8e1cf.svg); width: 10px; height: 10px; }
+
+/* Buttons and inputs */
+QPushButton {
+    background-color: #24304d; border: 1px solid #2b3550; border-radius: 4px; padding: 5px 14px;
+}
+QPushButton:hover { background-color: #2f3d5f; border-color: #c9a227; }
+QPushButton:pressed { background-color: #1d2740; }
+QPushButton:default { border-color: #6f9a3a; }
+QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox, QListView, QTreeView,
+QTableView, QListWidget {
+    background-color: #0f1524; border: 1px solid #2b3550; border-radius: 3px;
+}
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { padding: 3px 6px; }
+QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus { border-color: #c9a227; }
+QComboBox::drop-down { border: none; width: 18px; }
+QComboBox::down-arrow { image: url(renoir:arrow-down-e8e1cf.svg); width: 10px; height: 10px; }
+QComboBox QAbstractItemView { background-color: #1d2740; border: 1px solid #2b3550; }
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button { border: none; width: 16px; }
+QAbstractSpinBox::up-arrow { image: url(renoir:arrow-up-e8e1cf.svg); width: 9px; height: 9px; }
+QAbstractSpinBox::down-arrow { image: url(renoir:arrow-down-e8e1cf.svg); width: 9px; height: 9px; }
+
+/* Check boxes and radio buttons are drawn here, so the theme works without images. */
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 13px; height: 13px; border: 1px solid #a9a28f; background-color: #0f1524;
+}
+QCheckBox::indicator { border-radius: 3px; }
+QRadioButton::indicator { border-radius: 7px; }
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: #c9a227; border-color: #c9a227;
+}
+
+/* Item views */
+QTreeView::item:hover, QListView::item:hover, QListWidget::item:hover { background-color: #24304d; }
+QHeaderView::section { background-color: #1d2740; border: none; border-right: 1px solid #2b3550; padding: 4px; }
+
+/* Scroll bars */
+QScrollBar:vertical { background: #141b2d; width: 11px; margin: 0; }
+QScrollBar:horizontal { background: #141b2d; height: 11px; margin: 0; }
+QScrollBar::handle { background: #2b3550; border-radius: 4px; min-height: 24px; min-width: 24px; }
+QScrollBar::handle:hover { background: #6b4a2f; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+
+QTabBar::tab { background-color: #1d2740; padding: 5px 12px; border: 1px solid #2b3550; }
+QTabBar::tab:selected { background-color: #24304d; border-bottom: 2px solid #c9a227; }
+QStatusBar { background-color: #1d2740; border-top: 1px solid #2b3550; }
+
+/* Docking (Qt Advanced Docking System). Floating panels on other monitors are top-level windows
+   but still take this application-wide stylesheet. */
+ads--CDockContainerWidget { background-color: #141b2d; }
+ads--CDockAreaWidget { background-color: #141b2d; border: 1px solid #2b3550; }
+ads--CDockAreaTitleBar { background-color: #1d2740; border-bottom: 1px solid #2b3550; }
+ads--CDockWidgetTab { background-color: #1d2740; padding: 2px 8px; border-right: 1px solid #2b3550; }
+ads--CDockWidgetTab[activeTab="true"] { background-color: #2b3550; border-bottom: 2px solid #c9a227; }
+ads--CDockWidgetTab QLabel { background-color: transparent; color: #a9a28f; }
+ads--CDockWidgetTab[activeTab="true"] QLabel { color: #e8e1cf; }
+ads--CDockSplitter::handle { background-color: #2b3550; }
+ads--CDockSplitter::handle:hover { background-color: #c9a227; }
+ads--CFloatingDockContainer { background-color: #141b2d; }
+QMainWindow::separator { background: #2b3550; width: 4px; height: 4px; }
+QMainWindow::separator:hover { background: #c9a227; }

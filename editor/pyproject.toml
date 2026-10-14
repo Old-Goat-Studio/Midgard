@@ -24,8 +24,11 @@ Issues = "https://github.com/Old-Goat-Studio/Midgard/issues"
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
+    "pytest-qt>=4.4",
     "ruff>=0.6",
     "clang-format==18.1.8",
+    "pyinstaller>=6.10",
+    "pillow>=10",
 ]
 
 [project.scripts]

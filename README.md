@@ -18,8 +18,9 @@ Midgard has two halves:
 The editor **cooks** a project into a package (`manifest.json` + a SQLite database + assets),
 and the engine runs packages. The contract between them lives in [`schema/`](schema/).
 
-> **Status: Phase 0 (foundations).** The repository layout, contract v0, the build system and CI
-> are in place. The editor window arrives in Phase 1 and the first rendered scene in Phase 2.
+> **Status: Phase 1 (editor shell).** The editor opens projects in a window with dockable panels
+> that can spread across monitors, saved layouts, undo, themes, backups and an About box, and it
+> can be packaged. The first rendered scene arrives in Phase 2.
 > See [`midgard_roadmap.md`](midgard_roadmap.md) for the full design and plan, and
 > [`midgard_plan.md`](midgard_plan.md) for the original brief.
 
@@ -42,8 +43,9 @@ and the engine runs packages. The contract between them lives in [`schema/`](sch
 ```sh
 python -m venv .venv
 .venv/bin/pip install -e "editor[dev]"      # Windows: .venv\Scripts\pip
-.venv/bin/python -m midgard_editor --version
+.venv/bin/python -m midgard_editor               # open the editor
 .venv/bin/pytest editor tools
+python tools/package.py                          # packaged editor in build/dist/Midgard/
 ```
 
 **Engine** (CMake 3.25+, Ninja, and GCC 13+ or Visual Studio 2022):

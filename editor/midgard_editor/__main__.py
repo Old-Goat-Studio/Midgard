@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Command line for the Phase 0 contract tools. The editor window arrives in Phase 1."""
+"""Midgard editor entry point.
+
+    midgard-editor                       open the editor
+    midgard-editor --project X.config    open the editor with a project
+    midgard-editor migrate X.db          command-line contract tools
+    midgard-editor validate-manifest manifest.json
+"""
 import argparse
 import json
 import sys
@@ -12,6 +18,9 @@ from .version import BUILD, VERSION
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="midgard-editor", description="Midgard editor")
     parser.add_argument("--version", action="store_true", help="print the version and exit")
+    parser.add_argument("--project", type=Path, help="open this {project}.config")
+    parser.add_argument("--smoke-test", type=Path, metavar="DIR",
+                        help="start, open a test project in DIR, write smoke_test.json, quit")
     sub = parser.add_subparsers(dest="command")
     mig = sub.add_parser("migrate", help="create or upgrade a project database")
     mig.add_argument("database", type=Path)
@@ -33,8 +42,10 @@ def main(argv: list[str] | None = None) -> int:
             print(error, file=sys.stderr)
         print(f"{args.manifest}: {'valid' if not errors else f'{len(errors)} problem(s)'}")
         return 1 if errors else 0
-    parser.print_help()
-    return 0
+
+    from .app import run  # the GUI; only imported when needed
+
+    return run(project=args.project, smoke_test=args.smoke_test)
 
 
 if __name__ == "__main__":
