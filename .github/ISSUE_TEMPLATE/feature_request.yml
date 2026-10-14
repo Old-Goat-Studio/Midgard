@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Feature request
+description: Suggest something new for Midgard
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: input
+    id: roadmap
+    attributes:
+      label: Related roadmap section or phase
+      placeholder: "§7 Ships and other craft, Phase 6"

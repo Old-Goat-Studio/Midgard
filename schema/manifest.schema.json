@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://midgard.example/schema/manifest/1.0",
+  "title": "Midgard package manifest",
+  "description": "Describes a cooked Midgard package: what it is, what built it, which target it is for and where the game starts. Contract v0 (format_version 1.0).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "format_version", "game", "built_with", "target", "entry", "database", "schema_version", "content"],
+  "properties": {
+    "format": { "const": "midgard-package" },
+    "format_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "major.minor. The engine accepts packages whose major version it supports."
+    },
+    "game": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      }
+    },
+    "built_with": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["editor", "engine_abi"],
+      "properties": {
+        "editor": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\+[0-9]+$", "description": "version+build" },
+        "engine_abi": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch", "role"],
+      "properties": {
+        "os": { "enum": ["windows", "linux", "android"] },
+        "arch": { "enum": ["x86_64", "arm64"] },
+        "role": { "enum": ["game", "server"], "description": "server = dedicated-server cook (no textures, audio or UI)" }
+      }
+    },
+    "world_mode": { "enum": ["system_map", "bounded_surface_map"] },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scene"],
+      "properties": {
+        "scene": { "type": "string", "minLength": 1 },
+        "script": { "type": "string" }
+      }
+    },
+    "database": { "type": "string", "pattern": "^[^/\\\\]+\\.db$" },
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "content": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "sha256"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}

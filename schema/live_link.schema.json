@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://midgard.example/schema/live-link/0",
+  "title": "Midgard live-link message",
+  "description": "Messages between the editor and a running midgard_runtime over TCP. Each message is a 4-byte big-endian length followed by UTF-8 JSON. Contract v0.",
+  "type": "object",
+  "required": ["type"],
+  "oneOf": [
+    {
+      "description": "Sent by both sides when the connection opens.",
+      "properties": {
+        "type": { "const": "hello" },
+        "role": { "enum": ["editor", "runtime"] },
+        "version": { "type": "string" },
+        "protocol": { "const": 0 }
+      },
+      "required": ["type", "role", "version", "protocol"]
+    },
+    {
+      "description": "Editor → runtime: start or stop play.",
+      "properties": { "type": { "enum": ["play", "stop", "pause", "resume"] } },
+      "required": ["type"]
+    },
+    {
+      "description": "Editor → runtime: an asset was re-cooked and should be reloaded.",
+      "properties": { "type": { "const": "asset.changed" }, "id": { "type": "string" } },
+      "required": ["type", "id"]
+    },
+    {
+      "description": "Editor → runtime: a database row changed (hot reload of data).",
+      "properties": {
+        "type": { "const": "row.changed" },
+        "table": { "type": "string" },
+        "key": { "type": "string" }
+      },
+      "required": ["type", "table", "key"]
+    },
+    {
+      "description": "Editor → runtime: set one component of one entity.",
+      "properties": {
+        "type": { "const": "entity.set" },
+        "entity": { "type": "string" },
+        "component": { "type": "string" },
+        "value": { "type": "object" }
+      },
+      "required": ["type", "entity", "component", "value"]
+    },
+    {
+      "description": "Runtime → editor: a log line.",
+      "properties": {
+        "type": { "const": "log" },
+        "level": { "enum": ["debug", "info", "warn", "error"] },
+        "text": { "type": "string" }
+      },
+      "required": ["type", "level", "text"]
+    },
+    {
+      "description": "Runtime → editor: performance figures, about once a second.",
+      "properties": {
+        "type": { "const": "stats" },
+        "fps": { "type": "number" },
+        "draw_calls": { "type": "integer" }
+      },
+      "required": ["type", "fps"]
+    }
+  ]
+}

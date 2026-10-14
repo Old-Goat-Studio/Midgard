@@ -1,0 +1,19 @@
+{
+  "format": "midgard-package",
+  "format_version": "1.0",
+  "game": { "name": "HelloCube", "version": "0.1.0" },
+  "built_with": { "editor": "0.1.0+1", "engine_abi": 0 },
+  "target": { "os": "windows", "arch": "x86_64", "role": "game" },
+  "world_mode": "bounded_surface_map",
+  "entry": { "scene": "scn_main", "script": "scripts/main.py" },
+  "database": "HelloCube.db",
+  "schema_version": 1,
+  "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "content": [
+    {
+      "id": "mesh_cube",
+      "path": "meshes/cube.glb",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

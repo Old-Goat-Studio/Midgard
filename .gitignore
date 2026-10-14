@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# CMake / vcpkg
+build/
+out/
+vcpkg_installed/
+CMakeUserPresets.json
+
+# Editors and OS
+.vs/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Midgard project data that never belongs in the repository
+.midgard/
+
+# Tools fetched by tools/setup_vcpkg.py
+.tools/

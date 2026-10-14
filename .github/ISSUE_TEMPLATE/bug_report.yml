@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Bug report
+description: Something in the editor, engine or a game export doesn't work
+labels: [bug]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Editor, Engine / runtime, Dedicated server, Export / packaging, Services, Other]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From Help ▸ About Midgard, or `midgard_runtime --version`
+      placeholder: 0.1.0 (build 1)
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows x86_64, Linux x86_64, Linux arm64, Android]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the seed and world type if it involves a generated world.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: text
