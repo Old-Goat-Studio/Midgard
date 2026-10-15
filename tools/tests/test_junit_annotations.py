@@ -23,3 +23,11 @@ def test_failures_become_annotations(tmp_path):
     assert len(lines) == 1
     assert lines[0].startswith("::error title=tests.test_a.test_bad::")
     assert "100%25 wrong%0Aline one%0Aline two" in lines[0]
+
+
+def test_without_a_report_the_log_is_shown(tmp_path):
+    log = tmp_path / "pytest.txt"
+    log.write_text("collecting...\nFatal Python error: Segmentation fault\n", "utf-8")
+    lines = junit_annotations.annotations(tmp_path / "missing.xml", log)
+    assert len(lines) == 1 and "Segmentation fault" in lines[0]
+    assert junit_annotations.annotations(tmp_path / "missing.xml") == []

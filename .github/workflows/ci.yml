@@ -160,12 +160,16 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           MIDGARD_REQUIRE_ENGINE: "1"
         run: |
-          pip install --quiet -e "editor[dev]"
-          pytest editor/tests/test_scripting.py -q -rA --junitxml="$RUNNER_TEMP/scripting.xml"
+          set -o pipefail
+          pip install --quiet -e "editor[dev]" 2>&1 | tee "$RUNNER_TEMP/scripting.log"
+          pytest editor/tests/test_scripting.py -q -rA --junitxml="$RUNNER_TEMP/scripting.xml" \
+            2>&1 | tee -a "$RUNNER_TEMP/scripting.log"
       - name: Show failed script tests as annotations
         if: failure()
         shell: bash
-        run: python tools/junit_annotations.py "$RUNNER_TEMP/scripting.xml" || true
+        run: |
+          python tools/junit_annotations.py "$RUNNER_TEMP/scripting.xml" \
+            --log "$RUNNER_TEMP/scripting.log" || true
       - name: Runtime template (for Build > Export)
         run: python tools/make_template.py --preset ${{ matrix.preset }}
       - name: Upload the runtime template
