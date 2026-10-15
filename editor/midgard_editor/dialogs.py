@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Small dialogs: New Project and Preferences."""
+import logging
 import sys
 from pathlib import Path
 
@@ -19,8 +20,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import vcs
 from .project import NAME_PATTERN, WORLD_MODES, Project, ProjectError
 from .settings import Settings
+from .vcs import Identity
+
+log = logging.getLogger("midgard")
 
 
 class NewProjectDialog(QDialog):
@@ -43,6 +48,11 @@ class NewProjectDialog(QDialog):
             self.world_mode.addItem(label, key)
         note = QLabel("The world mode is fixed once the project is created.")
         note.setEnabled(False)
+        self.git = QCheckBox("Keep the project in Git (version control)")
+        self.git.setToolTip("Makes the project folder a Git repository with a first commit. "
+                            "The Script editor then marks lines changed since the last commit.")
+        self.git.setEnabled(vcs.available())
+        self.git.setChecked(vcs.available() and bool(settings.get("new_project_git")))
 
         form = QFormLayout(self)
         form.addRow("Project name", self.name)
@@ -50,6 +60,7 @@ class NewProjectDialog(QDialog):
         form.addRow("Location", row)
         form.addRow("World mode", self.world_mode)
         form.addRow("", note)
+        form.addRow("", self.git)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._create)
@@ -76,7 +87,53 @@ class NewProjectDialog(QDialog):
             QMessageBox.warning(self, "New Project", str(e))
             return
         self.settings.set("last_project_dir", self.location.text())
+        if self.git.isEnabled():
+            self.settings.set("new_project_git", self.git.isChecked())
+            if self.git.isChecked():
+                put_project_under_git(self.project, self)
         self.accept()
+
+
+def ask_identity(parent: QWidget | None) -> Identity | None:
+    """Asks for the name and email Git commits with (kept in this repository only)."""
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Git Name and Email")
+    name, email = QLineEdit(), QLineEdit()
+    email.setPlaceholderText("you@example.com")
+    form = QFormLayout(dialog)
+    note = QLabel("Git records who made each commit. These are saved in this project's "
+                  "repository only.")
+    note.setWordWrap(True)
+    form.addRow(note)
+    form.addRow("Name", name)
+    form.addRow("Email", email)
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                               | QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    form.addRow(buttons)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None
+    if not name.text().strip() or "@" not in email.text():
+        QMessageBox.warning(parent, "Git", "A name and an email address are needed.")
+        return None
+    return Identity(name.text().strip(), email.text().strip())
+
+
+def put_project_under_git(project: Project, parent: QWidget | None) -> bool:
+    """File ▸ Put Project Under Git…, and New Project's tick box. True if it worked."""
+    who = None
+    if vcs.identity(project.root) is None:
+        who = ask_identity(parent)
+        if who is None:
+            return False
+    try:
+        commit = vcs.put_under_git(project, who)
+    except vcs.VcsError as e:
+        QMessageBox.warning(parent, "Git", str(e))
+        return False
+    log.info("The project is now in Git (first commit %s).", commit)
+    return True
 
 
 class PreferencesDialog(QDialog):

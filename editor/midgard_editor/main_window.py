@@ -30,12 +30,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import APP_NAME, DESCRIPTION, ICON_PATH
+from . import APP_NAME, DESCRIPTION, ICON_PATH, vcs
 from . import layouts as layout_store
 from .about import AboutDialog, engine_info, runtime_candidates
 from .backup import BackupScheduler
 from .cook import CookError, cook
-from .dialogs import NewProjectDialog, PreferencesDialog
+from .dialogs import NewProjectDialog, PreferencesDialog, put_project_under_git
 from .docks.assistant import AssistantPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
@@ -314,6 +314,9 @@ class MainWindow(QMainWindow):
         self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
         self.close_action = add_action(file, "&Close Project", self.close_project)
         file.addSeparator()
+        self.git_action = add_action(file, "Put Project Under &Git…", self.put_under_git)
+        file.aboutToShow.connect(self._update_git_action)
+        file.addSeparator()
         add_action(file, "&Quit", self.close, QKeySequence.StandardKey.Quit)
 
         edit = bar.addMenu("&Edit")
@@ -472,6 +475,18 @@ class MainWindow(QMainWindow):
         if answer == QMessageBox.StandardButton.Save:
             self.script_editor.save_all()
         return True
+
+    def _update_git_action(self) -> None:
+        enabled, text = vcs.status_text(self.project)
+        self.git_action.setEnabled(enabled)
+        self.git_action.setText(text)
+
+    def put_under_git(self) -> None:
+        if self.project is not None and put_project_under_git(self.project, self):
+            for editor in self.script_editor.editors():
+                editor.refresh_git()
+            self.script_editor._update_titles()
+            self._update_git_action()
 
     def edit_script(self, module: str) -> None:
         """Shows a script in the Script editor (from the Inspector's Edit button)."""
