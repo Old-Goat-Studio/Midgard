@@ -22,6 +22,9 @@ DEFAULTS: dict[str, Any] = {
     "last_project_dir": "",
     "export_dir": "",            # last Build ▸ Export output folder
     "snippets": [],              # the user's own Script editor snippets
+    "assistant_enabled": False,  # the Assistant (roadmap §9) is off until the user turns it on
+    "assistant_model": "claude-opus-5-5",
+    "assistant_effort": "medium",
 }
 
 

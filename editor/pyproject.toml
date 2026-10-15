@@ -17,6 +17,8 @@ dependencies = [
     "jsonschema>=4.21",
     "cryptography>=43",
     "jedi>=0.19",
+    "anthropic>=1.14",
+    "keyring>=25",
 ]
 
 [project.urls]

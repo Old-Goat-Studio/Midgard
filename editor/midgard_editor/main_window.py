@@ -36,6 +36,7 @@ from .about import AboutDialog, engine_info, runtime_candidates
 from .backup import BackupScheduler
 from .cook import CookError, cook
 from .dialogs import NewProjectDialog, PreferencesDialog
+from .docks.assistant import AssistantPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.project_browser import ProjectBrowser
@@ -52,7 +53,8 @@ log = logging.getLogger(LOGGER_NAME)
 
 # objectName -> title. Object names are the keys in saved layouts, so never rename them.
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
-          "history": "History", "viewport": "Viewport", "scripts": "Script Editor"}
+          "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
+          "assistant": "Assistant"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -143,6 +145,8 @@ class MainWindow(QMainWindow):
         self.log_panel = LogPanel()
         self.viewport = ViewportPanel()
         self.script_editor = ScriptEditorPanel(settings)
+        self.assistant = AssistantPanel(settings)
+        self.script_editor.ask_assistant.connect(self.ask_assistant)
         self.history = QUndoView(self.undo_group)
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
@@ -153,7 +157,7 @@ class MainWindow(QMainWindow):
         self.browser.setMinimumWidth(220)
         widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,
                    "log": self.log_panel, "history": self.history, "viewport": self.viewport,
-                   "scripts": self.script_editor}
+                   "scripts": self.script_editor, "assistant": self.assistant}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -184,6 +188,22 @@ class MainWindow(QMainWindow):
         self.panels["log"].setAsCurrentTab()
         self._place_viewport()
         self._place_script_editor()
+        self._place_assistant()
+
+    def _place_assistant(self) -> None:
+        """The Assistant is a tab behind the Inspector."""
+        area = self.panels["inspector"].dockAreaWidget()
+        if area is not None:
+            self.dock_manager.addDockWidgetTabToArea(self.panels["assistant"], area)
+            self.panels["inspector"].setAsCurrentTab()
+        else:
+            self.dock_manager.addDockWidget(QtAds.DockWidgetArea.RightDockWidgetArea,
+                                            self.panels["assistant"])
+
+    def ask_assistant(self, code: str, file: str) -> None:
+        self.panels["assistant"].toggleView(True)
+        self.panels["assistant"].setAsCurrentTab()
+        self.assistant.ask_about(code, file)
 
     def _place_script_editor(self) -> None:
         """The Script editor shares the Viewport's area, as a tab behind it."""
@@ -239,6 +259,8 @@ class MainWindow(QMainWindow):
                 self._place_viewport()
             if "scripts" not in saved:
                 self._place_script_editor()
+            if "assistant" not in saved:
+                self._place_assistant()
 
     def reset_layout(self) -> None:
         self.dock_manager.restoreState(self._default_state)
@@ -302,7 +324,7 @@ class MainWindow(QMainWindow):
         edit.addAction(undo)
         edit.addAction(redo)
         edit.addSeparator()
-        add_action(edit, "&Preferences…", lambda: PreferencesDialog(self.settings, self).exec(),
+        add_action(edit, "&Preferences…", self.show_preferences,
                    QKeySequence.StandardKey.Preferences)
 
         build = bar.addMenu("&Build")
@@ -339,6 +361,10 @@ class MainWindow(QMainWindow):
         self.play_status = QLabel()
         self.statusBar().addPermanentWidget(self.play_status)
         self._play_state_changed(State.STOPPED)
+
+    def show_preferences(self) -> None:
+        PreferencesDialog(self.settings, self).exec()
+        self.assistant.refresh_state()
 
     def _fill_recent_menu(self) -> None:
         self.recent_menu.clear()
@@ -480,6 +506,7 @@ class MainWindow(QMainWindow):
         self.scene_panel.set_project(project)
         self.viewport.set_project(project)
         self.script_editor.set_project(project)
+        self.assistant.set_project(project)
         for action in (self.close_action, self.cook_action, self.export_action):
             action.setEnabled(project is not None)
         if project is not None:
@@ -576,6 +603,7 @@ class MainWindow(QMainWindow):
         if not self.unsaved_scripts_handled():
             event.ignore()
             return
+        self.assistant.cancel()
         if self.session is not None:
             self.session.stop()
         self.settings.set("layout_last", self._layout_record())

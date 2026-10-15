@@ -97,6 +97,22 @@ class PreferencesDialog(QDialog):
             hint = QLabel("Takes effect the next time Midgard starts.")
             hint.setEnabled(False)
             form.addRow("", hint)
+        from .assistant import EFFORTS, MODELS
+
+        self.assistant = QCheckBox("Turn on the Assistant")
+        self.assistant.setToolTip("Sends your questions, and the project data it looks at, to "
+                                  "Anthropic's API with your own API key.")
+        self.assistant.setChecked(bool(settings.get("assistant_enabled")))
+        self.model = QComboBox()
+        self.model.addItems(MODELS)
+        self.model.setEditable(True)  # newer models can be typed in
+        self.model.setCurrentText(settings.get("assistant_model"))
+        self.effort = QComboBox()
+        self.effort.addItems(EFFORTS)
+        self.effort.setCurrentText(settings.get("assistant_effort"))
+        form.addRow("Assistant", self.assistant)
+        form.addRow("Model", self.model)
+        form.addRow("Effort", self.effort)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._save)
@@ -107,4 +123,7 @@ class PreferencesDialog(QDialog):
         self.settings.set("backup_keep", self.keep.value())
         self.settings.set("backup_minutes", self.minutes.value())
         self.settings.set("use_x11", self.x11.isChecked())
+        self.settings.set("assistant_enabled", self.assistant.isChecked())
+        self.settings.set("assistant_model", self.model.currentText().strip() or "claude-opus-5-5")
+        self.settings.set("assistant_effort", self.effort.currentText())
         self.accept()

@@ -275,6 +275,7 @@ class CodeEditor(QPlainTextEdit):
 
 class ScriptEditorPanel(QWidget):
     open_requested = Signal(str)  # a module, from elsewhere in the editor
+    ask_assistant = Signal(str, str)  # selected code, its file (relative to scripts/)
 
     def __init__(self, settings: Settings, parent: QWidget | None = None):
         super().__init__(parent)
@@ -351,6 +352,9 @@ class ScriptEditorPanel(QWidget):
             QMessageBox.warning(self, "Open Script", str(e))
             return None
         editor = CodeEditor(path, self.project)
+        editor.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        editor.customContextMenuRequested.connect(
+            lambda pos, e=editor: self._context_menu(e, pos))
         editor.setPlainText(text)
         editor.document().setModified(False)
         editor.document().modificationChanged.connect(lambda _m: self._update_titles())
@@ -389,6 +393,25 @@ class ScriptEditorPanel(QWidget):
         self.tabs.removeTab(index)
         editor.deleteLater()
         return True
+
+    def _context_menu(self, editor: CodeEditor, pos) -> None:
+        menu = editor.createStandardContextMenu()
+        menu.addSeparator()
+        ask = menu.addAction("Ask Assistant About Selection",
+                             lambda: self.ask_about_selection(editor))
+        ask.setEnabled(editor.textCursor().hasSelection())
+        menu.exec(editor.mapToGlobal(pos))
+        menu.deleteLater()
+
+    def ask_about_selection(self, editor: CodeEditor) -> None:
+        code = editor.textCursor().selectedText().replace("\u2029", "\n")
+        if code.strip() and self.project is not None:
+            folder = scripting.scripts_dir(self.project)
+            try:
+                file = editor.path.relative_to(folder).as_posix()
+            except ValueError:
+                file = editor.path.name
+            self.ask_assistant.emit(code, file)
 
     def _fill_open_menu(self) -> None:
         self.open_menu.clear()
