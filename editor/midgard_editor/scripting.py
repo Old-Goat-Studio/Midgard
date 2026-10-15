@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Game scripts in the editor: the project's scripts/ folder, syntax checks, completion with the
-midgard API stubs (schema/midgard.pyi), and the snippet libraries.
+midgard API stubs (schema/midgard.pyi), Git change markers, and the snippet libraries.
 
 Snippets come from three places, shown together in the Script editor: the built-in starter set
 below, the project's library (the snippet table, shared with everyone on the project) and the
 user's own library (editor settings, shared across their projects).
 """
+import difflib
 import re
+import shutil
+import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,6 +130,92 @@ def check_syntax(source: str, filename: str = "<script>") -> tuple[int, str] | N
     except SyntaxError as e:
         return e.lineno or 1, f"{type(e).__name__}: {e.msg}"
     return None
+
+
+# ---- Git ----------------------------------------------------------------------------------------
+# Line changes since the last commit, for the Script editor's gutter.
+ADDED, MODIFIED, DELETED = "added", "modified", "deleted"
+
+
+def _git(folder: Path, *args: str) -> str | None:
+    """Runs git in a folder. None if git is missing, the folder isn't in a repository, or the
+    command fails."""
+    git = shutil.which("git")
+    if git is None or not folder.is_dir():
+        return None
+    try:
+        run = subprocess.run([git, *args], cwd=folder, capture_output=True, timeout=5,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return run.stdout.decode("utf-8", errors="replace") if run.returncode == 0 else None
+
+
+@dataclass
+class GitBase:
+    """A file's last committed text. text is None for a file Git doesn't have yet."""
+    text: str | None
+
+
+def committed(file: Path) -> GitBase | None:
+    """The file as of the last commit, or None if it isn't in a Git repository."""
+    folder = file.parent
+    while not folder.is_dir() and folder != folder.parent:
+        folder = folder.parent
+    root = _git(folder, "rev-parse", "--show-toplevel")
+    if root is None:
+        return None
+    try:
+        relative = file.resolve().relative_to(Path(root.strip()).resolve()).as_posix()
+    except ValueError:
+        return None
+    text = _git(folder, "show", f"HEAD:{relative}")
+    return GitBase(text.replace("\r\n", "\n") if text is not None else None)
+
+
+def line_changes(base: GitBase | None, current: str) -> dict[int, str]:
+    """1-based line -> ADDED or MODIFIED, and DELETED on the line after removed lines (or on the
+    last line). Empty when the file isn't in a repository or hasn't changed."""
+    if base is None:
+        return {}
+    new = current.split("\n")
+    if base.text is None:  # not committed yet: every line is new
+        return {i: ADDED for i in range(1, len(new) + 1) if current}
+    old = base.text.split("\n")
+    changes: dict[int, str] = {}
+    matcher = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
+    for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
+        if tag == "insert":
+            changes.update({j: ADDED for j in range(j1 + 1, j2 + 1)})
+        elif tag == "replace":
+            changes.update({j: MODIFIED for j in range(j1 + 1, j2 + 1)})
+        elif tag == "delete":
+            changes.setdefault(min(j1 + 1, len(new)), DELETED)
+    return changes
+
+
+def file_statuses(folder: Path) -> dict[Path, str]:
+    """Files under a folder that differ from the last commit: path -> "modified" or "new"."""
+    root = _git(folder, "rev-parse", "--show-toplevel")
+    out = _git(folder, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ".")
+    if root is None or out is None:
+        return {}
+    statuses: dict[Path, str] = {}
+    entries = out.split("\0")
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        code, path = entry[:2], entry[3:]
+        if code[0] in "RC":
+            i += 1  # a rename's second path follows
+        if "D" in code:
+            continue
+        state = "new" if code in ("??", "A ") or code[0] == "A" else "modified"
+        statuses[(Path(root.strip()) / path).resolve()] = state
+    return statuses
 
 
 # ---- completion --------------------------------------------------------------------------------

@@ -3,6 +3,10 @@
 highlighting, line numbers, completion for the midgard API (Ctrl+Space, or after a dot), error
 markers (syntax errors on saving, and errors from the running game), and snippets.
 
+When the project is in a Git repository, a bar beside the line numbers marks lines added (green)
+or changed (blue) since the last commit, and a red mark shows where lines were deleted. The
+Open menu and the tab tooltips say which scripts are changed or new.
+
 Saving a script while the game plays reloads it in the game (the Play session watches the
 scripts folder).
 """
@@ -12,11 +16,13 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     QEvent,
+    QPoint,
     QRect,
     QRegularExpression,
     QSize,
     QStringListModel,
     Qt,
+    QTimer,
     Signal,
 )
 from PySide6.QtGui import (
@@ -56,6 +62,9 @@ from ..settings import Settings
 
 log = logging.getLogger("midgard")
 INDENT = "    "
+GIT_COLOURS = {scripting.ADDED: "#2ecc71", scripting.MODIFIED: "#3498db",
+               scripting.DELETED: "#e74c3c"}
+GIT_BAR = 4  # pixels, at the right of the line numbers
 
 
 def _format(color: str, bold: bool = False, italic: bool = False) -> QTextCharFormat:
@@ -175,11 +184,31 @@ class CodeEditor(QPlainTextEdit):
         self.completer.activated.connect(self._insert_completion)
         self.completer.setModel(QStringListModel(self))
         self._inserts: dict[str, str] = {}
+        # Git: the last committed text, read again on opening, saving and returning to the
+        # editor; line changes are worked out from it as you type.
+        self.git_base: scripting.GitBase | None = None
+        self.git_changes: dict[int, str] = {}
+        self._git_timer = QTimer(self, singleShot=True, interval=250)
+        self._git_timer.timeout.connect(lambda: self.refresh_git(reload=False))
+        self.textChanged.connect(self._git_timer.start)
+
+    # ---- Git ------------------------------------------------------------------------------
+    def refresh_git(self, reload: bool = True) -> None:
+        if reload:
+            self.git_base = scripting.committed(self.path)
+        changes = scripting.line_changes(self.git_base, self.toPlainText())
+        if changes != self.git_changes:
+            self.git_changes = changes
+            self.numbers.update()
+
+    def focusInEvent(self, event) -> None:
+        super().focusInEvent(event)
+        self.refresh_git()  # a commit may have been made outside the editor
 
     # ---- line numbers ---------------------------------------------------------------------
     def line_number_width(self) -> int:
         digits = len(str(max(1, self.blockCount())))
-        return 12 + self.fontMetrics().horizontalAdvance("9") * max(digits, 3)
+        return 12 + GIT_BAR + self.fontMetrics().horizontalAdvance("9") * max(digits, 3)
 
     def _update_margin(self) -> None:
         self.setViewportMargins(self.line_number_width(), 0, 0, 0)
@@ -231,8 +260,18 @@ class CodeEditor(QPlainTextEdit):
             if block.isVisible():
                 painter.setPen(QColor("#e74c3c") if number == self.error_line
                                else number_colour)
-                painter.drawText(0, top, self.numbers.width() - 6, height,
+                painter.drawText(0, top, self.numbers.width() - 6 - GIT_BAR, height,
                                  Qt.AlignmentFlag.AlignRight, str(number))
+                change = self.git_changes.get(number)
+                if change == scripting.DELETED:  # a small wedge where lines were removed
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(GIT_COLOURS[change]))
+                    x = self.numbers.width() - GIT_BAR - 1
+                    painter.drawPolygon([QPoint(x, top - 3), QPoint(x + GIT_BAR + 1, top),
+                                         QPoint(x, top + 3)])
+                elif change:
+                    painter.fillRect(self.numbers.width() - GIT_BAR - 1, top, GIT_BAR - 1,
+                                     height, QColor(GIT_COLOURS[change]))
             block = block.next()
             top += height
 
@@ -405,6 +444,7 @@ class ScriptEditorPanel(QWidget):
             lambda pos, e=editor: self._context_menu(e, pos))
         editor.setPlainText(text)
         editor.document().setModified(False)
+        editor.refresh_git()
         editor.document().modificationChanged.connect(lambda _m: self._update_titles())
         self.tabs.addTab(editor, path.name)
         self.tabs.setCurrentWidget(editor)
@@ -419,11 +459,20 @@ class ScriptEditorPanel(QWidget):
             scripting.create_script(self.project, module)
         return self.open_file(file)
 
+    def _git_statuses(self) -> dict[Path, str]:
+        if self.project is None:
+            return {}
+        return scripting.file_statuses(scripting.scripts_dir(self.project))
+
     def _update_titles(self) -> None:
+        statuses = self._git_statuses()
         for i, editor in enumerate(self.editors()):
             star = "*" if editor.document().isModified() else ""
             self.tabs.setTabText(i, editor.path.name + star)
-            self.tabs.setTabToolTip(i, str(editor.path))
+            state = statuses.get(editor.path.resolve())
+            note = {"modified": "\nChanged since the last commit",
+                    "new": "\nNot committed yet"}.get(state, "")
+            self.tabs.setTabToolTip(i, str(editor.path) + note)
 
     def close_tab(self, index: int, ask: bool = True) -> bool:
         editor = self.tabs.widget(index)
@@ -466,8 +515,11 @@ class ScriptEditorPanel(QWidget):
         found = scripting.modules(self.project) if self.project else {}
         if not found:
             self.open_menu.addAction("(no scripts yet)").setEnabled(False)
+        statuses = self._git_statuses()
         for module, path in found.items():
-            self.open_menu.addAction(module, lambda p=path: self.open_file(p))
+            note = {"modified": "   (changed)", "new": "   (new)"}.get(
+                statuses.get(path.resolve()), "")
+            self.open_menu.addAction(module + note, lambda p=path: self.open_file(p))
 
     # ---- saving and errors ----------------------------------------------------------------
     def save(self, editor: CodeEditor) -> bool:
@@ -479,6 +531,8 @@ class ScriptEditorPanel(QWidget):
             QMessageBox.warning(self, "Save Script", str(e))
             return False
         editor.document().setModified(False)
+        editor.refresh_git()
+        self._update_titles()
         error = scripting.check_syntax(source, editor.path.name)
         if error:
             editor.mark_error(*error)

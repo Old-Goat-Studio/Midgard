@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import sqlite3
 
+import pytest
+
 from midgard_editor import scripting
 from midgard_editor.cook import cook
 from midgard_editor.docks.entity_form import EntityForm
@@ -165,3 +167,68 @@ def test_colours_follow_the_theme(qtbot, project, settings):
         assert dark and base.name() == "#1e1e1e" and text.name() == "#dddddd"
     finally:
         QApplication.instance().setStyleSheet("")
+
+
+# ---- Git change markers -------------------------------------------------------------------------
+def test_line_changes_against_the_last_commit():
+    base = scripting.GitBase("a\nb\nc\nd\n")
+    assert scripting.line_changes(base, "a\nb\nc\nd\n") == {}
+    assert scripting.line_changes(base, "a\nB\nc\nd\n") == {2: scripting.MODIFIED}
+    assert scripting.line_changes(base, "a\nb\nnew\nc\nd\n") == {3: scripting.ADDED}
+    assert scripting.line_changes(base, "a\nd\n") == {2: scripting.DELETED}
+    assert scripting.line_changes(scripting.GitBase(None), "x\ny") == {1: scripting.ADDED,
+                                                                         2: scripting.ADDED}
+    assert scripting.line_changes(None, "anything") == {}  # not in a repository
+
+
+def git(folder, *args):
+    import subprocess
+
+    subprocess.run(["git", "-c", "user.name=Midgard Tests", "-c", "user.email=tests@example.com",
+                    *args], cwd=folder, check=True, capture_output=True)
+
+
+@pytest.fixture
+def repo(project):
+    import shutil
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    scripting.create_script(project, "door")
+    git(project.root, "init", "-q")
+    git(project.root, "add", "scripts/door.py")
+    git(project.root, "commit", "-q", "-m", "door")
+    return project
+
+
+def test_git_markers_in_the_script_editor(qtbot, repo, settings):
+    folder = repo.root / "scripts"
+    assert scripting.committed(folder / "door.py").text.startswith('"""The door script')
+    assert scripting.committed(folder / "gate.py").text is None  # not committed yet
+    assert scripting.file_statuses(folder) == {}
+
+    panel = ScriptEditorPanel(settings)
+    qtbot.addWidget(panel)
+    panel.set_project(repo)
+    editor = panel.open_module("door")
+    assert editor.git_changes == {}
+    cursor = editor.textCursor()
+    cursor.movePosition(cursor.MoveOperation.End)
+    editor.setTextCursor(cursor)
+    editor.insertPlainText("\nmidgard.log('hi')\n")
+    qtbot.waitUntil(lambda: scripting.ADDED in editor.git_changes.values(), timeout=3000)
+
+    panel.save_current()
+    gate = panel.open_module("gate")  # a new, uncommitted script
+    assert set(gate.git_changes.values()) == {scripting.ADDED}
+    assert scripting.file_statuses(folder) == {(folder / "door.py").resolve(): "modified",
+                                               (folder / "gate.py").resolve(): "new"}
+    panel._fill_open_menu()
+    labels = [a.text() for a in panel.open_menu.actions()]
+    assert "door   (changed)" in labels and "gate   (new)" in labels
+
+
+def test_no_markers_outside_a_repository(project):
+    file = scripting.create_script(project, "door")
+    assert scripting.committed(file) is None
+    assert scripting.file_statuses(file.parent) == {}
