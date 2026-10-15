@@ -1,0 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
+// The runtime's icon. Its images are uncompressed (tools/make_runtime_icon.py) so that
+// exporting a game can replace them in place with the game's own icon.
+1 ICON "midgard.ico"

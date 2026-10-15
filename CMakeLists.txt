@@ -6,6 +6,9 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" MIDGARD_VERSION)
 string(STRIP "${MIDGARD_VERSION}" MIDGARD_VERSION)
 
 project(Midgard VERSION ${MIDGARD_VERSION} LANGUAGES CXX)
+if(WIN32)
+    enable_language(RC)  # the runtime's icon resource
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

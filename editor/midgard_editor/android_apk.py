@@ -342,9 +342,24 @@ def development_key(settings_dir: Path) -> tuple[SigningKey, Path]:
 
 
 # ---- the game APK -----------------------------------------------------------------------------
+def launcher_icon(png: bytes, size: int) -> bytes:
+    """The game's icon at the size of a launcher icon in the template."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+
+    from .branding import png_bytes, square
+
+    image = QImage.fromData(png)
+    if image.isNull():
+        raise ApkError("the game's icon can't be read")
+    return png_bytes(square(image).scaled(size, size, Qt.AspectRatioMode.IgnoreAspectRatio,
+                                          Qt.TransformationMode.SmoothTransformation))
+
+
 def build_apk(base_apk: Path, data_dir: Path, extra_assets: dict[str, bytes], package: str,
-              title: str, version: str, key: SigningKey) -> bytes:
-    """The signed game APK: the template plus the cooked package in assets/data/."""
+              title: str, version: str, key: SigningKey, icon_png: bytes | None = None) -> bytes:
+    """The signed game APK: the template plus the cooked package in assets/data/, with the
+    game's icon (if it has one) as the launcher icon."""
     if not valid_package_name(package):
         raise ApkError(f"'{package}' is not a valid Android package name "
                        "(for example com.yourstudio.yourgame)")
@@ -360,6 +375,11 @@ def build_apk(base_apk: Path, data_dir: Path, extra_assets: dict[str, bytes], pa
                         data, {PLACEHOLDER_PACKAGE: package, PLACEHOLDER_TITLE: title,
                                PLACEHOLDER_VERSION: version},
                         {"versionCode": version_code(version)})
+                elif icon_png and re.fullmatch(r"res/mipmap[^/]*/ic_launcher\.png",
+                                               info.filename):
+                    from PySide6.QtGui import QImage
+
+                    data = launcher_icon(icon_png, QImage.fromData(data).width() or 192)
                 entries.append(Entry(info.filename, data,
                                      compress=info.filename != "resources.arsc"))
     except (zipfile.BadZipFile, KeyError) as e:

@@ -6,6 +6,7 @@
     <out>/{name}.db          a read-only copy of {project}.db
     <out>/game.pak           cooked assets (zip): meshes as .glb
     <out>/scripts/           the project's scripts/ (*.py), for entity scripts
+    <out>/icon.png           the game's icon (Project Page), for the game's window, if it has one
 
 The manifest is checked against schema/manifest.schema.json before cooking finishes. When the
 engine's _midgard module is available, the engine then checks the package the way the runtime
@@ -189,6 +190,28 @@ def _script_warnings(project: Project, modules: dict[str, str]) -> list[str]:
             if (m := e.components.get("script", {}).get("module")) and m not in modules]
 
 
+ICON_PIXELS = 256  # the window icon; the Windows executable gets its own sizes at export
+
+
+def _cook_icon(project: Project, out: Path) -> None:
+    """icon.png for the runtime's window and taskbar icon."""
+    from . import branding
+
+    target = out / "icon.png"
+    source = branding.path(project, "icon")
+    if source is None:
+        target.unlink(missing_ok=True)
+        return
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+
+    image = QImage(str(source))
+    if image.width() > ICON_PIXELS:
+        image = image.scaled(ICON_PIXELS, ICON_PIXELS, Qt.AspectRatioMode.KeepAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+    target.write_bytes(branding.png_bytes(image))
+
+
 def _write_manifest(project: Project, out: Path, target: dict[str, str],
                     content: list[dict[str, str]], schema_version: int) -> dict:
     content_hash = hashlib.sha256()
@@ -196,6 +219,8 @@ def _write_manifest(project: Project, out: Path, target: dict[str, str],
         content_hash.update(item["sha256"].encode("ascii"))
     for module, sha in sorted(_script_hashes(out / "scripts").items()):
         content_hash.update(f"{module}={sha}".encode())
+    if (out / "icon.png").is_file():
+        content_hash.update(_sha256((out / "icon.png").read_bytes()).encode("ascii"))
     content_hash.update(_sha256((out / f"{project.name}.db").read_bytes()).encode("ascii"))
     manifest = {
         "format": "midgard-package",
@@ -230,6 +255,7 @@ def cook(project: Project, out_dir: Path | None = None,
     schema_version = _cook_database(project, out)
     content = _cook_assets(project, out, warnings)
     warnings += _script_warnings(project, _cook_scripts(project, out))
+    _cook_icon(project, out)
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
     (out / f"{project.name}.config").write_text(json.dumps(runtime_config, indent=2) + "\n",
                                                 "utf-8")

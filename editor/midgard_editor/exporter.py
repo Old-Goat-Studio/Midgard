@@ -6,6 +6,10 @@ to any target it has a template for.
     Windows:  <Game>-<version>-windows-x86_64.zip  ->  <Game>/<Game>.exe, data/, notices, README
     Linux:    <Game>-<version>-linux-x86_64.tar.gz ->  <Game>/<Game> (0755), data/, .desktop, ...
 
+The game's icon (Project Page) goes into the package (the window and taskbar icon), into the
+Windows executable itself (replacing the runtime's built-in icon in place; see winicon.py), beside
+the Linux executable for its .desktop launcher, and into the Android launcher.
+
 Desktop games also carry their Python (the template's runtime_files: python313.dll and python/
 on Windows, python/ on Linux) for game scripts.
     Android:  <Game>-<version>-android-arm64.apk   ->  signed APK, the package in assets/data/
@@ -15,6 +19,7 @@ settings folder: <settings>/templates/<engine version>/<os>-<arch>/.
 """
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -25,10 +30,12 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import BUNDLE_DIR, android_apk
+from . import BUNDLE_DIR, android_apk, branding
 from .cook import cook
 from .project import Project
 from .version import VERSION
+
+log = logging.getLogger("midgard")
 
 TARGETS = {
     "windows-x86_64": {"os": "windows", "arch": "x86_64", "label": "Windows (x86_64)",
@@ -150,6 +157,16 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> 
     cook(project, game_dir / "data", {"os": spec["os"], "arch": spec["arch"], "role": "game"})
     exe = game_dir / (f"{name}.exe" if spec["os"] == "windows" else name)
     shutil.copy2(template.runtime, exe)
+    icon = branding.path(project, "icon")
+    if icon is not None and spec["os"] == "windows":
+        from PySide6.QtGui import QImage
+
+        from . import winicon
+
+        try:
+            exe.write_bytes(winicon.set_icon(exe.read_bytes(), QImage(str(icon))))
+        except winicon.IconError as e:
+            log.warning("The game's icon isn't in %s: %s", exe.name, e)
     for extra in template.info.get("runtime_files", []):
         source = template.folder / extra
         if source.is_dir():
@@ -165,9 +182,14 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> 
     (game_dir / "README.txt").write_text(readme.format(title=project.game_title, name=name),
                                          "utf-8")
     if spec["os"] == "linux":
+        icon_line = ""
+        if icon is not None:
+            shutil.copy2(game_dir / "data" / "icon.png", game_dir / f"{name}.png")
+            icon_line = f"Icon=./{name}.png\n"
         (game_dir / f"{name}.desktop").write_text(
             "[Desktop Entry]\nType=Application\n"
-            f"Name={project.game_title}\nExec=./{name}\nTerminal=false\nCategories=Game;\n",
+            f"Name={project.game_title}\nExec=./{name}\n{icon_line}Terminal=false\n"
+            "Categories=Game;\n",
             "utf-8")
 
     stem = f"{name}-{version}-{target}"
@@ -208,8 +230,10 @@ def _export_android(project: Project, template: Template, out_dir: Path, setting
             assets[f"licenses/MIDGARD_{doc}.txt"] = src.read_bytes()
     key, _ = android_apk.development_key(settings_dir)
     try:
+        icon = work / "data" / "icon.png"
         apk = android_apk.build_apk(template.runtime, work / "data", assets,
-                                    android_package(project), project.game_title, version, key)
+                                    android_package(project), project.game_title, version, key,
+                                    icon.read_bytes() if icon.is_file() else None)
     except android_apk.ApkError as e:
         raise ExportError(f"The Android export failed: {e}") from e
     archive = out_dir / f"{project.name}-{version}-{target}.apk"

@@ -48,6 +48,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#include <stb_image.h>
+
 #include "midgard/game.h"
 #include "midgard/input.h"
 #include "midgard/link.h"
@@ -153,6 +157,8 @@ public:
     virtual void update(const midgard::Actions&, float) {}
     virtual bool wants_mouse_look() const { return false; }
     virtual std::string title() const { return "Midgard"; }
+    // The game's icon (icon.png in its package), for the window and the taskbar.
+    virtual std::optional<std::filesystem::path> icon() const { return std::nullopt; }
     // The scene as JSON (entities and their transforms and colours), for tests.
     virtual std::string dump() const { return "{}"; }
     // A message from the editor's live link (entity edits and the like).
@@ -232,6 +238,11 @@ public:
     }
     bool wants_mouse_look() const override { return game_.third_person().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
+    std::optional<std::filesystem::path> icon() const override {
+        const auto file = game_.package().root / "icon.png";
+        if (std::filesystem::is_regular_file(file)) return file;
+        return std::nullopt;
+    }
 
     void apply(const nlohmann::json& message, render::Renderer* renderer) override {
         const std::string type = message.value("type", "");
@@ -535,6 +546,25 @@ int run_headless(const Options& opt, Source& source) {
     return result;
 }
 
+// Shows the game's icon in the window's title bar and the taskbar (the Windows executable also
+// carries it as a resource, for Explorer).
+void set_window_icon(SDL_Window* window, const std::filesystem::path& file) {
+    const std::u8string u8 = file.u8string();
+    int width = 0, height = 0, channels = 0;
+    stbi_uc* pixels =
+        stbi_load(std::string(u8.begin(), u8.end()).c_str(), &width, &height, &channels, 4);
+    if (!pixels) {
+        warn("The game's icon %s could not be read\n", file.string().c_str());
+        return;
+    }
+    if (SDL_Surface* surface =
+            SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, pixels, width * 4)) {
+        SDL_SetWindowIcon(window, surface);
+        SDL_DestroySurface(surface);
+    }
+    stbi_image_free(pixels);
+}
+
 int run_window(const Options& opt, Source& source) {
     SDL_WindowFlags flags =
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -547,6 +577,7 @@ int run_window(const Options& opt, Source& source) {
         fail(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
         return 1;
     }
+    if (const auto icon = source.icon()) set_window_icon(window, *icon);
     int result = 0;
     std::unique_ptr<midgard::link::Client> link;
     try {

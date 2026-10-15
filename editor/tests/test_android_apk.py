@@ -104,6 +104,16 @@ def test_the_development_key_is_kept(tmp_path):
     assert (folder / "midgard-dev-key.pem").is_file()
 
 
+def _png(size: int, colour: str) -> bytes:
+    from PySide6.QtGui import QColor, QImage
+
+    from midgard_editor.branding import png_bytes
+
+    image = QImage(size, size, QImage.Format.Format_ARGB32)
+    image.fill(QColor(colour))
+    return png_bytes(image)
+
+
 def android_template(tmp_path):
     base = io.BytesIO()
     with zipfile.ZipFile(base, "w") as z:
@@ -111,6 +121,7 @@ def android_template(tmp_path):
         z.writestr("resources.arsc", b"arsc")
         z.writestr("classes.dex", b"dex")
         z.writestr("lib/arm64-v8a/libmain.so", b"engine")
+        z.writestr("res/mipmap-xxxhdpi-v4/ic_launcher.png", _png(192, "#2e8b57"))
     archive = tmp_path / f"midgard-runtime-{VERSION}-android-arm64.zip"
     with zipfile.ZipFile(archive, "w") as z:
         z.writestr("template.json", json.dumps({
@@ -175,3 +186,21 @@ def test_the_export_dialog_asks_for_the_android_package(project, settings, qtbot
     dialog.target.setCurrentIndex(dialog.target.findData("android-arm64"))
     assert dialog.form.isRowVisible(dialog.package)
     assert dialog.package.text() == "com.example.hellocube"
+
+
+def test_the_android_launcher_icon_is_the_games(project, tmp_path):
+    from PySide6.QtGui import QImage
+
+    from midgard_editor import branding
+    from midgard_editor.undo import SetConfigCommand
+
+    (tmp_path / "icon.png").write_bytes(_png(512, "#c0392b"))
+    value, _ = branding.import_image(project, "icon", tmp_path / "icon.png")
+    project.undo_stack.push(SetConfigCommand(project, "branding", value, "icon"))
+    settings = tmp_path / "settings"
+    exporter.install_template(android_template(tmp_path), settings)
+    archive = exporter.export(project, "android-arm64", tmp_path / "out", settings)
+    with zipfile.ZipFile(archive) as z:
+        icon = QImage.fromData(z.read("res/mipmap-xxxhdpi-v4/ic_launcher.png"))
+        assert "assets/data/icon.png" in z.namelist()
+    assert icon.width() == 192 and icon.pixelColor(96, 96).name() == "#c0392b"

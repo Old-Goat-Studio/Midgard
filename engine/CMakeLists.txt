@@ -175,11 +175,13 @@ if(MIDGARD_BUILD_PROGRAMS)
         set_target_properties(midgard_runtime PROPERTIES OUTPUT_NAME main)
         target_link_options(midgard_runtime PRIVATE $<$<CONFIG:Release>:-s>)
     else()
-        add_executable(midgard_runtime runtime/main.cpp)
+        add_executable(midgard_runtime runtime/main.cpp
+                       $<$<PLATFORM_ID:Windows>:runtime/runtime.rc>)
     endif()
     target_link_libraries(midgard_runtime PRIVATE
         midgard_core midgard_render midgard_scene midgard_link SDL3::SDL3 Vulkan::Headers
         midgard_options)
+    target_include_directories(midgard_runtime PRIVATE ${Stb_INCLUDE_DIR})  # the window icon
     if(WIN32)
         # A windowed program (no console behind the game). It attaches to the terminal it was
         # started from, so --version still prints there.
