@@ -51,3 +51,19 @@ def test_dock_stylesheet_steps_aside_for_qss_themes(qapp):
     applier.apply("light")
     assert dock.styleSheet() == "QWidget { color: blue; }"
     QApplication.instance().setStyleSheet("")
+
+
+def test_dark_and_stylesheet_themes_use_fusion(qapp):
+    """The native Windows style ignores the dark colour scheme; Fusion follows it."""
+    qapp.setStyleSheet("")  # as the editor starts: no theme applied yet
+    applier = ThemeApplier()
+    native = applier.native_style
+    try:
+        assert applier.apply("dark")
+        assert qapp.style().name().casefold() == "fusion"
+        assert applier.apply("light")
+        assert qapp.style().name().casefold() == native.casefold()
+        assert applier.apply(QSS_PREFIX + "yggdrasil")
+        assert applier.style.casefold() == "fusion"  # Qt names a stylesheet's style ""
+    finally:
+        applier.apply("light")
