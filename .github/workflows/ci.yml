@@ -135,7 +135,9 @@ jobs:
             ~/AppData/Local/vcpkg/archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
       - run: python tools/setup_vcpkg.py
-      - run: cmake --preset ${{ matrix.preset }}
+      - name: pybind11 (for the editor's _midgard engine module)
+        run: pip install "pybind11>=2.13"
+      - run: cmake --preset ${{ matrix.preset }} -DMIDGARD_REQUIRE_PYTHON=ON
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
       - name: Runtime reports its version

@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: Apache-2.0
+#include "midgard/validate.h"
+
+#include <exception>
+#include <memory>
+#include <set>
+
+#include "midgard/game.h"
+#include "midgard/gltf.h"
+#include "midgard/input.h"
+#include "midgard/package.h"
+#include "midgard/pak.h"
+#include "midgard/scene.h"
+
+namespace midgard {
+
+ValidationReport validate_package(const std::filesystem::path& dir) {
+    ValidationReport report;
+    PackageInfo package;
+    try {
+        package = open_package(dir);
+    } catch (const std::exception& e) {
+        report.errors.emplace_back(e.what());
+        return report;
+    }
+    const Manifest& m = package.manifest;
+    const std::filesystem::path database = dir / m.database;
+
+    std::set<std::string> content_ids;
+    for (const ContentEntry& c : m.content) content_ids.insert(c.id);
+    std::unique_ptr<Pak> pak;
+    if (!m.content.empty()) {
+        try {
+            pak = std::make_unique<Pak>(dir / "game.pak");
+        } catch (const std::exception& e) {
+            report.errors.emplace_back("game.pak: " + std::string(e.what()));
+        }
+    }
+    if (pak) {
+        for (const ContentEntry& c : m.content) {
+            try {
+                load_glb(pak->read(c.path));
+                ++report.assets;
+            } catch (const std::exception& e) {
+                report.errors.emplace_back("content '" + c.id + "' (" + c.path + "): " + e.what());
+            }
+        }
+    }
+
+    try {
+        const Scene scene = Scene::load(database, m.entry_scene);
+        report.entities = scene.registry.view<const EntityInfo>().size();
+        for (entt::entity e : scene.registry.view<const MeshRef>()) {
+            const std::string& asset = scene.registry.get<MeshRef>(e).asset;
+            if (asset != kBuiltinCube && !content_ids.contains(asset))
+                report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
+                                          "' uses mesh '" + asset +
+                                          "', which is not in the package; it will not be drawn");
+        }
+        (void)scene.light();
+        (void)scene.camera(16.0f / 9.0f);
+    } catch (const std::exception& e) {
+        report.errors.emplace_back(e.what());
+    }
+
+    try {
+        (void)InputMap::load(database);
+    } catch (const std::exception& e) {
+        report.errors.emplace_back("input bindings: " + std::string(e.what()));
+    }
+    return report;
+}
+
+}  // namespace midgard

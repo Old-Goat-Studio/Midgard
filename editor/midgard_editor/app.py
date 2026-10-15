@@ -58,11 +58,13 @@ def _smoke_test(app: QApplication, window, folder: Path) -> int:
         project = Project.create(project_dir, "SmokeTest", "system_map", "Smoke Test")
         opened = window.open_project(project.config_path)
         app.processEvents()
+        from . import engine as engine_module
         from .about import engine_info
 
         engine = engine_info()
         result = {
             "engine": engine.version if engine else None,
+            "engine_module": engine_module.module() is not None,
             "ok": opened and window.windowTitle() == f"{APP_NAME} - SmokeTest",
             "title": window.windowTitle(),
             "panels": sorted(window.panels),

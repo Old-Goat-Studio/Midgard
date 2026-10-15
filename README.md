@@ -61,6 +61,11 @@ build/linux-release/engine/midgard_runtime --version
 Other presets: `linux-arm64-release` (on an ARM host) and `android-arm64` (needs
 `ANDROID_NDK_HOME`).
 
+The engine build also makes `_midgard`, the engine as a Python module that the editor uses
+in-process (for example to check every cooked package). It is built for the project's `.venv`
+when there is one, and needs pybind11 there (included in `editor[dev]`); without it the build
+skips the module and the editor works without it.
+
 ## Licence
 
 Midgard is created by Richard E Rogers and published by **Old Goat Studio**, open source under

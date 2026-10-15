@@ -6,7 +6,9 @@
     <out>/{name}.db          a read-only copy of {project}.db
     <out>/game.pak           cooked assets (zip): meshes as .glb
 
-The manifest is checked against schema/manifest.schema.json before cooking finishes.
+The manifest is checked against schema/manifest.schema.json before cooking finishes. When the
+engine's _midgard module is available, the engine then checks the package the way the runtime
+loads it, and its problems stop the cook (errors) or are reported (warnings).
 """
 import hashlib
 import json
@@ -19,7 +21,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import contract, meshes
+from . import contract, engine, meshes
 from .project import Project
 from .scene_model import MAIN_SCENE
 from .version import BUILD, VERSION
@@ -175,7 +177,20 @@ def cook(project: Project, out_dir: Path | None = None,
     (out / f"{project.name}.config").write_text(json.dumps(runtime_config, indent=2) + "\n",
                                                 "utf-8")
     manifest = _write_manifest(project, out, target, content, schema_version)
+    report = engine.validate(out)
+    if report is not None:
+        if not report["ok"]:
+            raise CookError("The engine can't load the cooked package:\n" +
+                            "\n".join(report["errors"]))
+        warnings += [w for w in report["warnings"] if not _already_warned(w, warnings)]
     return CookResult(out, manifest, warnings)
+
+
+def _already_warned(engine_warning: str, warnings: list[str]) -> bool:
+    """The editor already warns about meshes it couldn't find; the engine's version of the
+    same warning would only repeat it."""
+    return "not in the package" in engine_warning and any("not in the project" in w
+                                                          for w in warnings)
 
 
 def recook(project: Project, out: Path, database: bool = False,

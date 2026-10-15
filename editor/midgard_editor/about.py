@@ -41,7 +41,11 @@ def parse_runtime_version(text: str) -> EngineInfo | None:
 
 @cache
 def engine_info() -> EngineInfo | None:
-    """Ask the runtime for its version (Phase 3 replaces this with the _midgard module)."""
+    """The engine's version: from the _midgard module, or else by asking the runtime."""
+    from . import engine
+
+    if v := engine.version():
+        return EngineInfo(v["engine"], v["engine_abi"], v["format_major"])
     for runtime in runtime_candidates():
         try:
             out = subprocess.run(

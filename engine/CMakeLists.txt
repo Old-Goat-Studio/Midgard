@@ -87,6 +87,7 @@ add_library(midgard_scene STATIC
     scene/src/scene.cpp
     scene/src/game.cpp
     scene/src/third_person.cpp
+    scene/src/validate.cpp
 )
 target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_link_libraries(midgard_scene
@@ -130,6 +131,35 @@ if(MIDGARD_BUILD_PROGRAMS)
     endif()
 endif()
 
+# ---- _midgard: the engine as a Python module for the editor (roadmap §2, channel 3) ---------
+# Built for the Python that runs the editor: the project's .venv if there is one, otherwise the
+# first Python 3 found. pybind11 comes from that Python's pip packages (pip install pybind11);
+# without it the module is skipped and the editor carries on without it.
+if(MIDGARD_BUILD_PYTHON AND NOT CMAKE_CROSSCOMPILING)
+    if(NOT DEFINED Python_EXECUTABLE AND EXISTS "${PROJECT_SOURCE_DIR}/.venv")
+        set(Python_ROOT_DIR "${PROJECT_SOURCE_DIR}/.venv")
+    endif()
+    find_package(Python 3.12 COMPONENTS Interpreter Development.Module)
+    set(MIDGARD_PYBIND11_DIR "")
+    if(Python_FOUND)
+        execute_process(COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
+                        OUTPUT_VARIABLE MIDGARD_PYBIND11_DIR
+                        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    endif()
+    if(MIDGARD_PYBIND11_DIR)
+        file(TO_CMAKE_PATH "${MIDGARD_PYBIND11_DIR}" MIDGARD_PYBIND11_DIR)  # Windows backslashes
+        set(PYBIND11_FINDPYTHON ON)
+        find_package(pybind11 CONFIG REQUIRED PATHS "${MIDGARD_PYBIND11_DIR}" NO_DEFAULT_PATH)
+        pybind11_add_module(_midgard bindings/module.cpp)
+        target_link_libraries(_midgard PRIVATE midgard_scene midgard_link midgard_options)
+        message(STATUS "_midgard: building for Python ${Python_VERSION} (${Python_EXECUTABLE})")
+    elseif(MIDGARD_REQUIRE_PYTHON)
+        message(FATAL_ERROR "_midgard needs Python 3.12+ with pybind11 (pip install pybind11)")
+    else()
+        message(STATUS "_midgard: skipped (needs Python 3.12+ with pybind11: pip install pybind11)")
+    endif()
+endif()
+
 if(MIDGARD_BUILD_TESTS)
     find_package(doctest CONFIG REQUIRED)
     add_executable(midgard_tests
@@ -148,5 +178,11 @@ if(MIDGARD_BUILD_TESTS)
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema")
     if(NOT CMAKE_CROSSCOMPILING)
         add_test(NAME midgard_tests COMMAND midgard_tests)
+    endif()
+    if(TARGET _midgard)
+        add_test(NAME python_module
+                 COMMAND "${Python_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bindings.py"
+                         "$<TARGET_FILE_DIR:_midgard>" "${PROJECT_SOURCE_DIR}/schema"
+                         "${MIDGARD_VERSION}")
     endif()
 endif()

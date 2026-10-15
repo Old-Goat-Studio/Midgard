@@ -75,6 +75,10 @@ def build_editor() -> None:
         if built.is_file():
             (internal / "engine").mkdir(exist_ok=True)
             shutil.copy2(built, internal / "engine" / built.name)
+    # The _midgard engine module, built for this Python (the one PyInstaller bundles).
+    for module in engine_dir.glob("_midgard*.pyd" if os.name == "nt" else "_midgard*.so"):
+        (internal / "engine").mkdir(exist_ok=True)
+        shutil.copy2(module, internal / "engine" / module.name)
     if (internal / "engine").is_dir():  # the host's runtime template, for Build ▸ Export
         run(sys.executable, ROOT / "tools" / "licenses.py", "notices", "--role", "runtime",
             "--out", internal / "engine" / "THIRD_PARTY_NOTICES.txt")
