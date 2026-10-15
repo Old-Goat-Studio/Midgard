@@ -20,6 +20,7 @@ DEFAULTS: dict[str, Any] = {
     "backup_minutes": 10,        # minutes between automatic backups while editing
     "use_x11": False,            # Linux: start under XWayland for full multi-monitor support
     "last_project_dir": "",
+    "export_dir": "",            # last Build ▸ Export output folder
 }
 
 

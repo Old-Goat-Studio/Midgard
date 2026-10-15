@@ -5,15 +5,23 @@
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH]
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH]   (offscreen, no window)
 //
-// With --package, the runtime shows the package's entry scene; without it, a built-in demo.
+// With --package, the runtime shows that package's entry scene. Without it, an exported game
+// runs the package in the data/ folder next to the executable, and a bare runtime shows a demo.
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>  // WinMain for the windowed Windows build
 #include <SDL3/SDL_vulkan.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -65,6 +73,7 @@ public:
     virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
     virtual void update(const midgard::Actions&, float) {}
     virtual bool wants_mouse_look() const { return false; }
+    virtual std::string title() const { return "Midgard"; }
 };
 
 class DemoSource : public Source {
@@ -113,6 +122,7 @@ public:
     midgard::InputMap input_map() const override { return game_.input_map(); }
     void update(const midgard::Actions& actions, float dt) override { game_.update(actions, dt); }
     bool wants_mouse_look() const override { return game_.third_person().active(); }
+    std::string title() const override { return game_.package().manifest.game_name; }
 
 private:
     midgard::Game game_;
@@ -158,6 +168,27 @@ void feed(midgard::Actions& actions, const SDL_Event& e) {
     }
 }
 
+// The Windows runtime is a windowed program. When it is started from a terminal it has no
+// standard output, so attach to the terminal; pipes (the editor, scripts) already work.
+void attach_parent_console() {
+#ifdef _WIN32
+    if (GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) != FILE_TYPE_UNKNOWN) return;
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        std::freopen("CONOUT$", "w", stdout);
+        std::freopen("CONOUT$", "w", stderr);
+    }
+#endif
+}
+
+// An exported game: <Game>.exe next to data/manifest.json.
+std::optional<std::string> package_beside_executable() {
+    const char* base = SDL_GetBasePath();
+    if (!base) return std::nullopt;
+    const std::filesystem::path data = std::filesystem::path(base) / "data";
+    if (std::filesystem::is_regular_file(data / "manifest.json")) return data.string();
+    return std::nullopt;
+}
+
 bool want_validation() {
     return std::getenv("MIDGARD_VULKAN_VALIDATION") != nullptr;
 }
@@ -188,7 +219,7 @@ int run_window(const Options& opt, Source& source) {
         return 1;
     }
     SDL_Window* window =
-        SDL_CreateWindow("Midgard", int(opt.width), int(opt.height),
+        SDL_CreateWindow(source.title().c_str(), int(opt.width), int(opt.height),
                          SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) {
         std::fprintf(stderr, "error: SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -258,6 +289,7 @@ int run_window(const Options& opt, Source& source) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    attach_parent_console();
     Options opt;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -279,6 +311,7 @@ int main(int argc, char** argv) {
             return usage();
         }
     }
+    if (!opt.package_dir) opt.package_dir = package_beside_executable();
     try {
         std::unique_ptr<Source> source;
         if (opt.package_dir)

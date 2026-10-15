@@ -141,6 +141,13 @@ jobs:
       - name: Runtime reports its version
         shell: bash
         run: build/${{ matrix.preset }}/engine/midgard_runtime --version
+      - name: Runtime template (for Build > Export)
+        run: python tools/make_template.py --preset ${{ matrix.preset }}
+      - name: Upload the runtime template
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-template-${{ matrix.preset }}
+          path: build/templates/*.zip
       - name: Render the demo scene offscreen with software Vulkan (lavapipe)
         if: runner.os == 'Linux'
         run: |

@@ -100,7 +100,9 @@ if(MIDGARD_BUILD_PROGRAMS)
     target_link_libraries(midgard_runtime PRIVATE
         midgard_core midgard_render midgard_scene SDL3::SDL3 Vulkan::Headers midgard_options)
     if(WIN32)
-        set_target_properties(midgard_runtime PROPERTIES WIN32_EXECUTABLE OFF)  # keep a console for --version
+        # A windowed program (no console behind the game). It attaches to the terminal it was
+        # started from, so --version still prints there.
+        set_target_properties(midgard_runtime PROPERTIES WIN32_EXECUTABLE ON)
     endif()
 
     # The dedicated server is headless: no renderer, no SDL.

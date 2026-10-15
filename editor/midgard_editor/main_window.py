@@ -40,6 +40,7 @@ from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.scene_panel import ScenePanel
+from .export_dialog import ExportDialog
 from .project import WORLD_MODES, Project, ProjectError
 from .settings import Settings
 from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
@@ -269,6 +270,8 @@ class MainWindow(QMainWindow):
         build = bar.addMenu("&Build")
         self.cook_action = add_action(build, "&Cook", self.cook_project, "Ctrl+B")
         self.cook_run_action = add_action(build, "Cook and &Run", self.cook_and_run, "F5")
+        build.addSeparator()
+        self.export_action = add_action(build, "&Export…", self.export_game, "Ctrl+E")
 
         view = bar.addMenu("&View")
         self.themes_menu = view.addMenu("&Themes")
@@ -384,7 +387,8 @@ class MainWindow(QMainWindow):
         self.browser.set_project(project)
         self.inspector.set_project(project)
         self.scene_panel.set_project(project)
-        for action in (self.close_action, self.cook_action, self.cook_run_action):
+        for action in (self.close_action, self.cook_action, self.cook_run_action,
+                       self.export_action):
             action.setEnabled(project is not None)
         if project is None:
             self.setWindowTitle(APP_NAME)
@@ -417,6 +421,10 @@ class MainWindow(QMainWindow):
         log.info("Cooked %s to %s (%d asset(s))", self.project.name, result.out_dir,
                  len(result.manifest["content"]))
         return result.out_dir
+
+    def export_game(self) -> None:
+        if self.project is not None:
+            ExportDialog(self.project, self.settings, self).exec()
 
     def cook_and_run(self) -> None:
         package = self.cook_project()

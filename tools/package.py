@@ -75,6 +75,11 @@ def build_editor() -> None:
         if built.is_file():
             (internal / "engine").mkdir(exist_ok=True)
             shutil.copy2(built, internal / "engine" / built.name)
+    if (internal / "engine").is_dir():  # the host's runtime template, for Build ▸ Export
+        run(sys.executable, ROOT / "tools" / "licenses.py", "notices", "--role", "runtime",
+            "--out", internal / "engine" / "THIRD_PARTY_NOTICES.txt")
+        for name in ("LICENSE", "NOTICE"):
+            shutil.copy2(ROOT / name, internal / "engine" / name)
     for name in ("LICENSE", "NOTICE"):
         shutil.copy2(ROOT / name, APP / name)
     run(sys.executable, ROOT / "tools" / "licenses.py", "notices", "--role", "editor",
