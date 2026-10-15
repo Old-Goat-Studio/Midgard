@@ -1,0 +1,136 @@
+/* Forest Twilight — earthy with a purple pop
+ * Scribe colour theme as a Qt stylesheet (reference copy).
+ * Generated from themes.txt; Scribe itself applies these colours as a
+ * QPalette with the Fusion style, so editing this file does not change the app.
+ *
+ *   base     #2d3047   editor / list background
+ *   window   #222435   toolbar, menus, panels
+ *   text     #ffdbb5
+ *   accent   #419d78   selection highlight
+ *   link     #c04abc
+ *   heading  #e0a458
+ */
+
+QWidget {
+    background-color: #222435;
+    color: #ffdbb5;
+    selection-background-color: #419d78;
+    selection-color: #000000;
+}
+
+QWidget:disabled {
+    color: #96867e;
+}
+
+/* Editing and list areas */
+QPlainTextEdit, QTextEdit, QTextBrowser, QLineEdit, QSpinBox, QComboBox,
+QListView, QTreeView, QTreeWidget, QTableView {
+    background-color: #2d3047;
+    color: #ffdbb5;
+    border: 1px solid #1d1f2d;
+}
+
+QTreeView, QListView, QTableView {
+    alternate-background-color: #35374b;
+}
+
+QTreeView::item:selected, QListView::item:selected {
+    background-color: #419d78;
+    color: #000000;
+}
+
+/* Menus */
+QMenuBar {
+    background-color: #222435;
+    color: #ffdbb5;
+}
+
+QMenuBar::item:selected, QMenu::item:selected {
+    background-color: #419d78;
+    color: #000000;
+}
+
+QMenu {
+    background-color: #222435;
+    color: #ffdbb5;
+    border: 1px solid #1d1f2d;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #1d1f2d;
+    margin: 4px 8px;
+}
+
+/* Toolbar and status bar */
+QToolBar {
+    background-color: #222435;
+    border: none;
+    spacing: 2px;
+}
+
+QToolButton:hover, QToolButton:checked {
+    background-color: #2f2f3d;
+    border: 1px solid #1d1f2d;
+    border-radius: 3px;
+}
+
+QStatusBar {
+    background-color: #222435;
+    color: #ffdbb5;
+}
+
+/* Tabs */
+QTabBar::tab {
+    background-color: #2f2f3d;
+    color: #ffdbb5;
+    padding: 4px 10px;
+    border: 1px solid #1d1f2d;
+    border-bottom: none;
+}
+
+QTabBar::tab:selected {
+    background-color: #2d3047;
+    color: #ffdbb5;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #2f2f3d;
+    color: #ffdbb5;
+    border: 1px solid #1d1f2d;
+    border-radius: 3px;
+    padding: 4px 14px;
+}
+
+QPushButton:hover {
+    background-color: #313343;
+}
+
+QPushButton:pressed {
+    background-color: #161722;
+}
+
+QPushButton:default {
+    border-color: #419d78;
+}
+
+/* Scroll bars */
+QScrollBar:vertical, QScrollBar:horizontal {
+    background-color: #222435;
+}
+
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background-color: #1d1f2d;
+    border-radius: 4px;
+}
+
+QToolTip {
+    background-color: #2d3047;
+    color: #ffdbb5;
+    border: 1px solid #1d1f2d;
+}
+
+QSplitter::handle {
+    background-color: #1d1f2d;
+}

@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QFontDatabase,
     QKeySequence,
     QPainter,
+    QPalette,
     QShortcut,
     QSyntaxHighlighter,
     QTextCharFormat,
@@ -66,27 +67,49 @@ def _format(color: str, bold: bool = False, italic: bool = False) -> QTextCharFo
     return f
 
 
+# Highlighting colours for light and for dark backgrounds (themes set the editor's background).
+COLOURS = {
+    False: {"keyword": "#3b6fb6", "builtin": "#7a4fa0", "midgard": "#b5651d",
+            "definition": "#1f7a5c", "number": "#a23b72", "string": "#2e8b57",
+            "comment": "#888888"},
+    True: {"keyword": "#79a8ff", "builtin": "#c792ea", "midgard": "#ffb86c",
+           "definition": "#5fd7a7", "number": "#f78c9c", "string": "#a5d6a7",
+           "comment": "#8f8f8f"},
+}
+
+
 class PythonHighlighter(QSyntaxHighlighter):
     """Keywords, built-ins, the midgard module, strings, numbers, comments and decorators."""
 
-    def __init__(self, document):
+    WORDS = r"\b(" + "|".join(keyword.kwlist + keyword.softkwlist) + r")\b"
+    BUILTINS = r"\b(print|len|range|min|max|abs|round|int|float|str|list|dict|set|tuple|" \
+               r"getattr|setattr|isinstance|enumerate|zip|sorted|sum|any|all)\b"
+
+    def __init__(self, document, dark: bool = False):
         super().__init__(document)
-        words = r"\b(" + "|".join(keyword.kwlist + keyword.softkwlist) + r")\b"
-        builtins = r"\b(print|len|range|min|max|abs|round|int|float|str|list|dict|set|tuple|" \
-                   r"getattr|setattr|isinstance|enumerate|zip|sorted|sum|any|all)\b"
-        self.rules = [
-            (QRegularExpression(words), _format("#3b6fb6", bold=True)),
-            (QRegularExpression(builtins), _format("#7a4fa0")),
-            (QRegularExpression(r"\bmidgard\b"), _format("#b5651d", bold=True)),
-            (QRegularExpression(r"\b(def|class)\s+(\w+)"), _format("#1f7a5c", bold=True)),
-            (QRegularExpression(r"\b[0-9]+(\.[0-9]*)?\b"), _format("#a23b72")),
-            (QRegularExpression(r"@\w+"), _format("#7a4fa0")),
-            (QRegularExpression(r"[rbfu]?\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""), _format("#2e8b57")),
-            (QRegularExpression(r"[rbfu]?'[^'\\\\]*(\\\\.[^'\\\\]*)*'"), _format("#2e8b57")),
-            (QRegularExpression(r"#[^\n]*"), _format("#888888", italic=True)),
-        ]
-        self.docstring = _format("#2e8b57", italic=True)
         self.triple = QRegularExpression(r"\"\"\"|'''")
+        self.dark = None
+        self.set_dark(dark)
+
+    def set_dark(self, dark: bool) -> None:
+        """Picks the colours for a dark or light background, and highlights again."""
+        if dark == self.dark:
+            return
+        self.dark = dark
+        c = COLOURS[dark]
+        self.rules = [
+            (QRegularExpression(self.WORDS), _format(c["keyword"], bold=True)),
+            (QRegularExpression(self.BUILTINS), _format(c["builtin"])),
+            (QRegularExpression(r"\bmidgard\b"), _format(c["midgard"], bold=True)),
+            (QRegularExpression(r"\b(def|class)\s+(\w+)"), _format(c["definition"], bold=True)),
+            (QRegularExpression(r"\b[0-9]+(\.[0-9]*)?\b"), _format(c["number"])),
+            (QRegularExpression(r"@\w+"), _format(c["builtin"])),
+            (QRegularExpression(r"[rbfu]?\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""), _format(c["string"])),
+            (QRegularExpression(r"[rbfu]?'[^'\\\\]*(\\\\.[^'\\\\]*)*'"), _format(c["string"])),
+            (QRegularExpression(r"#[^\n]*"), _format(c["comment"], italic=True)),
+        ]
+        self.docstring = _format(c["string"], italic=True)
+        self.rehighlight()
 
     def highlightBlock(self, text: str) -> None:
         for pattern, fmt in self.rules:
@@ -172,17 +195,42 @@ class CodeEditor(QPlainTextEdit):
         r = self.contentsRect()
         self.numbers.setGeometry(QRect(r.left(), r.top(), self.line_number_width(), r.height()))
 
+    def _colours(self) -> tuple[QColor, QColor, bool]:
+        """The text area's background and text colours (a theme's stylesheet sets them on the
+        viewport, not in the application palette), and whether the background is dark."""
+        palette = self.viewport().palette()
+        base = palette.color(QPalette.ColorRole.Base)
+        text = palette.color(QPalette.ColorRole.Text)
+        return base, text, base.lightnessF() < 0.5
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.PaletteChange, QEvent.Type.StyleChange):
+            self.highlighter.set_dark(self._colours()[2])
+            self.numbers.update()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.highlighter.set_dark(self._colours()[2])  # the theme is known once it is shown
+
     def paint_line_numbers(self, event) -> None:
+        base, text, dark = self._colours()
+        gutter = base.lighter(125) if dark else base.darker(106)
+        if dark and base.lightness() < 8:
+            gutter = QColor(28, 28, 28)  # lighter() can't lift pure black
+        number_colour = QColor(text)
+        number_colour.setAlphaF(0.55)
         painter = QPainter(self.numbers)
-        painter.fillRect(event.rect(), self.palette().alternateBase())
+        painter.setFont(self.font())
+        painter.fillRect(event.rect(), gutter)
         block = self.firstVisibleBlock()
         top = round(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
         height = round(self.blockBoundingRect(block).height())
         while block.isValid() and top <= event.rect().bottom():
             number = block.blockNumber() + 1
             if block.isVisible():
-                painter.setPen(QColor("#c0392b") if number == self.error_line
-                               else self.palette().placeholderText().color())
+                painter.setPen(QColor("#e74c3c") if number == self.error_line
+                               else number_colour)
                 painter.drawText(0, top, self.numbers.width() - 6, height,
                                  Qt.AlignmentFlag.AlignRight, str(number))
             block = block.next()

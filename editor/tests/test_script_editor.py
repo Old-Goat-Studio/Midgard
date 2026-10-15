@@ -145,3 +145,23 @@ def test_the_inspector_opens_scripts_in_the_script_editor(qtbot, settings, proje
     assert window.script_editor.current().path.name == "cube.py"
     window._script_error({"file": "cube.py", "line": 2, "message": "boom"})
     assert window.script_editor.current().error_line == 2
+
+
+def test_colours_follow_the_theme(qtbot, project, settings):
+    """Themes colour the text area (not the app palette); the gutter and highlighting follow."""
+    from PySide6.QtWidgets import QApplication
+
+    panel = ScriptEditorPanel(settings)
+    qtbot.addWidget(panel)
+    panel.set_project(project)
+    editor = panel.open_module("door")
+    panel.show()
+    assert editor._colours()[2] is False and editor.highlighter.dark is False
+    QApplication.instance().setStyleSheet(
+        "QPlainTextEdit { background-color: #1e1e1e; color: #dddddd; }")
+    try:
+        qtbot.waitUntil(lambda: editor.highlighter.dark is True, timeout=3000)
+        base, text, dark = editor._colours()
+        assert dark and base.name() == "#1e1e1e" and text.name() == "#dddddd"
+    finally:
+        QApplication.instance().setStyleSheet("")

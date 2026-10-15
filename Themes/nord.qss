@@ -1,0 +1,89 @@
+/* Nord — cool dark theme (https://www.nordtheme.com palette) */
+
+QWidget {
+    background-color: #2e3440;
+    color: #d8dee9;
+    selection-background-color: #5e81ac;
+    selection-color: #eceff4;
+}
+
+QMenuBar { background-color: #3b4252; }
+QMenuBar::item { background: transparent; padding: 4px 10px; }
+QMenuBar::item:selected { background-color: #434c5e; }
+
+QMenu { background-color: #3b4252; border: 1px solid #4c566a; padding: 4px; }
+QMenu::item { padding: 5px 24px; }
+QMenu::item:selected { background-color: #5e81ac; color: #eceff4; }
+QMenu::separator { height: 1px; background: #4c566a; margin: 4px 8px; }
+
+QStatusBar { background-color: #3b4252; color: #a3be8c; }
+
+QTabBar::tab {
+    background: #3b4252;
+    padding: 6px 16px;
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+QTabBar::tab:selected { background: #2e3440; border-bottom-color: #88c0d0; color: #eceff4; }
+QTabBar::tab:hover:!selected { background: #434c5e; }
+
+QPlainTextEdit, QLineEdit, QSpinBox {
+    background-color: #3b4252;
+    border: 1px solid #4c566a;
+    border-radius: 4px;
+    padding: 4px;
+}
+QPlainTextEdit:focus, QLineEdit:focus, QSpinBox:focus { border-color: #88c0d0; }
+
+QPushButton {
+    background-color: #434c5e;
+    border: 1px solid #4c566a;
+    border-radius: 4px;
+    padding: 5px 14px;
+}
+QPushButton:hover { background-color: #4c566a; }
+QPushButton:pressed { background-color: #5e81ac; }
+QPushButton:disabled { color: #616e88; }
+
+QToolButton {
+    background-color: #434c5e;
+    border: 1px solid #4c566a;
+    border-radius: 4px;
+    padding: 3px 8px;
+}
+QToolButton:hover { background-color: #4c566a; }
+QToolButton:pressed, QToolButton:checked {
+    background-color: #5e81ac;
+    border-color: #81a1c1;
+    color: #eceff4;
+}
+QToolButton:disabled { color: #616e88; }
+/* Borderless icon buttons (e.g. edit/delete) only show a background on hover. */
+QToolButton[autoRaise="true"] { background: transparent; border: 1px solid transparent; }
+QToolButton[autoRaise="true"]:hover { background-color: #434c5e; }
+
+QGroupBox {
+    border: 1px solid #4c566a;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 6px;
+}
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #88c0d0; }
+
+QCalendarWidget QWidget#qt_calendar_navigationbar { background-color: #3b4252; }
+QCalendarWidget QToolButton { background: transparent; color: #eceff4; padding: 4px; }
+QCalendarWidget QToolButton:hover { background-color: #434c5e; border-radius: 4px; }
+/* The stock arrow icons are black; swap them for text arrows that take the theme color. */
+QCalendarWidget QToolButton#qt_calendar_prevmonth { qproperty-icon: none; qproperty-text: "◀"; }
+QCalendarWidget QToolButton#qt_calendar_nextmonth { qproperty-icon: none; qproperty-text: "▶"; }
+QCalendarWidget QAbstractItemView {
+    background-color: #2e3440;
+    alternate-background-color: #3b4252;
+    selection-background-color: #5e81ac;
+}
+
+QScrollBar:vertical { background: #2e3440; width: 10px; }
+QScrollBar::handle:vertical { background: #4c566a; border-radius: 5px; min-height: 24px; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+
+QToolTip { background-color: #3b4252; color: #eceff4; border: 1px solid #4c566a; }
