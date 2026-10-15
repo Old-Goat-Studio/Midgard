@@ -22,12 +22,12 @@
       "required": ["type"]
     },
     {
-      "description": "Editor → runtime: an asset was re-cooked and should be reloaded.",
+      "description": "Editor → runtime: an asset was re-cooked into game.pak (and the manifest rewritten) and should be reloaded. id is the content id.",
       "properties": { "type": { "const": "asset.changed" }, "id": { "type": "string" } },
       "required": ["type", "id"]
     },
     {
-      "description": "Editor → runtime: a database row changed (hot reload of data).",
+      "description": "Editor → runtime: a database row changed (hot reload of data). The editor has already rewritten the package database; the runtime reads the row again. Tables used so far: scene (key = scene id), entity (key = entity id).",
       "properties": {
         "type": { "const": "row.changed" },
         "table": { "type": "string" },

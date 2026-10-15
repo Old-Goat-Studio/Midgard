@@ -710,6 +710,21 @@ Renderer::~Renderer() = default;
 
 MeshId Renderer::upload_mesh(const MeshData& mesh) {
     Impl& r = *impl_;
+    r.meshes.push_back({});
+    const auto id = static_cast<MeshId>(r.meshes.size() - 1);
+    replace_mesh(id, mesh);
+    return id;
+}
+
+void Renderer::replace_mesh(MeshId id, const MeshData& mesh) {
+    Impl& r = *impl_;
+    if (id >= r.meshes.size()) throw RenderError("replace_mesh: no such mesh");
+    GpuMesh& old = r.meshes[id];
+    if (old.vertices.buffer) {
+        vkDeviceWaitIdle(r.device);
+        r.destroy_buffer(old.vertices);
+        r.destroy_buffer(old.indices);
+    }
     GpuMesh gpu;
     const VkDeviceSize vbytes = mesh.vertices.size() * sizeof(Vertex);
     const VkDeviceSize ibytes = mesh.indices.size() * sizeof(uint32_t);
@@ -722,8 +737,7 @@ MeshId Renderer::upload_mesh(const MeshData& mesh) {
     vmaFlushAllocation(r.allocator, gpu.vertices.allocation, 0, VK_WHOLE_SIZE);
     vmaFlushAllocation(r.allocator, gpu.indices.allocation, 0, VK_WHOLE_SIZE);
     gpu.index_count = static_cast<uint32_t>(mesh.indices.size());
-    r.meshes.push_back(gpu);
-    return static_cast<MeshId>(r.meshes.size() - 1);
+    r.meshes[id] = gpu;
 }
 
 bool Renderer::render_frame(const Camera& camera, const Light& light,

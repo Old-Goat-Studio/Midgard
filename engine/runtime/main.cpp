@@ -203,6 +203,20 @@ public:
                                     message.at("value"));
             } else if (type == "entity.delete") {
                 game_.remove_entity(message.at("entity").get<std::string>());
+            } else if (type == "row.changed") {
+                const std::string table = message.at("table").get<std::string>();
+                const std::string key = message.at("key").get<std::string>();
+                if (table == "scene" && key == game_.scene().id)
+                    game_.reload_scene_settings();
+                else if (table == "entity")
+                    game_.reload_entity(key);
+                acknowledge("applied row.changed " + table + " " + key);
+                return;
+            } else if (type == "asset.changed") {
+                const std::string id = message.at("id").get<std::string>();
+                game_.reload_asset(id, renderer);
+                acknowledge("applied asset.changed " + id);
+                return;
             } else {
                 warn("live link: '%s' is not supported yet\n", type.c_str());
                 return;
@@ -213,16 +227,18 @@ public:
         }
         for (const std::string& error : game_.upload_new_meshes(renderer))
             warn("%s\n", error.c_str());
-        if (g_link) {  // lets the editor (and its tests) see when an edit took effect
-            const nlohmann::json& entity = message.at("entity");
-            g_link->send({{"type", "log"},
-                          {"level", "debug"},
-                          {"text", "applied " + type + " " +
-                                       (entity.is_object() ? entity.value("id", "")
-                                                           : entity.get<std::string>())}});
-        }
+        const nlohmann::json& entity = message.at("entity");
+        acknowledge("applied " + type + " " +
+                    (entity.is_object() ? entity.value("id", "") : entity.get<std::string>()));
     }
 
+private:
+    // Lets the editor (and its tests) see when an edit took effect.
+    static void acknowledge(const std::string& text) {
+        if (g_link) g_link->send({{"type", "log"}, {"level", "debug"}, {"text", text}});
+    }
+
+public:
 private:
     midgard::Game game_;
 };
@@ -400,7 +416,23 @@ int run_window(const Options& opt, Source& source) {
         say("Rendering on %s\n", renderer.device_name().c_str());
         source.upload(renderer);
         midgard::Actions actions(source.input_map());
-        if (source.wants_mouse_look()) SDL_SetWindowRelativeMouseMode(window, true);
+        // Mouse-look captures the mouse. Under the editor the game starts with the mouse free
+        // (so the editor's panels stay reachable): a click in the game captures it, and Esc,
+        // Shift+F1 or switching away frees it. An exported game captures it from the start.
+        bool captured = false;
+        const auto capture = [&](bool on) {
+            on = on && source.wants_mouse_look();
+            if (on == captured) return;
+            captured = on;
+            SDL_SetWindowRelativeMouseMode(window, on);
+            if (link) {
+                const std::string hint = on ? " (Esc frees the mouse)" : " (click to look around)";
+                SDL_SetWindowTitle(window, (source.title() + hint).c_str());
+            }
+        };
+        if (link && source.wants_mouse_look())
+            SDL_SetWindowTitle(window, (source.title() + " (click to look around)").c_str());
+        capture(!link);
 
         const auto start = std::chrono::steady_clock::now();
         auto last = start;
@@ -430,6 +462,7 @@ int run_window(const Options& opt, Source& source) {
             actions.begin_frame();
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
+                bool consumed = false;  // handled here; the game's actions don't see it
                 switch (e.type) {
                     case SDL_EVENT_QUIT:
                     case SDL_EVENT_TERMINATING:
@@ -450,14 +483,34 @@ int run_window(const Options& opt, Source& source) {
                         // Under the editor, its Pause (F6) and Stop (Shift+F5) keys also work
                         // while the game window has the keyboard.
                         if (link && !e.key.repeat) {
-                            if (e.key.scancode == SDL_SCANCODE_F5 && (e.key.mod & SDL_KMOD_SHIFT)) {
+                            const bool shift = e.key.mod & SDL_KMOD_SHIFT;
+                            if (e.key.scancode == SDL_SCANCODE_F5 && shift) {
                                 running = false;
                             } else if (e.key.scancode == SDL_SCANCODE_F6) {
                                 paused = !paused;
                                 link->send(
                                     {{"type", "state"}, {"state", paused ? "paused" : "playing"}});
+                            } else if (e.key.scancode == SDL_SCANCODE_ESCAPE ||
+                                       (e.key.scancode == SDL_SCANCODE_F1 && shift)) {
+                                // Frees the mouse. Under the editor Esc never quits the game
+                                // (Stop does), so pressing it twice is harmless.
+                                capture(false);
+                                consumed = true;
                             }
                         }
+                        break;
+                    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                        if (link && !captured) {
+                            capture(true);
+                            consumed = true;  // the click that captures isn't a game click
+                        }
+                        break;
+                    case SDL_EVENT_WINDOW_FOCUS_LOST:
+                        if (link) capture(false);
+                        break;
+                    case SDL_EVENT_MOUSE_MOTION:
+                        // A free mouse moving over the window doesn't turn the camera.
+                        consumed = !captured && source.wants_mouse_look();
                         break;
                     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                         renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
@@ -465,7 +518,7 @@ int run_window(const Options& opt, Source& source) {
                     default:
                         break;
                 }
-                feed(actions, e);
+                if (!consumed) feed(actions, e);
             }
             if (background || (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED)) {
                 SDL_Delay(50);

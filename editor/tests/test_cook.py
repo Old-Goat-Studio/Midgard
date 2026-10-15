@@ -11,6 +11,7 @@ import zipfile
 import pytest
 
 from midgard_editor import about, contract, meshes
+from midgard_editor import cook as cook_module
 from midgard_editor.cook import cook, host_target
 from midgard_editor.scene_model import look_at_rotation
 
@@ -118,3 +119,38 @@ def test_the_engine_renders_the_cooked_package(project, tmp_path):
 def test_cook_target_names(monkeypatch):
     monkeypatch.setattr(os, "name", "nt")
     assert host_target()["os"] == "windows"
+
+
+@pytest.mark.parametrize("asset", sorted(meshes.PRIMITIVES))
+def test_primitives_face_outwards(asset):
+    """Counter-clockwise from outside: each triangle's normal agrees with its vertex normals."""
+    mesh = meshes.primitive(asset)
+    for i in range(0, len(mesh.indices), 3):
+        a, b, c = (mesh.positions[k] for k in mesh.indices[i:i + 3])
+        u = [b[j] - a[j] for j in range(3)]
+        v = [c[j] - a[j] for j in range(3)]
+        n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+        assert sum(n[j] ** 2 for j in range(3)) > 1e-12, "no zero-area triangles"
+        normal = mesh.normals[mesh.indices[i]]
+        assert sum(n[j] * normal[j] for j in range(3)) > 0
+
+
+def test_recook_reports_what_changed(project, tmp_path):
+    out = cook(project, tmp_path / "pkg").out_dir
+    result, changed = cook_module.recook(project, out, database=True, assets=True)
+    assert changed == set()
+    cube = project.entity("e000004")
+    cube.components["mesh"]["asset"] = "prim_sphere"
+    project.put_entity(cube)
+    (project.root / "assets").mkdir()
+    (project.root / "assets" / "rock.glb").write_bytes(meshes.to_glb(meshes.cube()))
+    ground = project.entity("e000003")
+    ground.components["mesh"]["asset"] = "asset:rock.glb"
+    project.put_entity(ground)
+    result, changed = cook_module.recook(project, out, assets=True)
+    assert changed == {"prim_cube", "prim_sphere", "asset:rock.glb"}
+    ids = {c["id"]: c["path"] for c in result.manifest["content"]}
+    assert ids == {"prim_sphere": "meshes/prim_sphere.glb", "asset:rock.glb": "meshes/rock.glb"}
+    with zipfile.ZipFile(out / "game.pak") as pak:
+        assert sorted(pak.namelist()) == ["meshes/prim_sphere.glb", "meshes/rock.glb"]
+    assert not list(out.glob("*.tmp"))

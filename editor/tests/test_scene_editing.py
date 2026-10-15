@@ -23,9 +23,9 @@ def test_scene_panel_adds_and_deletes_with_undo(qtbot, project):
     panel = ScenePanel()
     qtbot.addWidget(panel)
     panel.set_project(project)
-    assert panel.list.count() == 4
+    assert panel.list.count() == 5  # the scene row, then 4 entities
     panel.add_cube_entity()
-    assert panel.list.count() == 5
+    assert panel.list.count() == 6
     assert panel.selected_id() == "e000005"
     assert project.entity("e000005").name == "Cube 2"
     panel.delete_selected()
@@ -33,7 +33,7 @@ def test_scene_panel_adds_and_deletes_with_undo(qtbot, project):
     project.undo_stack.undo()  # undo the delete
     assert project.entity("e000005") is not None
     project.undo_stack.undo()  # undo the add
-    assert panel.list.count() == 4
+    assert panel.list.count() == 5
 
 
 def test_entity_form_edits_are_undoable(qtbot, project):
@@ -75,3 +75,45 @@ def test_main_window_selection_shows_the_entity(window, project):
     assert window.inspector.entity_form.entity_id == "e000004"
     window.scene_panel.list.setCurrentRow(-1)
     assert window.inspector.entity_form is None
+
+
+def test_the_scene_row_shows_scene_settings(qtbot, project):
+    from midgard_editor.docks.inspector import Inspector
+    from midgard_editor.docks.scene_form import SceneSettingsForm
+
+    panel, inspector = ScenePanel(), Inspector()
+    qtbot.addWidget(panel)
+    qtbot.addWidget(inspector)
+    panel.entity_selected.connect(inspector.show_entity)
+    panel.scene_selected.connect(inspector.show_scene)
+    panel.set_project(project)
+    inspector.set_project(project)
+    panel.select_scene()
+    assert panel.selected_id() is None and not panel.delete.isEnabled()
+    form = inspector.entity_form
+    assert isinstance(form, SceneSettingsForm)
+    form.set_color("sky", [0.5, 0.25, 0.0])
+    assert project.scene_settings()["sky"] == [0.5, 0.25, 0.0]
+    assert form.buttons["sky"].text() == "#804000"
+    project.undo_stack.undo()
+    assert project.scene_settings()["sky"] == [0.08, 0.11, 0.18]
+
+
+def test_shapes_and_the_mesh_picker(qtbot, project):
+    panel = ScenePanel()
+    qtbot.addWidget(panel)
+    panel.set_project(project)
+    panel.add_primitive("prim_sphere")
+    sphere = project.entity(panel.selected_id())
+    assert sphere.name == "Sphere" and sphere.components["mesh"]["asset"] == "prim_sphere"
+
+    (project.root / "assets" / "rocks").mkdir(parents=True)
+    (project.root / "assets" / "rocks" / "boulder.glb").write_bytes(b"glb")
+    assert project.mesh_assets()["asset:rocks/boulder.glb"] == "rocks/boulder.glb"
+    form = EntityForm(project, sphere.id)
+    qtbot.addWidget(form)
+    assert form.mesh.currentData() == "prim_sphere"
+    form.mesh.setCurrentIndex(form.mesh.findData("asset:rocks/boulder.glb"))
+    assert project.entity(sphere.id).components["mesh"]["asset"] == "asset:rocks/boulder.glb"
+    project.undo_stack.undo()
+    assert form.mesh.currentData() == "prim_sphere"

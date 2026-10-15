@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import json
+import sqlite3
 import sys
 import time
 
@@ -85,7 +86,8 @@ def test_play_session_with_a_stand_in_game(project, session, qtbot, tmp_path):
     session.state_changed.connect(states.append)
     session.stats_received.connect(stats.append)
 
-    session.start([sys.executable, str(fake)], tmp_path / "package")
+    package = cook(project, tmp_path / "package").out_dir
+    session.start([sys.executable, str(fake)], package)
     qtbot.waitUntil(lambda: session.state == State.PLAYING, timeout=15000)
     qtbot.waitUntil(lambda: bool(stats), timeout=5000)
     assert stats[0]["fps"] == 60
@@ -152,3 +154,89 @@ def test_messages_follow_the_live_link_schema(project):
     ):
         assert live_link_errors(message) == [], message
     assert live_link_errors({"type": "entity.put", "entity": {"id": "x"}})  # no components
+
+
+def test_hot_reload_messages(project, session, qtbot, tmp_path):
+    """Scene settings and new meshes are re-cooked into the package, then announced."""
+    from midgard_editor import meshes
+    from midgard_editor.undo import SetSceneSettingsCommand
+
+    fake = tmp_path / "fake_runtime.py"
+    fake.write_text(FAKE_RUNTIME, encoding="utf-8")
+    received = []
+    session.message_received.connect(received.append)
+    package = cook(project, tmp_path / "package").out_dir
+    session.start([sys.executable, str(fake)], package)
+    qtbot.waitUntil(lambda: session.state == State.PLAYING, timeout=15000)
+
+    settings = project.scene_settings()
+    settings["sky"] = [1.0, 0.0, 0.0]
+    project.undo_stack.push(SetSceneSettingsCommand(project, settings, "sky"))
+    qtbot.waitUntil(lambda: {"type": "row.changed", "table": "scene", "key": "scn_main"}
+                    in echoed(received), timeout=5000)
+    with sqlite3.connect(package / "HelloCube.db") as con:  # the package was re-cooked first
+        assert json.loads(con.execute("SELECT settings FROM scene").fetchone()[0])["sky"] == \
+            [1.0, 0.0, 0.0]
+
+    cube = project.entity("e000004")
+    cube.components["mesh"]["asset"] = "prim_sphere"
+    project.undo_stack.push(SetEntityCommand(project, cube, "mesh"))
+    qtbot.waitUntil(lambda: {"type": "asset.changed", "id": "prim_sphere"} in echoed(received),
+                    timeout=5000)
+    kinds = [m["type"] for m in echoed(received)]
+    assert kinds.index("asset.changed") < len(kinds) - 1 - kinds[::-1].index("entity.put")
+
+    # A mesh file in assets/ that changes on disk is re-cooked and announced.
+    assets = project.root / "assets"
+    assets.mkdir()
+    (assets / "rock.glb").write_bytes(meshes.to_glb(meshes.cube()))
+    ground = project.entity("e000003")
+    ground.components["mesh"]["asset"] = "asset:rock.glb"
+    project.undo_stack.push(SetEntityCommand(project, ground, "mesh"))
+    qtbot.waitUntil(lambda: {"type": "asset.changed", "id": "asset:rock.glb"}
+                    in echoed(received), timeout=5000)
+    count = echoed(received).count({"type": "asset.changed", "id": "asset:rock.glb"})
+    (assets / "rock.glb").write_bytes(meshes.to_glb(meshes.sphere()))
+    qtbot.waitUntil(lambda: echoed(received).count(
+        {"type": "asset.changed", "id": "asset:rock.glb"}) > count, timeout=5000)
+
+
+@pytest.mark.skipif(not runtime_candidates(), reason="the engine runtime is not built")
+def test_the_real_game_hot_reloads(project, session, qtbot):
+    from midgard_editor.undo import SetSceneSettingsCommand
+
+    package = cook(project).out_dir
+    received = []
+    session.message_received.connect(received.append)
+    session.start(runtime_candidates()[0], package)
+    qtbot.waitUntil(lambda: session.state == State.PLAYING, timeout=20000)
+
+    def applied(text: str) -> bool:
+        return any(m.get("text") == text for m in received)
+
+    settings = project.scene_settings()
+    settings["sky"] = [0.6, 0.3, 0.1]
+    project.undo_stack.push(SetSceneSettingsCommand(project, settings, "sky"))
+    qtbot.waitUntil(lambda: applied("applied row.changed scene scn_main"), timeout=5000)
+
+    cube = project.entity("e000004")
+    cube.components["mesh"]["asset"] = "prim_sphere"
+    project.undo_stack.push(SetEntityCommand(project, cube, "mesh"))
+    qtbot.waitUntil(lambda: applied("applied entity.put e000004"), timeout=5000)
+    assert applied("applied asset.changed prim_sphere")
+
+    # Saving a mesh file again replaces the mesh already on the GPU.
+    from midgard_editor import meshes
+
+    assets = project.root / "assets"
+    assets.mkdir()
+    (assets / "rock.glb").write_bytes(meshes.to_glb(meshes.cube()))
+    ground = project.entity("e000003")
+    ground.components["mesh"]["asset"] = "asset:rock.glb"
+    project.undo_stack.push(SetEntityCommand(project, ground, "mesh"))
+    qtbot.waitUntil(lambda: applied("applied entity.put e000003"), timeout=5000)
+    before = sum(m.get("text") == "applied asset.changed asset:rock.glb" for m in received)
+    (assets / "rock.glb").write_bytes(meshes.to_glb(meshes.sphere()))
+    qtbot.waitUntil(lambda: sum(m.get("text") == "applied asset.changed asset:rock.glb"
+                                for m in received) > before, timeout=5000)
+    assert not [m for m in received if m.get("level") in ("warn", "error")]

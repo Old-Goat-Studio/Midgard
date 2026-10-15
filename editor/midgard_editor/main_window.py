@@ -144,6 +144,7 @@ class MainWindow(QMainWindow):
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
         self.scene_panel.entity_selected.connect(self.inspector.show_entity)
+        self.scene_panel.scene_selected.connect(self.inspector.show_scene)
         self.inspector.setMinimumWidth(340)
         self.browser.setMinimumWidth(220)
         widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,

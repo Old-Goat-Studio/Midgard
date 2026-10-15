@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/pak.h"
 
+#include <fstream>
+#include <iterator>
+
 #include <miniz.h>
 
 namespace midgard {
@@ -8,13 +11,17 @@ namespace midgard {
 struct Pak::Impl {
     mutable mz_zip_archive zip{};
     std::filesystem::path file;
+    std::vector<char> bytes;
 };
 
+// The archive is read into memory, so the file is not held open: the editor can replace it
+// while the game runs (hot reload). Streaming large paks comes with real asset sizes.
 Pak::Pak(const std::filesystem::path& file) : impl_(std::make_unique<Impl>()) {
     impl_->file = file;
-    const std::u8string u8 = file.u8string();
-    const std::string utf8(u8.begin(), u8.end());
-    if (!mz_zip_reader_init_file(&impl_->zip, utf8.c_str(), 0))
+    std::ifstream in(file, std::ios::binary);
+    if (!in) throw AssetError("cannot open " + file.string());
+    impl_->bytes.assign(std::istreambuf_iterator<char>(in), {});
+    if (!mz_zip_reader_init_mem(&impl_->zip, impl_->bytes.data(), impl_->bytes.size(), 0))
         throw AssetError("cannot open " + file.string() + ": " +
                          mz_zip_get_error_string(mz_zip_get_last_error(&impl_->zip)));
 }

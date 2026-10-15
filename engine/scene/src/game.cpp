@@ -99,6 +99,45 @@ void Game::remove_entity(const std::string& entity_id) {
     refresh_third_person(entt::null);
 }
 
+void Game::reload_scene_settings() {
+    scene_.settings = Scene::read_settings(package_.root / package_.manifest.database, scene_.id);
+}
+
+void Game::reload_entity(const std::string& entity_id) {
+    const auto row = Scene::read_entity(package_.root / package_.manifest.database, entity_id);
+    if (!row) {
+        remove_entity(entity_id);
+        return;
+    }
+    nlohmann::json components;
+    try {
+        components = nlohmann::json::parse(row->components_json);
+    } catch (const std::exception& e) {
+        throw SceneError("entity '" + entity_id + "': " + e.what());
+    }
+    put_entity({{"id", row->id},
+                {"name", row->name},
+                {"parent", row->parent},
+                {"components", std::move(components)}});
+}
+
+bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
+    package_.manifest = load_manifest(package_.root / "manifest.json");
+    const auto pak_file = package_.root / "game.pak";
+    pak_ = std::filesystem::is_regular_file(pak_file) ? std::make_unique<Pak>(pak_file) : nullptr;
+    failed_meshes_.erase(asset);
+    bool used = false;
+    for (entt::entity e : scene_.registry.view<const MeshRef>())
+        used = used || scene_.registry.get<MeshRef>(e).asset == asset;
+    if (!used) return false;
+    render::MeshData mesh = load_mesh(asset);
+    if (auto it = meshes_.find(asset); it != meshes_.end())
+        renderer.replace_mesh(it->second, mesh);
+    else
+        meshes_.emplace(asset, renderer.upload_mesh(mesh));
+    return true;
+}
+
 std::vector<render::DrawItem> Game::draws() const {
     std::vector<render::DrawItem> out;
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {

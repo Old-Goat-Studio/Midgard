@@ -114,6 +114,24 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
 
+SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
+    const bool settings_column = has_column(db, "scene", "settings");  // migration 2
+    Stmt s = prepare(db, settings_column ? "SELECT settings FROM scene WHERE id = ?"
+                                         : "SELECT '{}' FROM scene WHERE id = ?");
+    sqlite3_bind_text(s.get(), 1, scene_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(s.get()) != SQLITE_ROW)
+        throw SceneError("scene '" + scene_id + "' is not in the database");
+    SceneSettings out;
+    try {
+        const json settings = json::parse(column_text(s.get(), 0));
+        out.sky = vec3(settings, "sky", out.sky);
+        out.ambient = vec3(settings, "ambient", out.ambient);
+    } catch (const std::exception& e) {
+        throw SceneError("scene '" + scene_id + "' settings: " + e.what());
+    }
+    return out;
+}
+
 template <typename Component>
 entt::entity first_with(const entt::registry& reg) {
     // Entities are created in entity-id order, so the lowest handle is the first by id.
@@ -136,22 +154,7 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
     Db db = open_read_only(database);
     Scene scene;
     scene.id = scene_id;
-
-    {
-        const bool settings_column = has_column(db.get(), "scene", "settings");  // migration 2
-        Stmt s = prepare(db.get(), settings_column ? "SELECT settings FROM scene WHERE id = ?"
-                                                   : "SELECT '{}' FROM scene WHERE id = ?");
-        sqlite3_bind_text(s.get(), 1, scene_id.c_str(), -1, SQLITE_TRANSIENT);
-        if (sqlite3_step(s.get()) != SQLITE_ROW)
-            throw SceneError("scene '" + scene_id + "' is not in the database");
-        try {
-            const json settings = json::parse(column_text(s.get(), 0));
-            scene.settings.sky = vec3(settings, "sky", scene.settings.sky);
-            scene.settings.ambient = vec3(settings, "ambient", scene.settings.ambient);
-        } catch (const std::exception& e) {
-            throw SceneError("scene '" + scene_id + "' settings: " + e.what());
-        }
-    }
+    scene.settings = settings_from(db.get(), scene_id);
 
     Stmt s = prepare(db.get(),
                      "SELECT id, name, parent, components FROM entity WHERE scene = ? ORDER BY id");
@@ -177,6 +180,22 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
         scene.registry.get<EntityInfo>(e).parent = it->second;
     }
     return scene;
+}
+
+SceneSettings Scene::read_settings(const std::filesystem::path& database,
+                                   const std::string& scene_id) {
+    Db db = open_read_only(database);
+    return settings_from(db.get(), scene_id);
+}
+
+std::optional<EntityRow> Scene::read_entity(const std::filesystem::path& database,
+                                            const std::string& entity_id) {
+    Db db = open_read_only(database);
+    Stmt s = prepare(db.get(), "SELECT id, name, parent, components FROM entity WHERE id = ?");
+    sqlite3_bind_text(s.get(), 1, entity_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(s.get()) != SQLITE_ROW) return std::nullopt;
+    return EntityRow{column_text(s.get(), 0), column_text(s.get(), 1), column_text(s.get(), 2),
+                     column_text(s.get(), 3)};
 }
 
 entt::entity Scene::find(const std::string& entity_id) const {

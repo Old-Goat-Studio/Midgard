@@ -17,7 +17,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QUndoStack
 
-from . import contract
+from . import contract, meshes
 from .scene_model import DEFAULT_SETTINGS, MAIN_SCENE, Entity, default_entities, row_to_entity
 from .version import VERSION
 
@@ -37,6 +37,7 @@ class Project(QObject):
     config_changed = Signal(str)  # key
     string_changed = Signal(str)  # string key
     entities_changed = Signal(str)  # entity id, or "" when entities were added or removed
+    scene_changed = Signal(str)  # scene id: its settings changed
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
         super().__init__()
@@ -182,6 +183,31 @@ class Project(QObject):
                 con.execute("INSERT INTO entity (id, scene, name, parent, components) "
                             "VALUES (?, ?, ?, ?, ?)",
                             (e.id, MAIN_SCENE, e.name, e.parent, json.dumps(e.components)))
+
+    def scene_settings(self, scene: str = MAIN_SCENE) -> dict[str, Any]:
+        """A scene's settings (sky and ambient colours), with defaults filled in."""
+        with self.connect() as con:
+            row = con.execute("SELECT settings FROM scene WHERE id = ?", (scene,)).fetchone()
+        stored = json.loads(row[0]) if row and row[0] else {}
+        return {**DEFAULT_SETTINGS, **stored}
+
+    def set_scene_settings(self, settings: dict[str, Any], scene: str = MAIN_SCENE) -> None:
+        """Use SetSceneSettingsCommand from the UI."""
+        with self.connect() as con:
+            con.execute("UPDATE scene SET settings = ? WHERE id = ?",
+                        (json.dumps(settings), scene))
+        self.scene_changed.emit(scene)
+
+    def mesh_assets(self) -> dict[str, str]:
+        """Meshes an entity can use: id -> label. The editor's primitives, then the .glb files
+        in the project's assets/ folder."""
+        found = dict(meshes.PRIMITIVES)
+        assets = self.root / "assets"
+        if assets.is_dir():
+            for file in sorted(assets.rglob("*.glb")):
+                relative = file.relative_to(assets).as_posix()
+                found[f"asset:{relative}"] = relative
+        return found
 
     def entities(self, scene: str = MAIN_SCENE) -> list[Entity]:
         with self.connect() as con:

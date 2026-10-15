@@ -293,3 +293,28 @@ TEST_CASE("live edits change the running scene") {
     CHECK_FALSE(scene.registry.valid(scene.registry.get<midgard::EntityInfo>(added).parent));
     CHECK_FALSE(game.third_person().active());  // no player any more
 }
+
+TEST_CASE("scene settings and entity rows reload from the database") {
+    TestPackage pkg({{"e1_cube", R"(NULL, '{"mesh": {"asset": "builtin:cube"}}')"}});
+    midgard::Game game(pkg.dir);
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(UPDATE scene SET settings = '{"sky": [0.5, 0.6, 0.7]}')");
+    exec(db, R"(UPDATE entity SET name = 'Renamed',
+                components = '{"transform": {"position": [0, 4, 0]}}' WHERE id = 'e1_cube')");
+    exec(db, R"(INSERT INTO entity (id, scene, name, parent, components)
+                VALUES ('e2_new', 'scn_main', 'New', 'e1_cube', '{}'))");
+    sqlite3_close(db);
+
+    game.reload_scene_settings();
+    CHECK(near(game.scene().settings.sky, {0.5f, 0.6f, 0.7f}));
+    game.reload_entity("e1_cube");
+    const entt::entity cube = game.scene().find("e1_cube");
+    CHECK(game.scene().registry.get<midgard::EntityInfo>(cube).name == "Renamed");
+    CHECK_FALSE(game.scene().registry.all_of<midgard::MeshRef>(cube));
+    CHECK(near(game.scene().registry.get<midgard::Transform>(cube).position, {0, 4, 0}));
+    game.reload_entity("e2_new");
+    CHECK(game.scene().registry.valid(game.scene().find("e2_new")));
+    game.reload_entity("e9_missing");  // not in the database: nothing to add, nothing to remove
+    CHECK_FALSE(game.scene().registry.valid(game.scene().find("e9_missing")));
+}

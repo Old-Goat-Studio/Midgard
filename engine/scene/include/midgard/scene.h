@@ -62,11 +62,26 @@ struct SceneSettings {
     glm::vec3 ambient{0.18f, 0.2f, 0.26f};
 };
 
+// One row of the entity table.
+struct EntityRow {
+    std::string id;
+    std::string name;
+    std::string parent;           // empty: no parent
+    std::string components_json;  // the components column
+};
+
 // ---- the scene --------------------------------------------------------------------------
 class Scene {
 public:
     // Reads the scene and its entities from a package database (read-only). Throws SceneError.
     static Scene load(const std::filesystem::path& database, const std::string& scene_id);
+
+    // Hot reload: one scene's settings, or one entity row (nothing if it was deleted), read
+    // again from the package database. Throw SceneError.
+    static SceneSettings read_settings(const std::filesystem::path& database,
+                                       const std::string& scene_id);
+    static std::optional<EntityRow> read_entity(const std::filesystem::path& database,
+                                                const std::string& entity_id);
 
     entt::registry registry;
     SceneSettings settings;

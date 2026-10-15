@@ -6,7 +6,7 @@ from typing import Any
 from PySide6.QtGui import QUndoCommand
 
 from .project import Project
-from .scene_model import Entity
+from .scene_model import MAIN_SCENE, Entity
 
 
 class SetConfigCommand(QUndoCommand):
@@ -37,6 +37,22 @@ class SetStringCommand(QUndoCommand):
 
     def undo(self) -> None:
         self.project.set_string(self.key, self.old, self.context)
+
+
+class SetSceneSettingsCommand(QUndoCommand):
+    """Change a scene's settings (sky, ambient light)."""
+
+    def __init__(self, project: Project, settings: dict[str, Any], label: str,
+                 scene: str = MAIN_SCENE):
+        super().__init__(f"Change {label}")
+        self.project, self.scene, self.new = project, scene, settings
+        self.old = project.scene_settings(scene)
+
+    def redo(self) -> None:
+        self.project.set_scene_settings(self.new, self.scene)
+
+    def undo(self) -> None:
+        self.project.set_scene_settings(self.old, self.scene)
 
 
 class AddEntityCommand(QUndoCommand):

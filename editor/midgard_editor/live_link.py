@@ -5,8 +5,14 @@ talks to it over a TCP live link, so an engine crash never takes the editor down
     editor                                   midgard_runtime --editor-link 127.0.0.1:<port>
       listens on 127.0.0.1:<port>   <-----   connects, says hello
       entity.put / entity.delete    ----->   applies the edit to the running scene
+      row.changed / asset.changed   ----->   re-reads that row / mesh from the package on disk
       pause / resume / stop         ----->
                                     <-----   log lines, stats (about once a second)
+
+Hot reload: entity edits travel in the message itself. Scene settings and meshes are rewritten
+in the cooked package first (cook.recook), then named in row.changed / asset.changed. Mesh files
+in the project's assets/ folder are watched, so saving one from a modelling tool shows in the
+game.
 
 Each message is a 4-byte big-endian length followed by UTF-8 JSON
 (schema/live_link.schema.json).
@@ -17,9 +23,10 @@ import struct
 from enum import Enum
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QTimer, Signal
+from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
+from .cook import CookError, recook, used_mesh_assets
 from .project import Project
 from .version import VERSION
 
@@ -99,8 +106,16 @@ class PlaySession(QObject):
         self.socket: QTcpSocket | None = None
         self.reader = FrameReader()
         self.process: QProcess | None = None
+        self.package: Path | None = None
         self._known: set[str] = set()   # entity ids the running game has
+        self._cooked_assets: set[str] = set()  # content ids in the package's game.pak
+        self.watcher = QFileSystemWatcher(self)
+        self.watcher.directoryChanged.connect(self._assets_touched)
+        self.watcher.fileChanged.connect(self._assets_touched)
+        self._asset_timer = QTimer(self, singleShot=True, interval=300)  # saves come in bursts
+        self._asset_timer.timeout.connect(self._reload_assets)
         project.entities_changed.connect(self._entities_changed)
+        project.scene_changed.connect(self._scene_changed)
 
     # ---- control ------------------------------------------------------------------------
     def start(self, runtime: Path | list[str], package: Path) -> None:
@@ -110,6 +125,9 @@ class PlaySession(QObject):
         if not self.server.listen(QHostAddress.SpecialAddress.LocalHost, 0):
             raise LinkError(f"cannot open the live link: {self.server.errorString()}")
         self._known = {e.id for e in self.project.entities()}
+        self.package = package
+        self._cooked_assets = self._package_assets()
+        self._watch_assets()
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self._process_output)
@@ -132,6 +150,7 @@ class PlaySession(QObject):
             process.deleteLater()
         self._drop_socket()
         self.server.close()
+        self._unwatch_assets()
         self._set_state(State.STOPPED)
 
     def pause(self) -> None:
@@ -235,6 +254,7 @@ class PlaySession(QObject):
         self.process = None
         self._drop_socket()
         self.server.close()
+        self._unwatch_assets()
         self._set_state(State.STOPPED)
 
     def _process_error(self, error) -> None:
@@ -249,6 +269,10 @@ class PlaySession(QObject):
     def _entities_changed(self, entity_id: str) -> None:
         if self.socket is None:
             return
+        # A mesh the game's package doesn't have yet (a new shape, a file from assets/) is
+        # cooked into game.pak before the entity that uses it is sent.
+        if used_mesh_assets(self.project) - self._cooked_assets:
+            self._reload_assets()
         if entity_id:
             self.send(entity_message(self.project, entity_id))
             self._known.add(entity_id)
@@ -260,6 +284,64 @@ class PlaySession(QObject):
         for added in sorted(current - self._known):
             self.send(entity_message(self.project, added))
         self._known = current
+
+    def _scene_changed(self, scene_id: str) -> None:
+        if self.socket is None or self.package is None:
+            return
+        try:
+            recook(self.project, self.package, database=True)
+        except (CookError, OSError) as e:
+            log.error("Hot reload of the scene settings failed: %s", e)
+            return
+        self.send({"type": "row.changed", "table": "scene", "key": scene_id})
+
+    def _reload_assets(self) -> None:
+        """Re-cooks game.pak and tells the game which meshes changed."""
+        if self.socket is None or self.package is None:
+            return
+        try:
+            result, changed = recook(self.project, self.package, assets=True)
+        except (CookError, OSError) as e:
+            log.error("Hot reload of the assets failed: %s", e)
+            return
+        for warning in result.warnings:
+            log.warning(warning)
+        self._cooked_assets = {c["id"] for c in result.manifest["content"]}
+        for asset in sorted(changed & self._cooked_assets):
+            log.info("Reloading %s", asset)
+            self.send({"type": "asset.changed", "id": asset})
+        self._watch_assets()
+
+    def _package_assets(self) -> set[str]:
+        try:
+            manifest = json.loads((self.package / "manifest.json").read_text("utf-8"))
+        except (OSError, ValueError, TypeError):
+            return set()
+        return {c["id"] for c in manifest.get("content", [])}
+
+    def _watch_assets(self) -> None:
+        """Watches the project's assets/ folder, its subfolders and its .glb files. Editors
+        often replace a file when saving it, which drops it from the watch list, so the list
+        is rebuilt after every reload."""
+        assets = self.project.root / "assets"
+        paths = [assets] + [p for p in assets.rglob("*") if p.is_dir() or
+                            p.suffix.lower() == ".glb"] if assets.is_dir() else []
+        wanted = {str(p) for p in paths}
+        current = set(self.watcher.files()) | set(self.watcher.directories())
+        if current - wanted:
+            self.watcher.removePaths(sorted(current - wanted))
+        if wanted - current:
+            self.watcher.addPaths(sorted(wanted - current))
+
+    def _unwatch_assets(self) -> None:
+        paths = self.watcher.files() + self.watcher.directories()
+        if paths:
+            self.watcher.removePaths(paths)
+        self._asset_timer.stop()
+
+    def _assets_touched(self, _path: str) -> None:
+        if self.socket is not None:
+            self._asset_timer.start()
 
     def _set_state(self, state: State) -> None:
         if state != self.state:

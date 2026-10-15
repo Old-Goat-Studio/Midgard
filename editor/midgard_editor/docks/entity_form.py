@@ -5,6 +5,7 @@ import copy
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
@@ -17,6 +18,14 @@ from PySide6.QtWidgets import (
 from ..project import Project
 from ..scene_model import Entity
 from ..undo import SetEntityCommand
+
+
+def style_color_button(button: QPushButton, rgb: list[float]) -> None:
+    """Shows a colour on a button: its hex name on a background of that colour."""
+    c = QColor.fromRgbF(*[float(v) for v in rgb[:3]])
+    button.setText(c.name())
+    button.setStyleSheet(f"background-color: {c.name()}; color: "
+                         f"{'#000' if c.lightnessF() > 0.5 else '#fff'};")
 
 
 def _spin(minimum: float, maximum: float, step: float, decimals: int = 3) -> QDoubleSpinBox:
@@ -72,7 +81,13 @@ class EntityForm(QWidget):
                 box.valueChanged.connect(lambda _v, k=label: self._transform_edited(k))
 
         entity = self._entity()
-        self.color = self.fov = self.intensity = None
+        self.color = self.fov = self.intensity = self.mesh = None
+        if "mesh" in entity.components:
+            self.mesh = QComboBox()
+            for asset, label in project.mesh_assets().items():
+                self.mesh.addItem(label, asset)
+            self.mesh.currentIndexChanged.connect(self._mesh_chosen)
+            form.addRow("Mesh", self.mesh)
         if "material" in entity.components:
             self.color = QPushButton()
             self.color.clicked.connect(self._pick_color)
@@ -108,12 +123,16 @@ class EntityForm(QWidget):
         self.position.set_value(t["position"])
         self.rotation.set_value(t["rotation"])
         self.scale.set_value(t["scale"])
+        if self.mesh is not None:
+            asset = entity.components["mesh"].get("asset", "")
+            self.mesh.blockSignals(True)
+            if self.mesh.findData(asset) < 0:  # e.g. a file that has gone from assets/
+                self.mesh.addItem(f"{asset} (missing)", asset)
+            self.mesh.setCurrentIndex(self.mesh.findData(asset))
+            self.mesh.blockSignals(False)
         if self.color is not None:
-            rgba = entity.components["material"].get("color", [1, 1, 1, 1])
-            c = QColor.fromRgbF(*rgba[:3])
-            self.color.setText(c.name())
-            self.color.setStyleSheet(f"background-color: {c.name()}; color: "
-                                     f"{'#000' if c.lightnessF() > 0.5 else '#fff'};")
+            style_color_button(self.color,
+                               entity.components["material"].get("color", [1, 1, 1, 1]))
         for box, component, key, default in ((self.fov, "camera", "fov", 55.0),
                                              (self.intensity, "light", "intensity", 1.0)):
             if box is not None:
@@ -147,6 +166,16 @@ class EntityForm(QWidget):
             return
         entity.components[component][key] = round(value, 4)
         self._push(entity, key.replace("_", " "))
+
+    def _mesh_chosen(self, _index: int) -> None:
+        self.set_mesh(self.mesh.currentData())
+
+    def set_mesh(self, asset: str) -> None:
+        entity = self._entity()
+        if entity.components["mesh"].get("asset") == asset:
+            return
+        entity.components["mesh"] = {**entity.components["mesh"], "asset": asset}
+        self._push(entity, "mesh")
 
     def _pick_color(self) -> None:
         entity = self._entity()

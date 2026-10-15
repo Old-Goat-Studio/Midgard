@@ -12,7 +12,7 @@ mapping instead, from Phase 5).
 | Component | Shape | Notes |
 |---|---|---|
 | `transform` | `{"position": [x, y, z], "rotation": [x, y, z], "scale": [x, y, z]}` | Rotation is Euler degrees combined as `R = Ry · Rx · Rz` (yaw, pitch, roll), and the full local matrix is `T · R · S`. All three keys are optional (defaults: origin, no rotation, scale 1). Relative to the parent entity. |
-| `mesh` | `{"asset": "<content id>"}` | A mesh in the package's `content` list (a `.glb`). |
+| `mesh` | `{"asset": "<content id>"}` | A mesh in the package's `content` list (a `.glb`). Ids: `prim_cube`, `prim_sphere`, `prim_plane` (editor primitives), `asset:<path>` (a `.glb` in the project's `assets/` folder), `builtin:cube` (built into the engine, not in `game.pak`). |
 | `material` | `{"color": [r, g, b, a]}` | Alpha is optional (default 1). |
 | `camera` | `{"fov": 55, "near": 0.05, "far": 500}` | Vertical field of view in degrees. The scene's first camera is used. |
 | `light` | `{"type": "directional", "color": [r, g, b], "intensity": 1.0}` | A directional light shines along the entity's local −Z axis (after rotation). |

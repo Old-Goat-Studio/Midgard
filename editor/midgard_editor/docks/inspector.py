@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QSpinBox, QStacked
 from ..project import GAME_TITLE_KEY, WORLD_MODES, Project
 from ..undo import SetConfigCommand, SetStringCommand
 from .entity_form import EntityForm
+from .scene_form import SceneSettingsForm
 
 
 class ProjectSettingsForm(QWidget):
@@ -99,7 +100,7 @@ class Inspector(QWidget):
         self.stack.addWidget(self.empty)
         self.stack.addWidget(self.files)
         self.settings: ProjectSettingsForm | None = None
-        self.entity_form: EntityForm | None = None
+        self.entity_form: EntityForm | SceneSettingsForm | None = None
 
     def _drop_entity_form(self) -> None:
         if self.entity_form is not None:
@@ -107,8 +108,19 @@ class Inspector(QWidget):
             self.entity_form.deleteLater()
             self.entity_form = None
 
+    def show_scene(self, scene_id: str) -> None:
+        """The scene row selected in the Scene panel: its settings."""
+        self._drop_entity_form()
+        if self.settings is None:
+            return
+        self.entity_form = SceneSettingsForm(self.settings.project, scene_id)
+        self.stack.addWidget(self.entity_form)
+        self.stack.setCurrentWidget(self.entity_form)
+
     def show_entity(self, entity_id: str | None) -> None:
         """An entity selected in the Scene panel (None: back to the project settings)."""
+        if entity_id is None and isinstance(self.entity_form, SceneSettingsForm):
+            return  # the scene row is selected; show_scene follows
         self._drop_entity_form()
         if self.settings is None:
             return

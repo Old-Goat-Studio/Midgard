@@ -64,6 +64,8 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     MeshId upload_mesh(const MeshData& mesh);
+    // Replaces an uploaded mesh (hot reload). Waits for the GPU to finish with the old one.
+    void replace_mesh(MeshId id, const MeshData& mesh);
 
     // Draws one frame. Returns false if the window surface changed and the frame was skipped.
     bool render_frame(const Camera& camera, const Light& light, std::span<const DrawItem> draws,

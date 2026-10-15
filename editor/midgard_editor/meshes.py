@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Editor primitives (Phase 2: the cube) and a glTF binary (.glb) writer for the cook step.
+"""Editor primitives and a glTF binary (.glb) writer for the cook step.
 
-The cube matches the engine's render::make_cube(): side 1, centred, flat normals, triangles
-counter-clockwise seen from outside. Phase 5's Object editor adds more primitives.
+Every primitive fits a 1 m box centred on the origin (the plane lies flat, facing up), and its
+triangles run counter-clockwise seen from outside. The cube matches the engine's
+render::make_cube(). Phase 5's Object editor adds more.
 """
 import json
+import math
 import struct
 from dataclasses import dataclass, field
 
-PRIMITIVES = {"prim_cube": "Cube"}  # mesh asset id -> label
+PRIMITIVES = {"prim_cube": "Cube", "prim_sphere": "Sphere", "prim_plane": "Plane"}  # id -> label
 
 
 @dataclass
@@ -35,10 +37,40 @@ def cube() -> Mesh:
     return mesh
 
 
+def sphere(segments: int = 32, rings: int = 16) -> Mesh:
+    """A UV sphere of diameter 1 with smooth normals."""
+    mesh = Mesh()
+    for i in range(rings + 1):
+        theta = math.pi * i / rings  # from the top
+        for j in range(segments + 1):
+            phi = 2 * math.pi * j / segments
+            n = (math.sin(theta) * math.cos(phi), math.cos(theta),
+                 -math.sin(theta) * math.sin(phi))
+            mesh.normals.append(n)
+            mesh.positions.append(tuple(0.5 * c for c in n))
+    row = segments + 1
+    for i in range(rings):
+        for j in range(segments):
+            a, b = i * row + j, (i + 1) * row + j
+            c, d = b + 1, a + 1
+            if i != rings - 1:
+                mesh.indices += [a, b, c]
+            if i != 0:  # the poles' second triangles would have no area
+                mesh.indices += [a, c, d]
+    return mesh
+
+
+def plane() -> Mesh:
+    """A 1 × 1 square in the XZ plane, facing up."""
+    return Mesh([(-0.5, 0.0, 0.5), (0.5, 0.0, 0.5), (0.5, 0.0, -0.5), (-0.5, 0.0, -0.5)],
+                [(0.0, 1.0, 0.0)] * 4, [0, 1, 2, 0, 2, 3])
+
+
 def primitive(asset_id: str) -> Mesh:
-    if asset_id == "prim_cube":
-        return cube()
-    raise KeyError(asset_id)
+    makers = {"prim_cube": cube, "prim_sphere": sphere, "prim_plane": plane}
+    if asset_id not in makers:
+        raise KeyError(asset_id)
+    return makers[asset_id]()
 
 
 def to_glb(mesh: Mesh) -> bytes:
