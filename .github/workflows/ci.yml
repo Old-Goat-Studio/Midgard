@@ -161,7 +161,11 @@ jobs:
           MIDGARD_REQUIRE_ENGINE: "1"
         run: |
           pip install --quiet -e "editor[dev]"
-          pytest editor/tests/test_scripting.py -q
+          pytest editor/tests/test_scripting.py -q -rA --junitxml="$RUNNER_TEMP/scripting.xml"
+      - name: Show failed script tests as annotations
+        if: failure()
+        shell: bash
+        run: python tools/junit_annotations.py "$RUNNER_TEMP/scripting.xml" || true
       - name: Runtime template (for Build > Export)
         run: python tools/make_template.py --preset ${{ matrix.preset }}
       - name: Upload the runtime template

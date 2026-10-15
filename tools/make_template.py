@@ -128,7 +128,7 @@ def make_android_apk(build: Path, work: Path) -> Path:
 def runtime_version(runtime: Path) -> dict:
     out = subprocess.run([str(runtime), "--version"], capture_output=True, text=True, timeout=30,
                          check=True).stdout
-    # "Midgard runtime 0.1.0 (engine ABI 0, package format 1.x, schema 1-3)"
+    # "Midgard runtime 0.1.0 (engine ABI 0, package format 1.x, schema 1-4)"
     words = out.replace("(", " ").replace(")", " ").replace(",", " ").split()
     version = words[words.index("runtime") + 1]
     abi = int(words[words.index("ABI") + 1])

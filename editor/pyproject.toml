@@ -16,6 +16,7 @@ dependencies = [
     "PySide6-QtAds>=4.3",
     "jsonschema>=4.21",
     "cryptography>=43",
+    "jedi>=0.19",
 ]
 
 [project.urls]

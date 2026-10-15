@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Inspector form for one entity: name, transform, and the settings of its components."""
+"""Inspector form for one entity: name, transform, and the settings of its components. Add
+Component adds a script (a new file in scripts/, opened in the Script editor) or a trigger."""
 import copy
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
@@ -10,11 +12,14 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
+    QMenu,
     QPushButton,
     QSizePolicy,
+    QToolButton,
     QWidget,
 )
 
+from .. import scripting
 from ..project import Project
 from ..scene_model import Entity
 from ..undo import SetEntityCommand
@@ -61,7 +66,29 @@ class Vec3Editor(QWidget):
             box.blockSignals(False)
 
 
+def _row(*widgets: QWidget) -> QWidget:
+    row = QWidget()
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    for w in widgets:
+        layout.addWidget(w)
+    return row
+
+
+def _remove_button(tooltip: str, slot) -> QToolButton:
+    button = QToolButton()
+    button.setText("✕")
+    button.setToolTip(tooltip)
+    button.clicked.connect(slot)
+    return button
+
+
 class EntityForm(QWidget):
+    open_script = Signal(str)  # a module to open in the Script editor
+    rebuild = Signal(str)  # the entity's set of components changed: build the form again
+
+    ADDABLE = {"script": "Script", "trigger": "Trigger"}
+
     def __init__(self, project: Project, entity_id: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.project, self.entity_id = project, entity_id
@@ -103,6 +130,35 @@ class EntityForm(QWidget):
             self.intensity.valueChanged.connect(
                 lambda _v: self._component_value("light", "intensity", self.intensity.value()))
             form.addRow("Intensity", self.intensity)
+        self.script = self.trigger = None
+        if "script" in entity.components:
+            self.script = QComboBox()
+            self.script.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            for module in scripting.modules(project):
+                self.script.addItem(module, module)
+            self.script.currentIndexChanged.connect(lambda _i: self.set_script(
+                self.script.currentData()))
+            edit = QPushButton("Edit")
+            edit.setToolTip("Open the script in the Script editor")
+            edit.clicked.connect(lambda: self.open_script.emit(
+                self._entity().components["script"].get("module", "")))
+            form.addRow("Script", _row(self.script, edit, _remove_button(
+                "Remove the script (the file stays)", lambda: self.remove_component("script"))))
+        if "trigger" in entity.components:
+            self.trigger = Vec3Editor(0.1, 0.01)
+            for box in self.trigger.boxes:
+                box.valueChanged.connect(lambda _v: self._trigger_edited())
+            form.addRow("Trigger size", _row(self.trigger, _remove_button(
+                "Remove the trigger", lambda: self.remove_component("trigger"))))
+        missing = [k for k in self.ADDABLE if k not in entity.components]
+        self.add_component = QPushButton("Add Component")
+        menu = QMenu(self.add_component)
+        for key in missing:
+            menu.addAction(self.ADDABLE[key], lambda k=key: self.add(k))
+        self.add_component.setMenu(menu)
+        self.add_component.setEnabled(bool(missing))
+        form.addRow("", self.add_component)
+        self._kinds = set(entity.components)
         project.entities_changed.connect(self._changed)
         self.refresh()
 
@@ -113,7 +169,14 @@ class EntityForm(QWidget):
         return entity
 
     def _changed(self, entity_id: str) -> None:
-        if entity_id == self.entity_id and self.project.entity(self.entity_id) is not None:
+        if entity_id != self.entity_id:
+            return
+        entity = self.project.entity(self.entity_id)
+        if entity is None:
+            return
+        if set(entity.components) != self._kinds:
+            self.rebuild.emit(self.entity_id)  # rows to add or remove (also after Undo)
+        else:
             self.refresh()
 
     def refresh(self) -> None:
@@ -133,6 +196,15 @@ class EntityForm(QWidget):
         if self.color is not None:
             style_color_button(self.color,
                                entity.components["material"].get("color", [1, 1, 1, 1]))
+        if self.script is not None:
+            module = entity.components["script"].get("module", "")
+            self.script.blockSignals(True)
+            if self.script.findData(module) < 0:
+                self.script.addItem(f"{module} (missing)", module)
+            self.script.setCurrentIndex(self.script.findData(module))
+            self.script.blockSignals(False)
+        if self.trigger is not None:
+            self.trigger.set_value(entity.components["trigger"].get("size", [1.0, 1.0, 1.0]))
         for box, component, key, default in ((self.fov, "camera", "fov", 55.0),
                                              (self.intensity, "light", "intensity", 1.0)):
             if box is not None:
@@ -166,6 +238,37 @@ class EntityForm(QWidget):
             return
         entity.components[component][key] = round(value, 4)
         self._push(entity, key.replace("_", " "))
+
+    # ---- components ------------------------------------------------------------------------
+    def add(self, kind: str) -> None:
+        entity = self._entity()
+        if kind == "script":
+            module = scripting.new_module_name(self.project, entity.name)
+            scripting.create_script(self.project, module, f"The {entity.name} script.")
+            entity.components["script"] = {"module": module}
+        elif kind == "trigger":
+            entity.components["trigger"] = {"size": [1.0, 1.0, 1.0]}
+        self._push(entity, self.ADDABLE[kind].lower())
+        if kind == "script":
+            self.open_script.emit(entity.components["script"]["module"])
+
+    def remove_component(self, kind: str) -> None:
+        entity = self._entity()
+        if entity.components.pop(kind, None) is not None:
+            self._push(entity, f"{kind} removed")
+
+    def set_script(self, module: str) -> None:
+        entity = self._entity()
+        if module and entity.components["script"].get("module") != module:
+            entity.components["script"] = {**entity.components["script"], "module": module}
+            self._push(entity, "script")
+
+    def _trigger_edited(self) -> None:
+        entity = self._entity()
+        size = self.trigger.value()
+        if entity.components["trigger"].get("size") != size:
+            entity.components["trigger"] = {**entity.components["trigger"], "size": size}
+            self._push(entity, "trigger size")
 
     def _mesh_chosen(self, _index: int) -> None:
         self.set_mesh(self.mesh.currentData())

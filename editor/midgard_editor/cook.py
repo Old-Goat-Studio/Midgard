@@ -31,6 +31,7 @@ ENGINE_ABI = 0
 FORMAT_VERSION = "1.0"
 RUNTIME_CONFIG_KEYS = ("game_version", "world_mode", "max_players")
 BUILTIN_PREFIX = "builtin:"
+EDITOR_ONLY_TABLES = ("snippet",)
 PROJECT_ASSET_PREFIX = "asset:"  # a file in the project's assets/ folder
 
 
@@ -84,6 +85,9 @@ def _cook_database(project: Project, out: Path) -> int:
         try:
             src.backup(dst)
             schema_version = contract.schema_version(dst)
+            for table in EDITOR_ONLY_TABLES:  # the game never reads these
+                dst.execute(f"DROP TABLE IF EXISTS {table}")
+            dst.commit()
             dst.execute("VACUUM")
         finally:
             dst.close()

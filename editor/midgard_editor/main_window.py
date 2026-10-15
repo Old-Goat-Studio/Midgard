@@ -40,6 +40,7 @@ from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.scene_panel import ScenePanel
+from .docks.script_editor import ScriptEditorPanel
 from .docks.viewport import ViewportPanel
 from .export_dialog import ExportDialog
 from .live_link import LinkError, PlaySession, State
@@ -51,7 +52,7 @@ log = logging.getLogger(LOGGER_NAME)
 
 # objectName -> title. Object names are the keys in saved layouts, so never rename them.
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
-          "history": "History", "viewport": "Viewport"}
+          "history": "History", "viewport": "Viewport", "scripts": "Script Editor"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -141,15 +142,18 @@ class MainWindow(QMainWindow):
         self.inspector = Inspector()
         self.log_panel = LogPanel()
         self.viewport = ViewportPanel()
+        self.script_editor = ScriptEditorPanel(settings)
         self.history = QUndoView(self.undo_group)
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
         self.scene_panel.entity_selected.connect(self.inspector.show_entity)
         self.scene_panel.scene_selected.connect(self.inspector.show_scene)
         self.inspector.setMinimumWidth(340)
+        self.inspector.open_script.connect(self.edit_script)
         self.browser.setMinimumWidth(220)
         widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,
-                   "log": self.log_panel, "history": self.history, "viewport": self.viewport}
+                   "log": self.log_panel, "history": self.history, "viewport": self.viewport,
+                   "scripts": self.script_editor}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -179,6 +183,17 @@ class MainWindow(QMainWindow):
         self.dock_manager.addDockWidgetTabToArea(self.panels["history"], bottom)
         self.panels["log"].setAsCurrentTab()
         self._place_viewport()
+        self._place_script_editor()
+
+    def _place_script_editor(self) -> None:
+        """The Script editor shares the Viewport's area, as a tab behind it."""
+        area = self.panels["viewport"].dockAreaWidget()
+        if area is not None:
+            self.dock_manager.addDockWidgetTabToArea(self.panels["scripts"], area)
+            self.panels["viewport"].setAsCurrentTab()
+        else:
+            self.dock_manager.addDockWidget(QtAds.DockWidgetArea.RightDockWidgetArea,
+                                            self.panels["scripts"])
 
     def _place_viewport(self) -> None:
         """The Viewport goes above the central start page and takes most of its height."""
@@ -219,8 +234,11 @@ class MainWindow(QMainWindow):
                 log.warning("The saved layout could not be restored; using the default.")
                 return
             # Panels added since the layout was saved go where the default layout puts them.
-            if "viewport" not in last.get("panels", []):
+            saved = last.get("panels", [])
+            if "viewport" not in saved:
                 self._place_viewport()
+            if "scripts" not in saved:
+                self._place_script_editor()
 
     def reset_layout(self) -> None:
         self.dock_manager.restoreState(self._default_state)
@@ -396,6 +414,8 @@ class MainWindow(QMainWindow):
             self.open_project(Path(path))
 
     def open_project(self, config: Path) -> bool:
+        if not self.unsaved_scripts_handled():
+            return False
         try:
             project = Project.open(config)
         except ProjectError as e:
@@ -407,7 +427,40 @@ class MainWindow(QMainWindow):
         return True
 
     def close_project(self) -> None:
-        self.set_project(None)
+        if self.unsaved_scripts_handled():
+            self.set_project(None)
+
+    def unsaved_scripts_handled(self, can_cancel: bool = True) -> bool:
+        """Asks about scripts with unsaved changes. False if the user cancelled."""
+        modified = [e for e in self.script_editor.editors() if e.document().isModified()]
+        if not modified:
+            return True
+        buttons = QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
+        if can_cancel:
+            buttons |= QMessageBox.StandardButton.Cancel
+        names = ", ".join(e.path.name for e in modified)
+        answer = QMessageBox.question(self, "Unsaved Scripts",
+                                      f"Save the changes to {names}?", buttons)
+        if answer == QMessageBox.StandardButton.Cancel:
+            return False
+        if answer == QMessageBox.StandardButton.Save:
+            self.script_editor.save_all()
+        return True
+
+    def edit_script(self, module: str) -> None:
+        """Shows a script in the Script editor (from the Inspector's Edit button)."""
+        if not module:
+            return
+        self.panels["scripts"].toggleView(True)
+        self.panels["scripts"].setAsCurrentTab()
+        self.script_editor.open_module(module)
+
+    def _script_error(self, error: dict) -> None:
+        """A script failed in the running game: show the line in the Script editor."""
+        self.panels["scripts"].toggleView(True)
+        self.panels["scripts"].setAsCurrentTab()
+        self.script_editor.show_error(error.get("file", ""), int(error.get("line", 0)),
+                                      error.get("message", ""))
 
     def set_project(self, project: Project | None) -> None:
         if self.session is not None:
@@ -426,12 +479,14 @@ class MainWindow(QMainWindow):
         self.inspector.set_project(project)
         self.scene_panel.set_project(project)
         self.viewport.set_project(project)
+        self.script_editor.set_project(project)
         for action in (self.close_action, self.cook_action, self.export_action):
             action.setEnabled(project is not None)
         if project is not None:
             self.session = PlaySession(project, self)
             self.session.state_changed.connect(self._play_state_changed)
             self.session.stats_received.connect(self._play_stats)
+            self.session.script_error.connect(self._script_error)
         self._play_state_changed(State.STOPPED)
         if project is None:
             self.setWindowTitle(APP_NAME)
@@ -474,6 +529,7 @@ class MainWindow(QMainWindow):
         """Cooks the project and runs it, linked to the editor: edits reach the running game."""
         if self.session is None or self.session.running:
             return
+        self.script_editor.save_all()  # the game runs what is in the editor
         runtimes = runtime_candidates()
         if not runtimes:
             QMessageBox.warning(self, "Play",
@@ -517,6 +573,9 @@ class MainWindow(QMainWindow):
                                  f"{stats.get('draw_calls', 0)} draws")
     # ---- shutdown ----------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
+        if not self.unsaved_scripts_handled():
+            event.ignore()
+            return
         if self.session is not None:
             self.session.stop()
         self.settings.set("layout_last", self._layout_record())

@@ -21,6 +21,7 @@ DEFAULTS: dict[str, Any] = {
     "use_x11": False,            # Linux: start under XWayland for full multi-monitor support
     "last_project_dir": "",
     "export_dir": "",            # last Build ▸ Export output folder
+    "snippets": [],              # the user's own Script editor snippets
 }
 
 
