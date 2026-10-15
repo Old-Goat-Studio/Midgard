@@ -25,6 +25,8 @@ CONFIG_FORMAT = 1
 WORLD_MODES = {"system_map": "System map", "bounded_surface_map": "Bounded surface map"}
 NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 GAME_TITLE_KEY = "game.title"
+GAME_TAGLINE_KEY = "game.tagline"  # one line, e.g. for a store page or the title screen
+GAME_DESCRIPTION_KEY = "game.description"  # a few paragraphs about the game
 
 
 class ProjectError(Exception):
@@ -168,6 +170,14 @@ class Project(QObject):
     @property
     def game_title(self) -> str:
         return self.string(GAME_TITLE_KEY) or self.name
+
+    @property
+    def game_tagline(self) -> str:
+        return self.string(GAME_TAGLINE_KEY) or ""
+
+    @property
+    def game_description(self) -> str:
+        return self.string(GAME_DESCRIPTION_KEY) or ""
 
     # ---- scenes and entities ---------------------------------------------------------------
     def ensure_main_scene(self) -> None:

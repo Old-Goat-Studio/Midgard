@@ -40,12 +40,13 @@ from .docks.assistant import AssistantPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.project_browser import ProjectBrowser
+from .docks.project_page import ProjectPage
 from .docks.scene_panel import ScenePanel
 from .docks.script_editor import ScriptEditorPanel
 from .docks.viewport import ViewportPanel
 from .export_dialog import ExportDialog
 from .live_link import LinkError, PlaySession, State
-from .project import WORLD_MODES, Project, ProjectError
+from .project import Project, ProjectError
 from .settings import Settings
 from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
 
@@ -54,7 +55,7 @@ log = logging.getLogger(LOGGER_NAME)
 # objectName -> title. Object names are the keys in saved layouts, so never rename them.
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
-          "assistant": "Assistant"}
+          "assistant": "Assistant", "project_page": "Project Page"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -67,8 +68,8 @@ def add_action(menu: QMenu, text: str, slot, shortcut=None) -> QAction:
 
 
 class StartPage(QWidget):
-    """The central area: a start page with no project open, a summary with one open (the
-    Viewport panel above it shows the scene)."""
+    """The central area: a start page with no project open, a short summary with one open (the
+    Project Page panel has the details)."""
 
     def __init__(self, window: "MainWindow"):
         super().__init__()
@@ -106,10 +107,9 @@ class StartPage(QWidget):
         self.stack.setCurrentIndex(0)
 
     def show_project(self, project: Project) -> None:
-        mode = WORLD_MODES.get(project.config.get("world_mode"), "?")
-        self.summary.setText(
-            f"<h2>{project.game_title}</h2><p>{mode} · version "
-            f"{project.config.get('game_version')}</p><p>{project.root}</p>")
+        tagline = f"<p><i>{project.game_tagline}</i></p>" if project.game_tagline else ""
+        self.summary.setText(f"<h2>{project.game_title}</h2>{tagline}<p>Version "
+                             f"{project.config.get('game_version')} · {project.root}</p>")
         self.stack.setCurrentIndex(1)
 
 
@@ -145,6 +145,7 @@ class MainWindow(QMainWindow):
         self.log_panel = LogPanel()
         self.viewport = ViewportPanel()
         self.script_editor = ScriptEditorPanel(settings)
+        self.project_page = ProjectPage()
         self.assistant = AssistantPanel(settings)
         self.script_editor.ask_assistant.connect(self.ask_assistant)
         self.script_editor.commit_requested.connect(self.commit)
@@ -158,7 +159,8 @@ class MainWindow(QMainWindow):
         self.browser.setMinimumWidth(220)
         widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,
                    "log": self.log_panel, "history": self.history, "viewport": self.viewport,
-                   "scripts": self.script_editor, "assistant": self.assistant}
+                   "scripts": self.script_editor, "assistant": self.assistant,
+                   "project_page": self.project_page}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -189,6 +191,7 @@ class MainWindow(QMainWindow):
         self.panels["log"].setAsCurrentTab()
         self._place_viewport()
         self._place_script_editor()
+        self._tab_behind_viewport("project_page")
         self._place_assistant()
 
     def _place_assistant(self) -> None:
@@ -208,13 +211,16 @@ class MainWindow(QMainWindow):
 
     def _place_script_editor(self) -> None:
         """The Script editor shares the Viewport's area, as a tab behind it."""
+        self._tab_behind_viewport("scripts")
+
+    def _tab_behind_viewport(self, key: str) -> None:
         area = self.panels["viewport"].dockAreaWidget()
         if area is not None:
-            self.dock_manager.addDockWidgetTabToArea(self.panels["scripts"], area)
+            self.dock_manager.addDockWidgetTabToArea(self.panels[key], area)
             self.panels["viewport"].setAsCurrentTab()
         else:
             self.dock_manager.addDockWidget(QtAds.DockWidgetArea.RightDockWidgetArea,
-                                            self.panels["scripts"])
+                                            self.panels[key])
 
     def _place_viewport(self) -> None:
         """The Viewport goes above the central start page and takes most of its height."""
@@ -262,6 +268,8 @@ class MainWindow(QMainWindow):
                 self._place_script_editor()
             if "assistant" not in saved:
                 self._place_assistant()
+            if "project_page" not in saved:
+                self._tab_behind_viewport("project_page")
 
     def reset_layout(self) -> None:
         self.dock_manager.restoreState(self._default_state)
@@ -548,6 +556,7 @@ class MainWindow(QMainWindow):
         self.viewport.set_project(project)
         self.script_editor.set_project(project)
         self.assistant.set_project(project)
+        self.project_page.set_project(project)
         self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action):
             action.setEnabled(project is not None)
