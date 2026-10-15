@@ -96,7 +96,14 @@ target_link_libraries(midgard_scene
 
 if(MIDGARD_BUILD_PROGRAMS)
     find_package(SDL3 CONFIG REQUIRED)
-    add_executable(midgard_runtime runtime/main.cpp)
+    if(ANDROID)
+        # SDL's Java activity loads the game as libmain.so (SDL is linked in statically).
+        add_library(midgard_runtime SHARED runtime/main.cpp)
+        set_target_properties(midgard_runtime PROPERTIES OUTPUT_NAME main)
+        target_link_options(midgard_runtime PRIVATE $<$<CONFIG:Release>:-s>)
+    else()
+        add_executable(midgard_runtime runtime/main.cpp)
+    endif()
     target_link_libraries(midgard_runtime PRIVATE
         midgard_core midgard_render midgard_scene SDL3::SDL3 Vulkan::Headers midgard_options)
     if(WIN32)
@@ -105,9 +112,11 @@ if(MIDGARD_BUILD_PROGRAMS)
         set_target_properties(midgard_runtime PROPERTIES WIN32_EXECUTABLE ON)
     endif()
 
-    # The dedicated server is headless: no renderer, no SDL.
-    add_executable(midgard_server server/main.cpp)
-    target_link_libraries(midgard_server PRIVATE midgard_core midgard_options)
+    # The dedicated server is headless: no renderer, no SDL. Android never hosts.
+    if(NOT ANDROID)
+        add_executable(midgard_server server/main.cpp)
+        target_link_libraries(midgard_server PRIVATE midgard_core midgard_options)
+    endif()
 endif()
 
 if(MIDGARD_BUILD_TESTS)

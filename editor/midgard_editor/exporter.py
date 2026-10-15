@@ -5,6 +5,7 @@ to any target it has a template for.
 
     Windows:  <Game>-<version>-windows-x86_64.zip  ->  <Game>/<Game>.exe, data/, notices, README
     Linux:    <Game>-<version>-linux-x86_64.tar.gz ->  <Game>/<Game> (0755), data/, .desktop, ...
+    Android:  <Game>-<version>-android-arm64.apk   ->  signed APK, the package in assets/data/
 
 Templates come from Midgard's CI (tools/make_template.py) and are installed into the editor's
 settings folder: <settings>/templates/<engine version>/<os>-<arch>/.
@@ -12,6 +13,7 @@ settings folder: <settings>/templates/<engine version>/<os>-<arch>/.
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,7 +22,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import BUNDLE_DIR
+from . import BUNDLE_DIR, android_apk
 from .cook import cook
 from .project import Project
 from .version import VERSION
@@ -30,6 +32,8 @@ TARGETS = {
                        "preset": "windows-release", "runtime": "midgard_runtime.exe"},
     "linux-x86_64": {"os": "linux", "arch": "x86_64", "label": "Linux (x86_64)",
                      "preset": "linux-release", "runtime": "midgard_runtime"},
+    "android-arm64": {"os": "android", "arch": "arm64", "label": "Android (arm64)",
+                      "preset": "android-arm64", "runtime": "base.apk"},
 }
 
 README_WINDOWS = """{title}
@@ -101,6 +105,14 @@ def find_template(target: str, settings_dir: Path) -> Template | None:
     return None
 
 
+def android_package(project: Project) -> str:
+    """The game's Android package name (application ID), from the project config."""
+    slug = re.sub(r"[^a-z0-9_]", "", project.name.lower())
+    if not slug[:1].isalpha():
+        slug = "game" + slug
+    return project.config.get("android_package") or f"com.example.{slug}"
+
+
 def _notices(template: Template) -> str:
     bundled = template.folder / "THIRD_PARTY_NOTICES.txt"
     if bundled.is_file():
@@ -120,6 +132,8 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> 
                           "releases and choose Install Template…")
     name = project.name
     version = project.config.get("game_version", "0.1.0")
+    if spec["os"] == "android":
+        return _export_android(project, template, out_dir, settings_dir, target, version)
     game_dir = out_dir / f"{name}-{target}" / name
     if game_dir.parent.exists():
         shutil.rmtree(game_dir.parent)
@@ -163,5 +177,28 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> 
                         tar.addfile(info, io.BytesIO(f.read()))
                 else:
                     tar.addfile(info)
+    return archive
+
+
+def _export_android(project: Project, template: Template, out_dir: Path, settings_dir: Path,
+                    target: str, version: str) -> Path:
+    spec = TARGETS[target]
+    work = out_dir / f"{project.name}-{target}"
+    if work.exists():
+        shutil.rmtree(work)
+    cook(project, work / "data", {"os": spec["os"], "arch": spec["arch"], "role": "game"})
+    assets = {"licenses/THIRD_PARTY_NOTICES.txt": _notices(template).encode("utf-8")}
+    for doc in ("LICENSE", "NOTICE"):
+        src = template.folder / doc if (template.folder / doc).is_file() else BUNDLE_DIR / doc
+        if src.is_file():
+            assets[f"licenses/MIDGARD_{doc}.txt"] = src.read_bytes()
+    key, _ = android_apk.development_key(settings_dir)
+    try:
+        apk = android_apk.build_apk(template.runtime, work / "data", assets,
+                                    android_package(project), project.game_title, version, key)
+    except android_apk.ApkError as e:
+        raise ExportError(f"The Android export failed: {e}") from e
+    archive = out_dir / f"{project.name}-{version}-{target}.apk"
+    archive.write_bytes(apk)
     return archive
 

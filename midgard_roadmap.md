@@ -157,7 +157,7 @@ What the Android runtime needs:
 
 **Two export paths, the same way Godot handles it:**
 
-1. **Template export (default, fast).** Midgard's own CI builds a *runtime template APK* on Linux for each engine release. On export, the editor copies the template, adds `data/` to `assets/`, sets the package name, label and icon in the manifest (`aapt2`, or by editing the binary manifest), then runs `zipalign` and `apksigner`. The game author needs only a JDK and Android build-tools. No NDK, no Gradle.
+1. **Template export (default, fast).** Midgard's own CI builds a *runtime template APK* on Linux for each engine release. On export, the editor copies the template, adds `data/` to `assets/`, sets the package name, label and version by editing the compiled binary manifest, aligns the zip and signs it with APK Signature Scheme v2, all in the editor's own Python code. The game author needs no JDK, no Android SDK, no NDK and no Gradle.
 2. **Gradle export (advanced).** The editor writes a complete Gradle project (`platforms/android/` template + `data/`) for authors who add native plugins or need custom manifests. It is built with the NDK and `./gradlew bundleRelease`.
 
 #### Target-only exports (all platforms)
@@ -168,7 +168,7 @@ The plan's rule that "final deployment build will be on each OS needed" moves to
 |---|---|---|---|
 | Windows x86_64 | `midgard_runtime.exe` + embedded CPython (`python3x.dll`, stdlib zip) | Copy, rename to `<Game>.exe`, add `data/`, set the window icon from `data/icon.png`. Optionally embed the Explorer icon and version info in the `.exe` resources. **Unsigned in 1.0** (see *Code signing* below). | Linux, Windows |
 | Linux x86_64 | Runtime + embedded CPython, built against an old glibc (for example in a manylinux container) so it runs on most distributions | Copy, add `data/`, write a `.desktop` file and icon, pack as `.tar.gz`. **`.tar.gz` is the only Linux format** (decided). AppImage and Flatpak are not planned. | Linux, Windows |
-| Android arm64 | Template APK/AAB (SDL3 shell + runtime + CPython) | Add `data/` to `assets/`, set package name, label and icon, `zipalign`, `apksigner` | Linux, Windows (needs a JDK + Android build-tools, which the editor can download) |
+| Android arm64 | Template APK/AAB (SDL3 shell + runtime + CPython) | Add `data/` to `assets/`, set package name, label and version, align, sign (v2) | Linux, Windows (nothing extra to install) |
 | **Dedicated server**, Linux x86_64 | `midgard_server`: headless runtime + embedded CPython (no Vulkan, windowing or UI) | Add the *server* cook of `data/`, write `server.json`, a `systemd` unit and a `Dockerfile`, pack as `.tar.gz`. Build the Docker image too if Docker is installed. | Linux, Windows (`.tar.gz` + `Dockerfile`); image build where Docker is available |
 | **Dedicated server**, Linux arm64 | `midgard_server` built for aarch64 + embedded CPython for aarch64 | Same as Linux x86_64. The `Dockerfile` names the platform, and the editor can build one multi-architecture image (`docker buildx`, amd64 + arm64). | Linux, Windows (`.tar.gz` + `Dockerfile`); image build where Docker with buildx is available |
 | **Dedicated server**, Windows x86_64 | `midgard_server.exe` + embedded CPython | Add the *server* cook of `data/`, write `server.json` and start scripts, pack as `.zip`. Runs as a console program. | Linux, Windows |

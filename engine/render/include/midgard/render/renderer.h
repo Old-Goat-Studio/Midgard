@@ -72,6 +72,9 @@ public:
     // The window's drawable size changed.
     void resize(uint32_t width, uint32_t height);
 
+    // The window has a new native surface (Android, on returning from the background).
+    void recreate_surface();
+
     // Offscreen only: the last frame as tightly packed RGBA8, top row first.
     std::vector<uint8_t> read_pixels();
 

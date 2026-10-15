@@ -71,6 +71,7 @@ struct Renderer::Impl {
     bool offscreen = false;
     VkInstance instance = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
+    std::function<VkSurfaceKHR_T*(VkInstance_T*)> create_surface;
     VkPhysicalDevice gpu = VK_NULL_HANDLE;
     VkPhysicalDeviceProperties gpu_props{};
     VkDevice device = VK_NULL_HANDLE;
@@ -368,7 +369,11 @@ struct Renderer::Impl {
             info.imageArrayLayers = 1;
             info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            info.preTransform = caps.currentTransform;
+            // Identity lets the compositor rotate the image on phones held in landscape
+            // (pre-rotating in the renderer is an optimisation for later).
+            info.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+                                    ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+                                    : caps.currentTransform;
             info.compositeAlpha = (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
                                       ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
                                       : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
@@ -423,6 +428,18 @@ struct Renderer::Impl {
     void recreate_target() {
         vkDeviceWaitIdle(device);
         destroy_target();
+        create_target();
+    }
+
+    // The window system replaced the window's surface (Android, after returning from the
+    // background).
+    void recreate_surface() {
+        vkDeviceWaitIdle(device);
+        destroy_target();
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+        surface = reinterpret_cast<VkSurfaceKHR>(
+            create_surface(reinterpret_cast<VkInstance_T*>(instance)));
+        if (!surface) throw RenderError("Recreating the window surface failed");
         create_target();
     }
 
@@ -671,6 +688,7 @@ Renderer::Renderer(const RendererDesc& desc) : impl_(std::make_unique<Impl>()) {
     r.create_instance(desc);
     if (!r.offscreen) {
         if (!desc.create_surface) throw RenderError("A window target needs create_surface");
+        r.create_surface = desc.create_surface;
         r.surface = reinterpret_cast<VkSurfaceKHR>(
             desc.create_surface(reinterpret_cast<VkInstance_T*>(r.instance)));
         if (!r.surface) throw RenderError("Creating the window surface failed");
@@ -722,6 +740,10 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
             r.recreate_target();
             return false;
         }
+        if (acquired == VK_ERROR_SURFACE_LOST_KHR) {
+            r.recreate_surface();
+            return false;
+        }
         if (acquired != VK_SUBOPTIMAL_KHR) check(acquired, "Acquiring a swapchain image");
     }
     check(vkResetFences(r.device, 1, &f.fence), "Resetting a fence");
@@ -760,6 +782,8 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         const VkResult presented = vkQueuePresentKHR(r.queue, &present);
         if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR)
             r.recreate_target();
+        else if (presented == VK_ERROR_SURFACE_LOST_KHR)
+            r.recreate_surface();
         else
             check(presented, "Presenting a frame");
     }
@@ -779,6 +803,10 @@ std::vector<uint8_t> Renderer::read_pixels() {
     vmaInvalidateAllocation(r.allocator, r.readback.allocation, 0, VK_WHOLE_SIZE);
     const auto* src = static_cast<const uint8_t*>(r.readback.mapped);
     return {src, src + size_t(r.extent.width) * r.extent.height * 4};
+}
+
+void Renderer::recreate_surface() {
+    if (!impl_->offscreen) impl_->recreate_surface();
 }
 
 uint32_t Renderer::width() const {

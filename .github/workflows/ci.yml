@@ -164,13 +164,21 @@ jobs:
   android:
     name: Engine (android-arm64, NDK)
     runs-on: ubuntu-24.04
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Ninja and the Qt runtime libraries (for the editor's export)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libegl1 libgl1 libxkbcommon0 libdbus-1-3             libfontconfig1 libglib2.0-0
       - name: Use the runner's latest NDK
         run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
       - name: Cache vcpkg binaries
@@ -181,3 +189,37 @@ jobs:
       - run: python tools/setup_vcpkg.py
       - run: cmake --preset android-arm64
       - run: cmake --build --preset android-arm64
+      - name: Runtime template (template APK, for Build > Export)
+        run: python tools/make_template.py --preset android-arm64
+      - name: Upload the runtime template
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-template-android-arm64
+          path: build/templates/*.zip
+      - name: Export a sample game with the editor, as a user would
+        run: |
+          pip install -e editor
+          python - "$RUNNER_TEMP/projects" <<'PY'
+          import sys
+          from pathlib import Path
+          from PySide6.QtCore import QCoreApplication
+          from midgard_editor.project import Project
+          app = QCoreApplication([])
+          Project.create(Path(sys.argv[1]), "HelloCube", "system_map", "Hello Cube")
+          PY
+          python -m midgard_editor export "$RUNNER_TEMP/projects/HelloCube/HelloCube.config"             --target android-arm64 --out "$RUNNER_TEMP/export"             --template build/templates/midgard-runtime-*-android-arm64.zip             --settings "$RUNNER_TEMP/settings"
+      - name: Check the exported APK with the Android SDK's own tools
+        run: |
+          TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls "$RUNNER_TEMP"/export/*.apk)
+          "$TOOLS/zipalign" -c -v 4 "$APK" | tail -3
+          "$TOOLS/apksigner" verify --verbose --min-sdk-version 29 "$APK"
+          "$TOOLS/aapt2" dump badging "$APK" | tee "$RUNNER_TEMP/badging.txt"
+          grep -q "package: name='com.example.hellocube'" "$RUNNER_TEMP/badging.txt"
+          grep -q "application-label:'Hello Cube'" "$RUNNER_TEMP/badging.txt"
+          unzip -l "$APK"
+      - name: Upload the sample APK (install it on a phone to try it)
+        uses: actions/upload-artifact@v4
+        with:
+          name: HelloCube-android-arm64
+          path: ${{ runner.temp }}/export/*.apk

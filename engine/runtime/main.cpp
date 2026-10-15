@@ -7,6 +7,8 @@
 //
 // With --package, the runtime shows that package's entry scene. Without it, an exported game
 // runs the package in the data/ folder next to the executable, and a bare runtime shows a demo.
+// On Android the runtime is libmain.so inside the game's APK, and the package is in the APK's
+// assets/data/ (copied to internal storage on first start, since SQLite needs real files).
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>  // WinMain for the windowed Windows build
 #include <SDL3/SDL_vulkan.h>
@@ -18,12 +20,16 @@
 #endif
 #include <algorithm>
 #include <chrono>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,6 +38,7 @@
 
 #include "midgard/game.h"
 #include "midgard/input.h"
+#include "midgard/manifest.h"
 #include "midgard/render/renderer.h"
 #include "midgard/version.h"
 
@@ -51,6 +58,29 @@ int usage() {
         "usage: midgard_runtime [--version] [--package <dir>] [--frames N] [--size WxH]\n"
         "                       [--screenshot out.png]");
     return 2;
+}
+
+// Messages go to standard output and, on Android, also to the system log (logcat).
+void say(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+#ifdef __ANDROID__
+    va_list copy;
+    va_copy(copy, args);
+    SDL_LogMessageV(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO, fmt, copy);
+    va_end(copy);
+#endif
+    std::vfprintf(stdout, fmt, args);
+    va_end(args);
+}
+
+// Errors also appear on screen on Android, where there is no terminal to read them in.
+void fail(const std::string& message) {
+    std::fprintf(stderr, "error: %s\n", message.c_str());
+#ifdef __ANDROID__
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Midgard", message.c_str(), nullptr);
+#endif
 }
 
 bool parse_size(std::string_view text, uint32_t& w, uint32_t& h) {
@@ -109,10 +139,9 @@ class GameSource : public Source {
 public:
     explicit GameSource(const std::string& dir) : game_(dir) {
         const midgard::Manifest& m = game_.package().manifest;
-        std::printf("%s %s: scene '%s', %zu entities, built by editor %s\n", m.game_name.c_str(),
-                    m.game_version.c_str(), m.entry_scene.c_str(),
-                    game_.scene().registry.view<midgard::EntityInfo>().size(),
-                    m.editor_build.c_str());
+        say("%s %s: scene '%s', %zu entities, built by editor %s\n", m.game_name.c_str(),
+            m.game_version.c_str(), m.entry_scene.c_str(),
+            game_.scene().registry.view<midgard::EntityInfo>().size(), m.editor_build.c_str());
     }
     void upload(render::Renderer& renderer) override { game_.upload_meshes(renderer); }
     std::vector<render::DrawItem> draws(float) const override { return game_.draws(); }
@@ -189,6 +218,49 @@ std::optional<std::string> package_beside_executable() {
     return std::nullopt;
 }
 
+#ifdef __ANDROID__
+bool write_file(const std::filesystem::path& path, const void* data, size_t size) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(static_cast<const char*>(data), std::streamsize(size));
+    return bool(out);
+}
+
+// Copies the APK's assets/data/ package to internal storage, unless this exact package is already
+// there. Returns the folder, or nothing if the APK holds no package.
+std::optional<std::string> package_from_assets() {
+    size_t size = 0;
+    void* manifest_text = SDL_LoadFile("data/manifest.json", &size);  // read from the APK assets
+    if (!manifest_text) return std::nullopt;
+    const std::string manifest(static_cast<const char*>(manifest_text), size);
+    SDL_free(manifest_text);
+
+    const char* storage = SDL_GetAndroidInternalStoragePath();
+    if (!storage) throw std::runtime_error(std::string("No internal storage: ") + SDL_GetError());
+    const std::filesystem::path dir = std::filesystem::path(storage) / "data";
+    {
+        std::ifstream in(dir / "manifest.json", std::ios::binary);
+        const std::string installed((std::istreambuf_iterator<char>(in)), {});
+        if (in && installed == manifest) return dir.string();
+    }
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const midgard::Manifest m = midgard::parse_manifest(manifest);
+    const std::vector<std::string> files = {m.database, "game.pak", m.game_name + ".config"};
+    for (const std::string& name : files) {
+        void* bytes = SDL_LoadFile(("data/" + name).c_str(), &size);
+        if (!bytes) continue;  // optional parts of a package
+        const bool ok = write_file(dir / name, bytes, size);
+        SDL_free(bytes);
+        if (!ok) throw std::runtime_error("Could not write " + (dir / name).string());
+    }
+    // The manifest goes last: it marks a complete copy.
+    if (!write_file(dir / "manifest.json", manifest.data(), manifest.size()))
+        throw std::runtime_error("Could not write " + (dir / "manifest.json").string());
+    say("Unpacked the game data to %s\n", dir.string().c_str());
+    return dir.string();
+}
+#endif
+
 bool want_validation() {
     return std::getenv("MIDGARD_VULKAN_VALIDATION") != nullptr;
 }
@@ -208,22 +280,21 @@ int run_screenshot(const Options& opt, Source& source) {
         std::fprintf(stderr, "error: could not write %s\n", opt.screenshot->c_str());
         return 1;
     }
-    std::printf("Rendered %ux%u on %s to %s\n", opt.width, opt.height,
-                renderer.device_name().c_str(), opt.screenshot->c_str());
+    say("Rendered %ux%u on %s to %s\n", opt.width, opt.height, renderer.device_name().c_str(),
+        opt.screenshot->c_str());
     return 0;
 }
 
 int run_window(const Options& opt, Source& source) {
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
-        std::fprintf(stderr, "error: SDL_Init failed: %s\n", SDL_GetError());
-        return 1;
-    }
+    SDL_WindowFlags flags =
+        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#ifdef __ANDROID__
+    flags |= SDL_WINDOW_FULLSCREEN;
+#endif
     SDL_Window* window =
-        SDL_CreateWindow(source.title().c_str(), int(opt.width), int(opt.height),
-                         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        SDL_CreateWindow(source.title().c_str(), int(opt.width), int(opt.height), flags);
     if (!window) {
-        std::fprintf(stderr, "error: SDL_CreateWindow failed: %s\n", SDL_GetError());
-        SDL_Quit();
+        fail(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
         return 1;
     }
     int result = 0;
@@ -243,7 +314,7 @@ int run_window(const Options& opt, Source& source) {
         desc.height = uint32_t(ph);
         desc.validation = want_validation();
         render::Renderer renderer(desc);
-        std::printf("Rendering on %s\n", renderer.device_name().c_str());
+        say("Rendering on %s\n", renderer.device_name().c_str());
         source.upload(renderer);
         midgard::Actions actions(source.input_map());
         if (source.wants_mouse_look()) SDL_SetWindowRelativeMouseMode(window, true);
@@ -251,17 +322,39 @@ int run_window(const Options& opt, Source& source) {
         const auto start = std::chrono::steady_clock::now();
         auto last = start;
         bool running = true;
+        bool background = false;  // Android: the app is not visible and has no surface
         long frame = 0;
         while (running && (opt.frames < 0 || frame < opt.frames)) {
             actions.begin_frame();
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
-                if (e.type == SDL_EVENT_QUIT) running = false;
+                switch (e.type) {
+                    case SDL_EVENT_QUIT:
+                    case SDL_EVENT_TERMINATING:
+                        running = false;
+                        break;
+                    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+                    case SDL_EVENT_DID_ENTER_BACKGROUND:
+                        background = true;
+                        break;
+                    case SDL_EVENT_DID_ENTER_FOREGROUND:
+                        if (background) renderer.recreate_surface();
+                        background = false;
+                        last = std::chrono::steady_clock::now();
+                        break;
+                    case SDL_EVENT_KEY_DOWN:
+                        // Android's Back button quits until in-game menus exist (Phase 6).
+                        if (e.key.scancode == SDL_SCANCODE_AC_BACK) running = false;
+                        break;
+                    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                        renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
+                        break;
+                    default:
+                        break;
+                }
                 feed(actions, e);
-                if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
-                    renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
             }
-            if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) {
+            if (background || (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED)) {
                 SDL_Delay(50);
                 continue;
             }
@@ -278,11 +371,10 @@ int run_window(const Options& opt, Source& source) {
                 ++frame;
         }
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "error: %s\n", e.what());
+        fail(e.what());
         result = 1;
     }
     SDL_DestroyWindow(window);
-    SDL_Quit();
     return result;
 }
 
@@ -311,16 +403,27 @@ int main(int argc, char** argv) {
             return usage();
         }
     }
-    if (!opt.package_dir) opt.package_dir = package_beside_executable();
+    // SDL starts first: on Android it also reads the package from the APK.
+    if (!opt.screenshot && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+        fail(std::string("SDL_Init failed: ") + SDL_GetError());
+        return 1;
+    }
+    int result = 0;
     try {
+#ifdef __ANDROID__
+        if (!opt.package_dir) opt.package_dir = package_from_assets();
+#endif
+        if (!opt.package_dir) opt.package_dir = package_beside_executable();
         std::unique_ptr<Source> source;
         if (opt.package_dir)
             source = std::make_unique<GameSource>(*opt.package_dir);
         else
             source = std::make_unique<DemoSource>();
-        return opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, *source);
+        result = opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, *source);
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "error: %s\n", e.what());
-        return 1;
+        fail(e.what());
+        result = 1;
     }
+    if (!opt.screenshot) SDL_Quit();
+    return result;
 }

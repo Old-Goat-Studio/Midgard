@@ -5,6 +5,7 @@
     midgard-editor --project X.config    open the editor with a project
     midgard-editor migrate X.db          command-line contract tools
     midgard-editor validate-manifest manifest.json
+    midgard-editor export X.config --target android-arm64 --out DIR [--template T.zip]
 """
 import argparse
 import json
@@ -26,6 +27,13 @@ def main(argv: list[str] | None = None) -> int:
     mig.add_argument("database", type=Path)
     val = sub.add_parser("validate-manifest", help="check a package manifest.json")
     val.add_argument("manifest", type=Path)
+    exp = sub.add_parser("export", help="export a game without opening the editor")
+    exp.add_argument("project", type=Path, help="the {project}.config")
+    exp.add_argument("--target", required=True, help="windows-x86_64, linux-x86_64 or "
+                     "android-arm64")
+    exp.add_argument("--out", type=Path, required=True, help="output folder")
+    exp.add_argument("--template", type=Path, help="install this runtime template zip first")
+    exp.add_argument("--settings", type=Path, help="editor settings folder (templates, keys)")
     args = parser.parse_args(argv)
 
     if args.version:
@@ -43,9 +51,37 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.manifest}: {'valid' if not errors else f'{len(errors)} problem(s)'}")
         return 1 if errors else 0
 
+    if args.command == "export":
+        return export_command(args)
+
     from .app import run  # the GUI; only imported when needed
 
     return run(project=args.project, smoke_test=args.smoke_test)
+
+
+def export_command(args: argparse.Namespace) -> int:
+    from PySide6.QtCore import QCoreApplication
+
+    from .cook import CookError
+    from .exporter import TARGETS, ExportError, export, install_template
+    from .project import Project, ProjectError
+    from .settings import Settings
+
+    if args.target not in TARGETS:
+        print(f"unknown target {args.target}: use one of {', '.join(TARGETS)}", file=sys.stderr)
+        return 2
+    app = QCoreApplication.instance() or QCoreApplication([])
+    app.setApplicationName("Midgard")
+    settings = Settings(args.settings)
+    try:
+        if args.template:
+            print(f"Installed {install_template(args.template, settings.dir)}")
+        archive = export(Project.open(args.project), args.target, args.out, settings.dir)
+    except (ExportError, CookError, ProjectError, OSError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"Exported {archive}")
+    return 0
 
 
 if __name__ == "__main__":

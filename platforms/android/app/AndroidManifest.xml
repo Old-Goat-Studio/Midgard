@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0
+     The manifest of every exported Android game. tools/make_template.py compiles it into the
+     template APK; Build > Export replaces the placeholder package name, title and version. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.oldgoatstudio.midgard.template"
+    android:installLocation="auto">
+
+    <!-- Vulkan 1.1 (Android 10 and later) -->
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000"
+        android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:label="@@MIDGARD_GAME_TITLE@@"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:appCategory="game"
+        android:extractNativeLibs="true"
+        android:hardwareAccelerated="true"
+        android:hasCode="true"
+        android:isGame="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+        <activity
+            android:name="org.oldgoatstudio.midgard.MidgardActivity"
+            android:label="@@MIDGARD_GAME_TITLE@@"
+            android:alwaysRetainTaskState="true"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:preferMinimalPostProcessing="true"
+            android:screenOrientation="sensorLandscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

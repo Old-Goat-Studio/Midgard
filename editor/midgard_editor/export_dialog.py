@@ -19,8 +19,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import android_apk
 from .cook import CookError
-from .exporter import TARGETS, ExportError, export, find_template, install_template
+from .exporter import (
+    TARGETS,
+    ExportError,
+    android_package,
+    export,
+    find_template,
+    install_template,
+)
 from .project import Project
 from .settings import Settings
 
@@ -49,11 +57,22 @@ class ExportDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(self.folder)
         row.addWidget(browse)
+        # Android only: the application ID, and which key signs the APK.
+        self.package = QLineEdit(android_package(project))
+        self.package.setToolTip("The game's unique Android ID, for example "
+                                "com.yourstudio.yourgame. Keep it once players have the game.")
+        self.signing = QLabel(
+            f"The editor's development key, kept in {settings.dir / 'android'}. Back it up: "
+            "an installed game only accepts updates signed with the same key.")
+        self.signing.setWordWrap(True)
 
         form = QFormLayout(self)
+        self.form = form
         form.addRow("Target", self.target)
         form.addRow("Runtime template", self.status)
         form.addRow("", install)
+        form.addRow("Android package", self.package)
+        form.addRow("Signing", self.signing)
         form.addRow("Output folder", row)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         self.export_button = self.buttons.addButton("Export",
@@ -67,6 +86,9 @@ class ExportDialog(QDialog):
         return self.target.currentData()
 
     def _refresh(self) -> None:
+        android = TARGETS[self.selected_target()]["os"] == "android"
+        for field in (self.package, self.signing):
+            self.form.setRowVisible(field, android)
         template = find_template(self.selected_target(), self.settings.dir)
         if template is None:
             self.status.setText("Not installed. Download the template zip for this target from "
@@ -95,6 +117,14 @@ class ExportDialog(QDialog):
 
     def _export(self) -> None:
         out = Path(self.folder.text())
+        if TARGETS[self.selected_target()]["os"] == "android":
+            package = self.package.text().strip()
+            if not android_apk.valid_package_name(package):
+                QMessageBox.warning(self, "Export", f"'{package}' is not a valid Android package "
+                                    "name. Use something like com.yourstudio.yourgame.")
+                return
+            if package != android_package(self.project):
+                self.project.set_config("android_package", package)
         try:
             self.archive = export(self.project, self.selected_target(), out, self.settings.dir)
         except (ExportError, CookError, OSError) as e:
