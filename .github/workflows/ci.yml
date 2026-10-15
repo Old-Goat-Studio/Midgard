@@ -119,7 +119,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxft-dev libxext-dev libxrandr-dev \
             libxcursor-dev libxi-dev libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev \
-            mesa-vulkan-drivers
+            mesa-vulkan-drivers libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 \
+            libglib2.0-0
       - uses: seanmiddleditch/gha-setup-ninja@v5
         if: runner.os == 'Windows'
       - uses: ilammy/msvc-dev-cmd@v1
@@ -153,6 +154,14 @@ jobs:
       - name: Runtime starts the game's Python
         shell: bash
         run: build/${{ matrix.preset }}/engine/midgard_runtime --check-python
+      - name: Game scripts with this engine (triggers, errors, reload while playing, API stub)
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MIDGARD_REQUIRE_ENGINE: "1"
+        run: |
+          pip install --quiet -e "editor[dev]"
+          pytest editor/tests/test_scripting.py -q
       - name: Runtime template (for Build > Export)
         run: python tools/make_template.py --preset ${{ matrix.preset }}
       - name: Upload the runtime template

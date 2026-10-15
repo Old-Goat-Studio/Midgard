@@ -6,13 +6,15 @@ talks to it over a TCP live link, so an engine crash never takes the editor down
       listens on 127.0.0.1:<port>   <-----   connects, says hello
       entity.put / entity.delete    ----->   applies the edit to the running scene
       row.changed / asset.changed   ----->   re-reads that row / mesh from the package on disk
+      script.changed                ----->   re-imports that script module
       pause / resume / stop         ----->
-                                    <-----   log lines, stats (about once a second)
+                                    <-----   log lines, stats (about once a second),
+                                             script.error (file and line)
 
 Hot reload: entity edits travel in the message itself. Scene settings and meshes are rewritten
 in the cooked package first (cook.recook), then named in row.changed / asset.changed. Mesh files
-in the project's assets/ folder are watched, so saving one from a modelling tool shows in the
-game.
+in the project's assets/ folder and scripts in its scripts/ folder are watched, so saving one
+(from a modelling tool or a text editor) shows in the game.
 
 Each message is a 4-byte big-endian length followed by UTF-8 JSON
 (schema/live_link.schema.json).
@@ -26,7 +28,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
-from .cook import CookError, recook, used_mesh_assets
+from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .project import Project
 from .version import VERSION
 
@@ -95,6 +97,7 @@ class PlaySession(QObject):
 
     state_changed = Signal(object)    # State
     stats_received = Signal(dict)     # {"fps": …, "draw_calls": …, "paused": …}
+    script_error = Signal(dict)       # {"module", "file", "line", "message"} from the game
     message_received = Signal(dict)   # every message from the game (tests and tools)
 
     def __init__(self, project: Project, parent: QObject | None = None):
@@ -217,6 +220,8 @@ class PlaySession(QObject):
                                 else State.PLAYING)
         elif kind == "stats":
             self.stats_received.emit(message)
+        elif kind == "script.error":
+            self.script_error.emit(message)
         self.message_received.emit(message)
 
     def _drop_socket(self) -> None:
@@ -296,11 +301,11 @@ class PlaySession(QObject):
         self.send({"type": "row.changed", "table": "scene", "key": scene_id})
 
     def _reload_assets(self) -> None:
-        """Re-cooks game.pak and tells the game which meshes changed."""
+        """Re-cooks game.pak and the scripts, and tells the game what changed."""
         if self.socket is None or self.package is None:
             return
         try:
-            result, changed = recook(self.project, self.package, assets=True)
+            result, changed = recook(self.project, self.package, assets=True, scripts=True)
         except (CookError, OSError) as e:
             log.error("Hot reload of the assets failed: %s", e)
             return
@@ -310,6 +315,8 @@ class PlaySession(QObject):
         for asset in sorted(changed & self._cooked_assets):
             log.info("Reloading %s", asset)
             self.send({"type": "asset.changed", "id": asset})
+        for item in sorted(c for c in changed if c.startswith(SCRIPT_PREFIX)):
+            self.send({"type": "script.changed", "module": item[len(SCRIPT_PREFIX):]})
         self._watch_assets()
 
     def _package_assets(self) -> set[str]:
@@ -320,13 +327,17 @@ class PlaySession(QObject):
         return {c["id"] for c in manifest.get("content", [])}
 
     def _watch_assets(self) -> None:
-        """Watches the project's assets/ folder, its subfolders and its .glb files. Editors
-        often replace a file when saving it, which drops it from the watch list, so the list
-        is rebuilt after every reload."""
-        assets = self.project.root / "assets"
-        paths = [assets] + [p for p in assets.rglob("*") if p.is_dir() or
-                            p.suffix.lower() == ".glb"] if assets.is_dir() else []
-        wanted = {str(p) for p in paths}
+        """Watches the project's assets/ and scripts/ folders, their subfolders and their .glb
+        and .py files. Editors often replace a file when saving it, which drops it from the
+        watch list, so the list is rebuilt after every reload."""
+        wanted = set()
+        for folder, suffix in ((self.project.root / "assets", ".glb"),
+                               (self.project.root / "scripts", ".py")):
+            if folder.is_dir():
+                wanted.add(str(folder))
+                wanted |= {str(p) for p in folder.rglob("*")
+                           if (p.is_dir() and p.name != "__pycache__") or
+                           p.suffix.lower() == suffix}
         current = set(self.watcher.files()) | set(self.watcher.directories())
         if current - wanted:
             self.watcher.removePaths(sorted(current - wanted))

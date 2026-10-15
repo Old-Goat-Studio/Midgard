@@ -3,6 +3,11 @@
 //
 //   midgard_runtime --version
 //   midgard_runtime --check-python      start the game's Python and import the standard library
+//   midgard_runtime --dump-api          the midgard script API's names, as JSON
+//   midgard_runtime --package <dir> --simulate N [--dump-scene]
+//                                       N frames of gameplay and scripts, no window (tests)
+//   midgard_runtime --package <dir> --headless --editor-link host:port
+//                                       play under the editor without a window or GPU (tests, CI)
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH]   (offscreen, no window)
 //
@@ -37,6 +42,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -50,6 +56,7 @@
 #include "midgard/version.h"
 #ifdef MIDGARD_HAS_SCRIPTING
 #include "midgard/script.h"
+#include "midgard/script_system.h"
 #endif
 
 namespace render = midgard::render;
@@ -60,7 +67,10 @@ struct Options {
     std::optional<std::string> package_dir;
     std::optional<std::string> screenshot;
     std::optional<std::string> editor_link;
-    long frames = -1;  // run until closed
+    long simulate = -1;  // frames to run without a window
+    bool dump_scene = false;
+    bool headless = false;  // the game loop and live link, without a window or GPU
+    long frames = -1;       // run until closed
     uint32_t width = 1280, height = 720;
 };
 
@@ -143,8 +153,10 @@ public:
     virtual void update(const midgard::Actions&, float) {}
     virtual bool wants_mouse_look() const { return false; }
     virtual std::string title() const { return "Midgard"; }
+    // The scene as JSON (entities and their transforms and colours), for tests.
+    virtual std::string dump() const { return "{}"; }
     // A message from the editor's live link (entity edits and the like).
-    virtual void apply(const nlohmann::json& message, render::Renderer&) {
+    virtual void apply(const nlohmann::json& message, render::Renderer*) {
         warn("live link: '%s' needs a game package\n", message.value("type", "").c_str());
     }
 };
@@ -192,12 +204,45 @@ public:
     render::Light light() const override { return game_.scene().light(); }
     glm::vec4 sky() const override { return {game_.scene().settings.sky, 1.0f}; }
     midgard::InputMap input_map() const override { return game_.input_map(); }
-    void update(const midgard::Actions& actions, float dt) override { game_.update(actions, dt); }
+    void update(const midgard::Actions& actions, float dt) override {
+        game_.update(actions, dt);
+        if (!scripts_tried_ && scripts_needed()) start_scripts();
+#ifdef MIDGARD_HAS_SCRIPTING
+        if (scripts_) scripts_->update(actions, dt);
+#endif
+    }
+
+    std::string dump() const override {
+        nlohmann::json entities = nlohmann::json::array();
+        const auto& reg = game_.scene().registry;
+        for (entt::entity e : reg.view<const midgard::EntityInfo>()) {
+            const auto& t = reg.get<midgard::Transform>(e);
+            const midgard::Material* m = reg.try_get<midgard::Material>(e);
+            entities.push_back(
+                {{"id", reg.get<midgard::EntityInfo>(e).id},
+                 {"name", reg.get<midgard::EntityInfo>(e).name},
+                 {"position", {t.position.x, t.position.y, t.position.z}},
+                 {"rotation", {t.rotation.x, t.rotation.y, t.rotation.z}},
+                 {"scale", {t.scale.x, t.scale.y, t.scale.z}},
+                 {"color", m ? nlohmann::json{m->color.r, m->color.g, m->color.b, m->color.a}
+                             : nlohmann::json(nullptr)}});
+        }
+        const glm::vec3 sky = game_.scene().settings.sky;
+        return nlohmann::json{{"entities", entities}, {"sky", {sky.x, sky.y, sky.z}}}.dump();
+    }
     bool wants_mouse_look() const override { return game_.third_person().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
 
-    void apply(const nlohmann::json& message, render::Renderer& renderer) override {
+    void apply(const nlohmann::json& message, render::Renderer* renderer) override {
         const std::string type = message.value("type", "");
+        if (type == "script.changed") {
+            const std::string module = message.value("module", "");
+#ifdef MIDGARD_HAS_SCRIPTING
+            if (scripts_) scripts_->reload(module);
+#endif
+            acknowledge("applied script.changed " + module);
+            return;
+        }
         try {
             if (type == "entity.put") {
                 game_.put_entity(message.at("entity"));
@@ -218,7 +263,7 @@ public:
                 return;
             } else if (type == "asset.changed") {
                 const std::string id = message.at("id").get<std::string>();
-                game_.reload_asset(id, renderer);
+                if (renderer) game_.reload_asset(id, *renderer);
                 acknowledge("applied asset.changed " + id);
                 return;
             } else {
@@ -229,14 +274,64 @@ public:
             warn("live link: %s: %s\n", type.c_str(), e.what());
             return;
         }
-        for (const std::string& error : game_.upload_new_meshes(renderer))
-            warn("%s\n", error.c_str());
+        if (renderer)
+            for (const std::string& error : game_.upload_new_meshes(*renderer))
+                warn("%s\n", error.c_str());
         const nlohmann::json& entity = message.at("entity");
         acknowledge("applied " + type + " " +
                     (entity.is_object() ? entity.value("id", "") : entity.get<std::string>()));
     }
 
 private:
+    bool scripts_needed() const {
+        for (entt::entity e : game_.scene().registry.view<const midgard::ScriptRef>()) {
+            (void)e;
+            return true;
+        }
+        return false;
+    }
+
+    // Scripts start when the scene first has one (perhaps added from the editor while playing).
+    void start_scripts() {
+        scripts_tried_ = true;
+#ifdef MIDGARD_HAS_SCRIPTING
+        try {
+            const char* base = SDL_GetBasePath();
+            const std::filesystem::path home =
+                midgard::script::python_home_beside(base ? base : ".");
+            python_ = std::make_unique<midgard::script::Interpreter>(
+                home, std::vector<std::filesystem::path>{game_.package().root / "scripts"});
+            scripts_ = std::make_unique<midgard::script::ScriptSystem>(game_, report_script);
+        } catch (const std::exception& e) {
+            scripts_.reset();
+            python_.reset();
+            warn("Scripts can't run: %s\n", e.what());
+        }
+#else
+        warn("This runtime has no scripting yet, so the game's scripts don't run.\n");
+#endif
+    }
+
+#ifdef MIDGARD_HAS_SCRIPTING
+    static void report_script(const midgard::script::Report& r) {
+        if (r.level == "info") {
+            say("%s\n", r.text.c_str());
+        } else if (r.level == "warn") {
+            warn("%s\n", r.text.c_str());
+        } else if (g_link && g_link->connected()) {
+            send_log("error", r.text);
+            g_link->send({{"type", "script.error"},
+                          {"module", r.module},
+                          {"file", r.file},
+                          {"line", r.line},
+                          { "message",
+                            r.text }});
+        } else {
+            std::fprintf(stderr, "%s\n", r.text.c_str());
+        }
+    }
+#endif
+
     // Lets the editor (and its tests) see when an edit took effect.
     static void acknowledge(const std::string& text) {
         if (g_link) g_link->send({{"type", "log"}, {"level", "debug"}, {"text", text}});
@@ -245,6 +340,11 @@ private:
 public:
 private:
     midgard::Game game_;
+    bool scripts_tried_ = false;
+#ifdef MIDGARD_HAS_SCRIPTING
+    std::unique_ptr<midgard::script::Interpreter> python_;  // before scripts_: outlives it
+    std::unique_ptr<midgard::script::ScriptSystem> scripts_;
+#endif
 };
 
 constexpr float kStickDeadZone = 0.15f;
@@ -375,6 +475,66 @@ int run_screenshot(const Options& opt, Source& source) {
     return 0;
 }
 
+// The game loop under the editor's live link, at 60 frames a second, without a window or GPU:
+// edits, scripts, pause and stop work as in a window; nothing is drawn.
+int run_headless(const Options& opt, Source& source) {
+    if (!opt.editor_link) {
+        fail("--headless needs --editor-link");
+        return 2;
+    }
+    std::string host;
+    uint16_t port = 0;
+    if (!midgard::link::parse_endpoint(*opt.editor_link, host, port)) {
+        fail("--editor-link needs host:port, not " + *opt.editor_link);
+        return 2;
+    }
+    int result = 0;
+    try {
+        midgard::link::Client link(host, port);
+        g_link = &link;
+        link.send({{"type", "hello"},
+                   {"role", "runtime"},
+                   {"version", midgard::kVersion},
+                   {"protocol", midgard::link::kProtocol}});
+        midgard::Actions actions(source.input_map());
+        const auto frame_time = std::chrono::milliseconds(16);
+        auto next = std::chrono::steady_clock::now();
+        auto stats_due = next + std::chrono::seconds(1);
+        bool paused = false;
+        long frames = 0;
+        while (link.connected()) {
+            bool stop = false;
+            for (const nlohmann::json& message : link.receive()) {
+                const std::string type = message.value("type", "");
+                if (type == "stop")
+                    stop = true;
+                else if (type == "pause" || type == "resume")
+                    paused = type == "pause";
+                else if (type != "hello" && type != "play")
+                    source.apply(message, nullptr);
+            }
+            if (stop) break;
+            actions.begin_frame();
+            if (!paused) source.update(actions, 1.0f / 60.0f);
+            ++frames;
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= stats_due) {
+                link.send(
+                    {{"type", "stats"}, {"fps", frames}, {"draw_calls", 0}, {"paused", paused}});
+                frames = 0;
+                stats_due = now + std::chrono::seconds(1);
+            }
+            next += frame_time;
+            std::this_thread::sleep_until(next);
+        }
+    } catch (const std::exception& e) {
+        fail(e.what());
+        result = 1;
+    }
+    g_link = nullptr;
+    return result;
+}
+
 int run_window(const Options& opt, Source& source) {
     SDL_WindowFlags flags =
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -460,7 +620,7 @@ int run_window(const Options& opt, Source& source) {
                     else if (type == "pause" || type == "resume")
                         paused = type == "pause";
                     else if (type != "hello" && type != "play")
-                        source.apply(message, renderer);
+                        source.apply(message, &renderer);
                 }
             }
             actions.begin_frame();
@@ -570,6 +730,33 @@ std::filesystem::path executable_dir() {
     return base ? std::filesystem::path(base) : std::filesystem::current_path();
 }
 
+int dump_api() {
+#ifdef MIDGARD_HAS_SCRIPTING
+    try {
+        midgard::script::Interpreter python(midgard::script::python_home_beside(executable_dir()));
+        std::printf("%s\n", midgard::script::api_names().c_str());
+        return 0;
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "error: %s\n", e.what());
+        return 1;
+    }
+#else
+    std::fprintf(stderr, "error: this runtime was built without scripting\n");
+    return 1;
+#endif
+}
+
+// Gameplay and scripts for a number of frames at 60 per second, with no window or input.
+int run_simulation(const Options& opt, Source& source) {
+    midgard::Actions actions(source.input_map());
+    for (long frame = 0; frame < opt.simulate; ++frame) {
+        actions.begin_frame();
+        source.update(actions, 1.0f / 60.0f);
+    }
+    if (opt.dump_scene) std::printf("%s\n", source.dump().c_str());
+    return 0;
+}
+
 int check_python() {
 #ifdef MIDGARD_HAS_SCRIPTING
     try {
@@ -605,6 +792,14 @@ int main(int argc, char** argv) {
             return 0;
         } else if (arg == "--check-python") {
             return check_python();
+        } else if (arg == "--dump-api") {
+            return dump_api();
+        } else if (arg == "--simulate" && has_value) {
+            opt.simulate = std::atol(argv[++i]);
+        } else if (arg == "--dump-scene") {
+            opt.dump_scene = true;
+        } else if (arg == "--headless") {
+            opt.headless = true;
         } else if (arg == "--package" && has_value) {
             opt.package_dir = argv[++i];
         } else if (arg == "--screenshot" && has_value) {
@@ -620,7 +815,8 @@ int main(int argc, char** argv) {
         }
     }
     // SDL starts first: on Android it also reads the package from the APK.
-    if (!opt.screenshot && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+    const bool windowed = !opt.screenshot && opt.simulate < 0 && !opt.headless;
+    if (windowed && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         fail(std::string("SDL_Init failed: ") + SDL_GetError());
         return 1;
     }
@@ -635,11 +831,16 @@ int main(int argc, char** argv) {
             source = std::make_unique<GameSource>(*opt.package_dir);
         else
             source = std::make_unique<DemoSource>();
-        result = opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, *source);
+        if (opt.simulate >= 0)
+            result = run_simulation(opt, *source);
+        else if (opt.headless)
+            result = run_headless(opt, *source);
+        else
+            result = opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, *source);
     } catch (const std::exception& e) {
         fail(e.what());
         result = 1;
     }
-    if (!opt.screenshot) SDL_Quit();
+    if (windowed) SDL_Quit();
     return result;
 }

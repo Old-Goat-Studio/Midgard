@@ -152,10 +152,10 @@ if(MIDGARD_SCRIPTING AND NOT ANDROID)
         endif()
         target_link_libraries(midgard_python INTERFACE ${MIDGARD_PY_LIB})
 
-        add_library(midgard_script STATIC script/src/script.cpp)
+        add_library(midgard_script STATIC script/src/script.cpp script/src/script_system.cpp)
         target_include_directories(midgard_script PUBLIC script/include)
         target_link_libraries(midgard_script
-            PUBLIC midgard_python
+            PUBLIC midgard_python midgard_scene midgard_input
             PRIVATE pybind11::headers midgard_options)
         message(STATUS "Scripting: CPython from ${MIDGARD_GAME_PYTHON}")
     elseif(MIDGARD_REQUIRE_PYTHON)

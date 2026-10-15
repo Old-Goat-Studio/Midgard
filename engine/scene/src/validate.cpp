@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/validate.h"
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <set>
@@ -50,6 +51,17 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
     try {
         const Scene scene = Scene::load(database, m.entry_scene);
         report.entities = scene.registry.view<const EntityInfo>().size();
+        for (entt::entity e : scene.registry.view<const ScriptRef>()) {
+            std::string path = scene.registry.get<ScriptRef>(e).module;
+            std::replace(path.begin(), path.end(), '.', '/');
+            const std::filesystem::path scripts = dir / "scripts";
+            if (!std::filesystem::is_regular_file(scripts / (path + ".py")) &&
+                !std::filesystem::is_regular_file(scripts / path / "__init__.py"))
+                report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
+                                          "' uses script '" +
+                                          scene.registry.get<ScriptRef>(e).module +
+                                          "', which is not in the package; it will not run");
+        }
         for (entt::entity e : scene.registry.view<const MeshRef>()) {
             const std::string& asset = scene.registry.get<MeshRef>(e).asset;
             if (asset != kBuiltinCube && !content_ids.contains(asset))

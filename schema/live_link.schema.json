@@ -80,6 +80,25 @@
       "required": ["type", "level", "text"]
     },
     {
+      "description": "Editor → runtime: a script module's file changed in the package's scripts/ folder; the runtime re-imports it.",
+      "properties": {
+        "type": { "const": "script.changed" },
+        "module": { "type": "string" }
+      },
+      "required": ["type", "module"]
+    },
+    {
+      "description": "Runtime → editor: a script raised an error and is paused until it is reloaded. file is relative to scripts/; file and line are empty and 0 when unknown.",
+      "properties": {
+        "type": { "const": "script.error" },
+        "module": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "module", "file", "line", "message"]
+    },
+    {
       "description": "Runtime → editor: the player paused or resumed from the game window (F6).",
       "properties": {
         "type": { "const": "state" },

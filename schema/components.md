@@ -16,6 +16,8 @@ mapping instead, from Phase 5).
 | `material` | `{"color": [r, g, b, a]}` | Alpha is optional (default 1). |
 | `camera` | `{"fov": 55, "near": 0.05, "far": 500}` | Vertical field of view in degrees. The scene's first camera is used. |
 | `light` | `{"type": "directional", "color": [r, g, b], "intensity": 1.0}` | A directional light shines along the entity's local −Z axis (after rotation). |
+| `script` | `{"module": "door"}` | A Python module in the project's `scripts/` folder that drives the entity (`"door"` is `scripts/door.py`, `"enemies.wolf"` is `scripts/enemies/wolf.py`). Its functions and the `midgard` API are described in `schema/midgard.pyi`. |
+| `trigger` | `{"size": [x, y, z]}` | A box centred on the entity (in its local units, so its scale applies; rotation is ignored) that reports when the player enters or leaves it: `on_trigger_enter` / `on_trigger_exit` in the entity's script, and in the player's. Default size 1 × 1 × 1. |
 | `player` | `{"speed": 4.0}` | The entity the player controls (metres per second). If a scene has a player, its first camera follows it in third person: look orbits, the wheel zooms, and movement is relative to the camera. |
 
 ## Scene settings

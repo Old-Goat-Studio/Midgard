@@ -22,6 +22,35 @@ InputMap Game::input_map() const {
 
 void Game::update(const Actions& actions, float dt) {
     third_person_->update(scene_, actions, dt);
+    update_triggers();
+}
+
+void Game::update_triggers() {
+    trigger_events_.clear();
+    entt::entity player = entt::null;
+    for (entt::entity e : scene_.registry.view<const Player>()) {
+        player = e;
+        break;
+    }
+    std::unordered_set<entt::entity> inside;
+    if (player != entt::null) {
+        const glm::vec3 p(scene_.world_matrix(player)[3]);
+        for (entt::entity e : scene_.registry.view<const Trigger>()) {
+            if (e == player) continue;
+            const glm::mat4 m = scene_.world_matrix(e);
+            const glm::vec3 scale(glm::length(glm::vec3(m[0])), glm::length(glm::vec3(m[1])),
+                                  glm::length(glm::vec3(m[2])));
+            const glm::vec3 half = scene_.registry.get<Trigger>(e).size * scale * 0.5f;
+            const glm::vec3 d = glm::abs(p - glm::vec3(m[3]));
+            if (d.x <= half.x && d.y <= half.y && d.z <= half.z) inside.insert(e);
+        }
+    }
+    for (entt::entity e : inside)
+        if (!inside_.contains(e)) trigger_events_.push_back({e, player, true});
+    for (entt::entity e : inside_)
+        if (!inside.contains(e) && scene_.registry.valid(e))
+            trigger_events_.push_back({e, player, false});
+    inside_ = std::move(inside);
 }
 
 render::MeshData Game::load_mesh(const std::string& asset) const {

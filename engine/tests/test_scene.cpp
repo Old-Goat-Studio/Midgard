@@ -318,3 +318,31 @@ TEST_CASE("scene settings and entity rows reload from the database") {
     game.reload_entity("e9_missing");  // not in the database: nothing to add, nothing to remove
     CHECK_FALSE(game.scene().registry.valid(game.scene().find("e9_missing")));
 }
+
+TEST_CASE("triggers report the player entering and leaving") {
+    TestPackage pkg({
+        {"e1_player", R"(NULL, '{"transform": {"position": [0, 0, 0]}, "player": {}}')"},
+        {"e2_trigger", R"(NULL, '{"transform": {"position": [3, 0, 0], "scale": [2, 1, 1]},
+                         "trigger": {"size": [1, 2, 2]}, "script": {"module": "door"}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    midgard::Scene& scene = game.scene();
+    const entt::entity player = scene.find("e1_player");
+    const entt::entity trigger = scene.find("e2_trigger");
+    CHECK(scene.registry.get<midgard::ScriptRef>(trigger).module == "door");
+
+    game.update(actions, 0.016f);
+    CHECK(game.trigger_events().empty());
+    scene.registry.get<midgard::Transform>(player).position = {2.1f, 0.0f, 0.0f};  // half width 1
+    game.update(actions, 0.016f);
+    REQUIRE(game.trigger_events().size() == 1);
+    CHECK(game.trigger_events()[0].entered);
+    CHECK(game.trigger_events()[0].trigger == trigger);
+    game.update(actions, 0.016f);
+    CHECK(game.trigger_events().empty());  // still inside: nothing new
+    scene.registry.get<midgard::Transform>(player).position = {0.0f, 0.0f, 0.0f};
+    game.update(actions, 0.016f);
+    REQUIRE(game.trigger_events().size() == 1);
+    CHECK_FALSE(game.trigger_events()[0].entered);
+}

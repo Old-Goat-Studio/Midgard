@@ -83,6 +83,10 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
                                            c.value("far", 500.0f));
     } else if (name == "player") {
         reg.emplace_or_replace<Player>(e, c.value("speed", 4.0f));
+    } else if (name == "script") {
+        reg.emplace_or_replace<ScriptRef>(e, c.at("module").get<std::string>());
+    } else if (name == "trigger") {
+        reg.emplace_or_replace<Trigger>(e, vec3(c, "size", glm::vec3(1.0f)));
     } else if (name == "light") {
         if (c.value("type", "directional") == "directional")
             reg.emplace_or_replace<DirectionalLight>(e, vec3(c, "color", glm::vec3(1.0f)),
@@ -105,11 +109,16 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<Player>(e);
     else if (name == "light")
         reg.remove<DirectionalLight>(e);
+    else if (name == "script")
+        reg.remove<ScriptRef>(e);
+    else if (name == "trigger")
+        reg.remove<Trigger>(e);
 }
 
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
-    reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, Player>(e);
+    reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, Player, ScriptRef,
+               Trigger>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }

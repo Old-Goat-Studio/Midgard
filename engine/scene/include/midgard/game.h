@@ -23,6 +23,13 @@ namespace midgard {
 // Mesh asset ids that are built into the engine rather than stored in game.pak.
 inline constexpr const char* kBuiltinCube = "builtin:cube";
 
+// The player entered or left a trigger this frame.
+struct TriggerEvent {
+    entt::entity trigger = entt::null;
+    entt::entity other = entt::null;  // the player
+    bool entered = true;              // false: left
+};
+
 class Game {
 public:
     // Opens <dir>/manifest.json, its database and (if present) game.pak, and loads the entry
@@ -63,13 +70,16 @@ public:
     // The package's input bindings (built-in defaults for packages older than schema 3).
     InputMap input_map() const;
 
-    // One frame of gameplay: the player moves and the third-person camera follows.
+    // One frame of gameplay: the player moves, the third-person camera follows, and triggers
+    // note who entered or left them (trigger_events, until the next update).
     void update(const Actions& actions, float dt);
+    const std::vector<TriggerEvent>& trigger_events() const { return trigger_events_; }
     const ThirdPersonCamera& third_person() const { return *third_person_; }
 
 private:
     render::MeshData load_mesh(const std::string& asset) const;
     void refresh_third_person(entt::entity edited);
+    void update_triggers();
 
     PackageInfo package_;
     std::unique_ptr<Pak> pak_;
@@ -77,6 +87,8 @@ private:
     std::unique_ptr<ThirdPersonCamera> third_person_;
     std::unordered_map<std::string, render::MeshId> meshes_;
     std::unordered_set<std::string> failed_meshes_;
+    std::unordered_set<entt::entity> inside_;  // triggers the player is in
+    std::vector<TriggerEvent> trigger_events_;
 };
 
 }  // namespace midgard

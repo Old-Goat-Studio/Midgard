@@ -57,6 +57,18 @@ struct Player {
     float speed = 4.0f;  // metres per second
 };
 
+// A Python module in the package's scripts/ folder that drives this entity ("door" is
+// scripts/door.py, "enemies.wolf" is scripts/enemies/wolf.py).
+struct ScriptRef {
+    std::string module;
+};
+
+// A box around the entity (size in its local units, so the entity's scale applies) that reports
+// when the player enters or leaves it.
+struct Trigger {
+    glm::vec3 size{1.0f};
+};
+
 struct SceneSettings {
     glm::vec3 sky{0.08f, 0.11f, 0.18f};
     glm::vec3 ambient{0.18f, 0.2f, 0.26f};

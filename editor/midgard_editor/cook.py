@@ -5,6 +5,7 @@
     <out>/{name}.config      the runtime part of {project}.config
     <out>/{name}.db          a read-only copy of {project}.db
     <out>/game.pak           cooked assets (zip): meshes as .glb
+    <out>/scripts/           the project's scripts/ (*.py), for entity scripts
 
 The manifest is checked against schema/manifest.schema.json before cooking finishes. When the
 engine's _midgard module is available, the engine then checks the package the way the runtime
@@ -135,11 +136,62 @@ def _cook_assets(project: Project, out: Path, warnings: list[str]) -> list[dict[
     return content
 
 
+SCRIPT_PREFIX = "script:"  # recook reports changed scripts as "script:<module>"
+
+
+def script_files(folder: Path) -> dict[str, Path]:
+    """Python modules in a scripts folder: module name ("enemies.wolf") -> file."""
+    found = {}
+    if folder.is_dir():
+        for file in sorted(folder.rglob("*.py")):
+            relative = file.relative_to(folder)
+            if "__pycache__" in relative.parts:
+                continue
+            parts = list(relative.with_suffix("").parts)
+            if parts[-1] == "__init__":
+                parts = parts[:-1]
+            if parts:
+                found[".".join(parts)] = file
+    return found
+
+
+def _script_hashes(folder: Path) -> dict[str, str]:
+    return {m: _sha256(f.read_bytes()) for m, f in script_files(folder).items()}
+
+
+def _cook_scripts(project: Project, out: Path) -> dict[str, str]:
+    """Copies the project's scripts/ into the package (only what changed, so a running game
+    sees each file change once). Returns module -> sha256."""
+    source, dest = project.root / "scripts", out / "scripts"
+    wanted = {f.relative_to(source): f for f in script_files(source).values()}
+    if dest.is_dir():
+        for old in [p for p in dest.rglob("*.py") if p.relative_to(dest) not in wanted]:
+            old.unlink()
+    for relative, file in wanted.items():
+        target = dest / relative
+        data = file.read_bytes()
+        if not target.is_file() or target.read_bytes() != data:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_suffix(".py.tmp")
+            tmp.write_bytes(data)
+            replace_file(tmp, target)
+    return _script_hashes(dest)
+
+
+def _script_warnings(project: Project, modules: dict[str, str]) -> list[str]:
+    return [f"Entity '{e.name}' uses script '{m}', which is not in the project's scripts/ "
+            "folder; it will not run."
+            for e in project.entities(MAIN_SCENE)
+            if (m := e.components.get("script", {}).get("module")) and m not in modules]
+
+
 def _write_manifest(project: Project, out: Path, target: dict[str, str],
                     content: list[dict[str, str]], schema_version: int) -> dict:
     content_hash = hashlib.sha256()
     for item in content:
         content_hash.update(item["sha256"].encode("ascii"))
+    for module, sha in sorted(_script_hashes(out / "scripts").items()):
+        content_hash.update(f"{module}={sha}".encode())
     content_hash.update(_sha256((out / f"{project.name}.db").read_bytes()).encode("ascii"))
     manifest = {
         "format": "midgard-package",
@@ -173,6 +225,7 @@ def cook(project: Project, out_dir: Path | None = None,
     warnings: list[str] = []
     schema_version = _cook_database(project, out)
     content = _cook_assets(project, out, warnings)
+    warnings += _script_warnings(project, _cook_scripts(project, out))
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
     (out / f"{project.name}.config").write_text(json.dumps(runtime_config, indent=2) + "\n",
                                                 "utf-8")
@@ -193,17 +246,22 @@ def _already_warned(engine_warning: str, warnings: list[str]) -> bool:
                                                           for w in warnings)
 
 
-def recook(project: Project, out: Path, database: bool = False,
-           assets: bool = False) -> tuple[CookResult, set[str]]:
-    """Hot reload: rewrites parts of an existing package (the database and/or game.pak) and its
-    manifest, without touching the rest. Returns the result and the ids of content whose data
-    changed (added, removed or different)."""
+def recook(project: Project, out: Path, database: bool = False, assets: bool = False,
+           scripts: bool = False) -> tuple[CookResult, set[str]]:
+    """Hot reload: rewrites parts of an existing package (the database, game.pak and/or the
+    scripts) and its manifest, without touching the rest. Returns the result and the ids of
+    content whose data changed (added, removed or different); scripts as "script:<module>"."""
     old = json.loads((out / "manifest.json").read_text("utf-8"))
     warnings: list[str] = []
     schema_version = _cook_database(project, out) if database else old["schema_version"]
     content = _cook_assets(project, out, warnings) if assets else old["content"]
     before = {c["id"]: c["sha256"] for c in old["content"]}
     after = {c["id"]: c["sha256"] for c in content}
+    if scripts:
+        before |= {SCRIPT_PREFIX + m: s for m, s in _script_hashes(out / "scripts").items()}
+        cooked = _cook_scripts(project, out)
+        after |= {SCRIPT_PREFIX + m: s for m, s in cooked.items()}
+        warnings += _script_warnings(project, cooked)
     changed = {i for i in before.keys() | after.keys() if before.get(i) != after.get(i)}
     manifest = _write_manifest(project, out, old["target"], content, schema_version)
     return CookResult(out, manifest, warnings), changed
