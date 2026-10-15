@@ -24,6 +24,9 @@
     "vulkan-memory-allocator",
     "glm",
     "stb",
+    "miniz",
+    "cgltf",
+    "entt",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]
 }

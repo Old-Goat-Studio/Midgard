@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QProcess, QRect, Qt
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -32,12 +32,14 @@ from PySide6.QtWidgets import (
 
 from . import APP_NAME, DESCRIPTION, ICON_PATH
 from . import layouts as layout_store
-from .about import AboutDialog, engine_info
+from .about import AboutDialog, engine_info, runtime_candidates
 from .backup import BackupScheduler
+from .cook import CookError, cook
 from .dialogs import NewProjectDialog, PreferencesDialog
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.project_browser import ProjectBrowser
+from .docks.scene_panel import ScenePanel
 from .project import WORLD_MODES, Project, ProjectError
 from .settings import Settings
 from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
@@ -45,7 +47,8 @@ from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
 log = logging.getLogger(LOGGER_NAME)
 
 # objectName -> title. Object names are the keys in saved layouts, so never rename them.
-PANELS = {"project": "Project", "inspector": "Inspector", "log": "Log", "history": "History"}
+PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
+          "history": "History"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -131,15 +134,18 @@ class MainWindow(QMainWindow):
 
         self.undo_group = QUndoGroup(self)
         self.browser = ProjectBrowser()
+        self.scene_panel = ScenePanel()
+        self.runtime_process: QProcess | None = None
         self.inspector = Inspector()
         self.log_panel = LogPanel()
         self.history = QUndoView(self.undo_group)
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
+        self.scene_panel.entity_selected.connect(self.inspector.show_entity)
         self.inspector.setMinimumWidth(340)
         self.browser.setMinimumWidth(220)
-        widgets = {"project": self.browser, "inspector": self.inspector, "log": self.log_panel,
-                   "history": self.history}
+        widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,
+                   "log": self.log_panel, "history": self.history}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -160,7 +166,9 @@ class MainWindow(QMainWindow):
     # ---- layouts -----------------------------------------------------------------------
     def _arrange_default(self) -> None:
         area = QtAds.DockWidgetArea
-        self.dock_manager.addDockWidget(area.LeftDockWidgetArea, self.panels["project"])
+        left = self.dock_manager.addDockWidget(area.LeftDockWidgetArea, self.panels["project"])
+        self.dock_manager.addDockWidgetTabToArea(self.panels["scene"], left)
+        self.panels["scene"].setAsCurrentTab()
         self.dock_manager.addDockWidget(area.RightDockWidgetArea, self.panels["inspector"])
         bottom = self.dock_manager.addDockWidget(area.BottomDockWidgetArea, self.panels["log"])
         self.dock_manager.addDockWidgetTabToArea(self.panels["history"], bottom)
@@ -257,6 +265,10 @@ class MainWindow(QMainWindow):
         edit.addSeparator()
         add_action(edit, "&Preferences…", lambda: PreferencesDialog(self.settings, self).exec(),
                    QKeySequence.StandardKey.Preferences)
+
+        build = bar.addMenu("&Build")
+        self.cook_action = add_action(build, "&Cook", self.cook_project, "Ctrl+B")
+        self.cook_run_action = add_action(build, "Cook and &Run", self.cook_and_run, "F5")
 
         view = bar.addMenu("&View")
         self.themes_menu = view.addMenu("&Themes")
@@ -371,7 +383,9 @@ class MainWindow(QMainWindow):
         self.project = project
         self.browser.set_project(project)
         self.inspector.set_project(project)
-        self.close_action.setEnabled(project is not None)
+        self.scene_panel.set_project(project)
+        for action in (self.close_action, self.cook_action, self.cook_run_action):
+            action.setEnabled(project is not None)
         if project is None:
             self.setWindowTitle(APP_NAME)
             self.start.show_welcome(self.settings.recent_projects())
@@ -387,6 +401,44 @@ class MainWindow(QMainWindow):
         project.string_changed.connect(lambda *_: self.start.show_project(project))
         project.config_changed.connect(lambda *_: self.start.show_project(project))
 
+    # ---- build -------------------------------------------------------------------------
+    def cook_project(self) -> Path | None:
+        """Cook the open project for this machine. Returns the package folder."""
+        if self.project is None:
+            return None
+        try:
+            result = cook(self.project)
+        except (CookError, OSError) as e:
+            QMessageBox.warning(self, "Cook", str(e))
+            log.error("Cook failed: %s", e)
+            return None
+        for warning in result.warnings:
+            log.warning(warning)
+        log.info("Cooked %s to %s (%d asset(s))", self.project.name, result.out_dir,
+                 len(result.manifest["content"]))
+        return result.out_dir
+
+    def cook_and_run(self) -> None:
+        package = self.cook_project()
+        if package is None:
+            return
+        runtimes = runtime_candidates()
+        if not runtimes:
+            QMessageBox.warning(self, "Cook and Run",
+                                "The engine runtime was not found. Build the engine first "
+                                "(see the README), or use a packaged editor.")
+            return
+        if self.runtime_process is not None:
+            self.runtime_process.kill()
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.readyReadStandardOutput.connect(
+            lambda: [log.info("runtime: %s", line) for line in
+                     bytes(process.readAllStandardOutput()).decode(errors="replace").splitlines()])
+        process.finished.connect(lambda code, _status: log.info("Runtime exited (%d).", code))
+        process.start(str(runtimes[0]), ["--package", str(package)])
+        self.runtime_process = process
+        log.info("Running %s", package)
     # ---- shutdown ----------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
         self.settings.set("layout_last", self._layout_record())

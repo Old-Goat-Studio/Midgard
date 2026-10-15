@@ -4,6 +4,8 @@
 //   midgard_runtime --version
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH]
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH]   (offscreen, no window)
+//
+// With --package, the runtime shows the package's entry scene; without it, a built-in demo.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
@@ -11,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,7 +21,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "midgard/package.h"
+#include "midgard/game.h"
 #include "midgard/render/renderer.h"
 #include "midgard/version.h"
 
@@ -48,51 +51,80 @@ bool parse_size(std::string_view text, uint32_t& w, uint32_t& h) {
     return true;
 }
 
-// The built-in demo scene, used until a package's own scene is loaded (Phase 2, task 2).
-struct Demo {
-    render::MeshId cube = 0;
+// What the runtime draws: a package's scene, or the built-in demo.
+class Source {
+public:
+    virtual ~Source() = default;
+    virtual void upload(render::Renderer& renderer) = 0;
+    virtual std::vector<render::DrawItem> draws(float seconds) const = 0;
+    virtual render::Camera camera(float aspect) const = 0;
+    virtual render::Light light() const = 0;
+    virtual glm::vec4 sky() const = 0;
+};
 
-    std::vector<render::DrawItem> draws(float seconds) const {
+class DemoSource : public Source {
+public:
+    void upload(render::Renderer& renderer) override {
+        cube_ = renderer.upload_mesh(render::make_cube());
+    }
+    std::vector<render::DrawItem> draws(float seconds) const override {
         glm::mat4 spin = glm::rotate(glm::mat4(1.0f), seconds * 0.6f, glm::vec3(0, 1, 0));
-        glm::mat4 cube_model = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.5f, 0)) * spin;
+        glm::mat4 cube = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.5f, 0)) * spin;
         glm::mat4 ground = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0, -0.05f, 0)),
                                       glm::vec3(6.0f, 0.1f, 6.0f));
         return {
-            {cube, cube_model, glm::vec4(0.79f, 0.64f, 0.15f, 1.0f)},  // knotwork gold
-            {cube, ground, glm::vec4(0.22f, 0.32f, 0.18f, 1.0f)},      // moss
+            {cube_, cube, glm::vec4(0.79f, 0.64f, 0.15f, 1.0f)},    // knotwork gold
+            {cube_, ground, glm::vec4(0.22f, 0.32f, 0.18f, 1.0f)},  // moss
         };
     }
+    render::Camera camera(float aspect) const override {
+        render::Camera c;
+        c.view =
+            glm::lookAt(glm::vec3(2.6f, 2.0f, 3.4f), glm::vec3(0, 0.4f, 0), glm::vec3(0, 1, 0));
+        c.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, 200.0f);
+        return c;
+    }
+    render::Light light() const override { return {}; }
+    glm::vec4 sky() const override { return {0.08f, 0.11f, 0.18f, 1.0f}; }  // night blue
+
+private:
+    render::MeshId cube_ = 0;
 };
 
-render::Camera demo_camera(uint32_t width, uint32_t height) {
-    render::Camera camera;
-    camera.view =
-        glm::lookAt(glm::vec3(2.6f, 2.0f, 3.4f), glm::vec3(0, 0.4f, 0), glm::vec3(0, 1, 0));
-    camera.projection =
-        render::perspective(glm::radians(55.0f), float(width) / float(height), 0.05f, 200.0f);
-    return camera;
+class GameSource : public Source {
+public:
+    explicit GameSource(const std::string& dir) : game_(dir) {
+        const midgard::Manifest& m = game_.package().manifest;
+        std::printf("%s %s: scene '%s', %zu entities, built by editor %s\n", m.game_name.c_str(),
+                    m.game_version.c_str(), m.entry_scene.c_str(),
+                    game_.scene().registry.view<midgard::EntityInfo>().size(),
+                    m.editor_build.c_str());
+    }
+    void upload(render::Renderer& renderer) override { game_.upload_meshes(renderer); }
+    std::vector<render::DrawItem> draws(float) const override { return game_.draws(); }
+    render::Camera camera(float aspect) const override { return game_.camera(aspect); }
+    render::Light light() const override { return game_.scene().light(); }
+    glm::vec4 sky() const override { return {game_.scene().settings.sky, 1.0f}; }
+
+private:
+    midgard::Game game_;
+};
+
+bool want_validation() {
+    return std::getenv("MIDGARD_VULKAN_VALIDATION") != nullptr;
 }
 
-const glm::vec4 kSky(0.08f, 0.11f, 0.18f, 1.0f);  // night blue
-
-void describe_package(const std::string& dir) {
-    const midgard::PackageInfo info = midgard::open_package(dir);
-    const midgard::Manifest& m = info.manifest;
-    std::printf("%s %s: scene '%s', schema %d, %zu content file(s), built by editor %s\n",
-                m.game_name.c_str(), m.game_version.c_str(), m.entry_scene.c_str(),
-                info.database_schema_version, m.content.size(), m.editor_build.c_str());
-}
-
-int run_screenshot(const Options& opt) {
+int run_screenshot(const Options& opt, Source& source) {
     render::RendererDesc desc;
     desc.offscreen = true;
     desc.width = opt.width;
     desc.height = opt.height;
-    desc.validation = std::getenv("MIDGARD_VULKAN_VALIDATION") != nullptr;
+    desc.validation = want_validation();
     render::Renderer renderer(desc);
-    Demo demo{renderer.upload_mesh(render::make_cube())};
-    const auto draws = demo.draws(0.6f);
-    renderer.render_frame(demo_camera(opt.width, opt.height), render::Light{}, draws, kSky);
+    source.upload(renderer);
+    const auto draws = source.draws(0.6f);
+    renderer.render_frame(source.camera(float(opt.width) / float(opt.height)), source.light(),
+                          draws, source.sky());
     if (!render::write_png(*opt.screenshot, opt.width, opt.height, renderer.read_pixels())) {
         std::fprintf(stderr, "error: could not write %s\n", opt.screenshot->c_str());
         return 1;
@@ -102,7 +134,7 @@ int run_screenshot(const Options& opt) {
     return 0;
 }
 
-int run_window(const Options& opt) {
+int run_window(const Options& opt, Source& source) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::fprintf(stderr, "error: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -130,10 +162,10 @@ int run_window(const Options& opt) {
         SDL_GetWindowSizeInPixels(window, &pw, &ph);
         desc.width = uint32_t(pw);
         desc.height = uint32_t(ph);
-        desc.validation = std::getenv("MIDGARD_VULKAN_VALIDATION") != nullptr;
+        desc.validation = want_validation();
         render::Renderer renderer(desc);
         std::printf("Rendering on %s\n", renderer.device_name().c_str());
-        Demo demo{renderer.upload_mesh(render::make_cube())};
+        source.upload(renderer);
 
         const auto start = std::chrono::steady_clock::now();
         bool running = true;
@@ -153,9 +185,9 @@ int run_window(const Options& opt) {
             }
             const float t =
                 std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count();
-            const auto draws = demo.draws(t);
-            if (renderer.render_frame(demo_camera(renderer.width(), renderer.height()),
-                                      render::Light{}, draws, kSky))
+            const auto draws = source.draws(t);
+            const float aspect = float(renderer.width()) / float(renderer.height());
+            if (renderer.render_frame(source.camera(aspect), source.light(), draws, source.sky()))
                 ++frame;
         }
     } catch (const std::exception& e) {
@@ -192,8 +224,12 @@ int main(int argc, char** argv) {
         }
     }
     try {
-        if (opt.package_dir) describe_package(*opt.package_dir);
-        return opt.screenshot ? run_screenshot(opt) : run_window(opt);
+        std::unique_ptr<Source> source;
+        if (opt.package_dir)
+            source = std::make_unique<GameSource>(*opt.package_dir);
+        else
+            source = std::make_unique<DemoSource>();
+        return opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, *source);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());
         return 1;

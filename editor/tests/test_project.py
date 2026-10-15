@@ -16,7 +16,7 @@ def test_create_makes_config_database_and_title(project):
     assert config["max_players"] == 4
     assert project.schema_version() == len(contract.migrations())
     assert project.string(GAME_TITLE_KEY) == "Hello Cube"
-    assert (project.root / ".gitignore").read_text("utf-8") == ".midgard/\n"
+    assert (project.root / ".gitignore").read_text("utf-8") == ".midgard/\nbuild/\n"
 
 
 @pytest.mark.parametrize("name", ["", "1Game", "my game", "a/b", "x" * 65])

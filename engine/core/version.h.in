@@ -14,6 +14,6 @@ inline constexpr int kFormatMajor = 1;
 
 // Range of database schema versions (PRAGMA user_version) this engine reads.
 inline constexpr int kSchemaMin = 1;
-inline constexpr int kSchemaMax = 1;
+inline constexpr int kSchemaMax = 2;
 
 }  // namespace midgard

@@ -6,6 +6,7 @@ from typing import Any
 from PySide6.QtGui import QUndoCommand
 
 from .project import Project
+from .scene_model import Entity
 
 
 class SetConfigCommand(QUndoCommand):
@@ -36,3 +37,44 @@ class SetStringCommand(QUndoCommand):
 
     def undo(self) -> None:
         self.project.set_string(self.key, self.old, self.context)
+
+
+class AddEntityCommand(QUndoCommand):
+    def __init__(self, project: Project, entity: Entity):
+        super().__init__(f"Add {entity.name}")
+        self.project, self.entity = project, entity
+
+    def redo(self) -> None:
+        self.project.put_entity(self.entity)
+
+    def undo(self) -> None:
+        self.project.delete_entity(self.entity.id)
+
+
+class DeleteEntityCommand(QUndoCommand):
+    def __init__(self, project: Project, entity: Entity):
+        super().__init__(f"Delete {entity.name}")
+        self.project, self.entity = project, entity
+
+    def redo(self) -> None:
+        self.project.delete_entity(self.entity.id)
+
+    def undo(self) -> None:
+        self.project.put_entity(self.entity)
+
+
+class SetEntityCommand(QUndoCommand):
+    """Replace an entity's name and components (one Inspector edit)."""
+
+    def __init__(self, project: Project, new: Entity, label: str):
+        super().__init__(f"Change {new.name} {label}".strip())
+        old = project.entity(new.id)
+        if old is None:
+            raise KeyError(new.id)
+        self.project, self.old, self.new = project, old, new
+
+    def redo(self) -> None:
+        self.project.put_entity(self.new)
+
+    def undo(self) -> None:
+        self.project.put_entity(self.old)

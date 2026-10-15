@@ -35,7 +35,7 @@ def test_entity_components_must_be_json(tmp_path):
     contract.migrate(db)
     con = sqlite3.connect(db)
     con.execute("INSERT INTO string VALUES ('scn_main.name', 'Main', '')")
-    con.execute("INSERT INTO scene VALUES ('scn_main', 'scn_main.name')")
+    con.execute("INSERT INTO scene (id, name_key) VALUES ('scn_main', 'scn_main.name')")
     with pytest.raises(sqlite3.IntegrityError):
         con.execute("INSERT INTO entity (id, scene, name, components) "
                     "VALUES ('e1', 'scn_main', 'Cube', 'not json')")

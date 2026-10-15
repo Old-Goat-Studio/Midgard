@@ -71,11 +71,28 @@ target_link_libraries(midgard_render
     PRIVATE volk::volk Vulkan::Headers GPUOpen::VulkanMemoryAllocator midgard_options
 )
 
+# ---- scene: game.pak, glTF meshes and the EnTT scene built from the database ----------------
+find_package(miniz CONFIG REQUIRED)
+find_package(EnTT CONFIG REQUIRED)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_path(CGLTF_INCLUDE_DIR cgltf.h REQUIRED)
+add_library(midgard_scene STATIC
+    scene/src/pak.cpp
+    scene/src/gltf.cpp
+    scene/src/scene.cpp
+    scene/src/game.cpp
+)
+target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
+target_link_libraries(midgard_scene
+    PUBLIC midgard_core midgard_render EnTT::EnTT glm::glm
+    PRIVATE miniz::miniz unofficial::sqlite3::sqlite3 nlohmann_json::nlohmann_json midgard_options
+)
+
 if(MIDGARD_BUILD_PROGRAMS)
     find_package(SDL3 CONFIG REQUIRED)
     add_executable(midgard_runtime runtime/main.cpp)
     target_link_libraries(midgard_runtime PRIVATE
-        midgard_core midgard_render SDL3::SDL3 Vulkan::Headers midgard_options)
+        midgard_core midgard_render midgard_scene SDL3::SDL3 Vulkan::Headers midgard_options)
     if(WIN32)
         set_target_properties(midgard_runtime PROPERTIES WIN32_EXECUTABLE OFF)  # keep a console for --version
     endif()
@@ -92,9 +109,11 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_manifest.cpp
         tests/test_package.cpp
         tests/test_mesh_data.cpp
+        tests/test_scene.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
-        midgard_core midgard_render midgard_options doctest::doctest unofficial::sqlite3::sqlite3)
+        midgard_core midgard_render midgard_scene midgard_options doctest::doctest
+        unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
     target_compile_definitions(midgard_tests PRIVATE
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema")
     if(NOT CMAKE_CROSSCOMPILING)

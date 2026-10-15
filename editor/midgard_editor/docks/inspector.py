@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QSpinBox, QStacked
 
 from ..project import GAME_TITLE_KEY, WORLD_MODES, Project
 from ..undo import SetConfigCommand, SetStringCommand
+from .entity_form import EntityForm
 
 
 class ProjectSettingsForm(QWidget):
@@ -98,8 +99,28 @@ class Inspector(QWidget):
         self.stack.addWidget(self.empty)
         self.stack.addWidget(self.files)
         self.settings: ProjectSettingsForm | None = None
+        self.entity_form: EntityForm | None = None
+
+    def _drop_entity_form(self) -> None:
+        if self.entity_form is not None:
+            self.stack.removeWidget(self.entity_form)
+            self.entity_form.deleteLater()
+            self.entity_form = None
+
+    def show_entity(self, entity_id: str | None) -> None:
+        """An entity selected in the Scene panel (None: back to the project settings)."""
+        self._drop_entity_form()
+        if self.settings is None:
+            return
+        if entity_id is None or self.settings.project.entity(entity_id) is None:
+            self.stack.setCurrentWidget(self.settings)
+            return
+        self.entity_form = EntityForm(self.settings.project, entity_id)
+        self.stack.addWidget(self.entity_form)
+        self.stack.setCurrentWidget(self.entity_form)
 
     def set_project(self, project: Project | None) -> None:
+        self._drop_entity_form()
         if self.settings is not None:
             self.stack.removeWidget(self.settings)
             self.settings.deleteLater()

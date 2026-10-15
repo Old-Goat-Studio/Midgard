@@ -18,6 +18,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QUndoStack
 
 from . import contract
+from .scene_model import DEFAULT_SETTINGS, MAIN_SCENE, Entity, default_entities, row_to_entity
 from .version import VERSION
 
 CONFIG_FORMAT = 1
@@ -35,6 +36,7 @@ class Project(QObject):
 
     config_changed = Signal(str)  # key
     string_changed = Signal(str)  # string key
+    entities_changed = Signal(str)  # entity id, or "" when entities were added or removed
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
         super().__init__()
@@ -89,7 +91,8 @@ class Project(QObject):
             con.execute("INSERT INTO string (key, english, context) VALUES (?, ?, ?)",
                         (GAME_TITLE_KEY, game_title.strip() or name,
                          "The game's title, shown to players"))
-        (project.root / ".gitignore").write_text(".midgard/\n", encoding="utf-8")
+        project.ensure_main_scene()
+        (project.root / ".gitignore").write_text(".midgard/\nbuild/\n", encoding="utf-8")
         return project
 
     @classmethod
@@ -111,6 +114,7 @@ class Project(QObject):
             contract.migrate(project.db_path)  # upgrades projects made by older editors
         except (ValueError, sqlite3.Error) as e:
             raise ProjectError(str(e)) from e
+        project.ensure_main_scene()  # projects made before Phase 2 have no scene yet
         return project
 
     # ---- config ------------------------------------------------------------------------
@@ -163,3 +167,53 @@ class Project(QObject):
     @property
     def game_title(self) -> str:
         return self.string(GAME_TITLE_KEY) or self.name
+
+    # ---- scenes and entities ---------------------------------------------------------------
+    def ensure_main_scene(self) -> None:
+        """Create the main scene with its default entities if the project has none."""
+        with self.connect() as con:
+            if con.execute("SELECT 1 FROM scene WHERE id = ?", (MAIN_SCENE,)).fetchone():
+                return
+            con.execute("INSERT OR IGNORE INTO string (key, english, context) VALUES (?, ?, ?)",
+                        (f"{MAIN_SCENE}.name", "Main", "Scene name"))
+            con.execute("INSERT INTO scene (id, name_key, settings) VALUES (?, ?, ?)",
+                        (MAIN_SCENE, f"{MAIN_SCENE}.name", json.dumps(DEFAULT_SETTINGS)))
+            for e in default_entities():
+                con.execute("INSERT INTO entity (id, scene, name, parent, components) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (e.id, MAIN_SCENE, e.name, e.parent, json.dumps(e.components)))
+
+    def entities(self, scene: str = MAIN_SCENE) -> list[Entity]:
+        with self.connect() as con:
+            rows = con.execute("SELECT id, name, parent, components FROM entity "
+                               "WHERE scene = ? ORDER BY id", (scene,)).fetchall()
+        return [row_to_entity(r) for r in rows]
+
+    def entity(self, entity_id: str) -> Entity | None:
+        with self.connect() as con:
+            row = con.execute("SELECT id, name, parent, components FROM entity WHERE id = ?",
+                              (entity_id,)).fetchone()
+        return row_to_entity(row) if row else None
+
+    def next_entity_id(self) -> str:
+        """Ids sort in creation order ("first camera" means the oldest one)."""
+        with self.connect() as con:
+            ids = [r[0] for r in con.execute("SELECT id FROM entity")]
+        numbers = [int(i[1:]) for i in ids if i[:1] == "e" and i[1:].isdigit()]
+        return f"e{max(numbers, default=0) + 1:06d}"
+
+    def put_entity(self, entity: Entity, scene: str = MAIN_SCENE) -> None:
+        """Insert or replace an entity. Use the commands in undo.py from the UI."""
+        with self.connect() as con:
+            con.execute("INSERT INTO entity (id, scene, name, parent, components) "
+                        "VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                        "name = excluded.name, parent = excluded.parent, "
+                        "components = excluded.components",
+                        (entity.id, scene, entity.name, entity.parent,
+                         json.dumps(entity.components)))
+        self.entities_changed.emit(entity.id)
+
+    def delete_entity(self, entity_id: str) -> None:
+        with self.connect() as con:
+            con.execute("DELETE FROM entity WHERE id = ?", (entity_id,))
+        self.entities_changed.emit("")
