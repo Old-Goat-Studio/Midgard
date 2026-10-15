@@ -83,6 +83,7 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
         reg.emplace<CameraLens>(e, cam.value("fov", 55.0f), cam.value("near", 0.05f),
                                 cam.value("far", 500.0f));
     }
+    if (c.contains("player")) reg.emplace<Player>(e, c.at("player").value("speed", 4.0f));
     if (c.contains("light") && c.at("light").value("type", "directional") == "directional") {
         const json& l = c.at("light");
         reg.emplace<DirectionalLight>(e, vec3(l, "color", glm::vec3(1.0f)),

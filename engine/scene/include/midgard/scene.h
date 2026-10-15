@@ -51,6 +51,11 @@ struct DirectionalLight {
     float intensity = 1.0f;
 };
 
+// The entity the player controls. The first camera follows it in third person.
+struct Player {
+    float speed = 4.0f;  // metres per second
+};
+
 struct SceneSettings {
     glm::vec3 sky{0.08f, 0.11f, 0.18f};
     glm::vec3 ambient{0.18f, 0.2f, 0.26f};

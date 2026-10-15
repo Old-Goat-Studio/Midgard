@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +23,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "midgard/game.h"
+#include "midgard/input.h"
 #include "midgard/render/renderer.h"
 #include "midgard/version.h"
 
@@ -60,6 +62,9 @@ public:
     virtual render::Camera camera(float aspect) const = 0;
     virtual render::Light light() const = 0;
     virtual glm::vec4 sky() const = 0;
+    virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
+    virtual void update(const midgard::Actions&, float) {}
+    virtual bool wants_mouse_look() const { return false; }
 };
 
 class DemoSource : public Source {
@@ -105,10 +110,53 @@ public:
     render::Camera camera(float aspect) const override { return game_.camera(aspect); }
     render::Light light() const override { return game_.scene().light(); }
     glm::vec4 sky() const override { return {game_.scene().settings.sky, 1.0f}; }
+    midgard::InputMap input_map() const override { return game_.input_map(); }
+    void update(const midgard::Actions& actions, float dt) override { game_.update(actions, dt); }
+    bool wants_mouse_look() const override { return game_.third_person().active(); }
 
 private:
     midgard::Game game_;
 };
+
+constexpr float kStickDeadZone = 0.15f;
+
+// SDL events -> control names (schema/migrations/0003_input.sql). Keys use scancodes, so WASD
+// stays in place on any keyboard layout.
+void feed(midgard::Actions& actions, const SDL_Event& e) {
+    switch (e.type) {
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            if (!e.key.repeat)
+                actions.set("keyboard", SDL_GetScancodeName(e.key.scancode),
+                            e.type == SDL_EVENT_KEY_DOWN ? 1.0f : 0.0f);
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            actions.add_delta("mouse", "delta_x", e.motion.xrel);
+            actions.add_delta("mouse", "delta_y", e.motion.yrel);
+            break;
+        case SDL_EVENT_MOUSE_WHEEL:
+            actions.add_delta("mouse", "wheel", e.wheel.y);
+            break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+            SDL_OpenGamepad(e.gdevice.which);
+            break;
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+            float v = float(e.gaxis.value) / 32767.0f;
+            if (v > -kStickDeadZone && v < kStickDeadZone) v = 0.0f;
+            if (const char* name = SDL_GetGamepadStringForAxis(SDL_GamepadAxis(e.gaxis.axis)))
+                actions.set("gamepad", name, v);
+            break;
+        }
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            if (const char* name =
+                    SDL_GetGamepadStringForButton(SDL_GamepadButton(e.gbutton.button)))
+                actions.set("gamepad", name, e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ? 1.0f : 0.0f);
+            break;
+        default:
+            break;
+    }
+}
 
 bool want_validation() {
     return std::getenv("MIDGARD_VULKAN_VALIDATION") != nullptr;
@@ -135,7 +183,7 @@ int run_screenshot(const Options& opt, Source& source) {
 }
 
 int run_window(const Options& opt, Source& source) {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "error: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
@@ -166,16 +214,19 @@ int run_window(const Options& opt, Source& source) {
         render::Renderer renderer(desc);
         std::printf("Rendering on %s\n", renderer.device_name().c_str());
         source.upload(renderer);
+        midgard::Actions actions(source.input_map());
+        if (source.wants_mouse_look()) SDL_SetWindowRelativeMouseMode(window, true);
 
         const auto start = std::chrono::steady_clock::now();
+        auto last = start;
         bool running = true;
         long frame = 0;
         while (running && (opt.frames < 0 || frame < opt.frames)) {
+            actions.begin_frame();
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
                 if (e.type == SDL_EVENT_QUIT) running = false;
-                // Esc to quit is temporary: the input actions layer (task 3) replaces raw keys.
-                if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
+                feed(actions, e);
                 if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
                     renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
             }
@@ -183,8 +234,13 @@ int run_window(const Options& opt, Source& source) {
                 SDL_Delay(50);
                 continue;
             }
-            const float t =
-                std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count();
+            // The menu action quits until in-game menus exist (Phase 6).
+            if (actions.pressed("menu")) running = false;
+            const auto now = std::chrono::steady_clock::now();
+            const float dt = std::min(std::chrono::duration<float>(now - last).count(), 0.1f);
+            last = now;
+            source.update(actions, dt);
+            const float t = std::chrono::duration<float>(now - start).count();
             const auto draws = source.draws(t);
             const float aspect = float(renderer.width()) / float(renderer.height());
             if (renderer.render_frame(source.camera(aspect), source.light(), draws, source.sky()))

@@ -8,10 +8,12 @@
 #include <unordered_map>
 #include <vector>
 
+#include "midgard/input.h"
 #include "midgard/package.h"
 #include "midgard/pak.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
+#include "midgard/third_person.h"
 
 namespace midgard {
 
@@ -37,12 +39,20 @@ public:
     // The scene's camera, or a default view of the origin if it has none.
     render::Camera camera(float aspect) const;
 
+    // The package's input bindings (built-in defaults for packages older than schema 3).
+    InputMap input_map() const;
+
+    // One frame of gameplay: the player moves and the third-person camera follows.
+    void update(const Actions& actions, float dt);
+    const ThirdPersonCamera& third_person() const { return *third_person_; }
+
 private:
     render::MeshData load_mesh(const std::string& asset) const;
 
     PackageInfo package_;
     std::unique_ptr<Pak> pak_;
     Scene scene_;
+    std::unique_ptr<ThirdPersonCamera> third_person_;
     std::unordered_map<std::string, render::MeshId> meshes_;
 };
 

@@ -12,6 +12,15 @@ Game::Game(const std::filesystem::path& package_dir)
       scene_(Scene::load(package_dir / package_.manifest.database, package_.manifest.entry_scene)) {
     const auto pak_file = package_dir / "game.pak";
     if (std::filesystem::is_regular_file(pak_file)) pak_ = std::make_unique<Pak>(pak_file);
+    third_person_ = std::make_unique<ThirdPersonCamera>(scene_);
+}
+
+InputMap Game::input_map() const {
+    return InputMap::load(package_.root / package_.manifest.database);
+}
+
+void Game::update(const Actions& actions, float dt) {
+    third_person_->update(scene_, actions, dt);
 }
 
 render::MeshData Game::load_mesh(const std::string& asset) const {

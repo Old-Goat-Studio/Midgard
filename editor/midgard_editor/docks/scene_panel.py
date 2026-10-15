@@ -16,11 +16,11 @@ from ..project import Project
 from ..scene_model import Entity
 from ..undo import AddEntityCommand, DeleteEntityCommand
 
-ICONS = {"camera": "🎥", "light": "☀", "mesh": "■"}
+ICONS = {"player": "🧍", "camera": "🎥", "light": "☀", "mesh": "■"}
 
 
 def describe(entity: Entity) -> str:
-    kinds = [ICONS[k] for k in ("camera", "light", "mesh") if k in entity.components]
+    kinds = [ICONS[k] for k in ICONS if k in entity.components]
     return f"{' '.join(kinds) or '·'}  {entity.name}"
 
 

@@ -71,6 +71,11 @@ target_link_libraries(midgard_render
     PRIVATE volk::volk Vulkan::Headers GPUOpen::VulkanMemoryAllocator midgard_options
 )
 
+# ---- input: the actions layer (platform independent) ----------------------------------------
+add_library(midgard_input STATIC input/src/input.cpp)
+target_include_directories(midgard_input PUBLIC input/include)
+target_link_libraries(midgard_input PRIVATE unofficial::sqlite3::sqlite3 midgard_options)
+
 # ---- scene: game.pak, glTF meshes and the EnTT scene built from the database ----------------
 find_package(miniz CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
@@ -81,10 +86,11 @@ add_library(midgard_scene STATIC
     scene/src/gltf.cpp
     scene/src/scene.cpp
     scene/src/game.cpp
+    scene/src/third_person.cpp
 )
 target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_link_libraries(midgard_scene
-    PUBLIC midgard_core midgard_render EnTT::EnTT glm::glm
+    PUBLIC midgard_core midgard_render midgard_input EnTT::EnTT glm::glm
     PRIVATE miniz::miniz unofficial::sqlite3::sqlite3 nlohmann_json::nlohmann_json midgard_options
 )
 
@@ -110,6 +116,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_package.cpp
         tests/test_mesh_data.cpp
         tests/test_scene.cpp
+        tests/test_input.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_options doctest::doctest

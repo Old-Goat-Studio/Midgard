@@ -48,7 +48,8 @@ def default_entities() -> list[Entity]:
             "mesh": {"asset": "prim_cube"}, "material": {"color": [0.22, 0.32, 0.18, 1.0]}}),
         Entity("e000004", "Cube", None, {
             "transform": {"position": [0.0, 0.5, 0.0]},
-            "mesh": {"asset": "prim_cube"}, "material": {"color": [0.79, 0.64, 0.15, 1.0]}}),
+            "mesh": {"asset": "prim_cube"}, "material": {"color": [0.79, 0.64, 0.15, 1.0]},
+            "player": {"speed": 4.0}}),  # the camera follows it in third person
     ]
 
 
