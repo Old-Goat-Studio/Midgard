@@ -50,6 +50,16 @@ python tools/package.py                          # packaged editor in build/dist
 
 **Engine** (CMake 3.25+, Ninja, and GCC 13+ or Visual Studio 2022):
 
+On Linux, SDL needs the X11 and Wayland development packages, or it builds without a window
+system and the runtime fails with "No available video device". On Debian or Ubuntu:
+
+```sh
+sudo apt install pkg-config libx11-dev libxext-dev libwayland-dev libxkbcommon-dev libegl-dev wayland-protocols
+```
+
+If vcpkg already built SDL without them, delete `build/linux-release/vcpkg_installed` and configure
+again with `VCPKG_BINARY_SOURCES=clear`, so the cached copy isn't reused.
+
 ```sh
 python tools/setup_vcpkg.py                 # fetches vcpkg at the pinned version into .tools/
 python tools/setup_python.py                # fetches the CPython that games embed (scripts)
