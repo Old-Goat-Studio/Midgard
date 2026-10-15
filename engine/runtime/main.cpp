@@ -2,6 +2,7 @@
 // midgard_runtime: the game executable.
 //
 //   midgard_runtime --version
+//   midgard_runtime --check-python      start the game's Python and import the standard library
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH]   (offscreen, no window)
 //
@@ -47,6 +48,9 @@
 #include "midgard/manifest.h"
 #include "midgard/render/renderer.h"
 #include "midgard/version.h"
+#ifdef MIDGARD_HAS_SCRIPTING
+#include "midgard/script.h"
+#endif
 
 namespace render = midgard::render;
 
@@ -558,6 +562,36 @@ int run_window(const Options& opt, Source& source) {
 
 }  // namespace
 
+namespace {
+
+// The folder holding the running executable.
+std::filesystem::path executable_dir() {
+    const char* base = SDL_GetBasePath();
+    return base ? std::filesystem::path(base) : std::filesystem::current_path();
+}
+
+int check_python() {
+#ifdef MIDGARD_HAS_SCRIPTING
+    try {
+        midgard::script::Interpreter python(midgard::script::python_home_beside(executable_dir()));
+        python.exec(
+            "import asyncio, collections, dataclasses, datetime, enum, functools, itertools, "
+            "json, math, random, re, statistics, string, textwrap, typing\n"
+            "assert math.isclose(sum(range(4)) * 0.5, 3.0)");
+        std::printf("Python %s: ok\n", python.version().c_str());
+        return 0;
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "error: %s\n", e.what());
+        return 1;
+    }
+#else
+    std::fprintf(stderr, "error: this runtime was built without scripting\n");
+    return 1;
+#endif
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     attach_parent_console();
     Options opt;
@@ -569,6 +603,8 @@ int main(int argc, char** argv) {
                         midgard::kVersion, midgard::kEngineAbi, midgard::kFormatMajor,
                         midgard::kSchemaMin, midgard::kSchemaMax);
             return 0;
+        } else if (arg == "--check-python") {
+            return check_python();
         } else if (arg == "--package" && has_value) {
             opt.package_dir = argv[++i];
         } else if (arg == "--screenshot" && has_value) {

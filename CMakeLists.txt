@@ -17,7 +17,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(MIDGARD_BUILD_PROGRAMS "Build midgard_runtime and midgard_server" ON)
 option(MIDGARD_BUILD_TESTS "Build the engine tests" ON)
 option(MIDGARD_BUILD_PYTHON "Build the _midgard Python module for the editor (needs pybind11)" ON)
-option(MIDGARD_REQUIRE_PYTHON "Fail instead of skipping _midgard when pybind11 is missing (CI)" OFF)
+option(MIDGARD_SCRIPTING "Embed CPython in the runtime for game scripts (tools/setup_python.py)" ON)
+option(MIDGARD_REQUIRE_PYTHON
+       "Fail instead of skipping _midgard or scripting when their Python parts are missing (CI)" OFF)
 
 if(MIDGARD_BUILD_TESTS)
     enable_testing()

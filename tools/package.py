@@ -75,6 +75,16 @@ def build_editor() -> None:
         if built.is_file():
             (internal / "engine").mkdir(exist_ok=True)
             shutil.copy2(built, internal / "engine" / built.name)
+    # The game's Python beside the runtime (tools/setup_python.py).
+    sys.path.insert(0, str(ROOT / "tools"))
+    from setup_python import runtime_files
+
+    for name in runtime_files(engine_dir) if (internal / "engine").is_dir() else []:
+        source = engine_dir / name
+        if source.is_dir():
+            shutil.copytree(source, internal / "engine" / name, dirs_exist_ok=True)
+        else:
+            shutil.copy2(source, internal / "engine" / name)
     # The _midgard engine module, built for this Python (the one PyInstaller bundles).
     for module in engine_dir.glob("_midgard*.pyd" if os.name == "nt" else "_midgard*.so"):
         (internal / "engine").mkdir(exist_ok=True)

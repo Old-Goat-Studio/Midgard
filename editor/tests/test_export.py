@@ -86,3 +86,23 @@ def test_linux_export_keeps_the_executable_bit(project, tmp_path):
 def test_missing_template_is_explained(project, tmp_path):
     with pytest.raises(exporter.ExportError, match="Install Template"):
         exporter.export(project, "linux-x86_64", tmp_path / "out", tmp_path / "settings")
+
+
+def test_exports_carry_the_games_python(project, tmp_path):
+    """A template's runtime_files (the game's Python) go beside the game's executable."""
+    archive = tmp_path / f"midgard-runtime-{VERSION}-linux-x86_64.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("template.json", json.dumps({
+            "format": "midgard-runtime-template", "format_version": 1,
+            "target": {"os": "linux", "arch": "x86_64"}, "runtime": "midgard_runtime",
+            "engine": VERSION, "engine_abi": 0, "runtime_files": ["python"]}))
+        z.writestr("midgard_runtime", b"fake runtime")
+        z.writestr("python/python313.zip", b"stdlib")
+        z.writestr("python/lib/libpython3.13.so.1.0", b"libpython")
+        z.writestr("THIRD_PARTY_NOTICES.txt", "notices")
+    settings = tmp_path / "settings"
+    exporter.install_template(archive, settings)
+    result = exporter.export(project, "linux-x86_64", tmp_path / "out", settings)
+    with tarfile.open(result) as tar:
+        names = set(tar.getnames())
+    assert {"HelloCube/python/python313.zip", "HelloCube/python/lib/libpython3.13.so.1.0"} <= names

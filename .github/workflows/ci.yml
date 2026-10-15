@@ -135,14 +135,24 @@ jobs:
             ~/AppData/Local/vcpkg/archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
       - run: python tools/setup_vcpkg.py
-      - name: pybind11 (for the editor's _midgard engine module)
+      - name: pybind11 (for the editor's _midgard engine module and the runtime)
         run: pip install "pybind11>=2.13"
+      - name: Cache the game's Python download
+        uses: actions/cache@v4
+        with:
+          path: .tools/python/*.tar.gz
+          key: game-python-${{ matrix.preset }}-${{ hashFiles('tools/setup_python.py') }}
+      - name: The game's Python (python-build-standalone, pinned)
+        run: python tools/setup_python.py
       - run: cmake --preset ${{ matrix.preset }} -DMIDGARD_REQUIRE_PYTHON=ON
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
       - name: Runtime reports its version
         shell: bash
         run: build/${{ matrix.preset }}/engine/midgard_runtime --version
+      - name: Runtime starts the game's Python
+        shell: bash
+        run: build/${{ matrix.preset }}/engine/midgard_runtime --check-python
       - name: Runtime template (for Build > Export)
         run: python tools/make_template.py --preset ${{ matrix.preset }}
       - name: Upload the runtime template

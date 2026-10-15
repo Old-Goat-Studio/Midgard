@@ -52,10 +52,12 @@ python tools/package.py                          # packaged editor in build/dist
 
 ```sh
 python tools/setup_vcpkg.py                 # fetches vcpkg at the pinned version into .tools/
+python tools/setup_python.py                # fetches the CPython that games embed (scripts)
 cmake --preset linux-release                # Windows: windows-release, from a VS developer prompt
 cmake --build --preset linux-release
 ctest --preset linux-release
 build/linux-release/engine/midgard_runtime --version
+build/linux-release/engine/midgard_runtime --check-python
 ```
 
 Other presets: `linux-arm64-release` (on an ARM host) and `android-arm64` (needs

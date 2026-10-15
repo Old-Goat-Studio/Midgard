@@ -5,7 +5,9 @@ editor's Build ▸ Export copies and fills with a cooked game.
     python tools/make_template.py --preset windows-release [--out build/templates]
 
 Writes midgard-runtime-<version>-<target>.zip containing template.json, the runtime executable,
-LICENSE, NOTICE and THIRD_PARTY_NOTICES.txt (the components every exported game carries).
+the game's Python beside it (python313.dll and python/ on Windows, python/ on Linux; listed in
+template.json as runtime_files), LICENSE, NOTICE and THIRD_PARTY_NOTICES.txt (the components
+every exported game carries).
 
 For android-arm64 the "runtime" is base.apk: an unsigned APK holding the compiled manifest
 (platforms/android/app), the launcher icon, SDL's Java activity as classes.dex and the engine as
@@ -155,12 +157,24 @@ def make_template(preset: str, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     name = f"midgard-runtime-{info['engine']}-{target['os']}-{target['arch']}.zip"
     archive = out_dir / name
+    extra: list[str] = []
+    if target["os"] != "android":
+        sys.path.insert(0, str(ROOT / "tools"))
+        from setup_python import runtime_files
+
+        extra = runtime_files(runtime.parent)
+    info["runtime_files"] = extra
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("template.json", json.dumps(info, indent=2) + "\n")
         exe = zipfile.ZipInfo(target["runtime"])
         exe.external_attr = 0o100755 << 16  # keep the executable bit for Linux
         exe.compress_type = zipfile.ZIP_DEFLATED
         z.writestr(exe, runtime.read_bytes())
+        for name in extra:
+            path = runtime.parent / name
+            for file in sorted(path.rglob("*")) if path.is_dir() else [path]:
+                if file.is_file():
+                    z.write(file, file.relative_to(runtime.parent).as_posix())
         for doc in ("LICENSE", "NOTICE"):
             z.write(ROOT / doc, doc)
         z.writestr("THIRD_PARTY_NOTICES.txt", notices)

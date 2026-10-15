@@ -5,6 +5,9 @@ to any target it has a template for.
 
     Windows:  <Game>-<version>-windows-x86_64.zip  ->  <Game>/<Game>.exe, data/, notices, README
     Linux:    <Game>-<version>-linux-x86_64.tar.gz ->  <Game>/<Game> (0755), data/, .desktop, ...
+
+Desktop games also carry their Python (the template's runtime_files: python313.dll and python/
+on Windows, python/ on Linux) for game scripts.
     Android:  <Game>-<version>-android-arm64.apk   ->  signed APK, the package in assets/data/
 
 Templates come from Midgard's CI (tools/make_template.py) and are installed into the editor's
@@ -35,6 +38,9 @@ TARGETS = {
     "android-arm64": {"os": "android", "arch": "arm64", "label": "Android (arm64)",
                       "preset": "android-arm64", "runtime": "base.apk"},
 }
+
+# The game's Python beside a desktop runtime (tools/setup_python.py).
+PYTHON_FILES = ("python313.dll", "python3.dll", "vcruntime140.dll", "vcruntime140_1.dll", "python")
 
 README_WINDOWS = """{title}
 
@@ -99,8 +105,10 @@ def find_template(target: str, settings_dir: Path) -> Template | None:
         for runtime in (BUNDLE_DIR / "engine" / spec["runtime"],  # packaged editor
                         BUNDLE_DIR / "build" / spec["preset"] / "engine" / spec["runtime"]):
             if runtime.is_file():
+                files = [n for n in PYTHON_FILES if (runtime.parent / n).exists()]
                 return Template(runtime.parent, runtime,
                                 {"engine": VERSION, "runtime": spec["runtime"],
+                                 "runtime_files": files,
                                  "target": {"os": spec["os"], "arch": spec["arch"]}})
     return None
 
@@ -142,6 +150,12 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> 
     cook(project, game_dir / "data", {"os": spec["os"], "arch": spec["arch"], "role": "game"})
     exe = game_dir / (f"{name}.exe" if spec["os"] == "windows" else name)
     shutil.copy2(template.runtime, exe)
+    for extra in template.info.get("runtime_files", []):
+        source = template.folder / extra
+        if source.is_dir():
+            shutil.copytree(source, game_dir / extra)
+        elif source.is_file():
+            shutil.copy2(source, game_dir / extra)
     (game_dir / "THIRD_PARTY_NOTICES.txt").write_text(_notices(template), "utf-8")
     for doc in ("LICENSE", "NOTICE"):
         src = template.folder / doc if (template.folder / doc).is_file() else BUNDLE_DIR / doc

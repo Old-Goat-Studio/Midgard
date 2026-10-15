@@ -105,6 +105,68 @@ if(WIN32)
     target_link_libraries(midgard_link PRIVATE ws2_32)
 endif()
 
+# ---- Python ------------------------------------------------------------------------------
+# Two Pythons are involved. The host's Python (the project's .venv if there is one) runs build
+# tools and provides pybind11 (pip install pybind11); _midgard is built for it. The game's own
+# CPython (tools/setup_python.py, in .tools/python/) is what the runtime embeds for scripts.
+set(MIDGARD_PYBIND11_DIR "")
+if(NOT CMAKE_CROSSCOMPILING AND (MIDGARD_BUILD_PYTHON OR MIDGARD_SCRIPTING))
+    if(NOT DEFINED Python_EXECUTABLE AND EXISTS "${PROJECT_SOURCE_DIR}/.venv")
+        set(Python_ROOT_DIR "${PROJECT_SOURCE_DIR}/.venv")
+    endif()
+    find_package(Python 3.12 COMPONENTS Interpreter Development.Module)
+    if(Python_FOUND)
+        execute_process(COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
+                        OUTPUT_VARIABLE MIDGARD_PYBIND11_DIR
+                        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    endif()
+    if(MIDGARD_PYBIND11_DIR)
+        file(TO_CMAKE_PATH "${MIDGARD_PYBIND11_DIR}" MIDGARD_PYBIND11_DIR)  # Windows backslashes
+        set(PYBIND11_FINDPYTHON ON)
+        find_package(pybind11 CONFIG REQUIRED PATHS "${MIDGARD_PYBIND11_DIR}" NO_DEFAULT_PATH)
+    endif()
+endif()
+
+# ---- script: the game's embedded CPython ----------------------------------------------------
+if(MIDGARD_SCRIPTING AND NOT ANDROID)
+    if(WIN32)
+        set(MIDGARD_PY_TARGET "windows-x86_64")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+        set(MIDGARD_PY_TARGET "linux-arm64")
+    else()
+        set(MIDGARD_PY_TARGET "linux-x86_64")
+    endif()
+    file(GLOB MIDGARD_GAME_PYTHON LIST_DIRECTORIES true
+         "${PROJECT_SOURCE_DIR}/.tools/python/*-${MIDGARD_PY_TARGET}/python")
+    if(MIDGARD_GAME_PYTHON AND TARGET pybind11::headers)
+        list(GET MIDGARD_GAME_PYTHON -1 MIDGARD_GAME_PYTHON)
+        add_library(midgard_python INTERFACE)
+        if(WIN32)
+            file(GLOB MIDGARD_PY_LIB "${MIDGARD_GAME_PYTHON}/libs/python3[0-9]*.lib")
+            target_include_directories(midgard_python INTERFACE "${MIDGARD_GAME_PYTHON}/include")
+        else()
+            file(GLOB MIDGARD_PY_LIB "${MIDGARD_GAME_PYTHON}/lib/libpython3.*.so")
+            file(GLOB MIDGARD_PY_INCLUDE LIST_DIRECTORIES true
+                 "${MIDGARD_GAME_PYTHON}/include/python3.*")
+            target_include_directories(midgard_python INTERFACE ${MIDGARD_PY_INCLUDE})
+        endif()
+        target_link_libraries(midgard_python INTERFACE ${MIDGARD_PY_LIB})
+
+        add_library(midgard_script STATIC script/src/script.cpp)
+        target_include_directories(midgard_script PUBLIC script/include)
+        target_link_libraries(midgard_script
+            PUBLIC midgard_python
+            PRIVATE pybind11::headers midgard_options)
+        message(STATUS "Scripting: CPython from ${MIDGARD_GAME_PYTHON}")
+    elseif(MIDGARD_REQUIRE_PYTHON)
+        message(FATAL_ERROR "Scripting needs the game's CPython (python tools/setup_python.py) "
+                            "and pybind11 (pip install pybind11)")
+    else()
+        message(STATUS "Scripting: off (run python tools/setup_python.py, and pip install "
+                       "pybind11, to embed Python in the runtime)")
+    endif()
+endif()
+
 if(MIDGARD_BUILD_PROGRAMS)
     find_package(SDL3 CONFIG REQUIRED)
     if(ANDROID)
@@ -123,6 +185,21 @@ if(MIDGARD_BUILD_PROGRAMS)
         # started from, so --version still prints there.
         set_target_properties(midgard_runtime PROPERTIES WIN32_EXECUTABLE ON)
     endif()
+    if(TARGET midgard_script)
+        target_link_libraries(midgard_runtime PRIVATE midgard_script)
+        target_compile_definitions(midgard_runtime PRIVATE MIDGARD_HAS_SCRIPTING=1)
+        # The game's Python goes beside the runtime: python313.dll next to it on Windows (where
+        # it can't be delay-loaded), python/lib/libpython3.13.so through the rpath on Linux.
+        if(NOT WIN32)
+            set_target_properties(midgard_runtime PROPERTIES
+                BUILD_RPATH "\$ORIGIN/python/lib" INSTALL_RPATH "\$ORIGIN/python/lib")
+        endif()
+        add_custom_command(TARGET midgard_runtime POST_BUILD
+            COMMAND "${Python_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/setup_python.py" runtime
+                    --target "${MIDGARD_PY_TARGET}" --out "$<TARGET_FILE_DIR:midgard_runtime>"
+            COMMENT "Adding the game's Python beside the runtime"
+            VERBATIM)
+    endif()
 
     # The dedicated server is headless: no renderer, no SDL. Android never hosts.
     if(NOT ANDROID)
@@ -132,24 +209,9 @@ if(MIDGARD_BUILD_PROGRAMS)
 endif()
 
 # ---- _midgard: the engine as a Python module for the editor (roadmap §2, channel 3) ---------
-# Built for the Python that runs the editor: the project's .venv if there is one, otherwise the
-# first Python 3 found. pybind11 comes from that Python's pip packages (pip install pybind11);
-# without it the module is skipped and the editor carries on without it.
+# Built for the host's Python (see "Python" above); skipped without pybind11.
 if(MIDGARD_BUILD_PYTHON AND NOT CMAKE_CROSSCOMPILING)
-    if(NOT DEFINED Python_EXECUTABLE AND EXISTS "${PROJECT_SOURCE_DIR}/.venv")
-        set(Python_ROOT_DIR "${PROJECT_SOURCE_DIR}/.venv")
-    endif()
-    find_package(Python 3.12 COMPONENTS Interpreter Development.Module)
-    set(MIDGARD_PYBIND11_DIR "")
-    if(Python_FOUND)
-        execute_process(COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
-                        OUTPUT_VARIABLE MIDGARD_PYBIND11_DIR
-                        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    endif()
     if(MIDGARD_PYBIND11_DIR)
-        file(TO_CMAKE_PATH "${MIDGARD_PYBIND11_DIR}" MIDGARD_PYBIND11_DIR)  # Windows backslashes
-        set(PYBIND11_FINDPYTHON ON)
-        find_package(pybind11 CONFIG REQUIRED PATHS "${MIDGARD_PYBIND11_DIR}" NO_DEFAULT_PATH)
         pybind11_add_module(_midgard bindings/module.cpp bindings/viewport.cpp)
         target_link_libraries(_midgard PRIVATE midgard_scene midgard_link volk::volk
                               Vulkan::Headers midgard_options)
