@@ -35,7 +35,7 @@ from . import layouts as layout_store
 from .about import AboutDialog, engine_info, runtime_candidates
 from .backup import BackupScheduler
 from .cook import CookError, cook
-from .dialogs import NewProjectDialog, PreferencesDialog, put_project_under_git
+from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_project_under_git
 from .docks.assistant import AssistantPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
@@ -147,6 +147,7 @@ class MainWindow(QMainWindow):
         self.script_editor = ScriptEditorPanel(settings)
         self.assistant = AssistantPanel(settings)
         self.script_editor.ask_assistant.connect(self.ask_assistant)
+        self.script_editor.commit_requested.connect(self.commit)
         self.history = QUndoView(self.undo_group)
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
@@ -315,6 +316,7 @@ class MainWindow(QMainWindow):
         self.close_action = add_action(file, "&Close Project", self.close_project)
         file.addSeparator()
         self.git_action = add_action(file, "Put Project Under &Git…", self.put_under_git)
+        self.commit_action = add_action(file, "Co&mmit…", self.commit, "Ctrl+K")
         file.aboutToShow.connect(self._update_git_action)
         file.addSeparator()
         add_action(file, "&Quit", self.close, QKeySequence.StandardKey.Quit)
@@ -480,13 +482,37 @@ class MainWindow(QMainWindow):
         enabled, text = vcs.status_text(self.project)
         self.git_action.setEnabled(enabled)
         self.git_action.setText(text)
+        in_git = self.project is not None and vcs.repository_root(self.project.root) is not None
+        self.commit_action.setEnabled(in_git)
+        self.script_editor.commit_button.setEnabled(in_git)
+        self.script_editor.commit_button.setToolTip(
+            "Commit the project's changes to Git, with a message" if in_git else
+            "The project isn't in Git yet: File ▸ Put Project Under Git…")
+
+    def commit(self) -> None:
+        """File ▸ Commit… and the Script editor's Commit… button."""
+        if self.project is None:
+            return
+        if vcs.repository_root(self.project.root) is None:
+            QMessageBox.information(self, "Commit", "The project isn't in Git yet. Choose "
+                                    "File ▸ Put Project Under Git… first.")
+            return
+        self.script_editor.save_all()  # commit what is in the editor
+        if not vcs.changed_files(self.project):
+            QMessageBox.information(self, "Commit", "Nothing has changed since the last commit.")
+            return
+        if CommitDialog(self.project, self).exec():
+            self._refresh_git_views()
+
+    def _refresh_git_views(self) -> None:
+        for editor in self.script_editor.editors():
+            editor.refresh_git()
+        self.script_editor._update_titles()
+        self._update_git_action()
 
     def put_under_git(self) -> None:
         if self.project is not None and put_project_under_git(self.project, self):
-            for editor in self.script_editor.editors():
-                editor.refresh_git()
-            self.script_editor._update_titles()
-            self._update_git_action()
+            self._refresh_git_views()
 
     def edit_script(self, module: str) -> None:
         """Shows a script in the Script editor (from the Inspector's Edit button)."""
@@ -522,6 +548,7 @@ class MainWindow(QMainWindow):
         self.viewport.set_project(project)
         self.script_editor.set_project(project)
         self.assistant.set_project(project)
+        self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action):
             action.setEnabled(project is not None)
         if project is not None:

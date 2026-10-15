@@ -363,6 +363,7 @@ class CodeEditor(QPlainTextEdit):
 class ScriptEditorPanel(QWidget):
     open_requested = Signal(str)  # a module, from elsewhere in the editor
     ask_assistant = Signal(str, str)  # selected code, its file (relative to scripts/)
+    commit_requested = Signal()  # the Commit… button: the main window commits the project
 
     def __init__(self, settings: Settings, parent: QWidget | None = None):
         super().__init__(parent)
@@ -392,8 +393,11 @@ class ScriptEditorPanel(QWidget):
         self.snippets_menu = QMenu(self.snippets_button)
         self.snippets_menu.aboutToShow.connect(self._fill_snippets_menu)
         self.snippets_button.setMenu(self.snippets_menu)
+        self.commit_button = QPushButton("Commit…")
+        self.commit_button.setToolTip("Commit the project's changes to Git, with a message")
+        self.commit_button.clicked.connect(self.commit_requested)
         bar = QHBoxLayout()
-        for w in (new, self.open_button, save, self.snippets_button):
+        for w in (new, self.open_button, save, self.snippets_button, self.commit_button):
             bar.addWidget(w)
         bar.addStretch()
 

@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Small dialogs: New Project and Preferences."""
+"""Small dialogs: New Project, Preferences, and Git (Put Project Under Git, Commit)."""
 import logging
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,9 +15,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -134,6 +139,76 @@ def put_project_under_git(project: Project, parent: QWidget | None) -> bool:
         return False
     log.info("The project is now in Git (first commit %s).", commit)
     return True
+
+
+class CommitDialog(QDialog):
+    """Commit: the project's changed files (tick the ones to commit) and a message."""
+
+    LABELS = {"modified": "Changed", "new": "New", "deleted": "Deleted", "renamed": "Renamed",
+              "conflict": "Conflict"}
+
+    def __init__(self, project: Project, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Commit - {project.name}")
+        self.resize(520, 440)
+        self.project = project
+        self.commit_id = ""
+        self.files = vcs.changed_files(project)
+        self.list = QListWidget()
+        for f in self.files:
+            item = QListWidgetItem(f"{f.path}   ({self.LABELS.get(f.state, f.state).lower()})")
+            item.setData(Qt.ItemDataRole.UserRole, f.path)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            self.list.addItem(item)
+        self.message = QPlainTextEdit(vcs.suggest_message(self.files))
+        self.message.setPlaceholderText("What changed, and why")
+        self.message.setMaximumHeight(110)
+        self.message.selectAll()
+        note = QLabel("The project's scenes and settings are in its .db file, so commit it "
+                      "with the scripts that go with them.")
+        note.setWordWrap(True)
+        note.setEnabled(False)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.commit_button = self.buttons.addButton("Commit",
+                                                    QDialogButtonBox.ButtonRole.AcceptRole)
+        self.buttons.accepted.connect(self._commit)
+        self.buttons.rejected.connect(self.reject)
+        self.list.itemChanged.connect(lambda _i: self._update())
+        self.message.textChanged.connect(self._update)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Files to commit"))
+        layout.addWidget(self.list)
+        layout.addWidget(note)
+        layout.addWidget(QLabel("Message"))
+        layout.addWidget(self.message)
+        layout.addWidget(self.buttons)
+        self.message.setFocus()
+        self._update()
+
+    def ticked(self) -> list[str]:
+        return [self.list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.list.count())
+                if self.list.item(i).checkState() == Qt.CheckState.Checked]
+
+    def _update(self) -> None:
+        self.commit_button.setEnabled(bool(self.ticked()) and
+                                      bool(self.message.toPlainText().strip()))
+
+    def _commit(self) -> None:
+        who = None
+        if vcs.identity(self.project.root) is None:
+            who = ask_identity(self)
+            if who is None:
+                return
+        try:
+            self.commit_id = vcs.commit(self.project, self.ticked(), self.message.toPlainText(),
+                                        who)
+        except vcs.VcsError as e:
+            QMessageBox.warning(self, "Commit", str(e))
+            return
+        log.info("Committed %d file(s) as %s: %s", len(self.ticked()), self.commit_id,
+                 self.message.toPlainText().strip().splitlines()[0])
+        self.accept()
 
 
 class PreferencesDialog(QDialog):

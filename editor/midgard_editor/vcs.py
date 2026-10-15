@@ -77,3 +77,74 @@ def status_text(project: Project | None) -> tuple[bool, str]:
     if repository_root(project.root) is not None:
         return False, "Project Is in &Git"
     return True, "Put Project Under &Git…"
+
+
+# ---- committing -----------------------------------------------------------------------------
+STATES = {"M": "modified", "A": "new", "?": "new", "D": "deleted", "R": "renamed",
+          "C": "new", "T": "modified", "U": "conflict"}
+
+
+@dataclass
+class ChangedFile:
+    path: str   # relative to the project folder, with forward slashes
+    state: str  # modified, new, deleted, renamed or conflict
+
+
+def changed_files(project: Project) -> list[ChangedFile]:
+    """Files in the project folder that differ from the last commit, sorted by path."""
+    root = repository_root(project.root)
+    out = _git(project.root, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+               "--", ".")
+    if root is None or out is None:
+        return []
+    files: list[ChangedFile] = []
+    entries = out.split("\0")
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        code, path = entry[:2], entry[3:]
+        if code[0] in "RC":
+            i += 1  # the original name follows
+        letter = next((c for c in code if c not in " ?"), "?")
+        absolute = (root / path).resolve()
+        try:
+            relative = absolute.relative_to(project.root.resolve()).as_posix()
+        except ValueError:
+            continue
+        files.append(ChangedFile(relative, STATES.get(letter, "modified")))
+    return sorted(files, key=lambda f: f.path)
+
+
+def suggest_message(files: list[ChangedFile]) -> str:
+    """A first line for the commit message: "Update door.py", "Add gate.py", "Update 3 files"."""
+    if len(files) == 1:
+        verb = {"new": "Add", "deleted": "Delete", "renamed": "Rename"}.get(files[0].state,
+                                                                            "Update")
+        return f"{verb} {Path(files[0].path).name}"
+    return f"Update {len(files)} files" if files else ""
+
+
+def commit(project: Project, paths: list[str], message: str,
+           who: Identity | None = None) -> str:
+    """Commits these files (paths relative to the project folder) with a message, leaving any
+    other changes uncommitted. Returns the commit's short id. Raises VcsError."""
+    if not message.strip():
+        raise VcsError("Write a commit message first.")
+    if not paths:
+        raise VcsError("Tick at least one file to commit.")
+    if repository_root(project.root) is None:
+        raise VcsError("The project is not in Git yet (File ▸ Put Project Under Git…).")
+    if identity(project.root) is None:
+        if who is None:
+            raise VcsError("Git needs a name and email to commit with.")
+        _git(project.root, "config", "user.name", who.name)
+        _git(project.root, "config", "user.email", who.email)
+    # add -A stages new and deleted files too; commit -- paths commits only these.
+    if _git(project.root, "add", "-A", "--", *paths) is None:
+        raise VcsError("Git could not add the files.")
+    if _git(project.root, "commit", "-q", "-m", message.strip(), "--", *paths) is None:
+        raise VcsError("The commit failed; see the project with git status.")
+    return (_git(project.root, "rev-parse", "--short", "HEAD") or "").strip()

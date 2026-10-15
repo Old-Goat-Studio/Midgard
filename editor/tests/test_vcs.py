@@ -87,3 +87,77 @@ def test_the_file_menu_command(qtbot, settings, project, git_identity):
     window.put_under_git()
     assert vcs.repository_root(project.root) is not None
     assert not window.git_action.isEnabled() and "Is in" in window.git_action.text()
+
+
+# ---- committing ---------------------------------------------------------------------------
+@pytest.fixture
+def in_git(project, git_identity):
+    scripting.create_script(project, "door")
+    scripting.create_script(project, "old")
+    vcs.put_under_git(project)
+    return project
+
+
+def test_changed_files_and_committing_some_of_them(in_git):
+    project = in_git
+    folder = project.root / "scripts"
+    (folder / "door.py").write_text("print('changed')\n", "utf-8")
+    scripting.create_script(project, "gate")
+    (folder / "old.py").unlink()
+    files = {f.path: f.state for f in vcs.changed_files(project)}
+    assert files == {"scripts/door.py": "modified", "scripts/gate.py": "new",
+                     "scripts/old.py": "deleted"}
+    assert vcs.suggest_message([vcs.ChangedFile("scripts/gate.py", "new")]) == "Add gate.py"
+    assert vcs.suggest_message(vcs.changed_files(project)) == "Update 3 files"
+
+    with pytest.raises(vcs.VcsError, match="message"):
+        vcs.commit(project, ["scripts/door.py"], "  ")
+    commit = vcs.commit(project, ["scripts/gate.py", "scripts/old.py"], "Add the gate")
+    assert commit
+    left = {f.path: f.state for f in vcs.changed_files(project)}
+    assert left == {"scripts/door.py": "modified"}  # not ticked, so not committed
+    log = scripting._git(project.root, "log", "-1", "--format=%s")
+    assert log.strip() == "Add the gate"
+
+
+def test_the_commit_dialog(qtbot, in_git):
+    from midgard_editor.dialogs import CommitDialog
+
+    project = in_git
+    (project.root / "scripts" / "door.py").write_text("print('v2')\n", "utf-8")
+    scripting.create_script(project, "gate")
+    dialog = CommitDialog(project)
+    qtbot.addWidget(dialog)
+    assert dialog.list.count() == 2 and dialog.ticked() == ["scripts/door.py", "scripts/gate.py"]
+    assert dialog.message.toPlainText() == "Update 2 files"
+    dialog.list.item(1).setCheckState(dialog.list.item(1).checkState().Unchecked)
+    dialog.message.setPlainText("")
+    assert not dialog.commit_button.isEnabled()  # no message
+    dialog.message.setPlainText("Door v2")
+    assert dialog.commit_button.isEnabled()
+    dialog._commit()
+    assert dialog.commit_id
+    assert [f.path for f in vcs.changed_files(project)] == ["scripts/gate.py"]
+
+
+def test_the_commit_button_follows_the_project(qtbot, settings, project, git_identity,
+                                               monkeypatch):
+    from midgard_editor.dialogs import CommitDialog
+    from midgard_editor.main_window import MainWindow
+
+    window = MainWindow(settings)
+    qtbot.addWidget(window)
+    window.set_project(project)
+    assert not window.script_editor.commit_button.isEnabled()  # not in Git yet
+    window.put_under_git()
+    assert window.script_editor.commit_button.isEnabled()
+    assert window.commit_action.isEnabled()
+
+    editor = window.script_editor.open_module("door")  # a new script, unsaved edits below
+    editor.selectAll()
+    editor.insertPlainText("print('door')\n")
+    opened = []
+    monkeypatch.setattr(CommitDialog, "exec", lambda self: opened.append(self.ticked()) or 0)
+    window.script_editor.commit_button.click()
+    assert opened == [["scripts/door.py"]]  # the script was saved first, then offered
+    assert not editor.document().isModified()
