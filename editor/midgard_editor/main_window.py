@@ -40,6 +40,7 @@ from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.scene_panel import ScenePanel
+from .docks.viewport import ViewportPanel
 from .export_dialog import ExportDialog
 from .live_link import LinkError, PlaySession, State
 from .project import WORLD_MODES, Project, ProjectError
@@ -50,7 +51,7 @@ log = logging.getLogger(LOGGER_NAME)
 
 # objectName -> title. Object names are the keys in saved layouts, so never rename them.
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
-          "history": "History"}
+          "history": "History", "viewport": "Viewport"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -63,8 +64,8 @@ def add_action(menu: QMenu, text: str, slot, shortcut=None) -> QAction:
 
 
 class StartPage(QWidget):
-    """The central area: a start page with no project open, a summary with one open. The 3D
-    viewport replaces the summary in Phase 3."""
+    """The central area: a start page with no project open, a summary with one open (the
+    Viewport panel above it shows the scene)."""
 
     def __init__(self, window: "MainWindow"):
         super().__init__()
@@ -105,8 +106,7 @@ class StartPage(QWidget):
         mode = WORLD_MODES.get(project.config.get("world_mode"), "?")
         self.summary.setText(
             f"<h2>{project.game_title}</h2><p>{mode} · version "
-            f"{project.config.get('game_version')}</p><p>{project.root}</p>"
-            "<p><i>The 3D viewport arrives in Phase 3.</i></p>")
+            f"{project.config.get('game_version')}</p><p>{project.root}</p>")
         self.stack.setCurrentIndex(1)
 
 
@@ -140,6 +140,7 @@ class MainWindow(QMainWindow):
         self.session: PlaySession | None = None
         self.inspector = Inspector()
         self.log_panel = LogPanel()
+        self.viewport = ViewportPanel()
         self.history = QUndoView(self.undo_group)
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
@@ -148,7 +149,7 @@ class MainWindow(QMainWindow):
         self.inspector.setMinimumWidth(340)
         self.browser.setMinimumWidth(220)
         widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,
-                   "log": self.log_panel, "history": self.history}
+                   "log": self.log_panel, "history": self.history, "viewport": self.viewport}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -177,10 +178,22 @@ class MainWindow(QMainWindow):
         bottom = self.dock_manager.addDockWidget(area.BottomDockWidgetArea, self.panels["log"])
         self.dock_manager.addDockWidgetTabToArea(self.panels["history"], bottom)
         self.panels["log"].setAsCurrentTab()
+        self._place_viewport()
+
+    def _place_viewport(self) -> None:
+        """The Viewport goes above the central start page and takes most of its height."""
+        central = self.dock_manager.centralWidget().dockAreaWidget()
+        self.dock_manager.addDockWidget(QtAds.DockWidgetArea.TopDockWidgetArea,
+                                        self.panels["viewport"], central)
+        splitter = central.parentSplitter()
+        if splitter is not None and splitter.count() == 2:
+            total = max(sum(splitter.sizes()), 400)
+            splitter.setSizes([total * 4 // 5, total - total * 4 // 5])
 
     def _layout_record(self) -> dict:
         return {"state": layout_store.pack(self.dock_manager.saveState()),
-                "geometry": layout_store.pack(self.saveGeometry())}
+                "geometry": layout_store.pack(self.saveGeometry()),
+                "panels": list(PANELS)}
 
     def apply_layout(self, record: dict, geometry: bool = True) -> bool:
         if geometry and record.get("geometry"):
@@ -204,6 +217,10 @@ class MainWindow(QMainWindow):
                 self.apply_layout(last)
             except (KeyError, ValueError):
                 log.warning("The saved layout could not be restored; using the default.")
+                return
+            # Panels added since the layout was saved go where the default layout puts them.
+            if "viewport" not in last.get("panels", []):
+                self._place_viewport()
 
     def reset_layout(self) -> None:
         self.dock_manager.restoreState(self._default_state)
@@ -408,6 +425,7 @@ class MainWindow(QMainWindow):
         self.browser.set_project(project)
         self.inspector.set_project(project)
         self.scene_panel.set_project(project)
+        self.viewport.set_project(project)
         for action in (self.close_action, self.cook_action, self.export_action):
             action.setEnabled(project is not None)
         if project is not None:

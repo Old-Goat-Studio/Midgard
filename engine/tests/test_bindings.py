@@ -70,8 +70,53 @@ def main() -> int:
         bad = make_package(tmp / "bad_entity", {"e1": {"transform": {"position": [1, 2]}}}, [])
         report = _midgard.validate(bad)
         assert not report["ok"] and "e1" in report["errors"][0], report
+    check_viewport()
     print("_midgard: all checks passed")
     return 0
+
+
+def pixel(rgba: bytes, width: int, x: int, y: int) -> tuple[int, int, int]:
+    i = (y * width + x) * 4
+    return rgba[i], rgba[i + 1], rgba[i + 2]
+
+
+def check_viewport() -> None:
+    """The editor's viewport, drawn offscreen (skipped on machines without Vulkan)."""
+    view = _midgard.Viewport()
+    view.put_entity(json.dumps({"id": "e1", "name": "Cube", "parent": None, "components": {
+        "transform": {"position": [0, 0, 0]}, "mesh": {"asset": "builtin:cube"},
+        "material": {"color": [1, 0.2, 0.1, 1]}}}))
+    view.put_entity(json.dumps({"id": "e2", "name": "Sun", "components": {
+        "transform": {"rotation": [-50, 35, 0]}, "light": {"type": "directional"}}}))
+    view.set_settings(json.dumps({"sky": [0, 0, 1]}))
+    view.set_camera([0, 0, 3], [0, 0, 0], 50)
+    assert view.entity_count == 2 and not view.attached
+    assert not view.render()  # nothing to draw into yet
+    try:
+        view.set_mesh("bad", b"not a glb")
+        raise AssertionError("a bad mesh must be refused")
+    except RuntimeError:
+        pass
+    try:
+        view.attach_offscreen(160, 90)
+    except RuntimeError as e:
+        print(f"_midgard: viewport skipped (no Vulkan here: {e})")
+        return
+    for attempt in range(2):  # again after detaching: meshes go back onto the GPU
+        assert view.render()
+        rgba = view.read_pixels()
+        assert len(rgba) == 160 * 90 * 4
+        r, g, b = pixel(rgba, 160, 80, 45)
+        assert r > 100 and b < 100, ("the cube is in the middle", r, g, b)
+        r, g, b = pixel(rgba, 160, 2, 2)
+        assert b > 200 and r < 30, ("the sky is in the corner", r, g, b)
+        view.detach()
+        assert not view.attached
+        if attempt == 0:
+            view.attach_offscreen(160, 90)
+    view.remove_entity("e1")
+    assert view.entity_count == 1
+    print(f"_midgard: viewport drew on {view.device_name or 'the GPU'}")
 
 
 if __name__ == "__main__":
