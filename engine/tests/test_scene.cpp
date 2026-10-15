@@ -242,3 +242,54 @@ TEST_CASE("a missing entry scene is reported") {
     CHECK_THROWS_WITH_AS(midgard::Game(pkg.dir), doctest::Contains("not in the database"),
                          midgard::SceneError);
 }
+
+TEST_CASE("live edits change the running scene") {
+    TestPackage pkg({
+        {"e1_cube",
+         R"(NULL, '{"transform": {"position": [0, 0.5, 0]}, "mesh": {"asset": "mesh_cube"},
+                       "player": {"speed": 4}}')"},
+        {"e2_camera", R"(NULL, '{"transform": {"position": [0, 3, 6]}, "camera": {}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity cube = scene.find("e1_cube");
+    REQUIRE(scene.registry.valid(cube));
+    const float distance = game.third_person().distance();
+
+    // Replace a whole entity: same handle, new components.
+    game.put_entity({{"id", "e1_cube"},
+                     {"name", "Box"},
+                     {"components",
+                      {{"transform", {{"position", {2, 0.5, 0}}}},
+                       {"mesh", {{"asset", "mesh_cube"}}},
+                       {"material", {{"color", {1, 0, 0, 1}}}},
+                       {"player", {{"speed", 6}}}}}});
+    CHECK(scene.find("e1_cube") == cube);
+    CHECK(scene.registry.get<midgard::EntityInfo>(cube).name == "Box");
+    CHECK(near(scene.registry.get<midgard::Transform>(cube).position, {2, 0.5f, 0}));
+    CHECK(scene.registry.get<midgard::Material>(cube).color.r == 1.0f);
+    CHECK(scene.registry.get<midgard::Player>(cube).speed == 6.0f);
+    CHECK(game.third_person().distance() == doctest::Approx(distance));  // the orbit is kept
+
+    // One component, then removing it.
+    game.set_component("e1_cube", "material", {{"color", {0, 1, 0}}});
+    CHECK(scene.registry.get<midgard::Material>(cube).color.g == 1.0f);
+    game.set_component("e1_cube", "material", nullptr);
+    CHECK_FALSE(scene.registry.all_of<midgard::Material>(cube));
+    CHECK_THROWS_AS(game.set_component("nobody", "material", nullptr), midgard::SceneError);
+    CHECK_THROWS_AS(game.put_entity({{"id", "e1_cube"}, {"components", {{"mesh", 3}}}}),
+                    midgard::SceneError);
+
+    // New entities appear and removed ones go.
+    game.put_entity({{"id", "e3_new"},
+                     {"name", "New"},
+                     {"parent", "e1_cube"},
+                     {"components", {{"mesh", {{"asset", "builtin:cube"}}}}}});
+    const entt::entity added = scene.find("e3_new");
+    REQUIRE(scene.registry.valid(added));
+    CHECK(scene.registry.get<midgard::EntityInfo>(added).parent == cube);
+    game.remove_entity("e1_cube");
+    CHECK_FALSE(scene.registry.valid(scene.find("e1_cube")));
+    CHECK_FALSE(scene.registry.valid(scene.registry.get<midgard::EntityInfo>(added).parent));
+    CHECK_FALSE(game.third_person().active());  // no player any more
+}

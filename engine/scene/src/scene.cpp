@@ -67,28 +67,51 @@ glm::vec4 color4(const json& j, const char* key) {
     return {rgb, v.size() >= 4 ? v[3].get<float>() : 1.0f};
 }
 
+// One component from its JSON (schema/components.md). Components this engine doesn't know yet
+// stay in the database for later versions and are ignored here.
+void add_component(entt::registry& reg, entt::entity e, const std::string& name, const json& c) {
+    if (name == "transform") {
+        reg.emplace_or_replace<Transform>(e, vec3(c, "position", glm::vec3(0.0f)),
+                                          vec3(c, "rotation", glm::vec3(0.0f)),
+                                          vec3(c, "scale", glm::vec3(1.0f)));
+    } else if (name == "mesh") {
+        reg.emplace_or_replace<MeshRef>(e, c.at("asset").get<std::string>());
+    } else if (name == "material") {
+        reg.emplace_or_replace<Material>(e, color4(c, "color"));
+    } else if (name == "camera") {
+        reg.emplace_or_replace<CameraLens>(e, c.value("fov", 55.0f), c.value("near", 0.05f),
+                                           c.value("far", 500.0f));
+    } else if (name == "player") {
+        reg.emplace_or_replace<Player>(e, c.value("speed", 4.0f));
+    } else if (name == "light") {
+        if (c.value("type", "directional") == "directional")
+            reg.emplace_or_replace<DirectionalLight>(e, vec3(c, "color", glm::vec3(1.0f)),
+                                                     c.value("intensity", 1.0f));
+        else
+            reg.remove<DirectionalLight>(e);
+    }
+}
+
+void remove_component(entt::registry& reg, entt::entity e, const std::string& name) {
+    if (name == "transform")
+        reg.emplace_or_replace<Transform>(e);  // every entity has a transform
+    else if (name == "mesh")
+        reg.remove<MeshRef>(e);
+    else if (name == "material")
+        reg.remove<Material>(e);
+    else if (name == "camera")
+        reg.remove<CameraLens>(e);
+    else if (name == "player")
+        reg.remove<Player>(e);
+    else if (name == "light")
+        reg.remove<DirectionalLight>(e);
+}
+
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
-    if (c.contains("transform")) {
-        const json& t = c.at("transform");
-        reg.emplace<Transform>(e, vec3(t, "position", glm::vec3(0.0f)),
-                               vec3(t, "rotation", glm::vec3(0.0f)),
-                               vec3(t, "scale", glm::vec3(1.0f)));
-    } else {
-        reg.emplace<Transform>(e);
-    }
-    if (c.contains("mesh")) reg.emplace<MeshRef>(e, c.at("mesh").at("asset").get<std::string>());
-    if (c.contains("material")) reg.emplace<Material>(e, color4(c.at("material"), "color"));
-    if (c.contains("camera")) {
-        const json& cam = c.at("camera");
-        reg.emplace<CameraLens>(e, cam.value("fov", 55.0f), cam.value("near", 0.05f),
-                                cam.value("far", 500.0f));
-    }
-    if (c.contains("player")) reg.emplace<Player>(e, c.at("player").value("speed", 4.0f));
-    if (c.contains("light") && c.at("light").value("type", "directional") == "directional") {
-        const json& l = c.at("light");
-        reg.emplace<DirectionalLight>(e, vec3(l, "color", glm::vec3(1.0f)),
-                                      l.value("intensity", 1.0f));
-    }
+    if (!c.is_object()) throw SceneError("components must be a JSON object");
+    reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, Player>(e);
+    reg.emplace<Transform>(e);
+    for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
 
 template <typename Component>
@@ -154,6 +177,53 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
         scene.registry.get<EntityInfo>(e).parent = it->second;
     }
     return scene;
+}
+
+entt::entity Scene::find(const std::string& entity_id) const {
+    for (entt::entity e : registry.view<const EntityInfo>())
+        if (registry.get<EntityInfo>(e).id == entity_id) return e;
+    return entt::null;
+}
+
+entt::entity Scene::put_entity(const std::string& entity_id, const std::string& name,
+                               const std::string& parent_id, const json& components) {
+    entt::entity e = find(entity_id);
+    if (e == entt::null) {
+        e = registry.create();
+        registry.emplace<EntityInfo>(e, entity_id, name, entt::null);
+    }
+    EntityInfo& info = registry.get<EntityInfo>(e);
+    info.name = name;
+    info.parent = parent_id.empty() ? entt::null : find(parent_id);
+    try {
+        add_components(registry, e, components);
+    } catch (const SceneError&) {
+        throw;
+    } catch (const std::exception& ex) {  // a component of the wrong shape
+        throw SceneError("entity '" + entity_id + "': " + ex.what());
+    }
+    return e;
+}
+
+void Scene::set_component(entt::entity e, const std::string& component, const json& value) {
+    try {
+        if (value.is_null())
+            remove_component(registry, e, component);
+        else
+            add_component(registry, e, component, value);
+    } catch (const std::exception& ex) {
+        throw SceneError("component '" + component + "': " + ex.what());
+    }
+}
+
+bool Scene::remove_entity(const std::string& entity_id) {
+    const entt::entity e = find(entity_id);
+    if (e == entt::null) return false;
+    for (entt::entity child : registry.view<EntityInfo>())
+        if (registry.get<EntityInfo>(child).parent == e)
+            registry.get<EntityInfo>(child).parent = entt::null;
+    registry.destroy(e);
+    return true;
 }
 
 glm::mat4 Scene::local_matrix(entt::entity e) const {

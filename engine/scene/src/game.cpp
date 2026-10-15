@@ -2,6 +2,7 @@
 #include "midgard/game.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <nlohmann/json.hpp>
 
 #include "midgard/gltf.h"
 
@@ -44,6 +45,58 @@ void Game::upload_meshes(render::Renderer& renderer) {
         if (!meshes_.contains(asset))
             meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
     }
+}
+
+std::vector<std::string> Game::upload_new_meshes(render::Renderer& renderer) {
+    std::vector<std::string> errors;
+    for (entt::entity e : scene_.registry.view<const MeshRef>()) {
+        const std::string asset = scene_.registry.get<MeshRef>(e).asset;
+        if (meshes_.contains(asset) || failed_meshes_.contains(asset)) continue;
+        try {
+            meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
+        } catch (const std::exception& ex) {
+            failed_meshes_.insert(asset);
+            errors.emplace_back(ex.what());
+        }
+    }
+    return errors;
+}
+
+void Game::put_entity(const nlohmann::json& entity) {
+    const auto text = [&](const char* key) {
+        const auto it = entity.find(key);
+        return it != entity.end() && it->is_string() ? it->get<std::string>() : std::string();
+    };
+    const std::string id = text("id");
+    if (id.empty()) throw SceneError("entity.put needs an entity id");
+    const auto components = entity.find("components");
+    refresh_third_person(
+        scene_.put_entity(id, text("name"), text("parent"),
+                          components != entity.end() ? *components : nlohmann::json::object()));
+}
+
+// After an edit the player or camera may be different entities. The orbit is kept unless the
+// camera itself was edited.
+void Game::refresh_third_person(entt::entity edited) {
+    const ThirdPersonCamera old = *third_person_;
+    third_person_ = std::make_unique<ThirdPersonCamera>(scene_);
+    const bool camera_edited = edited != entt::null && scene_.registry.valid(edited) &&
+                               scene_.registry.all_of<CameraLens>(edited);
+    if (old.active() && !camera_edited)
+        third_person_->set_view(scene_, old.yaw(), old.elevation(), old.distance());
+}
+
+void Game::set_component(const std::string& entity_id, const std::string& component,
+                         const nlohmann::json& value) {
+    const entt::entity e = scene_.find(entity_id);
+    if (e == entt::null) throw SceneError("entity '" + entity_id + "' is not in the scene");
+    scene_.set_component(e, component, value);
+    refresh_third_person(e);
+}
+
+void Game::remove_entity(const std::string& entity_id) {
+    scene_.remove_entity(entity_id);
+    refresh_third_person(entt::null);
 }
 
 std::vector<render::DrawItem> Game::draws() const {

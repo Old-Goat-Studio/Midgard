@@ -83,3 +83,9 @@ def manifest_errors(manifest: dict, schema_dir: Path = SCHEMA_DIR) -> list[str]:
                 f"format_version: major version {major} is not supported "
                 f"(this editor writes {SUPPORTED_FORMAT_MAJOR}.x)")
     return errors
+
+
+def live_link_errors(message: dict, schema_dir: Path = SCHEMA_DIR) -> list[str]:
+    """Problems with a live-link message (schema/live_link.schema.json); empty if valid."""
+    schema = json.loads((schema_dir / "live_link.schema.json").read_text(encoding="utf-8"))
+    return [e.message for e in Draft202012Validator(schema).iter_errors(message)]

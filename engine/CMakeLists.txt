@@ -90,9 +90,19 @@ add_library(midgard_scene STATIC
 )
 target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_link_libraries(midgard_scene
-    PUBLIC midgard_core midgard_render midgard_input EnTT::EnTT glm::glm
-    PRIVATE miniz::miniz unofficial::sqlite3::sqlite3 nlohmann_json::nlohmann_json midgard_options
+    PUBLIC midgard_core midgard_render midgard_input EnTT::EnTT glm::glm nlohmann_json::nlohmann_json
+    PRIVATE miniz::miniz unofficial::sqlite3::sqlite3 midgard_options
 )
+
+# ---- link: the editor's live link (TCP, length-prefixed JSON) --------------------------------
+add_library(midgard_link STATIC link/src/link.cpp)
+target_include_directories(midgard_link PUBLIC link/include)
+target_link_libraries(midgard_link PUBLIC nlohmann_json::nlohmann_json PRIVATE midgard_options)
+find_package(Threads REQUIRED)
+target_link_libraries(midgard_link PUBLIC Threads::Threads)
+if(WIN32)
+    target_link_libraries(midgard_link PRIVATE ws2_32)
+endif()
 
 if(MIDGARD_BUILD_PROGRAMS)
     find_package(SDL3 CONFIG REQUIRED)
@@ -105,7 +115,8 @@ if(MIDGARD_BUILD_PROGRAMS)
         add_executable(midgard_runtime runtime/main.cpp)
     endif()
     target_link_libraries(midgard_runtime PRIVATE
-        midgard_core midgard_render midgard_scene SDL3::SDL3 Vulkan::Headers midgard_options)
+        midgard_core midgard_render midgard_scene midgard_link SDL3::SDL3 Vulkan::Headers
+        midgard_options)
     if(WIN32)
         # A windowed program (no console behind the game). It attaches to the terminal it was
         # started from, so --version still prints there.
@@ -128,9 +139,10 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_mesh_data.cpp
         tests/test_scene.cpp
         tests/test_input.cpp
+        tests/test_link.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
-        midgard_core midgard_render midgard_scene midgard_options doctest::doctest
+        midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest
         unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
     target_compile_definitions(midgard_tests PRIVATE
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema")

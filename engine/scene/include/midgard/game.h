@@ -6,7 +6,10 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include <nlohmann/json_fwd.hpp>
 
 #include "midgard/input.h"
 #include "midgard/package.h"
@@ -33,6 +36,17 @@ public:
     // Reads every mesh the scene uses (from game.pak or the built-ins) and uploads it once.
     void upload_meshes(render::Renderer& renderer);
 
+    // Live editing: uploads meshes the scene uses that aren't on the GPU yet. Meshes that fail
+    // to load are skipped (and not retried); the returned messages say why.
+    std::vector<std::string> upload_new_meshes(render::Renderer& renderer);
+
+    // Live editing (the editor's live link). Each throws SceneError on malformed data.
+    // entity: {"id", "name", "parent", "components"} as in the entity table.
+    void put_entity(const nlohmann::json& entity);
+    void set_component(const std::string& entity_id, const std::string& component,
+                       const nlohmann::json& value);
+    void remove_entity(const std::string& entity_id);
+
     // One draw per entity with a mesh, in world space.
     std::vector<render::DrawItem> draws() const;
 
@@ -48,12 +62,14 @@ public:
 
 private:
     render::MeshData load_mesh(const std::string& asset) const;
+    void refresh_third_person(entt::entity edited);
 
     PackageInfo package_;
     std::unique_ptr<Pak> pak_;
     Scene scene_;
     std::unique_ptr<ThirdPersonCamera> third_person_;
     std::unordered_map<std::string, render::MeshId> meshes_;
+    std::unordered_set<std::string> failed_meshes_;
 };
 
 }  // namespace midgard

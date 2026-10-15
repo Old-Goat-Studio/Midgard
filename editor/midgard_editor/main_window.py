@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QProcess, QRect, Qt
+from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -41,6 +41,7 @@ from .docks.log import LOGGER_NAME, LogPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.scene_panel import ScenePanel
 from .export_dialog import ExportDialog
+from .live_link import LinkError, PlaySession, State
 from .project import WORLD_MODES, Project, ProjectError
 from .settings import Settings
 from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
@@ -136,7 +137,7 @@ class MainWindow(QMainWindow):
         self.undo_group = QUndoGroup(self)
         self.browser = ProjectBrowser()
         self.scene_panel = ScenePanel()
-        self.runtime_process: QProcess | None = None
+        self.session: PlaySession | None = None
         self.inspector = Inspector()
         self.log_panel = LogPanel()
         self.history = QUndoView(self.undo_group)
@@ -160,6 +161,7 @@ class MainWindow(QMainWindow):
         self._default_state = self.dock_manager.saveState()
 
         self._build_menus()
+        self._build_play_toolbar()
         self._restore_session()
         self.themes.apply(settings.get("theme"))
         self.set_project(None)
@@ -269,7 +271,11 @@ class MainWindow(QMainWindow):
 
         build = bar.addMenu("&Build")
         self.cook_action = add_action(build, "&Cook", self.cook_project, "Ctrl+B")
-        self.cook_run_action = add_action(build, "Cook and &Run", self.cook_and_run, "F5")
+        build.addSeparator()
+        self.play_action = add_action(build, "&Play", self.play, "F5")
+        self.pause_action = add_action(build, "P&ause", self.toggle_pause, "F6")
+        self.pause_action.setCheckable(True)
+        self.stop_action = add_action(build, "&Stop", self.stop_game, "Shift+F5")
         build.addSeparator()
         self.export_action = add_action(build, "&Export…", self.export_game, "Ctrl+E")
 
@@ -287,6 +293,16 @@ class MainWindow(QMainWindow):
 
         help_ = bar.addMenu("&Help")
         add_action(help_, f"&About {APP_NAME}", self.show_about)
+
+    def _build_play_toolbar(self) -> None:
+        bar = self.addToolBar("Play")
+        bar.setObjectName("play_toolbar")
+        bar.setMovable(False)
+        for action in (self.play_action, self.pause_action, self.stop_action):
+            bar.addAction(action)
+        self.play_status = QLabel()
+        self.statusBar().addPermanentWidget(self.play_status)
+        self._play_state_changed(State.STOPPED)
 
     def _fill_recent_menu(self) -> None:
         self.recent_menu.clear()
@@ -376,6 +392,10 @@ class MainWindow(QMainWindow):
         self.set_project(None)
 
     def set_project(self, project: Project | None) -> None:
+        if self.session is not None:
+            self.session.stop()
+            self.session.deleteLater()
+            self.session = None
         if self.project is not None:
             if self.backups is not None:
                 self.backups.backup_if_needed()
@@ -387,9 +407,13 @@ class MainWindow(QMainWindow):
         self.browser.set_project(project)
         self.inspector.set_project(project)
         self.scene_panel.set_project(project)
-        for action in (self.close_action, self.cook_action, self.cook_run_action,
-                       self.export_action):
+        for action in (self.close_action, self.cook_action, self.export_action):
             action.setEnabled(project is not None)
+        if project is not None:
+            self.session = PlaySession(project, self)
+            self.session.state_changed.connect(self._play_state_changed)
+            self.session.stats_received.connect(self._play_stats)
+        self._play_state_changed(State.STOPPED)
         if project is None:
             self.setWindowTitle(APP_NAME)
             self.start.show_welcome(self.settings.recent_projects())
@@ -426,29 +450,56 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             ExportDialog(self.project, self.settings, self).exec()
 
-    def cook_and_run(self) -> None:
-        package = self.cook_project()
-        if package is None:
+    # ---- play-in-editor ----------------------------------------------------------------
+    def play(self) -> None:
+        """Cooks the project and runs it, linked to the editor: edits reach the running game."""
+        if self.session is None or self.session.running:
             return
         runtimes = runtime_candidates()
         if not runtimes:
-            QMessageBox.warning(self, "Cook and Run",
+            QMessageBox.warning(self, "Play",
                                 "The engine runtime was not found. Build the engine first "
                                 "(see the README), or use a packaged editor.")
             return
-        if self.runtime_process is not None:
-            self.runtime_process.kill()
-        process = QProcess(self)
-        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        process.readyReadStandardOutput.connect(
-            lambda: [log.info("runtime: %s", line) for line in
-                     bytes(process.readAllStandardOutput()).decode(errors="replace").splitlines()])
-        process.finished.connect(lambda code, _status: log.info("Runtime exited (%d).", code))
-        process.start(str(runtimes[0]), ["--package", str(package)])
-        self.runtime_process = process
-        log.info("Running %s", package)
+        package = self.cook_project()
+        if package is None:
+            return
+        try:
+            self.session.start(runtimes[0], package)
+        except LinkError as e:
+            QMessageBox.warning(self, "Play", str(e))
+            return
+        log.info("Playing %s", package)
+
+    def toggle_pause(self) -> None:
+        if self.session is None:
+            return
+        if self.session.state == State.PAUSED:
+            self.session.resume()
+        else:
+            self.session.pause()
+
+    def stop_game(self) -> None:
+        if self.session is not None and self.session.running:
+            self.session.stop()
+
+    def _play_state_changed(self, state: State) -> None:
+        has_project = self.session is not None
+        self.play_action.setEnabled(has_project and state == State.STOPPED)
+        self.pause_action.setEnabled(state in (State.PLAYING, State.PAUSED))
+        self.pause_action.setChecked(state == State.PAUSED)
+        self.stop_action.setEnabled(state != State.STOPPED)
+        self.play_status.setText({State.STOPPED: "", State.STARTING: "Starting the game…",
+                                  State.PLAYING: "Playing", State.PAUSED: "Paused"}[state])
+
+    def _play_stats(self, stats: dict) -> None:
+        state = "Paused" if stats.get("paused") else "Playing"
+        self.play_status.setText(f"{state} · {stats.get('fps', 0)} fps · "
+                                 f"{stats.get('draw_calls', 0)} draws")
     # ---- shutdown ----------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self.session is not None:
+            self.session.stop()
         self.settings.set("layout_last", self._layout_record())
         if self.backups is not None:
             self.backups.backup_if_needed()

@@ -50,6 +50,14 @@ void ThirdPersonCamera::place_camera(Scene& scene) const {
     cam.rotation = look_rotation(cam.position, target(scene));
 }
 
+void ThirdPersonCamera::set_view(Scene& scene, float yaw, float elevation, float distance) {
+    if (!active()) return;
+    yaw_ = yaw;
+    elevation_ = std::clamp(elevation, kMinElevation, kMaxElevation);
+    distance_ = std::clamp(distance, kMinDistance, kMaxDistance);
+    place_camera(scene);
+}
+
 void ThirdPersonCamera::update(Scene& scene, const Actions& actions, float dt) {
     if (!active()) return;
     // Look: degrees this frame (mouse deltas, or stick rates × dt).

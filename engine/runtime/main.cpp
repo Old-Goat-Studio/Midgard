@@ -2,8 +2,12 @@
 // midgard_runtime: the game executable.
 //
 //   midgard_runtime --version
-//   midgard_runtime [--package <dir>] [--frames N] [--size WxH]
+//   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH]   (offscreen, no window)
+//
+// --editor-link connects to the editor's live link (play-in-editor): the editor's edits reach the
+// running game, and the game's log and frame rate reach the editor. The game quits when the
+// editor stops it or goes away.
 //
 // With --package, the runtime shows that package's entry scene. Without it, an exported game
 // runs the package in the data/ folder next to the executable, and a bare runtime shows a demo.
@@ -35,9 +39,11 @@
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <nlohmann/json.hpp>
 
 #include "midgard/game.h"
 #include "midgard/input.h"
+#include "midgard/link.h"
 #include "midgard/manifest.h"
 #include "midgard/render/renderer.h"
 #include "midgard/version.h"
@@ -49,6 +55,7 @@ namespace {
 struct Options {
     std::optional<std::string> package_dir;
     std::optional<std::string> screenshot;
+    std::optional<std::string> editor_link;
     long frames = -1;  // run until closed
     uint32_t width = 1280, height = 720;
 };
@@ -56,27 +63,55 @@ struct Options {
 int usage() {
     std::puts(
         "usage: midgard_runtime [--version] [--package <dir>] [--frames N] [--size WxH]\n"
-        "                       [--screenshot out.png]");
+        "                       [--screenshot out.png] [--editor-link host:port]");
     return 2;
 }
 
-// Messages go to standard output and, on Android, also to the system log (logcat).
-void say(const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
+// The editor's live link, while the game runs under the editor.
+midgard::link::Client* g_link = nullptr;
+
+void send_log(const char* level, std::string text) {
+    while (!text.empty() && text.back() == '\n') text.pop_back();
+    g_link->send({{"type", "log"}, {"level", level}, {"text", text}});
+}
+
+// Messages go to the editor when the game runs under it, otherwise to standard output; on
+// Android also to the system log (logcat).
+void say_level(const char* level, const char* fmt, va_list args) {
 #ifdef __ANDROID__
     va_list copy;
     va_copy(copy, args);
     SDL_LogMessageV(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO, fmt, copy);
     va_end(copy);
 #endif
-    std::vfprintf(stdout, fmt, args);
+    if (g_link && g_link->connected()) {
+        char line[2048];
+        std::vsnprintf(line, sizeof(line), fmt, args);
+        send_log(level, line);
+    } else {
+        std::vfprintf(stdout, fmt, args);
+        std::fflush(stdout);
+    }
+}
+
+void say(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    say_level("info", fmt, args);
+    va_end(args);
+}
+
+void warn(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    say_level("warn", fmt, args);
     va_end(args);
 }
 
 // Errors also appear on screen on Android, where there is no terminal to read them in.
 void fail(const std::string& message) {
     std::fprintf(stderr, "error: %s\n", message.c_str());
+    if (g_link && g_link->connected()) send_log("error", message);
 #ifdef __ANDROID__
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Midgard", message.c_str(), nullptr);
@@ -104,6 +139,10 @@ public:
     virtual void update(const midgard::Actions&, float) {}
     virtual bool wants_mouse_look() const { return false; }
     virtual std::string title() const { return "Midgard"; }
+    // A message from the editor's live link (entity edits and the like).
+    virtual void apply(const nlohmann::json& message, render::Renderer&) {
+        warn("live link: '%s' needs a game package\n", message.value("type", "").c_str());
+    }
 };
 
 class DemoSource : public Source {
@@ -152,6 +191,37 @@ public:
     void update(const midgard::Actions& actions, float dt) override { game_.update(actions, dt); }
     bool wants_mouse_look() const override { return game_.third_person().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
+
+    void apply(const nlohmann::json& message, render::Renderer& renderer) override {
+        const std::string type = message.value("type", "");
+        try {
+            if (type == "entity.put") {
+                game_.put_entity(message.at("entity"));
+            } else if (type == "entity.set") {
+                game_.set_component(message.at("entity").get<std::string>(),
+                                    message.at("component").get<std::string>(),
+                                    message.at("value"));
+            } else if (type == "entity.delete") {
+                game_.remove_entity(message.at("entity").get<std::string>());
+            } else {
+                warn("live link: '%s' is not supported yet\n", type.c_str());
+                return;
+            }
+        } catch (const std::exception& e) {  // bad data from the editor must not end the game
+            warn("live link: %s: %s\n", type.c_str(), e.what());
+            return;
+        }
+        for (const std::string& error : game_.upload_new_meshes(renderer))
+            warn("%s\n", error.c_str());
+        if (g_link) {  // lets the editor (and its tests) see when an edit took effect
+            const nlohmann::json& entity = message.at("entity");
+            g_link->send({{"type", "log"},
+                          {"level", "debug"},
+                          {"text", "applied " + type + " " +
+                                       (entity.is_object() ? entity.value("id", "")
+                                                           : entity.get<std::string>())}});
+        }
+    }
 
 private:
     midgard::Game game_;
@@ -298,7 +368,20 @@ int run_window(const Options& opt, Source& source) {
         return 1;
     }
     int result = 0;
+    std::unique_ptr<midgard::link::Client> link;
     try {
+        if (opt.editor_link) {
+            std::string host;
+            uint16_t port = 0;
+            if (!midgard::link::parse_endpoint(*opt.editor_link, host, port))
+                throw std::runtime_error("--editor-link needs host:port, not " + *opt.editor_link);
+            link = std::make_unique<midgard::link::Client>(host, port);
+            link->send({{"type", "hello"},
+                        {"role", "runtime"},
+                        {"version", midgard::kVersion},
+                        {"protocol", midgard::link::kProtocol}});
+            g_link = link.get();
+        }
         render::RendererDesc desc;
         Uint32 count = 0;
         const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&count);
@@ -323,8 +406,27 @@ int run_window(const Options& opt, Source& source) {
         auto last = start;
         bool running = true;
         bool background = false;  // Android: the app is not visible and has no surface
+        bool paused = false;      // the editor's Pause: drawn, but no gameplay
         long frame = 0;
+        long frames_this_second = 0;
+        size_t draw_count = 0;
+        auto stats_due = start + std::chrono::seconds(1);
         while (running && (opt.frames < 0 || frame < opt.frames)) {
+            if (link) {
+                if (!link->connected()) {
+                    say("The editor closed the live link.\n");
+                    break;
+                }
+                for (const nlohmann::json& message : link->receive()) {
+                    const std::string type = message.value("type", "");
+                    if (type == "stop")
+                        running = false;
+                    else if (type == "pause" || type == "resume")
+                        paused = type == "pause";
+                    else if (type != "hello" && type != "play")
+                        source.apply(message, renderer);
+                }
+            }
             actions.begin_frame();
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
@@ -345,6 +447,17 @@ int run_window(const Options& opt, Source& source) {
                     case SDL_EVENT_KEY_DOWN:
                         // Android's Back button quits until in-game menus exist (Phase 6).
                         if (e.key.scancode == SDL_SCANCODE_AC_BACK) running = false;
+                        // Under the editor, its Pause (F6) and Stop (Shift+F5) keys also work
+                        // while the game window has the keyboard.
+                        if (link && !e.key.repeat) {
+                            if (e.key.scancode == SDL_SCANCODE_F5 && (e.key.mod & SDL_KMOD_SHIFT)) {
+                                running = false;
+                            } else if (e.key.scancode == SDL_SCANCODE_F6) {
+                                paused = !paused;
+                                link->send(
+                                    {{"type", "state"}, {"state", paused ? "paused" : "playing"}});
+                            }
+                        }
                         break;
                     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                         renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
@@ -363,17 +476,29 @@ int run_window(const Options& opt, Source& source) {
             const auto now = std::chrono::steady_clock::now();
             const float dt = std::min(std::chrono::duration<float>(now - last).count(), 0.1f);
             last = now;
-            source.update(actions, dt);
+            if (!paused) source.update(actions, dt);
             const float t = std::chrono::duration<float>(now - start).count();
             const auto draws = source.draws(t);
             const float aspect = float(renderer.width()) / float(renderer.height());
-            if (renderer.render_frame(source.camera(aspect), source.light(), draws, source.sky()))
+            if (renderer.render_frame(source.camera(aspect), source.light(), draws, source.sky())) {
                 ++frame;
+                ++frames_this_second;
+                draw_count = draws.size();
+            }
+            if (link && now >= stats_due) {
+                link->send({{"type", "stats"},
+                            {"fps", frames_this_second},
+                            {"draw_calls", draw_count},
+                            {"paused", paused}});
+                frames_this_second = 0;
+                stats_due = now + std::chrono::seconds(1);
+            }
         }
     } catch (const std::exception& e) {
         fail(e.what());
         result = 1;
     }
+    g_link = nullptr;
     SDL_DestroyWindow(window);
     return result;
 }
@@ -395,6 +520,8 @@ int main(int argc, char** argv) {
             opt.package_dir = argv[++i];
         } else if (arg == "--screenshot" && has_value) {
             opt.screenshot = argv[++i];
+        } else if (arg == "--editor-link" && has_value) {
+            opt.editor_link = argv[++i];
         } else if (arg == "--frames" && has_value) {
             opt.frames = std::atol(argv[++i]);
         } else if (arg == "--size" && has_value) {

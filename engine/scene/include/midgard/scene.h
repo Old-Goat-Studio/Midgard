@@ -9,6 +9,7 @@
 
 #include <entt/entity/registry.hpp>
 #include <glm/glm.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include "midgard/render/renderer.h"
 
@@ -70,6 +71,17 @@ public:
     entt::registry registry;
     SceneSettings settings;
     std::string id;
+
+    // The entity with this id, or entt::null.
+    entt::entity find(const std::string& entity_id) const;
+
+    // Live editing. put_entity adds an entity or replaces all of its components, keeping its
+    // handle; `components` has the shape of the entity table's components column. A component
+    // value of null in set_component removes it. Throw SceneError on malformed components.
+    entt::entity put_entity(const std::string& entity_id, const std::string& name,
+                            const std::string& parent_id, const nlohmann::json& components);
+    void set_component(entt::entity e, const std::string& component, const nlohmann::json& value);
+    bool remove_entity(const std::string& entity_id);
 
     glm::mat4 local_matrix(entt::entity e) const;
     glm::mat4 world_matrix(entt::entity e) const;  // includes parents

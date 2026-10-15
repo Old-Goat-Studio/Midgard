@@ -22,6 +22,9 @@ public:
     // Moves the player and the camera for one frame.
     void update(Scene& scene, const Actions& actions, float dt);
 
+    // Puts the camera at this orbit (clamped) around the player.
+    void set_view(Scene& scene, float yaw, float elevation, float distance);
+
     float yaw() const { return yaw_; }              // degrees around the player
     float elevation() const { return elevation_; }  // degrees above the horizon
     float distance() const { return distance_; }    // metres

@@ -36,14 +36,39 @@
       "required": ["type", "table", "key"]
     },
     {
-      "description": "Editor → runtime: set one component of one entity.",
+      "description": "Editor → runtime: set one component of one entity. A null value removes the component.",
       "properties": {
         "type": { "const": "entity.set" },
         "entity": { "type": "string" },
         "component": { "type": "string" },
-        "value": { "type": "object" }
+        "value": { "type": ["object", "null"] }
       },
       "required": ["type", "entity", "component", "value"]
+    },
+    {
+      "description": "Editor → runtime: add an entity, or replace its name, parent and all of its components. Same shape as a row of the entity table.",
+      "properties": {
+        "type": { "const": "entity.put" },
+        "entity": {
+          "type": "object",
+          "required": ["id", "components"],
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "parent": { "type": ["string", "null"] },
+            "components": { "type": "object" }
+          }
+        }
+      },
+      "required": ["type", "entity"]
+    },
+    {
+      "description": "Editor → runtime: remove an entity. Its children lose their parent.",
+      "properties": {
+        "type": { "const": "entity.delete" },
+        "entity": { "type": "string" }
+      },
+      "required": ["type", "entity"]
     },
     {
       "description": "Runtime → editor: a log line.",
@@ -55,11 +80,20 @@
       "required": ["type", "level", "text"]
     },
     {
+      "description": "Runtime → editor: the player paused or resumed from the game window (F6).",
+      "properties": {
+        "type": { "const": "state" },
+        "state": { "enum": ["playing", "paused"] }
+      },
+      "required": ["type", "state"]
+    },
+    {
       "description": "Runtime → editor: performance figures, about once a second.",
       "properties": {
         "type": { "const": "stats" },
         "fps": { "type": "number" },
-        "draw_calls": { "type": "integer" }
+        "draw_calls": { "type": "integer" },
+        "paused": { "type": "boolean" }
       },
       "required": ["type", "fps"]
     }
