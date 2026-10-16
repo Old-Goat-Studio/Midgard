@@ -127,7 +127,12 @@ if(NOT CMAKE_CROSSCOMPILING AND (MIDGARD_BUILD_PYTHON OR MIDGARD_SCRIPTING))
     endif()
 elseif(CMAKE_CROSSCOMPILING AND MIDGARD_SCRIPTING)
     # Cross-compiling (Android): the host's Python only runs tools and has pybind11's headers.
-    find_program(Python_EXECUTABLE NAMES python3 python)
+    # Searched in PATH order (the .venv first): the toolchain's search roots would otherwise find
+    # the system's Python rather than the one pybind11 was installed into.
+    find_program(Python_EXECUTABLE NAMES python3 python NAMES_PER_DIR
+                 PATHS "${PROJECT_SOURCE_DIR}/.venv/bin" "${PROJECT_SOURCE_DIR}/.venv/Scripts"
+                       ENV PATH
+                 NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
     if(Python_EXECUTABLE)
         execute_process(COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
                         OUTPUT_VARIABLE MIDGARD_PYBIND11_DIR
