@@ -2,8 +2,9 @@
 // Vulkan 1.1 renderer with classic render passes (Android 10 devices support 1.1).
 //
 // A frame: the shadow pass draws the sun's cascaded shadow maps (one layer each), the scene pass
-// draws into a floating-point HDR image (with depth), then the post pass tone maps it onto the
-// output (the swapchain image, or the offscreen image) and draws the debug overlay on top.
+// draws the opaque objects and then the sky (where none was drawn) into a floating-point HDR
+// image (with depth), then the post pass tone maps it onto the output (the swapchain image, or
+// the offscreen image) and draws the debug overlay on top.
 #include "midgard/render/renderer.h"
 
 #include "midgard/render/ktx.h"
@@ -27,6 +28,8 @@
 #include "overlay_frag.h"
 #include "overlay_vert.h"
 #include "shadow_vert.h"
+#include "sky_frag.h"
+#include "sky_vert.h"
 #include "tonemap_frag.h"
 
 namespace midgard::render {
@@ -60,6 +63,16 @@ struct FrameData {
     glm::vec4 shadow_texels;  // metres per texel of each cascade
     glm::vec4 view_depth;     // depth = dot(xyz, position) + w
     glm::vec4 shadow_params;  // x: cascades (0: no shadows), y: shadow distance, z: 1 / resolution
+    glm::mat4 inverse_view_proj;
+    glm::vec4 sky_zenith;  // linear, brightness included
+    glm::vec4 sky_horizon;
+    glm::vec4 sky_horizon_away;
+    glm::vec4 sky_ground;
+    glm::vec4 sun_disc;    // w: cos of the disc's radius
+    glm::vec4 sun_glow;    // w: tightness
+    glm::vec4 sky_params;  // x: cos of the disc's soft outer edge
+    glm::vec4 fog_color;   // w: sun scatter
+    glm::vec4 fog_params;  // density, height falloff, camera height, sky distance
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -158,6 +171,8 @@ struct Renderer::Impl {
     VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipeline sky_pipeline = VK_NULL_HANDLE;  // in the scene pass, after the opaque objects
+    Environment environment;
     VkPipelineLayout overlay_layout = VK_NULL_HANDLE;
     VkPipeline overlay_pipeline = VK_NULL_HANDLE;
     std::vector<OverlayLine> overlay_lines;
@@ -784,6 +799,24 @@ struct Renderer::Impl {
         vkDestroyShaderModule(device, vert, nullptr);
         vkDestroyShaderModule(device, frag, nullptr);
         check(result, "Creating the graphics pipeline");
+
+        // The sky: one triangle at the far plane, no vertices, drawn where the depth is still
+        // clear (so only where no object was drawn) without writing it.
+        VkShaderModule sky_v = shader(sky_vert, sizeof(sky_vert));
+        VkShaderModule sky_f = shader(sky_frag, sizeof(sky_frag));
+        stages[0].module = sky_v;
+        stages[1].module = sky_f;
+        VkPipelineVertexInputStateCreateInfo no_vertices{
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        info.pVertexInputState = &no_vertices;
+        raster.cullMode = VK_CULL_MODE_NONE;
+        depth_state.depthWriteEnable = VK_FALSE;
+        depth_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        const VkResult sky_result =
+            vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &sky_pipeline);
+        vkDestroyShaderModule(device, sky_v, nullptr);
+        vkDestroyShaderModule(device, sky_f, nullptr);
+        check(sky_result, "Creating the sky pipeline");
     }
 
     // The overlay: alpha-blended 2D triangles over everything, no depth test.
@@ -1543,6 +1576,10 @@ struct Renderer::Impl {
             vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
         }
+        if (environment.sky) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sky_pipeline);
+            vkCmdDraw(cmd, 3, 1, 0, 0);
+        }
         vkCmdEndRenderPass(cmd);
 
         // Post: tone map the HDR scene onto the output, then the overlay.
@@ -1608,6 +1645,7 @@ struct Renderer::Impl {
             if (descriptor_pool) vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
             if (command_pool) vkDestroyCommandPool(device, command_pool, nullptr);
             if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
+            if (sky_pipeline) vkDestroyPipeline(device, sky_pipeline, nullptr);
             if (shadow_pipeline) vkDestroyPipeline(device, shadow_pipeline, nullptr);
             if (shadow_layout) vkDestroyPipelineLayout(device, shadow_layout, nullptr);
             for (VkFramebuffer fb : shadow_framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
@@ -1786,6 +1824,32 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         glm::vec4(float(cascades.count), cascades.count > 0 ? cascades.far_depth[0] : 0.0f,
                   1.0f / float(std::max(r.shadow_settings.resolution, 1u)), 0.0f);
     if (cascades.count > 0) data.shadow_params.y = cascades.far_depth[size_t(cascades.count - 1)];
+
+    // The sky and fog.
+    data.inverse_view_proj = glm::inverse(data.view_proj);
+    const Environment& env = r.environment;
+    const SkyColors& sky = env.sky_colors;
+    const auto lit = [](const glm::vec3& srgb, float brightness) {
+        return glm::vec4(to_linear(srgb) * brightness, 0.0f);
+    };
+    data.sky_zenith = lit(sky.zenith, sky.brightness);
+    data.sky_horizon = lit(sky.horizon, sky.brightness);
+    data.sky_horizon_away = lit(sky.horizon_away, sky.brightness);
+    data.sky_ground = lit(sky.ground, sky.brightness);
+    const float radius = glm::radians(std::max(sky.sun_size, 0.01f)) * 0.5f;
+    data.sun_disc = lit(sky.sun, sky.sun_brightness);
+    data.sun_disc.w = std::cos(radius);
+    data.sky_params.x = std::cos(radius * 1.25f);
+    data.sun_glow = lit(sky.glow, sky.glow_brightness);
+    data.sun_glow.w = std::clamp(sky.glow_tightness, 0.0f, 0.95f);
+    const Fog& fog = env.fog;
+    glm::vec3 fog_color = to_linear(fog.color);
+    if (fog.color_from_sky)
+        fog_color = env.sky ? glm::vec3(data.sky_horizon + data.sky_horizon_away) * 0.5f
+                            : to_linear(glm::vec3(clear_color));
+    data.fog_color = glm::vec4(fog_color, std::max(fog.sun_scatter, 0.0f));
+    data.fog_params = glm::vec4(std::max(fog.density, 0.0f), std::max(fog.height_falloff, 0.0f),
+                                fog.camera_height, std::max(fog.sky_distance, 0.0f));
     std::memcpy(f.ubo.mapped, &data, sizeof(data));
     vmaFlushAllocation(r.allocator, f.ubo.allocation, 0, VK_WHOLE_SIZE);
 
@@ -1830,6 +1894,10 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
 
 const std::vector<std::string>& Renderer::validation_messages() const {
     return impl_->validation_messages;
+}
+
+void Renderer::set_environment(const Environment& environment) {
+    impl_->environment = environment;
 }
 
 void Renderer::set_exposure(float exposure) {

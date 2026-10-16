@@ -199,6 +199,8 @@ public:
     // The lighting, with local lights relative to the camera's origin.
     virtual render::Light light(const glm::dvec3& origin) const = 0;
     virtual glm::vec4 sky() const = 0;
+    // The sky and fog (by default: a flat sky in sky()'s colour, no fog).
+    virtual render::Environment environment() const { return {}; }
     virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
     virtual void update(const midgard::Actions&, float) {}
     virtual bool wants_mouse_look() const { return false; }
@@ -262,6 +264,7 @@ public:
     render::Camera camera(float aspect) const override { return scene_->camera(aspect); }
     render::Light light(const glm::dvec3& origin) const override { return scene_->light(origin); }
     glm::vec4 sky() const override { return scene_->sky(); }
+    render::Environment environment() const override { return scene_->environment(); }
 
 private:
     std::unique_ptr<midgard::test_scenes::TestScene> scene_;
@@ -624,6 +627,7 @@ int run_screenshot(const Options& opt, Source& source) {
     source.upload(renderer);
     if (opt.overlay_text) renderer.set_overlay(overlay_lines(*opt.overlay_text));
     renderer.set_exposure(opt.exposure);
+    renderer.set_environment(source.environment());
     const render::Camera camera = source.camera(float(opt.width) / float(opt.height));
     const auto draws = source.draws(0.6f, camera.origin);
     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
@@ -908,6 +912,7 @@ int run_window(const Options& opt, Source& source) {
             bool drawn = false;
             {
                 MIDGARD_PROFILE_SCOPE("render");
+                renderer.set_environment(source.environment());
                 drawn =
                     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
             }

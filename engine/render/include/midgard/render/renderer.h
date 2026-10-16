@@ -14,6 +14,7 @@
 
 #include <glm/glm.hpp>
 
+#include "midgard/render/atmosphere.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/render/overlay.h"
@@ -133,8 +134,13 @@ public:
     void replace_mesh(MeshId id, const MeshData& mesh);
 
     // Draws one frame. Returns false if the window surface changed and the frame was skipped.
+    // clear_color is the sky when the environment has none.
     bool render_frame(const Camera& camera, const Light& light, std::span<const DrawItem> draws,
                       const glm::vec4& clear_color);
+
+    // The sky and fog for every frame from now on (render/atmosphere.h). The default is a flat
+    // sky in each frame's clear colour and no fog.
+    void set_environment(const Environment& environment);
 
     // Brightness before tone mapping (1 = as lit); the environment will drive it later.
     void set_exposure(float exposure);

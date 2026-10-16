@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "test_scenes.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -331,10 +332,80 @@ private:
     render::MeshId cube_ = 0, sphere_ = 0, planet_ = 0;
 };
 
+// The analytic sky over a wide plain with pillars out to 300 m. Sky, shadows and haze use the
+// same sun, given by its height and its direction along the ground.
+class Sky : public TestScene {
+public:
+    // elevation and azimuth (from -z towards +x) of the sun, in degrees; the fog's density at
+    // the ground and how fast it thins upwards; where the camera stands and looks.
+    struct Setup {
+        float elevation, azimuth, density, falloff;
+        glm::vec3 eye, target;
+    };
+    explicit Sky(const Setup& s)
+        : setup_(s), sky_(render::analytic_sky(glm::radians(s.elevation))) {}
+    void upload(render::Renderer& r) override {
+        cube_ = r.upload_mesh(render::make_cube());
+        sphere_ = r.upload_mesh(render::make_sphere());
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        std::vector<DrawItem> out;
+        out.push_back(
+            {cube_, at({0, -0.05f, 0}, {4000, 0.1f, 4000}), glm::vec4(0.45f, 0.5f, 0.35f, 1)});
+        const float distances[] = {8, 20, 50, 120, 300};
+        for (int i = 0; i < 5; ++i) {
+            const float d = distances[i];
+            const float h = 2.0f + d * 0.04f;
+            out.push_back({cube_,
+                           at({(i % 2 ? 1.0f : -1.0f) * (2.0f + d * 0.2f), h * 0.5f, -d},
+                              {0.8f + d * 0.01f, h, 0.8f + d * 0.01f}),
+                           glm::vec4(0.75f, 0.45f, 0.3f, 1)});
+        }
+        out.push_back({sphere_, at({1.2f, 0.5f, -4.0f}), glm::vec4(0.8f, 0.8f, 0.8f, 1)});
+        return relative(out, origin);
+    }
+    render::Camera camera(float aspect) const override {
+        render::Camera c;
+        c.origin = glm::dvec3(setup_.eye);
+        c.view = glm::lookAt(glm::vec3(0.0f), setup_.target - setup_.eye, glm::vec3(0, 1, 0));
+        c.projection = render::perspective(glm::radians(60.0f), aspect, 0.1f, 2000.0f);
+        return c;
+    }
+    render::Light light(const glm::dvec3&) const override {
+        render::Light l;
+        const float e = glm::radians(setup_.elevation), a = glm::radians(setup_.azimuth);
+        const glm::vec3 to_sun(std::cos(e) * std::sin(a), std::sin(e), -std::cos(e) * std::cos(a));
+        l.direction = -to_sun;
+        l.color = sky_.sunlight;
+        l.intensity = sky_.sunlight_intensity;
+        // Ambient light from the sky: dimmer as the sun goes down.
+        const float day = std::clamp(sky_.colors.brightness, 0.05f, 1.0f);
+        l.ambient *= day;
+        l.ambient_ground *= day;
+        return l;
+    }
+    glm::vec4 sky() const override { return {0.0f, 0.0f, 0.0f, 1.0f}; }
+    render::Environment environment() const override {
+        render::Environment env;
+        env.sky = true;
+        env.sky_colors = sky_.colors;
+        env.fog.density = setup_.density;
+        env.fog.height_falloff = setup_.falloff;
+        env.fog.camera_height = setup_.eye.y;
+        return env;
+    }
+
+private:
+    Setup setup_;
+    render::AnalyticSky sky_;
+    render::MeshId cube_ = 0, sphere_ = 0;
+};
+
 }  // namespace
 
 std::vector<std::string> names() {
-    return {"materials", "textures", "compressed", "lights", "shadows", "shadows_curved"};
+    return {"materials", "textures",       "compressed", "lights",
+            "shadows",   "shadows_curved", "sky_day",    "sky_sunset"};
 }
 
 std::unique_ptr<TestScene> make(const std::string& name) {
@@ -344,6 +415,14 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "lights") return std::make_unique<Lights>();
     if (name == "shadows") return std::make_unique<Shadows>();
     if (name == "shadows_curved") return std::make_unique<ShadowsCurved>();
+    // By day: the sun high behind the camera's right shoulder, a thin haze everywhere.
+    if (name == "sky_day")
+        return std::make_unique<Sky>(
+            Sky::Setup{35.0f, 140.0f, 0.004f, 0.02f, {0, 1.7f, 0}, {0, 1.2f, -20}});
+    // At sunset: the sun ahead just above the horizon, fog lying low over the plain.
+    if (name == "sky_sunset")
+        return std::make_unique<Sky>(
+            Sky::Setup{3.0f, -15.0f, 0.02f, 0.6f, {0, 3.0f, 0}, {0, 2.2f, -20}});
     return nullptr;
 }
 

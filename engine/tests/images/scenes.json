@@ -57,6 +57,18 @@
       "max_bad": 0.01
     },
     {
+      "name": "sky_day",
+      "_about": "The analytic sky by day (sun 35 degrees up, behind the camera) over a wide plain, with a thin haze that hides the farthest pillar in the sky's own colour.",
+      "args": ["--size", "480x270", "--scene", "sky_day"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "sky_sunset",
+      "_about": "The sun 3 degrees up, ahead: its disc and glow, a warm horizon under a dark sky, long shadows, and fog lying low over the plain (thinning upwards).",
+      "args": ["--size", "480x270", "--scene", "sky_sunset"],
+      "max_bad": 0.01
+    },
+    {
       "name": "overlay",
       "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
     }

@@ -2,13 +2,14 @@
 // glTF metal/roughness materials: GGX specular with Smith visibility and Schlick Fresnel, and
 // Lambert diffuse, for the sun (with cascaded shadows) and up to 8 point or spot lights (glTF
 // KHR_lights_punctual falloff), plus hemisphere ambient light between the sky and the ground
-// along "up".
+// along "up", and fog.
 // Brightness: a light of intensity 1 head-on lights a white matte surface to 1, so plain
 // colours look as picked; that's pi times the physical radiance.
 #version 450
 #extension GL_GOOGLE_include_directive : require
 
 #include "frame.glsl"
+#include "atmosphere.glsl"
 
 layout(push_constant) uniform Push {
     mat4 model;
@@ -73,7 +74,7 @@ vec3 hemisphere(vec3 direction) {
 // lookups. The lookup moves off the surface along its normal by a texel and a half, more where
 // the sun grazes it, so surfaces don't shadow themselves (acne). Shadows fade out over the last
 // tenth of the shadow distance.
-float sun_shadow(vec3 position, vec3 normal, vec3 to_sun) {
+float sun_shadow(vec3 position, vec3 normal, vec3 sun) {
     const int count = int(frame.shadow_params.x);
     if (count == 0) return 1.0;
     const float depth = dot(frame.view_depth.xyz, position) + frame.view_depth.w;
@@ -81,7 +82,7 @@ float sun_shadow(vec3 position, vec3 normal, vec3 to_sun) {
     if (depth >= distance) return 1.0;
     int c = 0;
     while (c < count - 1 && depth > frame.shadow_splits[c]) ++c;
-    const float grazing = 1.0 - clamp(dot(normal, to_sun), 0.0, 1.0);
+    const float grazing = 1.0 - clamp(dot(normal, sun), 0.0, 1.0);
     const vec3 p = position + normal * frame.shadow_texels[c] * (1.5 + 2.0 * grazing);
     const vec4 s = frame.shadow_matrices[c] * vec4(p, 1.0);
     const vec2 uv = s.xy * 0.5 + 0.5;
@@ -127,9 +128,9 @@ void main() {
     const vec3 albedo = base.rgb;
     const vec3 f0 = mix(vec3(0.04), albedo, metallic);
 
-    const vec3 to_sun = -normalize(frame.sun_direction.xyz);
-    vec3 color = shade(n, v, to_sun, frame.sun_color.rgb, albedo, f0, metallic, alpha) *
-                 sun_shadow(v_position, surface, to_sun);
+    const vec3 l = to_sun();
+    vec3 color = shade(n, v, l, frame.sun_color.rgb, albedo, f0, metallic, alpha) *
+                 sun_shadow(v_position, surface, l);
     for (int i = 0; i < min(frame.counts.x, kMaxLocalLights); ++i) {
         const LocalLight light = frame.lights[i];
         const vec3 to_light = light.position_range.xyz - v_position;
@@ -155,5 +156,5 @@ void main() {
     color += (diffuse_ambient + specular_ambient) * occlusion;
 
     color += pc.emissive.rgb * texture(emissive_map, v_uv).rgb;
-    out_color = vec4(color, base.a);
+    out_color = vec4(apply_fog(color, v_position), base.a);
 }
