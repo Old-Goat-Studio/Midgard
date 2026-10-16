@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -177,6 +177,12 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._build_play_toolbar()
         self._restore_session()
+        # The layout (panels, tab order, floating windows) is kept as it changes, not only on a
+        # tidy exit, so a crash or a killed editor doesn't lose it.
+        self._layout_saver = QTimer(self)
+        self._layout_saver.setInterval(3000)
+        self._layout_saver.timeout.connect(self.save_session_layout)
+        self._layout_saver.start()
         self.themes.apply(settings.get("theme"))
         self.set_project(None)
 
@@ -252,6 +258,12 @@ class MainWindow(QMainWindow):
             moved |= layout_store.keep_on_screen(floating)
         if moved:
             log.info("Moved windows from a monitor that is no longer connected.")
+
+    def save_session_layout(self) -> None:
+        """Keeps the current layout for next time (if it has changed)."""
+        record = self._layout_record()
+        if record != self.settings.get("layout_last"):
+            self.settings.set("layout_last", record)
 
     def _restore_session(self) -> None:
         last = self.settings.get("layout_last")
@@ -681,7 +693,7 @@ class MainWindow(QMainWindow):
         self.assistant.cancel()
         if self.session is not None:
             self.session.stop()
-        self.settings.set("layout_last", self._layout_record())
+        self.save_session_layout()
         if self.backups is not None:
             self.backups.backup_if_needed()
         super().closeEvent(event)
