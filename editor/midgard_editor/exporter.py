@@ -10,7 +10,7 @@ The game's icon (Project Page) goes into the package (the window and taskbar ico
 Windows executable itself (replacing the runtime's built-in icon in place; see winicon.py), beside
 the Linux executable for its .desktop launcher, and into the Android launcher.
 
-Desktop games also carry their Python (the template's runtime_files: python313.dll and python/
+Desktop games also carry their Python (the template's runtime_files: python314.dll and python/
 on Windows, python/ on Linux) for game scripts.
     Android:  <Game>-<version>-android-arm64.apk   ->  signed APK, the package in assets/data/
 
@@ -47,7 +47,7 @@ TARGETS = {
 }
 
 # The game's Python beside a desktop runtime (tools/setup_python.py).
-PYTHON_FILES = ("python313.dll", "python3.dll", "vcruntime140.dll", "vcruntime140_1.dll", "python")
+PYTHON_FILES = ("python314.dll", "python3.dll", "vcruntime140.dll", "vcruntime140_1.dll", "python")
 
 README_WINDOWS = """{title}
 
@@ -224,6 +224,10 @@ def _export_android(project: Project, template: Template, out_dir: Path, setting
         shutil.rmtree(work)
     cook(project, work / "data", {"os": spec["os"], "arch": spec["arch"], "role": "game"})
     assets = {"licenses/THIRD_PARTY_NOTICES.txt": _notices(template).encode("utf-8")}
+    # The runtime copies these out of the APK on first start (scripts/, icon.png and the rest).
+    data_files = sorted(p.relative_to(work / "data").as_posix()
+                        for p in (work / "data").rglob("*") if p.is_file())
+    assets["data/files.txt"] = ("\n".join(data_files) + "\n").encode("utf-8")
     for doc in ("LICENSE", "NOTICE"):
         src = template.folder / doc if (template.folder / doc).is_file() else BUNDLE_DIR / doc
         if src.is_file():

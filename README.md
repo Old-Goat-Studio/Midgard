@@ -71,7 +71,7 @@ build/linux-release/engine/midgard_runtime --check-python
 ```
 
 Other presets: `linux-arm64-release` (on an ARM host) and `android-arm64` (needs
-`ANDROID_NDK_HOME`).
+`ANDROID_NDK_HOME`, and `python tools/setup_python.py --target android-arm64` for scripting).
 
 The engine build also makes `_midgard`, the engine as a Python module that the editor uses
 in-process (for example to check every cooked package). It is built for the project's `.venv`

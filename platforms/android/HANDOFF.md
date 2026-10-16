@@ -31,7 +31,12 @@ Android games join co-op sessions but never host. Package format: 1.0. Engine AB
   `<settings>/android/`. Back it up: an installed game accepts updates only when they are signed
   with the same key. Choosing your own keystore comes later.
 - On first start, the runtime copies `assets/data/` to internal storage (SQLite needs real
-  files), and copies it again whenever the package's `manifest.json` changes.
+  files; the exporter lists the files in `assets/data/files.txt`), and copies it again whenever
+  the package's `manifest.json` changes.
+- Game scripts run on Python 3.14 (python.org's official Android build, fetched by
+  `tools/setup_python.py --target android-arm64`): `lib/arm64-v8a/libpython3.14.so` beside
+  `libmain.so`, and `assets/python.zip` (the standard library and its compiled modules),
+  unpacked into internal storage on first start and again when it changes. About 10 MB.
 
 ## Outputs
 - `runtime-template-android-arm64`: the template zip, from every CI run

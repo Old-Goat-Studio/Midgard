@@ -219,7 +219,16 @@ jobs:
           path: ~/.cache/vcpkg/archives
           key: vcpkg-android-arm64-${{ hashFiles('vcpkg.json') }}
       - run: python tools/setup_vcpkg.py
-      - run: cmake --preset android-arm64
+      - name: pybind11 (headers for the runtime's scripting)
+        run: pip install "pybind11>=2.13"
+      - name: Cache the game's Python download
+        uses: actions/cache@v4
+        with:
+          path: .tools/python/*.tar.gz
+          key: game-python-android-arm64-${{ hashFiles('tools/setup_python.py') }}
+      - name: The game's Python for Android (python.org's official build, pinned)
+        run: python tools/setup_python.py --target android-arm64
+      - run: cmake --preset android-arm64 -DMIDGARD_REQUIRE_PYTHON=ON
       - run: cmake --build --preset android-arm64
       - name: Runtime template (template APK, for Build > Export)
         run: python tools/make_template.py --preset android-arm64
@@ -237,7 +246,16 @@ jobs:
           from PySide6.QtCore import QCoreApplication
           from midgard_editor.project import Project
           app = QCoreApplication([])
-          Project.create(Path(sys.argv[1]), "HelloCube", "system_map", "Hello Cube")
+          project = Project.create(Path(sys.argv[1]), "HelloCube", "system_map", "Hello Cube")
+          # A script, so the APK must carry Python and the game's scripts/.
+          (project.root / "scripts").mkdir()
+          (project.root / "scripts" / "spin.py").write_text(
+              "def on_update(entity, dt):\n"
+              "    x, y, z = entity.rotation\n"
+              "    entity.rotation = (x, y + 90 * dt, z)\n", "utf-8")
+          cube = project.entity("e000004")
+          cube.components["script"] = {"module": "spin"}
+          project.put_entity(cube)
           PY
           python -m midgard_editor export "$RUNNER_TEMP/projects/HelloCube/HelloCube.config"             --target android-arm64 --out "$RUNNER_TEMP/export"             --template build/templates/midgard-runtime-*-android-arm64.zip             --settings "$RUNNER_TEMP/settings"
       - name: Check the exported APK with the Android SDK's own tools
@@ -249,7 +267,11 @@ jobs:
           "$TOOLS/aapt2" dump badging "$APK" | tee "$RUNNER_TEMP/badging.txt"
           grep -q "package: name='com.example.hellocube'" "$RUNNER_TEMP/badging.txt"
           grep -q "application-label:'Hello Cube'" "$RUNNER_TEMP/badging.txt"
-          unzip -l "$APK"
+          unzip -l "$APK" | tee "$RUNNER_TEMP/apk.txt"
+          for f in lib/arm64-v8a/libmain.so lib/arm64-v8a/libpython3.14.so assets/python.zip \
+                   assets/data/files.txt assets/data/scripts/spin.py; do
+            grep -q " $f\$" "$RUNNER_TEMP/apk.txt" || { echo "::error::$f is missing from the APK"; exit 1; }
+          done
       - name: Upload the sample APK (install it on a phone to try it)
         uses: actions/upload-artifact@v4
         with:

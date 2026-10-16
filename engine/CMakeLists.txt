@@ -125,11 +125,29 @@ if(NOT CMAKE_CROSSCOMPILING AND (MIDGARD_BUILD_PYTHON OR MIDGARD_SCRIPTING))
         set(PYBIND11_FINDPYTHON ON)
         find_package(pybind11 CONFIG REQUIRED PATHS "${MIDGARD_PYBIND11_DIR}" NO_DEFAULT_PATH)
     endif()
+elseif(CMAKE_CROSSCOMPILING AND MIDGARD_SCRIPTING)
+    # Cross-compiling (Android): the host's Python only runs tools and has pybind11's headers.
+    find_program(Python_EXECUTABLE NAMES python3 python)
+    if(Python_EXECUTABLE)
+        execute_process(COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
+                        OUTPUT_VARIABLE MIDGARD_PYBIND11_DIR
+                        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    endif()
+    if(MIDGARD_PYBIND11_DIR)
+        file(TO_CMAKE_PATH "${MIDGARD_PYBIND11_DIR}" MIDGARD_PYBIND11_DIR)
+        set(PYBIND11_NOPYTHON ON)  # headers only: the game's Python is set up below
+        find_package(pybind11 CONFIG REQUIRED PATHS "${MIDGARD_PYBIND11_DIR}" NO_DEFAULT_PATH
+                     NO_CMAKE_FIND_ROOT_PATH)
+    endif()
 endif()
 
 # ---- script: the game's embedded CPython ----------------------------------------------------
-if(MIDGARD_SCRIPTING AND NOT ANDROID)
-    if(WIN32)
+if(MIDGARD_SCRIPTING)
+    set(MIDGARD_PY_FOLDER "python")  # python-build-standalone's layout
+    if(ANDROID)
+        set(MIDGARD_PY_TARGET "android-arm64")
+        set(MIDGARD_PY_FOLDER "prefix")  # python.org's Android build
+    elseif(WIN32)
         set(MIDGARD_PY_TARGET "windows-x86_64")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
         set(MIDGARD_PY_TARGET "linux-arm64")
@@ -137,13 +155,18 @@ if(MIDGARD_SCRIPTING AND NOT ANDROID)
         set(MIDGARD_PY_TARGET "linux-x86_64")
     endif()
     file(GLOB MIDGARD_GAME_PYTHON LIST_DIRECTORIES true
-         "${PROJECT_SOURCE_DIR}/.tools/python/*-${MIDGARD_PY_TARGET}/python")
+         "${PROJECT_SOURCE_DIR}/.tools/python/*-${MIDGARD_PY_TARGET}/${MIDGARD_PY_FOLDER}")
     if(MIDGARD_GAME_PYTHON AND TARGET pybind11::headers)
         list(GET MIDGARD_GAME_PYTHON -1 MIDGARD_GAME_PYTHON)
         add_library(midgard_python INTERFACE)
         if(WIN32)
             file(GLOB MIDGARD_PY_LIB "${MIDGARD_GAME_PYTHON}/libs/python3[0-9]*.lib")
             target_include_directories(midgard_python INTERFACE "${MIDGARD_GAME_PYTHON}/include")
+        elseif(ANDROID)
+            file(GLOB MIDGARD_PY_LIB "${MIDGARD_GAME_PYTHON}/lib/libpython3.*.so")
+            file(GLOB MIDGARD_PY_INCLUDE LIST_DIRECTORIES true
+                 "${MIDGARD_GAME_PYTHON}/include/python3.*")
+            target_include_directories(midgard_python INTERFACE ${MIDGARD_PY_INCLUDE})
         else()
             file(GLOB MIDGARD_PY_LIB "${MIDGARD_GAME_PYTHON}/lib/libpython3.*.so")
             file(GLOB MIDGARD_PY_INCLUDE LIST_DIRECTORIES true
@@ -182,6 +205,9 @@ if(MIDGARD_BUILD_PROGRAMS)
         midgard_core midgard_render midgard_scene midgard_link SDL3::SDL3 Vulkan::Headers
         midgard_options)
     target_include_directories(midgard_runtime PRIVATE ${Stb_INCLUDE_DIR})  # the window icon
+    if(ANDROID)
+        target_link_libraries(midgard_runtime PRIVATE miniz::miniz)  # unpacking Python
+    endif()
     if(WIN32)
         # A windowed program (no console behind the game). It attaches to the terminal it was
         # started from, so --version still prints there.
@@ -190,9 +216,10 @@ if(MIDGARD_BUILD_PROGRAMS)
     if(TARGET midgard_script)
         target_link_libraries(midgard_runtime PRIVATE midgard_script)
         target_compile_definitions(midgard_runtime PRIVATE MIDGARD_HAS_SCRIPTING=1)
-        # The game's Python goes beside the runtime: python313.dll next to it on Windows (where
-        # it can't be delay-loaded), python/lib/libpython3.13.so through the rpath on Linux.
-        if(NOT WIN32)
+        # The game's Python goes beside the runtime: python314.dll next to it on Windows (where
+        # it can't be delay-loaded), python/lib/libpython3.14.so through the rpath on Linux, and
+        # on Android libpython3.14.so beside libmain.so (in the APK) plus a python.zip asset.
+        if(NOT WIN32 AND NOT ANDROID)
             set_target_properties(midgard_runtime PROPERTIES
                 BUILD_RPATH "\$ORIGIN/python/lib" INSTALL_RPATH "\$ORIGIN/python/lib")
         endif()

@@ -97,12 +97,12 @@ def test_exports_carry_the_games_python(project, tmp_path):
             "target": {"os": "linux", "arch": "x86_64"}, "runtime": "midgard_runtime",
             "engine": VERSION, "engine_abi": 0, "runtime_files": ["python"]}))
         z.writestr("midgard_runtime", b"fake runtime")
-        z.writestr("python/python313.zip", b"stdlib")
-        z.writestr("python/lib/libpython3.13.so.1.0", b"libpython")
+        z.writestr("python/python314.zip", b"stdlib")
+        z.writestr("python/lib/libpython3.14.so.1.0", b"libpython")
         z.writestr("THIRD_PARTY_NOTICES.txt", "notices")
     settings = tmp_path / "settings"
     exporter.install_template(archive, settings)
     result = exporter.export(project, "linux-x86_64", tmp_path / "out", settings)
     with tarfile.open(result) as tar:
         names = set(tar.getnames())
-    assert {"HelloCube/python/python313.zip", "HelloCube/python/lib/libpython3.13.so.1.0"} <= names
+    assert {"HelloCube/python/python314.zip", "HelloCube/python/lib/libpython3.14.so.1.0"} <= names

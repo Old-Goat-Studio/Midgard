@@ -157,6 +157,7 @@ def test_android_export(project, tmp_path):
             "assets/licenses/THIRD_PARTY_NOTICES.txt",
             "assets/licenses/MIDGARD_NOTICE.txt"} <= names
     assert "com.example.hellocube" in strings and "Hello Cube" in strings
+    assert "assets/data/files.txt" in names  # what the runtime copies out on first start
     assert manifest["target"] == {"os": "android", "arch": "arm64", "role": "game"}
 
 

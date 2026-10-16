@@ -48,6 +48,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#ifdef __ANDROID__
+#include <miniz.h>  // unpacking the game's Python
+#endif
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #include <stb_image.h>
@@ -307,9 +311,13 @@ private:
         scripts_tried_ = true;
 #ifdef MIDGARD_HAS_SCRIPTING
         try {
+#ifdef __ANDROID__
+            const std::filesystem::path home = android_python_home();
+#else
             const char* base = SDL_GetBasePath();
             const std::filesystem::path home =
                 midgard::script::python_home_beside(base ? base : ".");
+#endif
             python_ = std::make_unique<midgard::script::Interpreter>(
                 home, std::vector<std::filesystem::path>{game_.package().root / "scripts"});
             scripts_ = std::make_unique<midgard::script::ScriptSystem>(game_, report_script);
@@ -445,11 +453,29 @@ std::optional<std::string> package_from_assets() {
     }
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    const midgard::Manifest m = midgard::parse_manifest(manifest);
-    const std::vector<std::string> files = {m.database, "game.pak", m.game_name + ".config"};
+    // The exporter lists the package's files in data/files.txt (scripts/, icon.png and the rest).
+    std::vector<std::string> files;
+    if (void* list = SDL_LoadFile("data/files.txt", &size)) {
+        std::string line;
+        for (const char c : std::string(static_cast<const char*>(list), size)) {
+            if (c != '\n') {
+                line += c;
+            } else if (!line.empty()) {
+                files.push_back(line);
+                line.clear();
+            }
+        }
+        if (!line.empty()) files.push_back(line);
+        SDL_free(list);
+    } else {  // an APK from before the list existed
+        const midgard::Manifest m = midgard::parse_manifest(manifest);
+        files = {m.database, "game.pak", m.game_name + ".config"};
+    }
     for (const std::string& name : files) {
+        if (name == "manifest.json" || name == "files.txt") continue;
         void* bytes = SDL_LoadFile(("data/" + name).c_str(), &size);
         if (!bytes) continue;  // optional parts of a package
+        std::filesystem::create_directories((dir / name).parent_path());
         const bool ok = write_file(dir / name, bytes, size);
         SDL_free(bytes);
         if (!ok) throw std::runtime_error("Could not write " + (dir / name).string());
@@ -460,6 +486,53 @@ std::optional<std::string> package_from_assets() {
     say("Unpacked the game data to %s\n", dir.string().c_str());
     return dir.string();
 }
+
+#ifdef MIDGARD_HAS_SCRIPTING
+// The game's Python on Android: the APK's python.zip asset (the standard library and its
+// compiled modules) unpacked into the app's storage, again only after an update changes it.
+std::filesystem::path android_python_home() {
+    const char* storage = SDL_GetAndroidInternalStoragePath();
+    if (!storage) throw std::runtime_error(std::string("No internal storage: ") + SDL_GetError());
+    const std::filesystem::path home = std::filesystem::path(storage) / "python";
+    size_t size = 0;
+    void* archive = SDL_LoadFile("python.zip", &size);
+    if (!archive) throw std::runtime_error("python.zip is missing from the game's APK");
+    mz_zip_archive zip{};
+    if (!mz_zip_reader_init_mem(&zip, archive, size, 0)) {
+        SDL_free(archive);
+        throw std::runtime_error("python.zip in the game's APK is damaged");
+    }
+    std::string version;
+    size_t version_size = 0;
+    if (void* v = mz_zip_reader_extract_file_to_heap(&zip, "VERSION", &version_size, 0)) {
+        version.assign(static_cast<const char*>(v), version_size);
+        mz_free(v);
+    }
+    std::ifstream installed_file(home / "VERSION", std::ios::binary);
+    const std::string installed((std::istreambuf_iterator<char>(installed_file)), {});
+    if (version.empty() || installed != version) {
+        std::filesystem::remove_all(home);
+        for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&zip); ++i) {
+            char name[512];
+            mz_zip_reader_get_filename(&zip, i, name, sizeof(name));
+            if (mz_zip_reader_is_file_a_directory(&zip, i) || std::string(name) == "VERSION")
+                continue;
+            const std::filesystem::path target = home / name;
+            std::filesystem::create_directories(target.parent_path());
+            if (!mz_zip_reader_extract_to_file(&zip, i, target.string().c_str(), 0)) {
+                mz_zip_reader_end(&zip);
+                SDL_free(archive);
+                throw std::runtime_error("Could not unpack Python: " + target.string());
+            }
+        }
+        write_file(home / "VERSION", version.data(), version.size());  // last: a complete copy
+        say("Unpacked Python %s", version.c_str());
+    }
+    mz_zip_reader_end(&zip);
+    SDL_free(archive);
+    return home;
+}
+#endif
 #endif
 
 bool want_validation() {

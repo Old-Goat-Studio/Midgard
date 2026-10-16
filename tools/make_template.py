@@ -5,13 +5,14 @@ editor's Build ▸ Export copies and fills with a cooked game.
     python tools/make_template.py --preset windows-release [--out build/templates]
 
 Writes midgard-runtime-<version>-<target>.zip containing template.json, the runtime executable,
-the game's Python beside it (python313.dll and python/ on Windows, python/ on Linux; listed in
+the game's Python beside it (python314.dll and python/ on Windows, python/ on Linux; listed in
 template.json as runtime_files), LICENSE, NOTICE and THIRD_PARTY_NOTICES.txt (the components
 every exported game carries).
 
 For android-arm64 the "runtime" is base.apk: an unsigned APK holding the compiled manifest
-(platforms/android/app), the launcher icon, SDL's Java activity as classes.dex and the engine as
-lib/arm64-v8a/libmain.so. The editor adds the game's data and signs it. Building it needs the
+(platforms/android/app), the launcher icon, SDL's Java activity as classes.dex, the engine as
+lib/arm64-v8a/libmain.so and the game's Python (lib/arm64-v8a/libpython3.14.so and
+assets/python.zip). The editor adds the game's data and signs it. Building it needs the
 Android SDK (ANDROID_HOME, with build-tools and a platform) and a JDK (javac).
 """
 import argparse
@@ -121,6 +122,13 @@ def make_android_apk(build: Path, work: Path) -> Path:
     with zipfile.ZipFile(apk, "a", zipfile.ZIP_DEFLATED) as z:
         z.write(work / "dex" / "classes.dex", "classes.dex")
         z.write(libmain, "lib/arm64-v8a/libmain.so")
+        # The game's Python (tools/setup_python.py, written beside libmain.so by the build).
+        sys.path.insert(0, str(ROOT / "tools"))
+        from setup_python import ANDROID_ASSET, ANDROID_LIBRARY
+
+        if (libmain.parent / ANDROID_LIBRARY).is_file():
+            z.write(libmain.parent / ANDROID_LIBRARY, f"lib/arm64-v8a/{ANDROID_LIBRARY}")
+            z.write(libmain.parent / ANDROID_ASSET, f"assets/{ANDROID_ASSET}")
     run(tools / f"aapt2{exe}", "dump", "badging", apk)
     return apk
 

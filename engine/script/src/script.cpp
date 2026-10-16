@@ -10,6 +10,12 @@ namespace {
 
 bool g_running = false;
 
+// "python314.zip" and "python3.14": the names tools/setup_python.py gives the standard library.
+const std::string kStdlibZip =
+    "python" + std::to_string(PY_MAJOR_VERSION) + std::to_string(PY_MINOR_VERSION) + ".zip";
+const std::string kLibFolder =
+    "python" + std::to_string(PY_MAJOR_VERSION) + "." + std::to_string(PY_MINOR_VERSION);
+
 void append(PyWideStringList& list, const std::filesystem::path& path) {
     const PyStatus status = PyWideStringList_Append(&list, path.wstring().c_str());
     if (PyStatus_Exception(status)) throw ScriptError("Python: cannot add " + path.string());
@@ -24,7 +30,7 @@ std::filesystem::path python_home_beside(const std::filesystem::path& executable
 Interpreter::Interpreter(const std::filesystem::path& python_home,
                          const std::vector<std::filesystem::path>& script_paths) {
     if (g_running) throw ScriptError("the Python interpreter is already running");
-    const std::filesystem::path stdlib = python_home / "python313.zip";
+    const std::filesystem::path stdlib = python_home / kStdlibZip;
     if (!std::filesystem::is_regular_file(stdlib))
         throw ScriptError("Python is missing: " + stdlib.string() + " not found");
     PyConfig config;
@@ -45,7 +51,7 @@ Interpreter::Interpreter(const std::filesystem::path& python_home,
 #ifdef _WIN32
         append(config.module_search_paths, python_home / "DLLs");
 #else
-        append(config.module_search_paths, python_home / "lib" / "python3.13" / "lib-dynload");
+        append(config.module_search_paths, python_home / "lib" / kLibFolder / "lib-dynload");
 #endif
     } catch (...) {
         PyConfig_Clear(&config);
