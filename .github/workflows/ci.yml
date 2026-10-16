@@ -52,7 +52,18 @@ jobs:
             libdbus-1-3 libfontconfig1 libglib2.0-0
       - run: pip install -e "editor[dev]"
       - run: python -m midgard_editor --version
-      - run: pytest editor -q
+      - name: Editor tests
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest editor -q -rA --junitxml="$RUNNER_TEMP/editor.xml" 2>&1 \
+            | tee "$RUNNER_TEMP/editor.log"
+      - name: Show failed editor tests as annotations
+        if: failure()
+        shell: bash
+        run: |
+          python tools/junit_annotations.py "$RUNNER_TEMP/editor.xml" \
+            --log "$RUNNER_TEMP/editor.log" || true
 
   package-editor:
     name: Package editor (${{ matrix.os }})
