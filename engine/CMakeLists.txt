@@ -121,10 +121,12 @@ add_library(midgard_scene STATIC
     scene/src/game.cpp
     scene/src/third_person.cpp
     scene/src/validate.cpp
+    scene/src/scene_physics.cpp
 )
 target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_link_libraries(midgard_scene
-    PUBLIC midgard_core midgard_render midgard_input EnTT::EnTT glm::glm nlohmann_json::nlohmann_json
+    PUBLIC midgard_core midgard_render midgard_input midgard_physics EnTT::EnTT glm::glm
+           nlohmann_json::nlohmann_json
     PRIVATE miniz::miniz unofficial::sqlite3::sqlite3 midgard_options
 )
 

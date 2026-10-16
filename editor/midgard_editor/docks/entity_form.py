@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Inspector form for one entity: name, transform, and the settings of its components. Add
-Component adds a script (a new file in scripts/, opened in the Script editor) or a trigger. A
-folder has only its name, and the sky its sky and ambient light colours."""
+Component adds a script (a new file in scripts/, opened in the Script editor), a trigger, or
+physics: a collider (its shape), a rigid body (how it moves, its mass and collision layer) and a
+physics material (friction and bounciness). A folder has only its name, and the sky its sky and
+ambient light colours."""
 import copy
+from typing import Any
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
@@ -88,13 +91,22 @@ class EntityForm(QWidget):
     open_script = Signal(str)  # a module to open in the Script editor
     rebuild = Signal(str)  # the entity's set of components changed: build the form again
 
-    ADDABLE = {"script": "Script", "trigger": "Trigger"}
+    ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
+               "rigidbody": "Rigid body", "physics_material": "Physics material"}
     SKY_COLOURS = {"color": "Sky colour", "ambient": "Ambient light"}
+    COLLIDER_SHAPES = {"box": "Box", "sphere": "Sphere", "capsule": "Capsule",
+                       "convex": "Convex (wraps its mesh)", "mesh": "Mesh (static only)"}
+    # Which collider settings each shape uses.
+    COLLIDER_ROWS = {"box": {"size", "offset"}, "sphere": {"radius", "offset"},
+                     "capsule": {"radius", "height", "offset"}, "convex": {"offset"},
+                     "mesh": {"offset"}, "heightfield": set()}
+    MOTIONS = {"dynamic": "Dynamic (falls, gets pushed)", "kinematic": "Kinematic (moved by "
+               "the game)", "static": "Static (never moves)"}
 
     def __init__(self, project: Project, entity_id: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.project, self.entity_id = project, entity_id
-        form = QFormLayout(self)
+        form = self.form = QFormLayout(self)
         self.name = QLineEdit()
         form.addRow("Name", self.name)
         self.name.editingFinished.connect(self._name_edited)
@@ -163,6 +175,7 @@ class EntityForm(QWidget):
                 box.valueChanged.connect(lambda _v: self._trigger_edited())
             form.addRow("Trigger size", _row(self.trigger, _remove_button(
                 "Remove the trigger", lambda: self.remove_component("trigger"))))
+        self._build_physics_rows(entity)
         missing = [k for k in self.ADDABLE if k not in entity.components]
         self.add_component = QPushButton("Add Component")
         menu = QMenu(self.add_component)
@@ -175,6 +188,123 @@ class EntityForm(QWidget):
         self._kinds = set(entity.components)
         project.entities_changed.connect(self._changed)
         self.refresh()
+
+    def _build_physics_rows(self, entity: Entity) -> None:
+        form = self.form
+        self.collider_shape = self.collider_size = self.collider_radius = None
+        self.collider_height = self.collider_offset = None
+        if "collider" in entity.components:
+            self.collider_shape = QComboBox()
+            for key, label in self.COLLIDER_SHAPES.items():
+                self.collider_shape.addItem(label, key)
+            if entity.components["collider"].get("shape") == "heightfield":
+                self.collider_shape.addItem("Heightfield", "heightfield")
+            self.collider_shape.currentIndexChanged.connect(
+                lambda _i: self._set_value("collider", "shape", self.collider_shape.currentData(),
+                                           "collider shape"))
+            form.addRow("Collider", _row(self.collider_shape, _remove_button(
+                "Remove the collider", lambda: self.remove_component("collider"))))
+            self.collider_size = Vec3Editor(0.1, 0.001)
+            self.collider_radius = _spin(0.001, 100000.0, 0.05)
+            self.collider_height = _spin(0.002, 100000.0, 0.1)
+            self.collider_offset = Vec3Editor(0.1)
+            for editor, key in ((self.collider_size, "size"), (self.collider_offset, "offset")):
+                for box in editor.boxes:
+                    box.valueChanged.connect(lambda _v, e=editor, k=key: self._set_value(
+                        "collider", k, e.value(), f"collider {k}"))
+            for box, key in ((self.collider_radius, "radius"), (self.collider_height, "height")):
+                box.valueChanged.connect(lambda _v, b=box, k=key: self._set_value(
+                    "collider", k, round(b.value(), 4), f"collider {k}"))
+            form.addRow("Size", self.collider_size)
+            form.addRow("Radius", self.collider_radius)
+            form.addRow("Height", self.collider_height)
+            form.addRow("Offset", self.collider_offset)
+        self.motion = self.mass = self.layer = None
+        if "rigidbody" in entity.components:
+            self.motion = QComboBox()
+            for key, label in self.MOTIONS.items():
+                self.motion.addItem(label, key)
+            self.motion.currentIndexChanged.connect(lambda _i: self._set_value(
+                "rigidbody", "motion", self.motion.currentData(), "motion"))
+            form.addRow("Rigid body", _row(self.motion, _remove_button(
+                "Remove the rigid body (it becomes static scenery)",
+                lambda: self.remove_component("rigidbody"))))
+            self.mass = _spin(0.0, 1.0e6, 1.0, 2)
+            self.mass.setSuffix(" kg")
+            self.mass.setSpecialValueText("From its size")
+            self.mass.valueChanged.connect(lambda _v: self._set_value(
+                "rigidbody", "mass", round(self.mass.value(), 4), "mass"))
+            form.addRow("Mass", self.mass)
+            self.layer = QComboBox()
+            for i, name in enumerate(self.project.physics_layers()):
+                if name or i == 0:
+                    self.layer.addItem(f"{i}: {name or 'default'}", i)
+            self.layer.currentIndexChanged.connect(lambda _i: self._set_value(
+                "rigidbody", "layer", self.layer.currentData(), "collision layer"))
+            form.addRow("Layer", self.layer)
+        self.friction = self.bounciness = None
+        if "physics_material" in entity.components:
+            self.friction = _spin(0.0, 2.0, 0.05, 2)
+            self.bounciness = _spin(0.0, 1.0, 0.05, 2)
+            for box, key in ((self.friction, "friction"), (self.bounciness, "bounciness")):
+                box.valueChanged.connect(lambda _v, b=box, k=key: self._set_value(
+                    "physics_material", k, round(b.value(), 4), k))
+            form.addRow("Friction", _row(self.friction, _remove_button(
+                "Remove the physics material", lambda: self.remove_component(
+                    "physics_material"))))
+            form.addRow("Bounciness", self.bounciness)
+
+    def _refresh_physics(self, entity: Entity) -> None:
+        def show(combo: QComboBox, value: Any) -> None:
+            combo.blockSignals(True)
+            if combo.findData(value) < 0:
+                combo.addItem(f"{value} (unknown)", value)
+            combo.setCurrentIndex(combo.findData(value))
+            combo.blockSignals(False)
+
+        def number(box: QDoubleSpinBox, value: float) -> None:
+            box.blockSignals(True)
+            box.setValue(float(value))
+            box.blockSignals(False)
+
+        if self.collider_shape is not None:
+            c = entity.components["collider"]
+            shape = c.get("shape", "box")
+            show(self.collider_shape, shape)
+            self.collider_size.set_value(c.get("size", [1.0, 1.0, 1.0]))
+            number(self.collider_radius, c.get("radius", 0.5))
+            number(self.collider_height, c.get("height", 2.0))
+            self.collider_offset.set_value(c.get("offset", [0.0, 0.0, 0.0]))
+            rows = self.COLLIDER_ROWS.get(shape, set())
+            for key, widget in (("size", self.collider_size), ("radius", self.collider_radius),
+                                ("height", self.collider_height),
+                                ("offset", self.collider_offset)):
+                self.form.setRowVisible(widget, key in rows)
+        if self.motion is not None:
+            b = entity.components["rigidbody"]
+            show(self.motion, b.get("motion", "dynamic"))
+            number(self.mass, b.get("mass", 0.0))
+            show(self.layer, b.get("layer", 0))
+        if self.friction is not None:
+            m = entity.components["physics_material"]
+            number(self.friction, m.get("friction", 0.5))
+            number(self.bounciness, m.get("bounciness", 0.0))
+
+    def _set_value(self, component: str, key: str, value: Any, label: str) -> None:
+        entity = self._entity()
+        if component not in entity.components or entity.components[component].get(key) == value:
+            return
+        entity.components[component] = {**entity.components[component], key: value}
+        self._push(entity, label)
+
+    def default_collider(self, entity: Entity) -> dict[str, Any]:
+        """A collider that fits the entity's mesh: a sphere for a sphere, a box otherwise."""
+        asset = entity.components.get("mesh", {}).get("asset", "")
+        if asset == "prim_sphere":
+            return {"shape": "sphere", "radius": 0.5}
+        if asset.startswith("asset:"):
+            return {"shape": "convex"}  # wraps the model
+        return {"shape": "box", "size": [1.0, 1.0, 1.0]}
 
     def _entity(self) -> Entity:
         entity = self.project.entity(self.entity_id)
@@ -222,6 +352,7 @@ class EntityForm(QWidget):
             self.script.blockSignals(False)
         if self.trigger is not None:
             self.trigger.set_value(entity.components["trigger"].get("size", [1.0, 1.0, 1.0]))
+        self._refresh_physics(entity)
         for box, component, key, default in ((self.fov, "camera", "fov", 55.0),
                                              (self.intensity, "light", "intensity", 1.0)):
             if box is not None:
@@ -265,6 +396,14 @@ class EntityForm(QWidget):
             entity.components["script"] = {"module": module}
         elif kind == "trigger":
             entity.components["trigger"] = {"size": [1.0, 1.0, 1.0]}
+        elif kind == "collider":
+            entity.components["collider"] = self.default_collider(entity)
+        elif kind == "rigidbody":
+            entity.components["rigidbody"] = {"motion": "dynamic"}
+            # A rigid body needs a shape to collide with.
+            entity.components.setdefault("collider", self.default_collider(entity))
+        elif kind == "physics_material":
+            entity.components["physics_material"] = {"friction": 0.5, "bounciness": 0.0}
         self._push(entity, self.ADDABLE[kind].lower())
         if kind == "script":
             self.open_script.emit(entity.components["script"]["module"])

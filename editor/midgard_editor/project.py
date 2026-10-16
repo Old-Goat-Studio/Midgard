@@ -48,6 +48,7 @@ NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 GAME_TITLE_KEY = "game.title"
 GAME_TAGLINE_KEY = "game.tagline"  # one line, e.g. for a store page or the title screen
 GAME_DESCRIPTION_KEY = "game.description"  # a few paragraphs about the game
+PHYSICS_LAYERS = 16
 
 
 class ProjectError(Exception):
@@ -60,6 +61,8 @@ class Project(QObject):
     config_changed = Signal(str)  # key
     string_changed = Signal(str)  # string key
     entities_changed = Signal(str)  # entity id, or "" when entities were added or removed
+    scene_settings_changed = Signal(str)  # scene id
+    physics_layers_changed = Signal()
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
         super().__init__()
@@ -275,6 +278,44 @@ class Project(QObject):
             row = con.execute("SELECT settings FROM scene WHERE id = ?", (scene,)).fetchone()
         stored = json.loads(row[0]) if row and row[0] else {}
         return {**DEFAULT_SETTINGS, **stored}
+
+    def set_scene_settings(self, settings: dict[str, Any], scene: str = MAIN_SCENE) -> None:
+        """Replace a scene's settings. Use undo.SetSceneSettingsCommand from the UI."""
+        with self.connect() as con:
+            con.execute("UPDATE scene SET settings = ? WHERE id = ?", (json.dumps(settings), scene))
+        self.scene_settings_changed.emit(scene)
+
+    # ---- physics layers (migration 5) --------------------------------------------------
+    def physics_layers(self) -> list[str]:
+        """The 16 collision layers' names ("" for a layer not in use)."""
+        names = [""] * PHYSICS_LAYERS
+        with self.connect() as con:
+            for layer, name in con.execute("SELECT id, name FROM physics_layer"):
+                names[layer] = name
+        return names
+
+    def physics_ignored(self) -> set[tuple[int, int]]:
+        """Pairs of layers (a <= b) that pass through each other."""
+        with self.connect() as con:
+            return {(a, b) for a, b in con.execute("SELECT a, b FROM physics_ignore")}
+
+    def set_physics_layers(self, names: list[str], ignored: set[tuple[int, int]]) -> None:
+        """Replace the layers and the pairs that don't collide. Layer 0 always exists. Use
+        undo.SetPhysicsLayersCommand from the UI."""
+        names = [n.strip() for n in names] + [""] * (PHYSICS_LAYERS - len(names))
+        names[0] = names[0] or "default"
+        used = {i for i, n in enumerate(names) if n}
+        if len({names[i] for i in used}) != len(used):
+            raise ValueError("Each physics layer needs its own name")
+        with self.connect() as con:
+            con.execute("DELETE FROM physics_ignore")
+            con.execute("DELETE FROM physics_layer")
+            con.executemany("INSERT INTO physics_layer (id, name) VALUES (?, ?)",
+                            [(i, names[i]) for i in sorted(used)])
+            con.executemany("INSERT INTO physics_ignore (a, b) VALUES (?, ?)",
+                            sorted((min(a, b), max(a, b)) for a, b in ignored
+                                   if a in used and b in used))
+        self.physics_layers_changed.emit()
 
     def mesh_assets(self) -> dict[str, str]:
         """Meshes an entity can use: id -> label. The editor's primitives, then the .glb files

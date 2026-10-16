@@ -453,3 +453,133 @@ TEST_CASE("triggers report the player entering and leaving") {
     REQUIRE(game.trigger_events().size() == 1);
     CHECK_FALSE(game.trigger_events()[0].entered);
 }
+
+namespace {
+
+// Plays the game for a while, a frame at a time.
+void play(midgard::Game& game, double seconds) {
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (double t = 0.0; t < seconds - 1e-9; t += 1.0 / 60.0) game.update(actions, 1.0f / 60.0f);
+}
+
+}  // namespace
+
+TEST_CASE("physics components: scenery, falling crates, kinematic movers, materials") {
+    TestPackage pkg({
+        {"e1_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                        "collider": {"size": [20, 1, 20]}}')"},
+        {"e2_crate", R"(NULL, '{"transform": {"position": [0, 3, 0], "rotation": [0, 30, 0]},
+                       "mesh": {"asset": "mesh_cube"}, "collider": {}, "rigidbody": {}}')"},
+        {"e3_ball", R"(NULL, '{"transform": {"position": [4, 2, 0]},
+                      "collider": {"shape": "sphere", "radius": 0.5},
+                      "rigidbody": {"mass": 3}, "physics_material": {"bounciness": 0.9}}')"},
+        {"e4_lift", R"(NULL, '{"transform": {"position": [-4, 0.1, 0]},
+                      "collider": {"size": [2, 0.2, 2]}, "rigidbody": {"motion": "kinematic"}}')"},
+        {"e5_rider", R"(NULL, '{"transform": {"position": [-4, 0.7, 0]},
+                       "collider": {"shape": "capsule", "radius": 0.3, "height": 1},
+                       "rigidbody": {}}')"},
+        {"e6_mesh_rock", R"(NULL, '{"transform": {"position": [8, 0, 0]},
+                           "mesh": {"asset": "mesh_cube"}, "collider": {"shape": "mesh"}}')"},
+        // Solid and a trigger at once: it lands on the ground, and its trigger goes with it.
+        {"e7_alarm", R"(NULL, '{"transform": {"position": [-8, 2, 0]}, "collider": {},
+                       "rigidbody": {}, "trigger": {"size": [3, 3, 3]}}')"},
+        {"e8_player", R"(NULL, '{"transform": {"position": [-6.5, 0.5, 0]}, "player": {}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity crate = scene.find("e2_crate");
+    const entt::entity ball = scene.find("e3_ball");
+    const entt::entity lift = scene.find("e4_lift");
+    const entt::entity rider = scene.find("e5_rider");
+    CHECK(game.physics().world().body_count() == 8);  // 7 solid, one trigger
+    CHECK(scene.registry.get<midgard::RigidBody>(ball).mass == 3.0f);
+
+    // The lift rises 2 m over a second, carrying the capsule standing on it.
+    for (int i = 0; i < 60; ++i) {
+        scene.registry.get<midgard::Transform>(lift).position.y += 2.0 / 60.0;
+        play(game, 1.0 / 60.0);
+    }
+    play(game, 2.0);
+    // The crate fell onto the ground and stayed upright, turned as it was.
+    const auto& c = scene.registry.get<midgard::Transform>(crate);
+    CHECK(c.position.y == doctest::Approx(0.5).epsilon(0.02));
+    CHECK(c.rotation.y == doctest::Approx(30.0).epsilon(0.02));
+    CHECK(std::abs(c.rotation.x) < 0.5f);
+    // The bouncy ball is still bouncing after 3 s; the rider rode the lift up.
+    CHECK(glm::length(game.physics().world().state(game.physics().body(ball)).velocity) > 0.5f);
+    CHECK(scene.registry.get<midgard::Transform>(rider).position.y > 2.0);
+    const entt::entity alarm = scene.find("e7_alarm");
+    CHECK(scene.registry.get<midgard::Transform>(alarm).position.y ==
+          doctest::Approx(0.5).epsilon(0.05));
+    // The player, 1.5 m away, is inside the alarm's 3 m trigger now it has landed.
+    CHECK(game.physics().triggers_touching(scene, scene.find("e8_player")) ==
+          std::vector<entt::entity>{alarm});
+
+    // Live edits rebuild the body: the crate becomes a sphere, a static rock is removed.
+    game.set_component("e2_crate", "collider", json::parse(R"({"shape": "sphere"})"));
+    CHECK(game.physics().body(crate) != midgard::physics::kNoBody);
+    game.remove_entity("e6_mesh_rock");
+    CHECK(game.physics().world().body_count() == 7);
+    game.set_component("e3_ball", "collider", nullptr);
+    CHECK(game.physics().body(ball) == midgard::physics::kNoBody);
+}
+
+TEST_CASE("physics: the scene's body gives gravity, and bad colliders name their entity") {
+    // A 1 km planet: a crate dropped on its side falls towards the centre and lands there.
+    TestPackage planet(
+        {
+            {"e1_planet", R"(NULL, '{"collider": {"shape": "sphere", "radius": 1000}}')"},
+            {"e2_crate", R"(NULL, '{"transform": {"position": [1003, 0, 0]},
+                           "collider": {}, "rigidbody": {}}')"},
+        },
+        R"({"body": {"shape": "sphere_outside", "radius": 1000}})");
+    midgard::Game game(planet.dir);
+    REQUIRE(game.scene().settings.body.has_value());
+    CHECK(game.scene().light(glm::dvec3(1003, 0, 0)).up.x == doctest::Approx(1.0f));
+    play(game, 3.0);
+    const glm::dvec3 p =
+        game.scene().registry.get<midgard::Transform>(game.scene().find("e2_crate")).position;
+    CHECK(std::abs(p.x - 1000.5) < 0.03);  // resting on the surface (Jolt allows 2 cm overlap)
+    CHECK(std::abs(p.y) < 0.05);
+
+    // Mistakes are refused on load, naming the entity.
+    const auto load_error = [](const char* components) {
+        TestPackage pkg({{"e9_bad", components}});
+        try {
+            midgard::Game g(pkg.dir);
+        } catch (const std::exception& e) {
+            return std::string(e.what());
+        }
+        return std::string();
+    };
+    CHECK(load_error(R"(NULL, '{"collider": {}, "rigidbody": {"motion": "flying"}}')")
+              .find("flying") != std::string::npos);
+    CHECK(
+        load_error(R"(NULL, '{"collider": {"shape": "mesh"}, "rigidbody": {}}')").find("e9_bad") !=
+        std::string::npos);  // no mesh, and meshes can't be dynamic
+    CHECK(load_error(R"(NULL, '{"collider": {"size": [0, 1, 1]}}')").find("e9_bad") !=
+          std::string::npos);
+    CHECK(load_error(R"(NULL, '{"collider": {}, "rigidbody": {"layer": 16}}')").find("layer") !=
+          std::string::npos);
+}
+
+TEST_CASE("physics layers come from the project, and rotations round-trip as Euler angles") {
+    TestPackage pkg({});
+    const midgard::PhysicsLayers layers = midgard::PhysicsLayers::load(pkg.dir / "Game.db");
+    CHECK(layers.names[0] == "default");
+    CHECK(layers.names[1] == "player");
+    REQUIRE(layers.ignored.size() == 1);
+    CHECK(layers.ignored[0] == std::pair{1, 2});
+    midgard::Game game(pkg.dir);
+    CHECK_FALSE(game.physics().world().collides(1, 2));
+    CHECK(game.physics().world().collides(0, 2));
+
+    for (const glm::vec3 euler : {glm::vec3(10, 20, 30), glm::vec3(-45, 170, 5),
+                                  glm::vec3(80, -90, 0), glm::vec3(0, 0, -120)}) {
+        const glm::quat q = glm::quat_cast(glm::mat3(midgard::rotation_matrix(euler)));
+        const glm::vec3 back = midgard::euler_degrees(q);
+        CHECK(near(glm::vec3(midgard::rotation_matrix(back)[0]),
+                   glm::vec3(midgard::rotation_matrix(euler)[0])));
+        CHECK(glm::length(back - euler) < 1e-3f);
+    }
+}

@@ -106,6 +106,54 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
     } else if (name == "sky") {
         reg.emplace_or_replace<Sky>(e, vec3(c, "color", SceneSettings{}.sky),
                                     vec3(c, "ambient", SceneSettings{}.ambient));
+    } else if (name == "rigidbody") {
+        RigidBody b;
+        const std::string motion = c.value("motion", "dynamic");
+        if (motion == "static")
+            b.motion = physics::Motion::Static;
+        else if (motion == "kinematic")
+            b.motion = physics::Motion::Kinematic;
+        else if (motion != "dynamic")
+            throw SceneError("rigidbody: motion '" + motion +
+                             "' is not static, dynamic or kinematic");
+        b.mass = std::max(c.value("mass", 0.0f), 0.0f);
+        b.layer = c.value("layer", 0);
+        if (b.layer < 0 || b.layer >= physics::kLayers)
+            throw SceneError("rigidbody: layer " + std::to_string(b.layer) + " is not 0 to 15");
+        reg.emplace_or_replace<RigidBody>(e, b);
+    } else if (name == "collider") {
+        ColliderShape s;
+        const std::string shape = c.value("shape", "box");
+        using Kind = physics::Collider::Kind;
+        if (shape == "box")
+            s.kind = Kind::Box;
+        else if (shape == "sphere")
+            s.kind = Kind::Sphere;
+        else if (shape == "capsule")
+            s.kind = Kind::Capsule;
+        else if (shape == "convex")
+            s.kind = Kind::Convex;
+        else if (shape == "mesh")
+            s.kind = Kind::Mesh;
+        else if (shape == "heightfield")
+            s.kind = Kind::Heightfield;
+        else
+            throw SceneError("collider: shape '" + shape +
+                             "' is not box, sphere, capsule, convex, "
+                             "mesh or heightfield");
+        s.size = vec3(c, "size", glm::vec3(1.0f));
+        s.radius = c.value("radius", 0.5f);
+        s.height = c.value("height", 2.0f);
+        s.offset = vec3(c, "offset", glm::vec3(0.0f));
+        s.mesh = c.value("mesh", "");
+        s.samples = c.value("samples", 0u);
+        s.heights = c.value("heights", std::vector<float>{});
+        s.spacing = c.value("spacing", 1.0f);
+        reg.emplace_or_replace<ColliderShape>(e, std::move(s));
+    } else if (name == "physics_material") {
+        reg.emplace_or_replace<PhysicsMaterial>(
+            e, std::max(c.value("friction", 0.5f), 0.0f),
+            std::clamp(c.value("bounciness", 0.0f), 0.0f, 1.0f));
     } else if (name == "light") {
         const std::string type = c.value("type", "directional");
         reg.remove<DirectionalLight, LocalLightSource>(e);
@@ -144,12 +192,18 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<Trigger>(e);
     else if (name == "sky")
         reg.remove<Sky>(e);
+    else if (name == "rigidbody")
+        reg.remove<RigidBody>(e);
+    else if (name == "collider")
+        reg.remove<ColliderShape>(e);
+    else if (name == "physics_material")
+        reg.remove<PhysicsMaterial>(e);
 }
 
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
-               ScriptRef, Trigger, Sky>(e);
+               ScriptRef, Trigger, Sky, RigidBody, ColliderShape, PhysicsMaterial>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
@@ -166,6 +220,7 @@ SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
         const json settings = json::parse(column_text(s.get(), 0));
         out.sky = vec3(settings, "sky", out.sky);
         out.ambient = vec3(settings, "ambient", out.ambient);
+        if (settings.contains("body")) out.body = body_from_json(settings.at("body"));
     } catch (const std::exception& e) {
         throw SceneError("scene '" + scene_id + "' settings: " + e.what());
     }
@@ -358,6 +413,7 @@ render::Light Scene::light(const glm::dvec3& origin) const {
     light.ambient = settings.ambient;
     // Until environments are authored (Phase 5.8), the ground reflects some of the sky.
     light.ambient_ground = settings.ambient * 0.6f;
+    if (settings.body) light.up = glm::vec3(settings.body->up(origin));
     const entt::entity e = first_with<DirectionalLight>(registry);
     if (e != entt::null) {
         const DirectionalLight& l = registry.get<DirectionalLight>(e);

@@ -63,7 +63,8 @@ def default_entities() -> list[Entity]:
             "light": {"type": "directional", "color": [1.0, 0.97, 0.9], "intensity": 1.0}}),
         Entity("e000003", "Ground", world, {
             "transform": {"position": [0.0, -0.1, 0.0], "scale": [10.0, 0.2, 10.0]},
-            "mesh": {"asset": "prim_cube"}, "material": {"color": [0.22, 0.32, 0.18, 1.0]}}),
+            "mesh": {"asset": "prim_cube"}, "material": {"color": [0.22, 0.32, 0.18, 1.0]},
+            "collider": {"shape": "box"}}),  # static scenery: things land on it
         Entity("e000004", "Player", world, {
             "transform": {"position": [0.0, 0.5, 0.0]},
             "mesh": {"asset": "prim_cube"}, "material": {"color": [0.79, 0.64, 0.15, 1.0]},

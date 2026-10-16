@@ -14,6 +14,13 @@ Game::Game(const std::filesystem::path& package_dir)
     const auto pak_file = package_dir / "game.pak";
     if (std::filesystem::is_regular_file(pak_file)) pak_ = std::make_unique<Pak>(pak_file);
     third_person_ = std::make_unique<ThirdPersonCamera>(scene_);
+    layers_ = PhysicsLayers::load(package_dir / package_.manifest.database);
+    rebuild_physics();
+}
+
+void Game::rebuild_physics() {
+    physics_ = std::make_unique<ScenePhysics>(
+        scene_, layers_, [this](const std::string& asset) { return load_mesh(asset); });
 }
 
 InputMap Game::input_map() const {
@@ -22,6 +29,7 @@ InputMap Game::input_map() const {
 
 void Game::update(const Actions& actions, float dt) {
     third_person_->update(scene_, actions, dt);
+    physics_->update(scene_, dt);
     update_triggers();
 }
 
@@ -32,19 +40,9 @@ void Game::update_triggers() {
         player = e;
         break;
     }
+    // The player's capsule against every trigger's sensor in the physics world.
     std::unordered_set<entt::entity> inside;
-    if (player != entt::null) {
-        const glm::dvec3 p = scene_.world_position(player);
-        for (entt::entity e : scene_.registry.view<const Trigger>()) {
-            if (e == player) continue;
-            const glm::dmat4 m = scene_.world_matrix(e);
-            const glm::dvec3 scale(glm::length(glm::dvec3(m[0])), glm::length(glm::dvec3(m[1])),
-                                   glm::length(glm::dvec3(m[2])));
-            const glm::dvec3 half = glm::dvec3(scene_.registry.get<Trigger>(e).size) * scale * 0.5;
-            const glm::dvec3 d = glm::abs(p - glm::dvec3(m[3]));
-            if (d.x <= half.x && d.y <= half.y && d.z <= half.z) inside.insert(e);
-        }
-    }
+    for (entt::entity e : physics_->triggers_touching(scene_, player)) inside.insert(e);
     for (entt::entity e : inside)
         if (!inside_.contains(e)) trigger_events_.push_back({e, player, true});
     for (entt::entity e : inside_)
@@ -99,9 +97,11 @@ void Game::put_entity(const nlohmann::json& entity) {
     const std::string id = text("id");
     if (id.empty()) throw SceneError("entity.put needs an entity id");
     const auto components = entity.find("components");
-    refresh_third_person(
+    const entt::entity e =
         scene_.put_entity(id, text("name"), text("parent"),
-                          components != entity.end() ? *components : nlohmann::json::object()));
+                          components != entity.end() ? *components : nlohmann::json::object());
+    refresh_third_person(e);
+    physics_->rebuild(scene_, e);
 }
 
 // After an edit the player or camera may be different entities. The orbit is kept unless the
@@ -121,16 +121,19 @@ void Game::set_component(const std::string& entity_id, const std::string& compon
     if (e == entt::null) throw SceneError("entity '" + entity_id + "' is not in the scene");
     scene_.set_component(e, component, value);
     refresh_third_person(e);
+    physics_->rebuild(scene_, e);
 }
 
 void Game::remove_entity(const std::string& entity_id) {
+    physics_->remove(scene_.find(entity_id));
     scene_.remove_entity(entity_id);
     refresh_third_person(entt::null);
 }
 
 void Game::reload_scene_settings() {
     scene_.settings = Scene::read_settings(package_.root / package_.manifest.database, scene_.id);
-    scene_.use_sky();  // a Sky entity outranks the settings
+    scene_.use_sky();   // a Sky entity outranks the settings
+    rebuild_physics();  // the world's shape may have changed
 }
 
 void Game::reload_entity(const std::string& entity_id) {
@@ -165,6 +168,9 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
         renderer.replace_mesh(it->second, mesh);
     else
         meshes_.emplace(asset, renderer.upload_mesh(mesh));
+    // Colliders made from this mesh change with it.
+    for (entt::entity e : scene_.registry.view<const ColliderShape, const MeshRef>())
+        if (scene_.registry.get<MeshRef>(e).asset == asset) physics_->rebuild(scene_, e);
     return true;
 }
 

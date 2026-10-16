@@ -12,6 +12,7 @@
 #include "midgard/package.h"
 #include "midgard/pak.h"
 #include "midgard/scene.h"
+#include "midgard/scene_physics.h"
 
 namespace midgard {
 
@@ -71,6 +72,19 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
         }
         (void)scene.light();
         (void)scene.camera(16.0f / 9.0f);
+        // Every collider builds (a missing mesh, a malformed shape or a dynamic mesh is an
+        // error naming its entity).
+        const Pak* paks = pak.get();
+        const PhysicsLayers layers = PhysicsLayers::load(database);
+        const ScenePhysics physics(scene, layers, [&](const std::string& asset) {
+            if (asset == kBuiltinCube) return render::make_cube();
+            for (const ContentEntry& c : m.content)
+                if (c.id == asset) {
+                    if (!paks) throw AssetError("game.pak is missing");
+                    return load_glb(paks->read(c.path));
+                }
+            throw AssetError("mesh '" + asset + "' is not in the package");
+        });
     } catch (const std::exception& e) {
         report.errors.emplace_back(e.what());
     }

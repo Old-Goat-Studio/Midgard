@@ -46,6 +46,7 @@ from .docks.script_editor import ScriptEditorPanel
 from .docks.viewport import ViewportPanel
 from .export_dialog import ExportDialog
 from .live_link import LinkError, PlaySession, State
+from .physics_dialogs import PhysicsLayersDialog, WorldShapeDialog
 from .project import Project, ProjectError
 from .settings import Settings
 from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
@@ -349,6 +350,11 @@ class MainWindow(QMainWindow):
         build.addSeparator()
         self.export_action = add_action(build, "&Export…", self.export_game, "Ctrl+E")
 
+        world = bar.addMenu("W&orld")
+        self.world_shape_action = add_action(world, "World &Shape…", self.edit_world_shape)
+        self.physics_layers_action = add_action(world, "&Physics Layers…",
+                                                self.edit_physics_layers)
+
         view = bar.addMenu("&View")
         self.themes_menu = view.addMenu("&Themes")
         # Rebuilt each time it opens, so a .qss file added to a Themes folder appears at once.
@@ -536,6 +542,14 @@ class MainWindow(QMainWindow):
         self.script_editor.show_error(error.get("file", ""), int(error.get("line", 0)),
                                       error.get("message", ""))
 
+    def edit_world_shape(self) -> None:
+        if self.project is not None:
+            WorldShapeDialog(self.project, self).exec()
+
+    def edit_physics_layers(self) -> None:
+        if self.project is not None:
+            PhysicsLayersDialog(self.project, self).exec()
+
     def set_project(self, project: Project | None) -> None:
         if self.session is not None:
             self.session.stop()
@@ -557,7 +571,8 @@ class MainWindow(QMainWindow):
         self.assistant.set_project(project)
         self.project_page.set_project(project)
         self._update_git_action()
-        for action in (self.close_action, self.cook_action, self.export_action):
+        for action in (self.close_action, self.cook_action, self.export_action,
+                       self.world_shape_action, self.physics_layers_action):
             action.setEnabled(project is not None)
         if project is not None:
             self.session = PlaySession(project, self)

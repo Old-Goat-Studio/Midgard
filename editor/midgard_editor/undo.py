@@ -6,7 +6,7 @@ from typing import Any
 from PySide6.QtGui import QUndoCommand
 
 from .project import Project
-from .scene_model import Entity, descendants
+from .scene_model import MAIN_SCENE, Entity, descendants
 
 
 class SetConfigCommand(QUndoCommand):
@@ -37,6 +37,37 @@ class SetStringCommand(QUndoCommand):
 
     def undo(self) -> None:
         self.project.set_string(self.key, self.old, self.context)
+
+
+class SetSceneSettingsCommand(QUndoCommand):
+    """Replace a scene's settings (its world shape and fallback colours)."""
+
+    def __init__(self, project: Project, settings: dict[str, Any], label: str,
+                 scene: str = MAIN_SCENE):
+        super().__init__(f"Change {label}")
+        self.project, self.scene, self.new = project, scene, settings
+        self.old = project.scene_settings(scene)
+
+    def redo(self) -> None:
+        self.project.set_scene_settings(self.new, self.scene)
+
+    def undo(self) -> None:
+        self.project.set_scene_settings(self.old, self.scene)
+
+
+class SetPhysicsLayersCommand(QUndoCommand):
+    """Replace the project's collision layers and the pairs that don't collide."""
+
+    def __init__(self, project: Project, names: list[str], ignored: set[tuple[int, int]]):
+        super().__init__("Change physics layers")
+        self.project, self.new = project, (list(names), set(ignored))
+        self.old = (project.physics_layers(), project.physics_ignored())
+
+    def redo(self) -> None:
+        self.project.set_physics_layers(*self.new)
+
+    def undo(self) -> None:
+        self.project.set_physics_layers(*self.old)
 
 
 class AddEntityCommand(QUndoCommand):

@@ -16,6 +16,7 @@
 #include "midgard/pak.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
+#include "midgard/scene_physics.h"
 #include "midgard/third_person.h"
 
 namespace midgard {
@@ -71,21 +72,27 @@ public:
     // The package's input bindings (built-in defaults for packages older than schema 3).
     InputMap input_map() const;
 
-    // One frame of gameplay: the player moves, the third-person camera follows, and triggers
-    // note who entered or left them (trigger_events, until the next update).
+    // One frame of gameplay: the player moves, the third-person camera follows, physics steps
+    // (bodies follow moved entities, dynamic bodies move theirs), and triggers note who entered
+    // or left them (trigger_events, until the next update).
     void update(const Actions& actions, float dt);
     const std::vector<TriggerEvent>& trigger_events() const { return trigger_events_; }
     const ThirdPersonCamera& third_person() const { return *third_person_; }
+    ScenePhysics& physics() { return *physics_; }
+    const PhysicsLayers& physics_layers() const { return layers_; }
 
 private:
     render::MeshData load_mesh(const std::string& asset) const;
     void refresh_third_person(entt::entity edited);
+    void rebuild_physics();
     void update_triggers();
 
     PackageInfo package_;
     std::unique_ptr<Pak> pak_;
     Scene scene_;
     std::unique_ptr<ThirdPersonCamera> third_person_;
+    PhysicsLayers layers_;
+    std::unique_ptr<ScenePhysics> physics_;
     std::unordered_map<std::string, render::MeshId> meshes_;
     std::unordered_set<std::string> failed_meshes_;
     std::unordered_set<entt::entity> inside_;  // triggers the player is in

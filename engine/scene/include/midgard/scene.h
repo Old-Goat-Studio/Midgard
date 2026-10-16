@@ -3,14 +3,18 @@
 // shapes are defined in schema/components.md.
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <entt/entity/registry.hpp>
 #include <glm/glm.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include "midgard/body.h"
+#include "midgard/physics.h"
 #include "midgard/render/renderer.h"
 
 namespace midgard {
@@ -78,14 +82,46 @@ struct ScriptRef {
 };
 
 // A box around the entity (size in its local units, so the entity's scale applies) that reports
-// when the player enters or leaves it.
+// when the player enters or leaves it: a sensor in the physics world, so nothing bumps into
+// it. It moves with the entity, and is separate from any collider the entity has.
 struct Trigger {
     glm::vec3 size{1.0f};
+};
+
+// How the entity moves in the physics world. An entity with a collider and no rigid body is
+// static scenery.
+struct RigidBody {
+    physics::Motion motion = physics::Motion::Dynamic;
+    float mass = 0.0f;  // kilograms; 0: from the collider's volume at the density of water
+    int layer = 0;      // the project's collision layer (0 to 15)
+};
+
+// The entity's shape for physics, in its local units (its scale applies). Convex and mesh
+// colliders take the entity's own mesh unless `mesh` names another.
+struct ColliderShape {
+    physics::Collider::Kind kind = physics::Collider::Kind::Box;
+    glm::vec3 size{1.0f};
+    float radius = 0.5f;
+    float height = 2.0f;
+    glm::vec3 offset{0.0f};
+    std::string mesh;  // a content id, for convex and mesh colliders
+    // Heightfield: samples x samples heights, `spacing` metres apart.
+    std::uint32_t samples = 0;
+    std::vector<float> heights;
+    float spacing = 1.0f;
+};
+
+struct PhysicsMaterial {
+    float friction = 0.5f;
+    float bounciness = 0.0f;
 };
 
 struct SceneSettings {
     glm::vec3 sky{0.08f, 0.11f, 0.18f};
     glm::vec3 ambient{0.18f, 0.2f, 0.26f};
+    // The world's shape: where "up" is and how gravity pulls (midgard/body.h). None: flat
+    // ground, +Y up, gravity 9.81 m/s^2 down.
+    std::optional<Body> body;
 };
 
 // The scene's sky: an entity with this component sets the scene's sky and ambient colours
@@ -144,7 +180,7 @@ public:
     // position and its view only turns (camera-relative rendering, see render::Camera).
     std::optional<render::Camera> camera(float aspect) const;
     // The lighting: the first directional light, the ambient colours, and the point and spot
-    // lights nearest `origin` (the camera's), relative to it.
+    // lights nearest `origin` (the camera's), relative to it. "Up" is the world shape's there.
     render::Light light(const glm::dvec3& origin = glm::dvec3(0.0)) const;
 
     // The first Sky entity's colours become the scene's (after its settings were read again).

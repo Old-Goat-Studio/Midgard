@@ -7,6 +7,8 @@
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
@@ -396,6 +398,43 @@ void World::add_force(BodyId id, const glm::vec3& force) {
     JPH::BodyInterface& bodies = impl_->system.GetBodyInterface();
     const JPH::BodyID b = impl_->id(id);
     if (bodies.IsAdded(b)) bodies.AddForce(b, to_jolt(force), JPH::EActivation::Activate);
+}
+
+namespace {
+
+class TouchingFilter final : public JPH::BodyFilter {
+public:
+    explicit TouchingFilter(Touching which) : which_(which) {}
+    bool ShouldCollideLocked(const JPH::Body& body) const override {
+        return which_ == Touching::All || (which_ == Touching::Sensors) == body.IsSensor();
+    }
+
+private:
+    Touching which_;
+};
+
+}  // namespace
+
+std::vector<std::uint64_t> World::overlaps(const Collider& c, const glm::dvec3& position,
+                                           const glm::quat& rotation, const glm::vec3& scale,
+                                           Touching which) const {
+    const JPH::ShapeRefC shape = make_shape(c, scale);
+    const JPH::Quat q = to_jolt(glm::normalize(rotation));
+    const JPH::RVec3 centre = to_jolt(position) + JPH::RVec3(q * shape->GetCenterOfMass());
+    JPH::CollideShapeSettings settings;
+    settings.mBackFaceMode = JPH::EBackFaceMode::CollideWithBackFaces;
+    JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> hits;
+    const TouchingFilter filter(which);
+    impl_->system.GetNarrowPhaseQuery().CollideShape(shape, JPH::Vec3::sReplicate(1.0f),
+                                                     JPH::RMat44::sRotationTranslation(q, centre),
+                                                     settings, centre, hits, {}, {}, filter);
+    const JPH::BodyInterface& bodies = impl_->system.GetBodyInterface();
+    std::vector<std::uint64_t> out;
+    for (const JPH::CollideShapeResult& hit : hits.mHits)
+        out.push_back(bodies.GetUserData(hit.mBodyID2));
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
 }
 
 glm::dvec3 World::gravity(const glm::dvec3& position) const {

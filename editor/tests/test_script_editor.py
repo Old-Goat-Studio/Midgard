@@ -128,7 +128,8 @@ def test_adding_a_script_and_a_trigger(qtbot, project):
     qtbot.addWidget(form)
     form.trigger.boxes[0].setValue(3.0)
     assert project.entity("e000004").components["trigger"]["size"] == [3.0, 1.0, 1.0]
-    assert not form.add_component.isEnabled()  # nothing left to add
+    offered = [a.text() for a in form.add_component.menu().actions()]
+    assert "Script" not in offered and "Trigger" not in offered  # each once
 
     form.remove_component("script")
     assert "script" not in project.entity("e000004").components

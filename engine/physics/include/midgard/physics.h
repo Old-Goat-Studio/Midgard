@@ -76,6 +76,13 @@ struct BodyDesc {
 using BodyId = std::uint32_t;
 inline constexpr BodyId kNoBody = ~0u;
 
+// Which bodies a query sees.
+enum class Touching {
+    All,
+    Sensors,  // only sensors (triggers)
+    Solid,    // everything but sensors
+};
+
 struct BodyState {
     glm::dvec3 position{0.0};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
@@ -111,6 +118,12 @@ public:
     void set_velocity(BodyId id, const glm::vec3& velocity);
     void add_impulse(BodyId id, const glm::vec3& impulse);  // kg m/s, at the centre of mass
     void add_force(BodyId id, const glm::vec3& force);      // newtons, for the next step only
+
+    // The bodies a shape overlaps where it is placed (their user values, smallest first).
+    std::vector<std::uint64_t> overlaps(const Collider& shape, const glm::dvec3& position,
+                                        const glm::quat& rotation,
+                                        const glm::vec3& scale = glm::vec3(1.0f),
+                                        Touching which = Touching::All) const;
 
     // The gravity a body feels at a point (the shape's, or kFlatGravity).
     glm::dvec3 gravity(const glm::dvec3& position) const;
