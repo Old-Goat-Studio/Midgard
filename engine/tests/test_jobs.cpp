@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <random>
 #include <set>
@@ -180,4 +181,31 @@ TEST_CASE("profiling records zones from every thread only while on") {
     std::filesystem::remove(file);
     CHECK(trace["traceEvents"].size() == zones.size());
     CHECK(trace["traceEvents"][0]["ph"] == "X");
+}
+
+TEST_CASE("a batch runs every job once, with one wake-up for all") {
+    JobSystem jobs(3);
+    std::vector<std::atomic<int>> runs(5000);
+    std::vector<std::function<void(const JobContext&)>> work;
+    for (int i = 0; i < 5000; ++i) work.emplace_back([&runs, i](const JobContext&) { ++runs[i]; });
+    const auto handles = jobs.submit_batch(std::move(work), JobPriority::Low);
+    REQUIRE(handles.size() == 5000);
+    jobs.wait_all(handles);
+    for (auto& r : runs) REQUIRE(r.load() == 1);
+    CHECK(jobs.submit_batch({}).empty());
+}
+
+TEST_CASE("sleeping workers wake for new work (no lost wake-ups)") {
+    // Polled rather than waited for, so this thread never runs the jobs itself: only a worker
+    // that was woken can.
+    JobSystem jobs(2);
+    for (int round = 0; round < 200; ++round) {
+        if (round % 20 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(2));  // idle
+        std::atomic<bool> ran{false};
+        auto job = jobs.submit([&](const JobContext&) { ran = true; });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!job->done() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        REQUIRE(ran.load());
+    }
 }
