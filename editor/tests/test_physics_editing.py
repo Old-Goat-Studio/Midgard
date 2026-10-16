@@ -135,3 +135,14 @@ def test_cooking_checks_colliders(project, tmp_path):
     project.put_entity(crate)
     with pytest.raises(CookError, match="e000060"):
         cook(project, tmp_path / "bad")
+
+
+def test_the_players_walking_settings(qtbot, project):
+    form = form_for(qtbot, project, "e000004")  # the new project's player
+    assert form.player_rows["speed"].value() == 4.0
+    assert form.player_rows["jump"].value() == 4.5  # the engine's default when unset
+    form.player_rows["jump"].setValue(6.0)
+    form.player_rows["height"].setValue(1.8)
+    assert project.entity("e000004").components["player"] == {
+        "speed": 4.0, "jump": 6.0, "height": 1.8}
+

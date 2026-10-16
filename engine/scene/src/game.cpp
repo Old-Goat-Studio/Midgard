@@ -28,8 +28,10 @@ InputMap Game::input_map() const {
 }
 
 void Game::update(const Actions& actions, float dt) {
-    third_person_->update(scene_, actions, dt);
-    physics_->update(scene_, dt);
+    const PlayerIntent intent = third_person_->steer(scene_, actions, dt);
+    physics_->set_player_intent(intent.walk, intent.jump);
+    physics_->update(scene_, dt);  // the player walks
+    third_person_->follow(scene_);
     update_triggers();
 }
 

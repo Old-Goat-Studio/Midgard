@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -230,4 +231,157 @@ TEST_CASE("bodies: kinematic movers, layers, forces and bad colliders") {
     CHECK_THROWS_AS(world.add(bad), PhysicsError);
     bad.layer = 16;
     CHECK_THROWS_AS(world.add(bad), PhysicsError);
+}
+
+// ---- the character -------------------------------------------------------------------------
+namespace {
+
+// Steps the world with a character walking at `walk` for a while.
+void walk_for(World& world, Character& c, double seconds, const glm::vec3& walk,
+              float jump = 0.0f) {
+    for (double t = 0.0; t < seconds - 1e-9; t += kStep) {
+        world.step(kStep, [&] { c.step(walk, jump); });
+        jump = 0.0f;  // one press
+    }
+}
+
+BodyId add_box(World& world, glm::dvec3 at, glm::vec3 size, glm::quat turn = {1, 0, 0, 0}) {
+    BodyDesc d;
+    d.collider.size = size;
+    d.position = at;
+    d.rotation = turn;
+    return world.add(d);
+}
+
+}  // namespace
+
+TEST_CASE("the character lands, walks, stops at walls, climbs steps and jumps") {
+    World world;
+    add_box(world, {0, -0.5, 0}, {60, 1, 60});
+    CharacterDesc desc;  // radius 0.3, 1 m tall: its middle stands 0.5 m above the ground
+    desc.position = {0, 2, 0};
+    Character c(world, desc);
+
+    walk_for(world, c, 1.5, {0, 0, 0});
+    CHECK(c.on_ground());
+    CHECK(std::abs(c.position().y - 0.5) < 0.03);
+
+    // 4 m/s along +x for a second; the upward part of the walk is ignored.
+    walk_for(world, c, 1.0, {4, 3, 0});
+    CHECK(c.position().x == doctest::Approx(4.0).epsilon(0.03));
+    CHECK(std::abs(c.position().y - 0.5) < 0.03);
+
+    // A wall at x = 8 (its face at 7.5): stopped a radius short of it, not through it.
+    add_box(world, {8, 1, 0}, {1, 2, 4});
+    walk_for(world, c, 2.0, {4, 0, 0});
+    CHECK(c.position().x == doctest::Approx(7.2).epsilon(0.01));
+
+    // Steps: 0.25 m is walked up, 0.5 m is a wall.
+    c.set_position({0, 0.5, 10});
+    add_box(world, {3, 0.125, 10}, {2, 0.25, 4});
+    add_box(world, {8, 0.25, 10}, {2, 0.5, 4});
+    walk_for(world, c, 1.5, {2, 0, 0});  // to x = 3, on the low step
+    CHECK(c.position().y == doctest::Approx(0.75).epsilon(0.05));
+    walk_for(world, c, 3.0, {2, 0, 0});  // on towards the high one
+    CHECK(c.position().x < 7.0 + 0.05);  // its face is at 7: stopped there
+    CHECK(c.position().y < 0.8);
+
+    // Jumping at 5 m/s rises about 1.27 m (v^2 / 2g), then lands again.
+    c.set_position({0, 0.5, -10});
+    walk_for(world, c, 0.5, {0, 0, 0});
+    double highest = 0.0;
+    world.step(kStep, [&] { c.step({0, 0, 0}, 5.0f); });
+    for (int i = 0; i < 120; ++i) {
+        world.step(kStep, [&] { c.step({0, 0, 0}); });
+        highest = std::max(highest, c.position().y);
+    }
+    CHECK(highest - 0.5 == doctest::Approx(1.27).epsilon(0.08));
+    CHECK(c.on_ground());
+}
+
+TEST_CASE("the character stands on gentle slopes and can't climb steep ones") {
+    World world;
+    add_box(world, {0, -0.5, 0}, {60, 1, 60});
+    // Ramps rising towards +x: 25 degrees (walkable) and 65 degrees (steeper than 50: a wall).
+    const auto ramp = [&](double z, float degrees) {
+        const glm::quat turn = glm::angleAxis(glm::radians(degrees), glm::vec3(0, 0, 1));
+        add_box(world, {6, 0, z}, {8, 0.5, 4}, turn);
+    };
+    ramp(0, 25.0f);
+    ramp(10, 65.0f);
+    CharacterDesc desc;
+    desc.position = {7.0, 2.5, 0};  // above the middle of the gentle ramp
+    Character c(world, desc);
+    walk_for(world, c, 1.0, {0, 0, 0});
+    REQUIRE(c.on_ground());
+    const glm::dvec3 resting = c.position();
+    walk_for(world, c, 2.0, {0, 0, 0});
+    CHECK(glm::length(c.position() - resting) < 0.02);  // no sliding down
+    walk_for(world, c, 1.0, {2, 0, 0});
+    CHECK(c.position().y > resting.y + 0.5);  // walked on up it
+
+    c.set_position({1.0, 0.5, 10});
+    walk_for(world, c, 3.0, {2, 0, 0});
+    CHECK(c.position().y < 1.0);  // the steep ramp stopped it near the bottom
+}
+
+TEST_CASE("the character walks all the way round a planet and along inside a cylinder") {
+    struct Case {
+        const char* name;
+        Body body;
+    };
+    for (const Case& t :
+         {Case{"planet", make_body("planet", Shape::sphere_outside(1000, 9.81))},
+          Case{"cylinder", make_body("tube", Shape::curved_cylinder(1000, 5000, 9.81))}}) {
+        CAPTURE(std::string(t.name));
+        World world(t.body);
+        if (t.body.shape.kind() == Shape::Kind::SphereOutside) {
+            BodyDesc ground;
+            ground.collider.kind = Collider::Kind::Sphere;
+            ground.collider.radius = 1000.0f;
+            world.add(ground);
+        } else {
+            world.add([&] {
+                BodyDesc d;
+                d.collider = ground_mesh(t.body.shape, 512, 4);  // 12 m chords, 2 cm sag
+                return d;
+            }());
+        }
+        const SurfacePoint start{0, 0.5, 0.5, 0.5};
+        CharacterDesc desc;
+        desc.position = t.body.position(start);
+        Character c(world, desc);
+        // Walk "east" (round the planet's equator, round the cylinder), keeping the heading
+        // level as "up" turns underfoot.
+        glm::dvec3 heading = t.body.frame(desc.position).east;
+        const double speed = 20.0;
+        double turned = 0.0;  // radians round the centre (or the axis)
+        glm::dvec3 last = c.position();
+        int steps = 0, airborne = 0;
+        double lowest = 1e9, highest = -1e9;
+        while (turned < 2.0 * 3.14159265358979 && steps < 30000) {
+            const glm::dvec3 up = t.body.up(c.position());
+            heading = glm::normalize(heading - up * glm::dot(heading, up));
+            world.step(kStep, [&] { c.step(glm::vec3(heading * speed)); });
+            ++steps;
+            const glm::dvec3 now = c.position();
+            glm::dvec3 a = last, b = now;
+            if (t.body.shape.kind() == Shape::Kind::CurvedCylinder) a.z = b.z = 0.0;
+            turned +=
+                std::acos(std::clamp(glm::dot(glm::normalize(a), glm::normalize(b)), -1.0, 1.0));
+            last = now;
+            if (!c.on_ground()) ++airborne;
+            if (steps > 60) {
+                const double h = t.body.surface(now).height;
+                lowest = std::min(lowest, h);
+                highest = std::max(highest, h);
+            }
+        }
+        // Round in 2 pi R / 20 m/s = 314 s (18850 steps), give or take a few per cent.
+        CHECK(steps == doctest::Approx(18850).epsilon(0.05));
+        CHECK(glm::length(c.position() - desc.position) < 50.0);  // back where it began
+        CHECK(lowest > 0.45);                                     // never sank into the ground
+        CHECK(highest < 0.65);  // nor left it (flat chords and 2 cm padding aside)
+        CHECK(airborne < 30);   // on its feet all the way (half a second in all, at most)
+    }
 }

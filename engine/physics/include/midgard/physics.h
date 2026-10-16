@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -108,8 +109,9 @@ public:
 
     // Advances the world by dt seconds, in whole fixed steps (the remainder carries over to the
     // next call), at most 15 of them (a quarter of a second): after a long stall the world slows
-    // down rather than spending ever longer catching up. Returns the number of steps taken.
-    int step(double dt);
+    // down rather than spending ever longer catching up. before_each_step runs before each one
+    // (characters move there). Returns the number of steps taken.
+    int step(double dt, const std::function<void()>& before_each_step = {});
 
     BodyState state(BodyId id) const;
     // Kinematic bodies: where to be by the end of the next step (moving there at the speed that
@@ -128,6 +130,47 @@ public:
     // The gravity a body feels at a point (the shape's, or kFlatGravity).
     glm::dvec3 gravity(const glm::dvec3& position) const;
     const std::optional<Body>& body() const;
+
+private:
+    friend class Character;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+struct CharacterDesc {
+    float radius = 0.3f;       // metres
+    float height = 1.0f;       // end to end, along "up"; at least twice the radius
+    float max_slope = 50.0f;   // degrees: steeper ground is a wall
+    float step_height = 0.3f;  // steps up to this high are walked up
+    float mass = 70.0f;        // kilograms, for pushing things
+    int layer = 1;             // the "player" layer of a new project
+    glm::dvec3 position{0.0};  // the middle of the capsule
+    std::uint64_t user = 0;
+};
+
+// A character the game walks about (Jolt's CharacterVirtual): an upright capsule that stands on
+// the ground, slides along walls, walks up steps and gentle slopes, follows moving platforms
+// and pushes dynamic bodies. "Up" and gravity come from the world's shape wherever it is, so it
+// walks all the way round a planet or along the inside of a cylinder. Other bodies and queries
+// see it as a kinematic capsule on its layer.
+class Character {
+public:
+    Character(World& world, const CharacterDesc& desc);  // throws PhysicsError
+    ~Character();
+    Character(const Character&) = delete;
+    Character& operator=(const Character&) = delete;
+
+    // One physics step (call it from World::step's before_each_step): walks at `walk` metres per
+    // second (only the part along the ground counts) and, standing, jumps at jump_speed m/s.
+    void step(const glm::vec3& walk, float jump_speed = 0.0f);
+
+    glm::dvec3 position() const;
+    void set_position(const glm::dvec3& position);  // a jump to somewhere else; stops falling
+    glm::vec3 velocity() const;
+    glm::vec3 up() const;
+    bool on_ground() const;  // standing on something it can stand on
+    BodyId body() const;     // the capsule other bodies and queries see
+    const CharacterDesc& desc() const;
 
 private:
     struct Impl;

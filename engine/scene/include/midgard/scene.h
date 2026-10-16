@@ -70,9 +70,15 @@ struct LocalLightSource {
     float inner_angle = 20.0f, outer_angle = 30.0f;  // degrees
 };
 
-// The entity the player controls. The first camera follows it in third person.
+// The entity the player controls: a character in the physics world (an upright capsule centred
+// on the entity) that walks on the ground. The first camera follows it in third person.
 struct Player {
-    float speed = 4.0f;  // metres per second
+    float speed = 4.0f;        // metres per second
+    float radius = 0.3f;       // the capsule
+    float height = 1.0f;       // end to end, along "up"
+    float max_slope = 50.0f;   // degrees: steeper ground is a wall
+    float step_height = 0.3f;  // steps up to this high are walked up
+    float jump = 4.5f;         // metres per second upwards (about 1 m high); 0: no jumping
 };
 
 // A Python module in the package's scripts/ folder that drives this entity ("door" is

@@ -242,6 +242,19 @@ class EntityForm(QWidget):
             self.layer.currentIndexChanged.connect(lambda _i: self._set_value(
                 "rigidbody", "layer", self.layer.currentData(), "collision layer"))
             form.addRow("Layer", self.layer)
+        self.player_rows: dict[str, QDoubleSpinBox] = {}
+        if "player" in entity.components:
+            for key, label, low, high, step, suffix in (
+                    ("speed", "Walk speed", 0.0, 100.0, 0.5, " m/s"),
+                    ("jump", "Jump speed", 0.0, 50.0, 0.5, " m/s"),
+                    ("height", "Height", 0.02, 20.0, 0.1, " m"),
+                    ("radius", "Radius", 0.01, 10.0, 0.05, " m")):
+                box = _spin(low, high, step, 2)
+                box.setSuffix(suffix)
+                box.valueChanged.connect(lambda _v, b=box, k=key, lab=label: self._set_value(
+                    "player", k, round(b.value(), 4), lab.lower()))
+                form.addRow(label, box)
+                self.player_rows[key] = box
         self.friction = self.bounciness = None
         if "physics_material" in entity.components:
             self.friction = _spin(0.0, 2.0, 0.05, 2)
@@ -280,6 +293,9 @@ class EntityForm(QWidget):
                                 ("height", self.collider_height),
                                 ("offset", self.collider_offset)):
                 self.form.setRowVisible(widget, key in rows)
+        player_defaults = {"speed": 4.0, "jump": 4.5, "height": 1.0, "radius": 0.3}
+        for key, box in self.player_rows.items():
+            number(box, entity.components["player"].get(key, player_defaults[key]))
         if self.motion is not None:
             b = entity.components["rigidbody"]
             show(self.motion, b.get("motion", "dynamic"))

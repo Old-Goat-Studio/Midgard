@@ -491,7 +491,7 @@ TEST_CASE("physics components: scenery, falling crates, kinematic movers, materi
     const entt::entity ball = scene.find("e3_ball");
     const entt::entity lift = scene.find("e4_lift");
     const entt::entity rider = scene.find("e5_rider");
-    CHECK(game.physics().world().body_count() == 8);  // 7 solid, one trigger
+    CHECK(game.physics().world().body_count() == 9);  // 7 solid, a trigger, the player
     CHECK(scene.registry.get<midgard::RigidBody>(ball).mass == 3.0f);
 
     // The lift rises 2 m over a second, carrying the capsule standing on it.
@@ -519,7 +519,7 @@ TEST_CASE("physics components: scenery, falling crates, kinematic movers, materi
     game.set_component("e2_crate", "collider", json::parse(R"({"shape": "sphere"})"));
     CHECK(game.physics().body(crate) != midgard::physics::kNoBody);
     game.remove_entity("e6_mesh_rock");
-    CHECK(game.physics().world().body_count() == 7);
+    CHECK(game.physics().world().body_count() == 8);
     game.set_component("e3_ball", "collider", nullptr);
     CHECK(game.physics().body(ball) == midgard::physics::kNoBody);
 }
@@ -582,4 +582,81 @@ TEST_CASE("physics layers come from the project, and rotations round-trip as Eul
                    glm::vec3(midgard::rotation_matrix(euler)[0])));
         CHECK(glm::length(back - euler) < 1e-3f);
     }
+}
+
+TEST_CASE("the player walks as a character: on the ground, stopped by walls, jumping") {
+    TestPackage pkg({
+        {"e1_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                        "collider": {"size": [40, 1, 40]}}')"},
+        {"e2_wall",
+         R"(NULL, '{"transform": {"position": [0, 1, -6]}, "collider": {"size": [8, 2, 1]}}')"},
+        {"e3_player",
+         R"(NULL, '{"transform": {"position": [0, 0.5, 0]}, "player": {"speed": 4}}')"},
+        {"e4_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]}, "camera": {}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity player = scene.find("e3_player");
+    REQUIRE(game.physics().character() != nullptr);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto frames = [&](int n) {
+        for (int i = 0; i < n; ++i) {
+            game.update(actions, 1.0f / 60.0f);
+            actions.begin_frame();
+        }
+    };
+    frames(30);
+    CHECK(game.physics().character()->on_ground());
+
+    // Forward (away from the camera, along -Z) for a second: 4 m, still on the ground.
+    actions.set("keyboard", "W", 1.0f);
+    frames(60);
+    const glm::dvec3 walked = scene.registry.get<midgard::Transform>(player).position;
+    CHECK(walked.z == doctest::Approx(-4.0).epsilon(0.03));
+    CHECK(std::abs(walked.y - 0.5) < 0.03);
+    // On into the wall (its face at z = -5.5): stopped a radius short of it.
+    frames(120);
+    CHECK(scene.registry.get<midgard::Transform>(player).position.z ==
+          doctest::Approx(-5.2).epsilon(0.01));
+    // The camera kept following, level with the ground.
+    const glm::dvec3 cam = scene.registry.get<midgard::Transform>(scene.find("e4_camera")).position;
+    CHECK(cam.z > scene.registry.get<midgard::Transform>(player).position.z + 3.0);
+    actions.set("keyboard", "W", 0.0f);
+
+    // Jump: up, then down again.
+    actions.set("keyboard", "Space", 1.0f);
+    frames(1);
+    actions.set("keyboard", "Space", 0.0f);
+    frames(20);
+    CHECK(scene.registry.get<midgard::Transform>(player).position.y > 1.0);
+    frames(90);
+    CHECK(std::abs(scene.registry.get<midgard::Transform>(player).position.y - 0.5) < 0.03);
+
+    // A script (or the editor) moving the player puts the character there.
+    scene.registry.get<midgard::Transform>(player).position = {10, 0.5, 10};
+    frames(2);
+    CHECK(glm::length(game.physics().character()->position() - glm::dvec3(10, 0.5, 10)) < 0.05);
+}
+
+TEST_CASE("on a planet the player stands on its side and the camera stays level with it") {
+    TestPackage pkg(
+        {
+            {"e1_planet", R"(NULL, '{"collider": {"shape": "sphere", "radius": 1000}}')"},
+            {"e2_player", R"(NULL, '{"transform": {"position": [1000.5, 0, 0]}, "player": {}}')"},
+            {"e3_camera", R"(NULL, '{"transform": {"position": [1004, 2, 0]}, "camera": {}}')"},
+        },
+        R"({"body": {"shape": "sphere_outside", "radius": 1000}})");
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    actions.set("keyboard", "W", 1.0f);  // walk "forward" for 5 seconds: 20 m along the ground
+    for (int i = 0; i < 300; ++i) game.update(actions, 1.0f / 60.0f);
+    const glm::dvec3 p = scene.registry.get<midgard::Transform>(scene.find("e2_player")).position;
+    CHECK(glm::length(p) == doctest::Approx(1000.5).epsilon(1e-4));  // standing on the surface
+    CHECK(glm::length(p - glm::dvec3(1000.5, 0, 0)) > 15.0);         // and it went somewhere
+    // The camera is above the ground behind the player, along the player's "up".
+    const glm::dvec3 cam = scene.registry.get<midgard::Transform>(scene.find("e3_camera")).position;
+    const glm::dvec3 up = glm::normalize(p);
+    CHECK(glm::dot(cam - p, up) > 0.5);
+    CHECK(glm::length(cam) > 1001.0);
 }

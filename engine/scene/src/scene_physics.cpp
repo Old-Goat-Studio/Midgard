@@ -91,6 +91,52 @@ ScenePhysics::ScenePhysics(const Scene& scene, const PhysicsLayers& layers, Mesh
     for (entt::entity e : scene.registry.view<const EntityInfo>()) entities.push_back(e);
     std::sort(entities.begin(), entities.end());
     for (entt::entity e : entities) add(scene, e);
+    make_character(scene);
+}
+
+// The scene's first player walks as a character; its own collider and rigid body, if it has
+// any, are left out (the character is its body).
+void ScenePhysics::make_character(const Scene& scene) {
+    character_.reset();
+    player_ = entt::null;
+    for (entt::entity e : scene.registry.view<const Player>())
+        if (player_ == entt::null || entt::to_integral(e) < entt::to_integral(player_)) player_ = e;
+    if (player_ == entt::null) return;
+    const Player& p = scene.registry.get<Player>(player_);
+    physics::CharacterDesc d;
+    d.radius = p.radius;
+    d.height = p.height;
+    d.max_slope = p.max_slope;
+    d.step_height = p.step_height;
+    d.user = entt::to_integral(player_);
+    player_placed_ = placement(scene, player_);
+    d.position = player_placed_.position;
+    try {
+        character_ = std::make_unique<physics::Character>(*world_, d);
+    } catch (const std::exception& ex) {
+        throw SceneError("entity '" + scene.registry.get<EntityInfo>(player_).id +
+                         "': player: " + ex.what());
+    }
+}
+
+void ScenePhysics::set_player_intent(const glm::vec3& walk, bool jump) {
+    walk_ = walk;
+    jump_ = jump_ || jump;
+}
+
+// An entity's new world position (and rotation) from physics, in its parent's space.
+void ScenePhysics::write_back(Scene& scene, entt::entity e, const glm::dvec3& position,
+                              const glm::quat* rotation) {
+    Transform& tf = scene.registry.get<Transform>(e);
+    const entt::entity parent = scene.registry.get<EntityInfo>(e).parent;
+    if (parent == entt::null) {
+        tf.position = position;
+        if (rotation) tf.rotation = euler_degrees(*rotation);
+        return;
+    }
+    tf.position = glm::dvec3(glm::inverse(scene.world_matrix(parent)) * glm::dvec4(position, 1.0));
+    if (rotation)
+        tf.rotation = euler_degrees(glm::inverse(placement(scene, parent).rotation) * *rotation);
 }
 
 ScenePhysics::Placed ScenePhysics::placement(const Scene& scene, entt::entity e) const {
@@ -126,6 +172,7 @@ physics::Collider ScenePhysics::collider_for(const Scene& scene, entt::entity e)
 }
 
 void ScenePhysics::add(const Scene& scene, entt::entity e) {
+    if (scene.registry.all_of<Player>(e)) return;  // the player is a character instead
     const auto* shape = scene.registry.try_get<ColliderShape>(e);
     const auto* trigger = scene.registry.try_get<Trigger>(e);
     if (!shape && !trigger) return;
@@ -173,9 +220,15 @@ void ScenePhysics::add(const Scene& scene, entt::entity e) {
 void ScenePhysics::rebuild(const Scene& scene, entt::entity e) {
     remove(e);
     if (scene.registry.valid(e)) add(scene, e);
+    if (e == player_ || (scene.registry.valid(e) && scene.registry.all_of<Player>(e)))
+        make_character(scene);
 }
 
 void ScenePhysics::remove(entt::entity e) {
+    if (e == player_) {
+        character_.reset();
+        player_ = entt::null;
+    }
     const auto it = bodies_.find(e);
     if (it == bodies_.end()) return;
     for (physics::BodyId id : {it->second.id, it->second.sensor})
@@ -211,26 +264,33 @@ int ScenePhysics::update(Scene& scene, double dt) {
     }
     for (entt::entity e : gone) remove(e);
     for (entt::entity e : rescaled) rebuild(scene, e);
+    // The player moved by something other than walking (a script, the editor): it jumps there.
+    if (character_ && player_ != entt::null && scene.registry.valid(player_)) {
+        const Placed now = placement(scene, player_);
+        if (now.position != player_placed_.position) character_->set_position(now.position);
+        player_placed_ = now;
+    }
 
-    const int steps = world_->step(dt);
+    const float jump_speed = player_ != entt::null && scene.registry.valid(player_) &&
+                                     scene.registry.all_of<Player>(player_)
+                                 ? scene.registry.get<Player>(player_).jump
+                                 : 0.0f;
+    const int steps = world_->step(dt, [&] {
+        if (!character_) return;
+        character_->step(walk_, jump_ ? jump_speed : 0.0f);
+        jump_ = false;
+    });
     if (steps == 0) return 0;
+    if (character_ && scene.registry.valid(player_)) {
+        write_back(scene, player_, character_->position(), nullptr);
+        player_placed_ = placement(scene, player_);
+    }
 
     // Dynamic bodies move their entities (in their parents' space, if they have parents).
     for (auto& [e, t] : bodies_) {
         if (t.motion != physics::Motion::Dynamic || t.id == physics::kNoBody) continue;
         const physics::BodyState s = world_->state(t.id);
-        Transform& tf = scene.registry.get<Transform>(e);
-        const entt::entity parent = scene.registry.get<EntityInfo>(e).parent;
-        glm::dvec3 position = s.position;
-        glm::quat rotation = s.rotation;
-        if (parent != entt::null) {
-            const glm::dmat4 pm = scene.world_matrix(parent);
-            position = glm::dvec3(glm::inverse(pm) * glm::dvec4(s.position, 1.0));
-            const Placed pp = placement(scene, parent);
-            rotation = glm::inverse(pp.rotation) * s.rotation;
-        }
-        tf.position = position;
-        tf.rotation = euler_degrees(rotation);
+        write_back(scene, e, s.position, &s.rotation);
         t.placed = placement(scene, e);
         // Its trigger goes with it (by the end of the next step).
         if (t.sensor != physics::kNoBody)
@@ -245,8 +305,10 @@ std::vector<entt::entity> ScenePhysics::triggers_touching(const Scene& scene,
     if (player == entt::null || !scene.registry.valid(player)) return out;
     physics::Collider capsule;
     capsule.kind = physics::Collider::Kind::Capsule;
-    capsule.radius = kPlayerRadius;
-    capsule.height = kPlayerHeight;
+    Player p;
+    if (const auto* own = scene.registry.try_get<Player>(player)) p = *own;
+    capsule.radius = p.radius;
+    capsule.height = p.height;
     const glm::dvec3 at = scene.world_position(player);
     const glm::quat turn =
         upright(glm::vec3(scene.settings.body ? scene.settings.body->up(at) : glm::dvec3(0, 1, 0)));

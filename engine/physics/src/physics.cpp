@@ -7,6 +7,7 @@
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -326,7 +327,7 @@ bool World::collides(int a, int b) const {
     return (impl_->layer_pairs.masks[size_t(a)] >> b) & 1;
 }
 
-int World::step(double dt) {
+int World::step(double dt, const std::function<void()>& before_each_step) {
     Impl& w = *impl_;
     w.carried += std::max(dt, 0.0);
     // At most a quarter of a second at once: after a long stall the world slows down rather
@@ -335,6 +336,7 @@ int World::step(double dt) {
     int steps = 0;
     JPH::BodyInterface& bodies = w.system.GetBodyInterface();
     while (w.carried >= kStep && steps < kMaxSteps) {
+        if (before_each_step) before_each_step();
         for (const Impl::Target& t : w.targets)
             if (bodies.IsAdded(t.id))
                 bodies.MoveKinematic(t.id, to_jolt(t.position), to_jolt(t.rotation), float(kStep));
@@ -443,6 +445,135 @@ glm::dvec3 World::gravity(const glm::dvec3& position) const {
 
 const std::optional<Body>& World::body() const {
     return impl_->body;
+}
+
+// ---- characters -----------------------------------------------------------------------------
+
+namespace {
+
+// Queries for a character: everything solid on layers its layer collides with.
+class SolidOnly final : public JPH::BodyFilter {
+public:
+    bool ShouldCollideLocked(const JPH::Body& body) const override { return !body.IsSensor(); }
+};
+
+}  // namespace
+
+struct Character::Impl {
+    World::Impl* world = nullptr;
+    CharacterDesc desc;
+    JPH::Ref<JPH::CharacterVirtual> character;
+    float half_cylinder = 0.0f;
+
+    JPH::Vec3 up_at(const JPH::RVec3& p) const {
+        const glm::dvec3 g = world->gravity(from_jolt(p));
+        const double length = glm::length(g);
+        if (length < 1e-9) return JPH::Vec3::sAxisY();
+        const glm::dvec3 up = -g / length;
+        return JPH::Vec3(float(up.x), float(up.y), float(up.z));
+    }
+};
+
+Character::Character(World& world, const CharacterDesc& d) : impl_(std::make_unique<Impl>()) {
+    Impl& c = *impl_;
+    c.world = world.impl_.get();
+    c.desc = d;
+    if (d.radius <= 0.0f || d.height < 2.0f * d.radius)
+        throw PhysicsError("character: the capsule must be at least as tall as it is wide");
+    if (d.layer < 0 || d.layer >= kLayers) throw PhysicsError("character: no such layer");
+    c.half_cylinder = 0.5f * d.height - d.radius;
+    const JPH::ShapeRefC capsule = make(JPH::CapsuleShapeSettings(c.half_cylinder, d.radius));
+
+    JPH::Ref<JPH::CharacterVirtualSettings> s = new JPH::CharacterVirtualSettings();
+    s->mShape = capsule;
+    s->mMaxSlopeAngle = glm::radians(std::clamp(d.max_slope, 0.0f, 89.0f));
+    s->mMass = std::max(d.mass, 1.0f);
+    // Contacts below the lower half-sphere's centre hold it up; the rest are walls.
+    s->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), c.half_cylinder);
+    s->mInnerBodyShape = capsule;  // so bodies and queries see it
+    s->mInnerBodyLayer = object_layer(d.layer, true);
+    s->mEnhancedInternalEdgeRemoval = true;  // smooth over the edges between mesh triangles
+    const JPH::RVec3 at = to_jolt(d.position);
+    const JPH::Vec3 up = c.up_at(at);
+    s->mUp = up;
+    c.character = new JPH::CharacterVirtual(s, at, JPH::Quat::sFromTo(JPH::Vec3::sAxisY(), up),
+                                            d.user, &c.world->system);
+    c.world->system.GetBodyInterface().SetUserData(c.character->GetInnerBodyID(), d.user);
+}
+
+Character::~Character() = default;
+
+void Character::step(const glm::vec3& walk, float jump_speed) {
+    Impl& c = *impl_;
+    JPH::CharacterVirtual& ch = *c.character;
+    const JPH::Vec3 up = c.up_at(ch.GetPosition());
+    ch.SetUp(up);
+    ch.SetRotation(JPH::Quat::sFromTo(JPH::Vec3::sAxisY(), up));
+    ch.UpdateGroundVelocity();
+
+    // Walking: only along the ground (up and down a slope as it goes). Up and down: while
+    // standing, the ground's own movement (a lift carries it), a jump, and only the part of
+    // gravity that presses into the ground: none along it, so it doesn't slide down a slope it
+    // can stand on, yet it stays pressed to ground that curves away (a planet). In the air, its
+    // own speed plus gravity.
+    JPH::Vec3 along = to_jolt(walk);
+    along -= up * along.Dot(up);
+    const JPH::Vec3 velocity = ch.GetLinearVelocity();
+    const JPH::Vec3 ground = ch.GetGroundVelocity();
+    const bool standing = ch.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround &&
+                          (velocity - ground).Dot(up) < 0.1f;
+    const glm::dvec3 g = c.world->gravity(from_jolt(ch.GetPosition()));
+    const JPH::Vec3 gravity(float(g.x), float(g.y), float(g.z));
+    JPH::Vec3 next;
+    if (standing) {
+        const JPH::Vec3 normal = ch.GetGroundNormal();
+        const float speed = along.Length();
+        JPH::Vec3 on_slope = along - normal * along.Dot(normal);
+        if (speed > 0.0f && on_slope.LengthSq() > 1e-12f) on_slope = on_slope.Normalized() * speed;
+        next = up * ground.Dot(up) + on_slope + normal * (gravity.Dot(normal) * float(kStep));
+        if (jump_speed > 0.0f) next += up * jump_speed;
+    } else {
+        next = up * velocity.Dot(up) + gravity * float(kStep) + along;
+    }
+    ch.SetLinearVelocity(next);
+
+    JPH::CharacterVirtual::ExtendedUpdateSettings settings;
+    settings.mStickToFloorStepDown = -up * 0.5f;
+    settings.mWalkStairsStepUp = up * c.desc.step_height;
+    const JPH::ObjectLayer layer = object_layer(c.desc.layer, true);
+    const SolidOnly solid;
+    ch.ExtendedUpdate(float(kStep), gravity, settings,
+                      c.world->system.GetDefaultBroadPhaseLayerFilter(layer),
+                      c.world->system.GetDefaultLayerFilter(layer), solid, {}, *c.world->temp);
+}
+
+glm::dvec3 Character::position() const {
+    return from_jolt(impl_->character->GetPosition());
+}
+
+void Character::set_position(const glm::dvec3& position) {
+    impl_->character->SetPosition(to_jolt(position));
+    impl_->character->SetLinearVelocity(JPH::Vec3::sZero());
+}
+
+glm::vec3 Character::velocity() const {
+    return from_jolt(impl_->character->GetLinearVelocity());
+}
+
+glm::vec3 Character::up() const {
+    return from_jolt(impl_->character->GetUp());
+}
+
+bool Character::on_ground() const {
+    return impl_->character->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+}
+
+BodyId Character::body() const {
+    return impl_->character->GetInnerBodyID().GetIndexAndSequenceNumber();
+}
+
+const CharacterDesc& Character::desc() const {
+    return impl_->desc;
 }
 
 }  // namespace midgard::physics

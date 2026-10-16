@@ -24,7 +24,7 @@ mapping instead, from Phase 5).
 | `physics_material` | `{"friction": 0.5, "bounciness": 0}` | How the collider's surface behaves: friction from 0 (ice) up, bounciness from 0 (stops dead) to 1 (bounces back as fast as it came). Defaults when absent. |
 | `sky` | `{"color": [r, g, b], "ambient": [r, g, b]}` | The scene's sky colour and ambient light. The first entity with a sky sets them, and the scene settings below are only the fallback for scenes without one. Defaults as in the settings. |
 | `folder` | `{}` | A folder in the editor's Scene panel that groups its child entities. The engine sees an entity with only a transform (the editor keeps it at the origin). |
-| `player` | `{"speed": 4.0}` | The entity the player controls (metres per second). If a scene has a player, its first camera follows it in third person: look orbits, the wheel zooms, and movement is relative to the camera. |
+| `player` | `{"speed": 4.0, "jump": 4.5, "radius": 0.3, "height": 1.0, "max_slope": 50, "step_height": 0.3}` | The entity the player controls: a character in the physics world, an upright capsule (`radius`, and `height` end to end) centred on the entity, that walks at `speed` metres per second, stands on the ground, slides along walls, walks up steps up to `step_height` metres and slopes up to `max_slope` degrees, and jumps (the jump action) at `jump` metres per second upwards (0: no jumping). "Up" and gravity come from the scene's `body`, so it walks all the way round a planet. Its own `collider` and `rigidbody`, if it has any, are left out. If a scene has a player, its first camera follows it in third person: look orbits, the wheel zooms, and movement is relative to the camera, level with the ground underfoot. |
 
 ## Scene settings
 

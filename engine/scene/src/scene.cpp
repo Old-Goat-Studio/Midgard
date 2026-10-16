@@ -98,7 +98,14 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<CameraLens>(e, c.value("fov", 55.0f), c.value("near", 0.05f),
                                            c.value("far", 500.0f));
     } else if (name == "player") {
-        reg.emplace_or_replace<Player>(e, c.value("speed", 4.0f));
+        Player p;
+        p.speed = std::max(c.value("speed", p.speed), 0.0f);
+        p.radius = std::max(c.value("radius", p.radius), 0.01f);
+        p.height = std::max(c.value("height", p.height), 2.0f * p.radius);
+        p.max_slope = std::clamp(c.value("max_slope", p.max_slope), 0.0f, 89.0f);
+        p.step_height = std::max(c.value("step_height", p.step_height), 0.0f);
+        p.jump = std::max(c.value("jump", p.jump), 0.0f);
+        reg.emplace_or_replace<Player>(e, p);
     } else if (name == "script") {
         reg.emplace_or_replace<ScriptRef>(e, c.at("module").get<std::string>());
     } else if (name == "trigger") {
