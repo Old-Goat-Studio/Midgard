@@ -1,5 +1,5 @@
 {
-  "_about": "Performance budgets (milliseconds, the median of midgard_bench's runs), checked by tools/budgets.py. A benchmark fails when it takes longer than its budget plus the margin. 'default' applies everywhere unless a platform has its own value; CI's platforms are named ci-<preset>, and its Linux jobs render with software Vulkan (lavapipe). Budgets are about 2-3 times the slowest CI timing seen (CI runs 38842790692 and, for the job system with a queue per worker, 38845093430; 15 October 2026), so a real slowdown fails but runner noise doesn't. Every benchmark needs a budget.",
+  "_about": "Performance budgets (milliseconds, the median of midgard_bench's runs), checked by tools/budgets.py. A benchmark fails when it takes longer than its budget plus the margin. 'default' applies everywhere unless a platform has its own value; CI's platforms are named ci-<preset>, and its Linux jobs render with software Vulkan (lavapipe). Budgets are about 2-3 times the slowest CI timing seen (CI runs 38842790692 and, for the job system with a queue per worker, 38845093430; 15 October 2026; texture transcoding: 38924696676, 16 October 2026), so a real slowdown fails but runner noise doesn't. Every benchmark needs a budget.",
   "margin": 0.25,
   "metric": "median_ms",
   "budgets": {
@@ -14,7 +14,7 @@
       "ci-linux-release": 20,
       "ci-linux-arm64-release": 20
     },
-    "texture.transcode_512_bc7": {"default": 40},
-    "texture.transcode_512_astc": {"default": 40}
+    "texture.transcode_512_bc7": {"default": 25},
+    "texture.transcode_512_astc": {"default": 10}
   }
 }
