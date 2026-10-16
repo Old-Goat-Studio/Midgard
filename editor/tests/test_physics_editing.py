@@ -205,3 +205,74 @@ def test_world_shape_adds_ground_covering_the_world(qtbot, project, tmp_path):
     assert len(project.entities()) == before
     assert "body" not in project.scene_settings()
 
+
+# ---- the viewport's transform gizmos ---------------------------------------------------------
+def test_gizmos_move_rotate_and_scale_the_selected_entity(qtbot, project):
+    from midgard_editor.docks.gizmos import UNIFORM, GizmoPanel, view_axes
+
+    panel = GizmoPanel(lambda: (0.0, 0.0), lambda: 0.01)  # looking along -Z, 1 cm a pixel
+    qtbot.addWidget(panel)
+    assert not panel.isEnabled()  # nothing selected
+    panel.set_entity(project, "e000006")
+    assert not panel.isEnabled()  # the World folder has no transform to change
+    panel.set_entity(project, "e000004")  # the player
+    assert panel.isEnabled()
+    before = project.entity("e000004").transform()
+
+    assert panel.begin("position", 0)
+    panel.drag(50)  # live as it goes...
+    panel.drag(100)
+    panel.end()     # ...one undo step at the end
+    assert project.entity("e000004").transform()["position"][0] == before["position"][0] + 1.0
+
+    panel.begin("rotation", 1)
+    panel.drag(60)
+    panel.end()
+    assert project.entity("e000004").transform()["rotation"][1] == before["rotation"][1] + 30.0
+
+    panel.begin("scale", UNIFORM)
+    panel.drag(100)  # twice the size, evenly
+    panel.end()
+    assert project.entity("e000004").transform()["scale"] == [s * 2 for s in before["scale"]]
+
+    project.undo_stack.undo()
+    project.undo_stack.undo()
+    project.undo_stack.undo()
+    assert project.entity("e000004").transform() == before
+
+    # From the front, X points right and Y up on screen; Z comes towards the camera.
+    x, y, z = view_axes(0.0, 0.0)
+    assert x[0] == 1.0 and abs(x[1]) < 1e-9
+    assert y[1] == -1.0
+    assert abs(z[0]) < 1e-9 and abs(z[1]) < 1e-9
+
+
+def test_dragging_a_gizmo_handle_with_the_mouse(qtbot, project):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    from midgard_editor.docks.gizmos import GizmoPanel
+
+    panel = GizmoPanel(lambda: (0.0, 0.0), lambda: 0.01)
+    qtbot.addWidget(panel)
+    panel.set_entity(project, "e000004")
+    panel.show()
+    move = panel.gizmos["position"]
+    handle = next(w for axis, w, _ in move.handles() if axis == 0)  # X, to the right
+    start = QPoint(int(handle.x()), int(handle.y()))
+    x = project.entity("e000004").transform()["position"][0]
+    QTest.mousePress(move, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(move, start + QPoint(40, 0))
+    QTest.mouseRelease(move, Qt.MouseButton.LeftButton, pos=start + QPoint(40, 0))
+    assert project.entity("e000004").transform()["position"][0] == pytest.approx(x + 0.4)
+
+
+def test_the_gizmos_toolbar_switch(qtbot, window, settings):
+    action = window.viewport.gizmos_action
+    assert action in window.viewport.toolbar.actions()
+    assert action.isChecked()  # shown unless turned off
+    action.trigger()
+    assert not action.isChecked() and settings.get("show_gizmos") is False
+    window.scene_panel.entity_selected.emit("e000004")
+    assert window.viewport.selected == "e000004"
+

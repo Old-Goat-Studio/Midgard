@@ -10,8 +10,9 @@ window, so this is what keeps the viewport from drawing into a window that has g
 
 Mouse: drag with the left or right button to orbit, the middle button to pan, the wheel to zoom.
 
-The toolbar along its top holds the view's switches (Colliders: the physics shapes' outlines).
-Its actions are the panel's, so menus can share them.
+The toolbar along its top holds the view's switches (Colliders: the physics shapes' outlines;
+Gizmos: the Move, Rotate and Scale controls in the top-right corner, see gizmos.py). Its actions
+are the panel's, so menus can share them.
 """
 import json
 import logging
@@ -33,6 +34,7 @@ from .. import engine
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
 from ..project import Project
 from ..scene_model import MAIN_SCENE, parents_first
+from .gizmos import GizmoPanel
 
 log = logging.getLogger("midgard")
 PLATFORMS = ("windows", "xcb")  # window systems the engine can draw into
@@ -145,14 +147,38 @@ class ViewportPanel(QWidget):
             "triggers yellow, the player cyan (F4 does the same in the game)")
         self.colliders_action.toggled.connect(self.set_show_colliders)
         self.toolbar.addAction(self.colliders_action)
+        self.gizmos_action = QAction("Show &Gizmos", self)
+        self.gizmos_action.setIconText("Gizmos")
+        self.gizmos_action.setCheckable(True)
+        self.gizmos_action.setChecked(True)
+        self.gizmos_action.setToolTip("Move, rotate and scale the selected entity with the "
+                                      "controls in the view's top-right corner")
+        self.toolbar.addAction(self.gizmos_action)
+        self.selected: str | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self.toolbar)
-        view_area = QWidget()
+        view_area = self.view_area = QWidget()
         layout.addWidget(view_area, 1)
         self.stack = QStackedLayout(view_area)
         self.stack.addWidget(self.message)
+        # The gizmos float over the view's top-right corner. The view is a native window, which
+        # nothing inside the panel can show through, so the gizmos are a small see-through window
+        # of their own that keeps to that corner (and hides when the view isn't showing).
+        self.gizmos = GizmoPanel(lambda: (self.camera.yaw, self.camera.pitch),
+                                 lambda: self.camera.distance * 0.0025, self)
+        self.gizmos.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                                   | Qt.WindowType.NoDropShadowWindowHint)
+        self.gizmos.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.gizmos.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.gizmos.adjustSize()
+        self.gizmos.changed.connect(self.request_render)
+        self.gizmos_action.toggled.connect(self.set_show_gizmos)
+        self._gizmo_host = None  # the window (and screen) the gizmos float above
+        self._follow = QTimer(self)  # docks move, float and hide without telling this panel
+        self._follow.setInterval(100)
+        self._follow.timeout.connect(self._place_gizmos)
         self.window: ViewportWindow | None = None
 
         module = engine.module()
@@ -175,6 +201,7 @@ class ViewportPanel(QWidget):
             self.window.screenChanged.connect(lambda _s: self.window_resized())
         self.toolbar.setEnabled(self.view is not None)
         self.set_project(None)
+        self.set_show_gizmos(True)
 
     def _show_message(self, text: str) -> None:
         self.message.setText(text)
@@ -189,6 +216,7 @@ class ViewportPanel(QWidget):
             self.project.entities_changed.disconnect(self._entities_changed)
             self.project.scene_settings_changed.disconnect(self._settings_changed)
         self.project = project
+        self.set_selected(None)
         if project is not None:
             project.entities_changed.connect(self._entities_changed)
             project.scene_settings_changed.connect(self._settings_changed)
@@ -197,6 +225,47 @@ class ViewportPanel(QWidget):
                 self.camera = OrbitCamera.looking(camera.transform()["position"],
                                                   [0.0, 0.5, 0.0])
         self._sync_all()
+
+    def _place_gizmos(self) -> None:
+        """Keeps the gizmos in the view's top-right corner while the view is on screen."""
+        top = self.view_area.window()  # (self.window is the view's own QWindow)
+        wanted = (self.gizmos_action.isChecked() and self.view is not None
+                  and self.view_area.isVisible() and not top.isMinimized())
+        if not wanted:
+            self.gizmos.hide()
+            return
+        # A window stays above the window that owns it, and no other. When the view moves to
+        # another window (its dock floated, docked again, or put on another screen), the gizmos
+        # move to that window and are shown afresh above it.
+        host = (top, top.screen())
+        if host != self._gizmo_host:
+            self._gizmo_host = host
+            flags = self.gizmos.windowFlags()
+            self.gizmos.hide()
+            self.gizmos.setParent(top, flags)
+        corner = self.view_area.mapToGlobal(
+            QPoint(max(self.view_area.width() - self.gizmos.width() - 8, 0), 8))
+        if self.gizmos.pos() != corner:
+            self.gizmos.move(corner)
+        if not self.gizmos.isVisible():
+            self.gizmos.show()
+            self.gizmos.raise_()
+
+    def set_show_gizmos(self, show: bool) -> None:
+        """The Move, Rotate and Scale controls in the view's top-right corner."""
+        if self.gizmos_action.isChecked() != show:
+            self.gizmos_action.setChecked(show)  # comes back here through toggled
+            return
+        if show and self.view is not None:
+            self._follow.start()
+        else:
+            self._follow.stop()
+        self._place_gizmos()
+
+    def set_selected(self, entity_id: str | None) -> None:
+        """The entity the gizmos act on (the Scene panel's selection)."""
+        self.selected = entity_id
+        self.gizmos.set_entity(self.project, entity_id)
 
     def set_show_colliders(self, show: bool) -> None:
         """Outlines of colliders (by how they move), triggers and the player."""
@@ -279,6 +348,7 @@ class ViewportPanel(QWidget):
             self.request_render()
 
     def camera_changed(self) -> None:
+        self.gizmos.refresh()  # the axes as the camera now sees them
         if self.view is not None:
             self.view.set_camera(self.camera.eye(), self.camera.target, self.camera.fov)
             self.request_render()

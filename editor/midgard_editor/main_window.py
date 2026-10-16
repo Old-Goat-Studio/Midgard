@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
         self.scene_panel.entity_selected.connect(self.inspector.show_entity)
+        self.scene_panel.entity_selected.connect(self.viewport.set_selected)
         self.inspector.setMinimumWidth(340)
         self.inspector.open_script.connect(self.edit_script)
         self.browser.setMinimumWidth(220)
@@ -361,6 +362,10 @@ class MainWindow(QMainWindow):
         colliders.setChecked(bool(self.settings.get("show_colliders")))
         colliders.toggled.connect(lambda on: self.settings.set("show_colliders", on))
         view.addAction(colliders)
+        gizmos = self.viewport.gizmos_action
+        gizmos.setChecked(self.settings.get("show_gizmos", True) is not False)
+        gizmos.toggled.connect(lambda on: self.settings.set("show_gizmos", on))
+        view.addAction(gizmos)
         self.themes_menu = view.addMenu("&Themes")
         # Rebuilt each time it opens, so a .qss file added to a Themes folder appears at once.
         self.themes_menu.aboutToShow.connect(self._fill_themes_menu)
