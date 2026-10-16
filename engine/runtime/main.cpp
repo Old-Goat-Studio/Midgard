@@ -10,7 +10,8 @@
 //                                       play under the editor without a window or GPU (tests, CI)
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH] [--overlay-text "a|b"]
-//                                       offscreen, no window (image tests)
+//                                       offscreen, no window (image tests); --origin-offset x,y,z
+//                                       places the demo scene far from the world's origin
 //   midgard_runtime --selftest [--show]  checks this device can run games (jobs, identical data,
 //                                       rendering, the package, Python); --show puts the results
 //                                       on screen. On Android, an APK with a selftest.txt asset
@@ -94,7 +95,8 @@ struct Options {
     std::optional<std::string> overlay_text;  // fixed overlay lines, separated by '|'
     std::optional<std::string> profile;       // where to write the profiling trace
     bool selftest = false;
-    bool show = false;  // the self-test's results in a window
+    bool show = false;              // the self-test's results in a window
+    glm::dvec3 origin_offset{0.0};  // where the demo scene is placed (precision tests)
     // Overlay lines shown for the whole run (the self-test's results); F3 is off then.
     std::vector<render::OverlayLine> fixed_overlay;
 };
@@ -185,7 +187,8 @@ class Source {
 public:
     virtual ~Source() = default;
     virtual void upload(render::Renderer& renderer) = 0;
-    virtual std::vector<render::DrawItem> draws(float seconds) const = 0;
+    // What to draw, relative to the camera's origin (camera-relative rendering).
+    virtual std::vector<render::DrawItem> draws(float seconds, const glm::dvec3& origin) const = 0;
     virtual render::Camera camera(float aspect) const = 0;
     virtual render::Light light() const = 0;
     virtual glm::vec4 sky() const = 0;
@@ -205,23 +208,30 @@ public:
 
 class DemoSource : public Source {
 public:
+    // The whole scene can be placed far from the world's origin (--origin-offset): with
+    // camera-relative rendering it must look exactly the same there.
+    explicit DemoSource(glm::dvec3 offset = glm::dvec3(0.0)) : offset_(offset) {}
     void upload(render::Renderer& renderer) override {
         cube_ = renderer.upload_mesh(render::make_cube());
     }
-    std::vector<render::DrawItem> draws(float seconds) const override {
-        glm::mat4 spin = glm::rotate(glm::mat4(1.0f), seconds * 0.6f, glm::vec3(0, 1, 0));
-        glm::mat4 cube = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.5f, 0)) * spin;
-        glm::mat4 ground = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0, -0.05f, 0)),
-                                      glm::vec3(6.0f, 0.1f, 6.0f));
+    std::vector<render::DrawItem> draws(float seconds, const glm::dvec3& origin) const override {
+        const glm::dmat4 spin =
+            glm::rotate(glm::dmat4(1.0), double(seconds * 0.6f), glm::dvec3(0, 1, 0));
+        const glm::dmat4 cube =
+            glm::translate(glm::dmat4(1.0), offset_ + glm::dvec3(0, 0.5, 0)) * spin;
+        const glm::dmat4 ground =
+            glm::scale(glm::translate(glm::dmat4(1.0), offset_ + glm::dvec3(0, -0.05, 0)),
+                       glm::dvec3(6.0, 0.1, 6.0));
         return {
-            {cube_, cube, glm::vec4(0.79f, 0.64f, 0.15f, 1.0f)},    // knotwork gold
-            {cube_, ground, glm::vec4(0.22f, 0.32f, 0.18f, 1.0f)},  // moss
-        };
+            {cube_, render::relative_to(cube, origin), glm::vec4(0.79f, 0.64f, 0.15f, 1.0f)},
+            {cube_, render::relative_to(ground, origin), glm::vec4(0.22f, 0.32f, 0.18f, 1.0f)},
+        };  // knotwork gold, moss
     }
     render::Camera camera(float aspect) const override {
         render::Camera c;
-        c.view =
-            glm::lookAt(glm::vec3(2.6f, 2.0f, 3.4f), glm::vec3(0, 0.4f, 0), glm::vec3(0, 1, 0));
+        c.origin = offset_ + glm::dvec3(2.6, 2.0, 3.4);
+        const glm::vec3 to_target(offset_ + glm::dvec3(0, 0.4, 0) - c.origin);
+        c.view = glm::lookAt(glm::vec3(0.0f), to_target, glm::vec3(0, 1, 0));
         c.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, 200.0f);
         return c;
     }
@@ -229,6 +239,7 @@ public:
     glm::vec4 sky() const override { return {0.08f, 0.11f, 0.18f, 1.0f}; }  // night blue
 
 private:
+    glm::dvec3 offset_;
     render::MeshId cube_ = 0;
 };
 
@@ -245,7 +256,9 @@ public:
             game_.scene().registry.view<midgard::EntityInfo>().size(), m.editor_build.c_str());
     }
     void upload(render::Renderer& renderer) override { game_.upload_meshes(renderer); }
-    std::vector<render::DrawItem> draws(float) const override { return game_.draws(); }
+    std::vector<render::DrawItem> draws(float, const glm::dvec3& origin) const override {
+        return game_.draws(origin);
+    }
     render::Camera camera(float aspect) const override { return game_.camera(aspect); }
     render::Light light() const override { return game_.scene().light(); }
     glm::vec4 sky() const override { return {game_.scene().settings.sky, 1.0f}; }
@@ -584,9 +597,9 @@ int run_screenshot(const Options& opt, Source& source) {
     render::Renderer renderer(desc);
     source.upload(renderer);
     if (opt.overlay_text) renderer.set_overlay(overlay_lines(*opt.overlay_text));
-    const auto draws = source.draws(0.6f);
-    renderer.render_frame(source.camera(float(opt.width) / float(opt.height)), source.light(),
-                          draws, source.sky());
+    const render::Camera camera = source.camera(float(opt.width) / float(opt.height));
+    const auto draws = source.draws(0.6f, camera.origin);
+    renderer.render_frame(camera, source.light(), draws, source.sky());
     if (!render::write_png(*opt.screenshot, opt.width, opt.height, renderer.read_pixels())) {
         std::fprintf(stderr, "error: could not write %s\n", opt.screenshot->c_str());
         return 1;
@@ -853,13 +866,13 @@ int run_window(const Options& opt, Source& source) {
                 source.update(actions, dt);
             }
             const float t = std::chrono::duration<float>(now - start).count();
-            const auto draws = source.draws(t);
             const float aspect = float(renderer.width()) / float(renderer.height());
+            const render::Camera camera = source.camera(aspect);
+            const auto draws = source.draws(t, camera.origin);
             bool drawn = false;
             {
                 MIDGARD_PROFILE_SCOPE("render");
-                drawn = renderer.render_frame(source.camera(aspect), source.light(), draws,
-                                              source.sky());
+                drawn = renderer.render_frame(camera, source.light(), draws, source.sky());
             }
             if (drawn) {
                 ++frame;
@@ -1040,6 +1053,10 @@ int main(int argc, char** argv) {
             opt.overlay_text = argv[++i];
         } else if (arg == "--profile" && has_value) {
             opt.profile = argv[++i];
+        } else if (arg == "--origin-offset" && has_value) {
+            double x = 0, y = 0, z = 0;
+            if (std::sscanf(argv[++i], "%lf,%lf,%lf", &x, &y, &z) != 3) return usage();
+            opt.origin_offset = {x, y, z};
         } else if (arg == "--selftest") {
             opt.selftest = true;
         } else if (arg == "--show") {
@@ -1073,7 +1090,7 @@ int main(int argc, char** argv) {
         if (opt.package_dir)
             source = std::make_unique<GameSource>(*opt.package_dir);
         else
-            source = std::make_unique<DemoSource>();
+            source = std::make_unique<DemoSource>(opt.origin_offset);
         if (opt.simulate >= 0)
             result = run_simulation(opt, *source);
         else if (opt.headless)

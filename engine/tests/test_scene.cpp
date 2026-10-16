@@ -209,7 +209,10 @@ TEST_CASE("the scene is built from the entity table") {
 
     const auto camera = scene.camera(16.0f / 9.0f);
     REQUIRE(camera.has_value());
-    CHECK(near(glm::vec3(camera->view * glm::vec4(0, 0, 5, 1)), {0, 0, 0}));  // camera at origin
+    // Camera-relative: the camera's world position is its origin, and its view only turns.
+    CHECK(near(glm::vec3(camera->origin), {0, 0, 5}));
+    CHECK(near(glm::vec3(camera->view * glm::vec4(0, 0, 0, 1)), {0, 0, 0}));
+    CHECK(near(glm::vec3(camera->view * glm::vec4(0, 0, -1, 1)), {0, 0, -1}));  // looks along -Z
 
     const auto light = scene.light();
     CHECK(near(light.direction, {0, -1, 0}));  // pitched down 90 degrees: shining straight down
@@ -335,6 +338,32 @@ TEST_CASE("a sky entity sets the scene's sky and ambient colours") {
     CHECK(near(scene.settings.sky, {1, 0, 0}));
     game.reload_scene_settings();
     CHECK(near(game.scene().settings.sky, {1, 0, 0}));
+}
+
+TEST_CASE("positions far from the origin stay exact (double precision, camera-relative)") {
+    // 50 km and 10,000 km out: a float would round these to 4 mm and 1 m steps.
+    for (const double far : {50'000.0, 10'000'000.0}) {
+        const std::string at = std::to_string(static_cast<long long>(far));  // whole metres
+        TestPackage pkg({
+            {"e1_cube", "NULL, '{\"transform\": {\"position\": [" + at + ", 0, " + at +
+                            "]}, \"mesh\": {\"asset\": \"mesh_cube\"}}'"},
+            {"e2_near", "NULL, '{\"transform\": {\"position\": [" + at + ".001, 0.25, " + at +
+                            "]}, \"mesh\": {\"asset\": \"mesh_cube\"}}'"},
+            {"e3_camera", "NULL, '{\"transform\": {\"position\": [" + at + ", 0, " + at +
+                              ".5]}, \"camera\": {}}'"},
+        });
+        midgard::Game game(pkg.dir);
+        const auto& scene = game.scene();
+        const auto camera = scene.camera(1.0f);
+        REQUIRE(camera.has_value());
+        CHECK(camera->origin.x == far);  // exact
+        const glm::mat4 near_cube = scene.draw_matrix(scene.find("e2_near"), camera->origin);
+        // 1 mm across and 0.5 m in front of the camera, to well under a micrometre.
+        CHECK(near_cube[3].x == doctest::Approx(0.001).epsilon(1e-6));
+        CHECK(near_cube[3].y == doctest::Approx(0.25));
+        CHECK(near_cube[3].z == doctest::Approx(-0.5));
+        CHECK(scene.world_position(scene.find("e2_near")).x == far + 0.001);
+    }
 }
 
 TEST_CASE("triggers report the player entering and leaving") {

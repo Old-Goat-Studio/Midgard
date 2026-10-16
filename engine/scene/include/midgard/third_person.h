@@ -34,7 +34,7 @@ public:
 
 private:
     void place_camera(Scene& scene) const;
-    glm::vec3 target(const Scene& scene) const;
+    glm::dvec3 target(const Scene& scene) const;
 
     entt::entity player_ = entt::null;
     entt::entity camera_ = entt::null;

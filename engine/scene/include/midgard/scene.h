@@ -28,7 +28,7 @@ struct EntityInfo {
 };
 
 struct Transform {
-    glm::vec3 position{0.0f};
+    glm::dvec3 position{0.0};  // metres, double precision (worlds are tens of kilometres across)
     glm::vec3 rotation{0.0f};  // Euler degrees, R = Ry * Rx * Rz
     glm::vec3 scale{1.0f};
 };
@@ -117,10 +117,14 @@ public:
     void set_component(entt::entity e, const std::string& component, const nlohmann::json& value);
     bool remove_entity(const std::string& entity_id);
 
-    glm::mat4 local_matrix(entt::entity e) const;
-    glm::mat4 world_matrix(entt::entity e) const;  // includes parents
+    glm::dmat4 local_matrix(entt::entity e) const;
+    glm::dmat4 world_matrix(entt::entity e) const;  // includes parents
+    glm::dvec3 world_position(entt::entity e) const;
+    // The entity's model matrix for drawing, relative to a camera's origin.
+    glm::mat4 draw_matrix(entt::entity e, const glm::dvec3& origin) const;
 
-    // The first camera (by entity id order), as view + projection for the given aspect ratio.
+    // The first camera (by entity id order), for the given aspect ratio: its origin is its world
+    // position and its view only turns (camera-relative rendering, see render::Camera).
     std::optional<render::Camera> camera(float aspect) const;
     // The first directional light, combined with the scene's ambient colour.
     render::Light light() const;

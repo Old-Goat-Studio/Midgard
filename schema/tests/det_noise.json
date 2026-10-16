@@ -1,0 +1,119 @@
+{
+ "_about": "Noise fields (midgard/det.h): an n x n grid at x = origin.x + i * step, y = origin.y + j * step, z = origin.z (row j, then column i), of gradient_noise, value_noise or fbm(octaves). hash is FNV-1a over the Q16 results as little-endian int32; first is the first four results, to help when a hash differs.",
+ "cases": [
+  {
+   "kind": "gradient",
+   "seed": "1",
+   "origin": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "step": 0.125,
+   "n": 32,
+   "octaves": 0,
+   "first": [
+    -32768,
+    -36799,
+    -40112,
+    -41675
+   ],
+   "hash": "d9d66a71be48e55d"
+  },
+  {
+   "kind": "gradient",
+   "seed": "829174332",
+   "origin": [
+    -17.3,
+    4.25,
+    -2.0
+   ],
+   "step": 0.37,
+   "n": 32,
+   "octaves": 0,
+   "first": [
+    21359,
+    -3851,
+    -34449,
+    -31504
+   ],
+   "hash": "5c681f9e0e4435fc"
+  },
+  {
+   "kind": "value",
+   "seed": "7",
+   "origin": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "step": 0.25,
+   "n": 32,
+   "octaves": 0,
+   "first": [
+    -15090,
+    -11146,
+    3961,
+    19068
+   ],
+   "hash": "3ad7e2b82f6bce2a"
+  },
+  {
+   "kind": "value",
+   "seed": "7",
+   "origin": [
+    -1000.5,
+    2000.25,
+    3.75
+   ],
+   "step": 0.5,
+   "n": 32,
+   "octaves": 0,
+   "first": [
+    -7264,
+    -30683,
+    -21313,
+    -11944
+   ],
+   "hash": "97a5c2445456817b"
+  },
+  {
+   "kind": "fbm",
+   "seed": "42",
+   "origin": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "step": 0.05,
+   "n": 32,
+   "octaves": 5,
+   "first": [
+    0,
+    2890,
+    10472,
+    9624
+   ],
+   "hash": "162c08078c36aebc"
+  },
+  {
+   "kind": "fbm",
+   "seed": "42",
+   "origin": [
+    25000.0,
+    -40000.0,
+    12.5
+   ],
+   "step": 0.05,
+   "n": 24,
+   "octaves": 8,
+   "first": [
+    -16384,
+    -19630,
+    -24926,
+    -29732
+   ],
+   "hash": "846389f5b7a669c2"
+  }
+ ]
+}

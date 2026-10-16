@@ -210,15 +210,17 @@ void Viewport::upload_meshes() {
 bool Viewport::render() {
     if (!renderer_) return false;
     std::vector<render::DrawItem> draws;
+    // Camera-relative, as in the game (see render::Camera).
+    render::Camera camera;
+    camera.origin = glm::dvec3(eye_);
+    camera.view = glm::lookAt(glm::vec3(0.0f), target_ - eye_, glm::vec3(0, 1, 0));
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         const auto it = meshes_.find(scene_.registry.get<MeshRef>(e).asset);
         if (it == meshes_.end()) continue;
         const Material* material = scene_.registry.try_get<Material>(e);
-        draws.push_back({it->second, scene_.world_matrix(e),
+        draws.push_back({it->second, scene_.draw_matrix(e, camera.origin),
                          material ? material->color : glm::vec4(0.8f, 0.8f, 0.8f, 1.0f)});
     }
-    render::Camera camera;
-    camera.view = glm::lookAt(eye_, target_, glm::vec3(0, 1, 0));
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
     camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, 2000.0f);
     return renderer_->render_frame(camera, scene_.light(), draws,

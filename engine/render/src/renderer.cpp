@@ -967,6 +967,12 @@ std::string Renderer::device_name() const {
     return impl_->gpu_props.deviceName;
 }
 
+glm::mat4 relative_to(const glm::dmat4& world, const glm::dvec3& origin) {
+    glm::dmat4 m = world;
+    m[3] -= glm::dvec4(origin, 0.0);  // done in double: only the small difference becomes float
+    return glm::mat4(m);
+}
+
 glm::mat4 perspective(float fov_y_radians, float aspect, float near_plane, float far_plane) {
     glm::mat4 p = glm::perspectiveRH_ZO(fov_y_radians, aspect, near_plane, far_plane);
     p[1][1] *= -1.0f;  // Vulkan's clip space has y pointing down

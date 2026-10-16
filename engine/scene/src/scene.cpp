@@ -53,6 +53,14 @@ bool has_column(sqlite3* db, const char* table, const char* column) {
     return false;
 }
 
+glm::dvec3 dvec3(const json& j, const char* key, glm::dvec3 fallback) {
+    if (!j.contains(key)) return fallback;
+    const json& v = j.at(key);
+    if (!v.is_array() || v.size() < 3)
+        throw SceneError(std::string("'") + key + "' needs 3 numbers");
+    return {v[0].get<double>(), v[1].get<double>(), v[2].get<double>()};
+}
+
 glm::vec3 vec3(const json& j, const char* key, glm::vec3 fallback) {
     if (!j.contains(key)) return fallback;
     const json& v = j.at(key);
@@ -71,7 +79,7 @@ glm::vec4 color4(const json& j, const char* key) {
 // stay in the database for later versions and are ignored here.
 void add_component(entt::registry& reg, entt::entity e, const std::string& name, const json& c) {
     if (name == "transform") {
-        reg.emplace_or_replace<Transform>(e, vec3(c, "position", glm::vec3(0.0f)),
+        reg.emplace_or_replace<Transform>(e, dvec3(c, "position", glm::dvec3(0.0)),
                                           vec3(c, "rotation", glm::vec3(0.0f)),
                                           vec3(c, "scale", glm::vec3(1.0f)));
     } else if (name == "mesh") {
@@ -273,14 +281,14 @@ bool Scene::remove_entity(const std::string& entity_id) {
     return true;
 }
 
-glm::mat4 Scene::local_matrix(entt::entity e) const {
+glm::dmat4 Scene::local_matrix(entt::entity e) const {
     const Transform& t = registry.get<Transform>(e);
-    return glm::translate(glm::mat4(1.0f), t.position) * rotation_matrix(t.rotation) *
-           glm::scale(glm::mat4(1.0f), t.scale);
+    return glm::translate(glm::dmat4(1.0), t.position) * glm::dmat4(rotation_matrix(t.rotation)) *
+           glm::scale(glm::dmat4(1.0), glm::dvec3(t.scale));
 }
 
-glm::mat4 Scene::world_matrix(entt::entity e) const {
-    glm::mat4 m = local_matrix(e);
+glm::dmat4 Scene::world_matrix(entt::entity e) const {
+    glm::dmat4 m = local_matrix(e);
     int depth = 0;
     for (entt::entity p = registry.get<EntityInfo>(e).parent; p != entt::null;
          p = registry.get<EntityInfo>(p).parent) {
@@ -290,12 +298,22 @@ glm::mat4 Scene::world_matrix(entt::entity e) const {
     return m;
 }
 
+glm::dvec3 Scene::world_position(entt::entity e) const {
+    return glm::dvec3(world_matrix(e)[3]);
+}
+
+glm::mat4 Scene::draw_matrix(entt::entity e, const glm::dvec3& origin) const {
+    return render::relative_to(world_matrix(e), origin);
+}
+
 std::optional<render::Camera> Scene::camera(float aspect) const {
     const entt::entity e = first_with<CameraLens>(registry);
     if (e == entt::null) return std::nullopt;
     const CameraLens& lens = registry.get<CameraLens>(e);
     render::Camera cam;
-    cam.view = glm::inverse(world_matrix(e));  // cameras look along their local -Z
+    cam.origin = world_position(e);
+    // Cameras look along their local -Z; relative to their own origin they only turn.
+    cam.view = glm::inverse(render::relative_to(world_matrix(e), cam.origin));
     cam.projection =
         render::perspective(glm::radians(lens.fov), aspect, lens.near_plane, lens.far_plane);
     return cam;
@@ -307,7 +325,7 @@ render::Light Scene::light() const {
     const entt::entity e = first_with<DirectionalLight>(registry);
     if (e != entt::null) {
         const DirectionalLight& l = registry.get<DirectionalLight>(e);
-        light.direction = glm::vec3(world_matrix(e) * glm::vec4(0, 0, -1, 0));
+        light.direction = glm::vec3(world_matrix(e) * glm::dvec4(0, 0, -1, 0));
         light.color = l.color * l.intensity;
     }
     return light;

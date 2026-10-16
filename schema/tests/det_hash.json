@@ -1,0 +1,47 @@
+{
+ "_about": "det::hash3(seed, x, y, z) (midgard/det.h). seed is a decimal string (64-bit); hash is hex. Checked against tools/reference/det.py and the engine.",
+ "cases": [
+  {
+   "seed": "0",
+   "x": 0,
+   "y": 0,
+   "z": 0,
+   "hash": "2130748aaac80268"
+  },
+  {
+   "seed": "1",
+   "x": 0,
+   "y": 0,
+   "z": 0,
+   "hash": "e28195ddd9ee4956"
+  },
+  {
+   "seed": "0",
+   "x": 1,
+   "y": 0,
+   "z": 0,
+   "hash": "d1c0270687984b37"
+  },
+  {
+   "seed": "12345",
+   "x": -1,
+   "y": -2,
+   "z": -3,
+   "hash": "c72399a04c104168"
+  },
+  {
+   "seed": "18446744073709551615",
+   "x": 4611686018427387904,
+   "y": -4611686018427387904,
+   "z": 7,
+   "hash": "efa32087fe6f040b"
+  },
+  {
+   "seed": "829174332",
+   "x": 1000,
+   "y": -1000,
+   "z": 31,
+   "hash": "e8711a9aa7546f2a"
+  }
+ ]
+}

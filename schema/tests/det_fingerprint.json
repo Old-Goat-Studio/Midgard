@@ -1,0 +1,6 @@
+{
+ "_about": "det::fingerprint() (midgard/det.h): FNV-1a over a 64 x 64 fbm field (seed 829174332, x = -12000 + i * 0.173, y = 4500 + j * 0.173, z = 33, 6 octaves, int32 little-endian), then sin, cos and sqrt(|x|) of x = -500 + k * 1.0371 for k < 1000 (doubles), then 100 values from Rng(829174332).split(tag(\"selftest\")). The self-test checks it on devices.",
+ "cases": [
+  {"fingerprint": "9f42a2ae6f3222d2"}
+ ]
+}

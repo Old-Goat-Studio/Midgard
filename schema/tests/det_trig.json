@@ -1,0 +1,125 @@
+{
+ "_about": "det::sin, det::cos and det::sqrt(|x|) (midgard/det.h): x as a hex float, results as the hex bits of the double. Must match exactly on every target.",
+ "cases": [
+  {
+   "x": "0x0.0p+0",
+   "sin": "0000000000000000",
+   "cos": "3ff0000000000000",
+   "sqrt": "0000000000000000"
+  },
+  {
+   "x": "0x1.56e1fc2f8f359p-997",
+   "sin": "01a56e1fc2f8f359",
+   "cos": "3ff0000000000000",
+   "sqrt": "20ca2fe76a3f9475"
+  },
+  {
+   "x": "0x1.5798ee2308c3ap-27",
+   "sin": "3e45798ee2308c3a",
+   "cos": "3ff0000000000000",
+   "sqrt": "3f1a36e2eb1c432d"
+  },
+  {
+   "x": "0x1.0000000000000p-1",
+   "sin": "3fdeaee8744b05f0",
+   "cos": "3fec1528065b7d50",
+   "sqrt": "3fe6a09e667f3bcd"
+  },
+  {
+   "x": "0x1.921fb54442d18p-1",
+   "sin": "3fe6a09e667f3bcc",
+   "cos": "3fe6a09e667f3bcd",
+   "sqrt": "3fec5bf891b4ef6a"
+  },
+  {
+   "x": "0x1.0000000000000p+0",
+   "sin": "3feaed548f090cee",
+   "cos": "3fe14a280fb5068c",
+   "sqrt": "3ff0000000000000"
+  },
+  {
+   "x": "0x1.921fb54442d18p+0",
+   "sin": "3ff0000000000000",
+   "cos": "3c91a62633100000",
+   "sqrt": "3ff40d931ff62705"
+  },
+  {
+   "x": "0x1.0000000000000p+1",
+   "sin": "3fed18f6ead1b446",
+   "cos": "bfdaa22657537205",
+   "sqrt": "3ff6a09e667f3bcd"
+  },
+  {
+   "x": "0x1.921fb54442d18p+1",
+   "sin": "3ca1a62633100000",
+   "cos": "bff0000000000000",
+   "sqrt": "3ffc5bf891b4ef6a"
+  },
+  {
+   "x": "0x1.0000000000000p+2",
+   "sin": "bfe837b9dddc1eae",
+   "cos": "bfe4eaa606db24c1",
+   "sqrt": "4000000000000000"
+  },
+  {
+   "x": "0x1.921fb54442d18p+2",
+   "sin": "bcb1a62633100000",
+   "cos": "3ff0000000000000",
+   "sqrt": "40040d931ff62705"
+  },
+  {
+   "x": "-0x1.0000000000000p-2",
+   "sin": "bfcfaaeed4f31577",
+   "cos": "3fef01549f7deea1",
+   "sqrt": "3fe0000000000000"
+  },
+  {
+   "x": "-0x1.0000000000000p+0",
+   "sin": "bfeaed548f090cee",
+   "cos": "3fe14a280fb5068c",
+   "sqrt": "3ff0000000000000"
+  },
+  {
+   "x": "-0x1.8000000000000p+1",
+   "sin": "bfc210386db6d55b",
+   "cos": "bfefae04be85e5d2",
+   "sqrt": "3ffbb67ae8584caa"
+  },
+  {
+   "x": "0x1.4000000000000p+3",
+   "sin": "bfe1689ef5f34f53",
+   "cos": "bfead9ac890c6b1f",
+   "sqrt": "40094c583ada5b53"
+  },
+  {
+   "x": "0x1.9000000000000p+6",
+   "sin": "bfe03425b78c4db8",
+   "cos": "3feb981dbf665fe0",
+   "sqrt": "4024000000000000"
+  },
+  {
+   "x": "0x1.81cd6c8b43958p+13",
+   "sin": "bfe687d5890974a5",
+   "cos": "3fe6b94c3bbe24b8",
+   "sqrt": "405bc71c5eab9ed8"
+  },
+  {
+   "x": "-0x1.81cd6e9e1b08ap+16",
+   "sin": "bfa5a0fd0d209b99",
+   "cos": "3feff8afef125a18",
+   "sqrt": "4073a4509c87dcaa"
+  },
+  {
+   "x": "0x1.e848000000000p+19",
+   "sin": "bfd6664b2568d867",
+   "cos": "3fedf9df9906d32c",
+   "sqrt": "408f400000000000"
+  },
+  {
+   "x": "0x1.ab3f000000000p+21",
+   "sin": "3fee61e1f0b3782b",
+   "cos": "bfd4174f1376c667",
+   "sqrt": "409d3b5094ffcdcd"
+  }
+ ]
+}

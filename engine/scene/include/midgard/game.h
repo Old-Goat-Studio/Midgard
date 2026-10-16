@@ -62,7 +62,8 @@ public:
     bool reload_asset(const std::string& asset, render::Renderer& renderer);
 
     // One draw per entity with a mesh, in world space.
-    std::vector<render::DrawItem> draws() const;
+    // What to draw, relative to the camera's origin (camera-relative rendering).
+    std::vector<render::DrawItem> draws(const glm::dvec3& origin) const;
 
     // The scene's camera, or a default view of the origin if it has none.
     render::Camera camera(float aspect) const;

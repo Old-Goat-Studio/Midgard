@@ -1,9 +1,21 @@
 {
-  "_about": "Image tests (tools/images.py): each scene is drawn with midgard_runtime and these arguments plus --screenshot, then compared with <name>.png in this folder. A scene may set its own tolerance (0-255 per colour channel) and max_bad (the fraction of pixels allowed past it).",
+  "_about": "Image tests (tools/images.py): each scene is drawn with midgard_runtime and these arguments plus --screenshot, then compared with <name>.png in this folder, or, with 'same_as', exactly with this run's image of an earlier scene. A scene may set its own tolerance (0-255 per colour channel) and max_bad (the fraction of pixels allowed past it).",
   "scenes": [
     {
       "name": "demo",
       "args": ["--size", "320x180"]
+    },
+    {
+      "name": "far_50km",
+      "_about": "The demo scene 50 km from the world's origin: camera-relative rendering makes it look exactly like the demo at the origin.",
+      "args": ["--size", "320x180", "--origin-offset", "50000,0,-50000"],
+      "same_as": "demo"
+    },
+    {
+      "name": "far_10000km",
+      "_about": "10,000 km out, where a float steps by a metre: still the same picture.",
+      "args": ["--size", "320x180", "--origin-offset", "10000000,2500,10000000"],
+      "same_as": "demo"
     },
     {
       "name": "overlay",

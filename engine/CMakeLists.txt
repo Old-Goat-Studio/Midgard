@@ -27,6 +27,7 @@ add_library(midgard_core STATIC
     core/src/package.cpp
     core/src/jobs.cpp
     core/src/profile.cpp
+    core/src/det.cpp
 )
 target_include_directories(midgard_core PUBLIC
     core/include
@@ -283,6 +284,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_overlay.cpp
         tests/test_hash.cpp
         tests/test_reference_tables.cpp
+        tests/test_det.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest

@@ -6,8 +6,10 @@
     python tools/images.py compare actual.png reference.png [--diff diff.png]
 
 The scenes are listed in engine/tests/images/scenes.json, each with the runtime arguments that
-draw it, and the reference images sit beside it (<name>.png). CI runs them on Linux with
-software Vulkan (Mesa's lavapipe), so no GPU is needed.
+draw it, and the reference images sit beside it (<name>.png). A scene can instead be compared
+with this run's image of an earlier scene ("same_as": "demo"), exactly by default: the same
+driver drew both, so ways of drawing that must look the same are held to every pixel.
+CI runs them on Linux with software Vulkan (Mesa's lavapipe), so no GPU is needed.
 
 Graphics drivers round slightly differently, so two images match when no colour channel differs
 by more than `tolerance` (0-255) except in at most `max_bad` of the pixels (a fraction). A scene
@@ -93,14 +95,20 @@ def run_all(runtime: list[str], out_dir: Path) -> int:
             _report(name, False, f"the runtime didn't draw it: {output}")
             failures += 1
             continue
-        reference = IMAGES / f"{name}.png"
+        if "same_as" in scene:
+            reference = out_dir / f"{scene['same_as']}.png"
+            tolerance, max_bad = scene.get("tolerance", 0), scene.get("max_bad", 0.0)
+        else:
+            reference = IMAGES / f"{name}.png"
+            tolerance, max_bad = scene.get("tolerance", TOLERANCE), scene.get("max_bad", MAX_BAD)
         if not reference.is_file():
-            _report(name, False, f"no reference image ({reference.relative_to(ROOT)}); "
-                                 "run tools/images.py update")
+            missing = (f"scene {scene['same_as']} wasn't drawn before it" if "same_as" in scene
+                       else f"no reference image ({reference.relative_to(ROOT)}); "
+                            "run tools/images.py update")
+            _report(name, False, missing)
             failures += 1
             continue
-        result = compare(actual, reference, scene.get("tolerance", TOLERANCE),
-                         scene.get("max_bad", MAX_BAD), out_dir / f"{name}.diff.png")
+        result = compare(actual, reference, tolerance, max_bad, out_dir / f"{name}.diff.png")
         _report(name, result.ok, result.message)
         failures += not result.ok
     print(f"{len(scenes()) - failures} of {len(scenes())} image tests passed")
@@ -109,6 +117,8 @@ def run_all(runtime: list[str], out_dir: Path) -> int:
 
 def update_all(runtime: list[str]) -> int:
     for scene in scenes():
+        if "same_as" in scene:
+            continue  # compared with another scene's image, so it has none of its own
         reference = IMAGES / f"{scene['name']}.png"
         drawn, output = render(runtime, scene, reference)
         print(f"{'wrote' if drawn else 'FAILED'} {reference.relative_to(ROOT)}"

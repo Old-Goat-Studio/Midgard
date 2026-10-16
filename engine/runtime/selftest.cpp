@@ -10,6 +10,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "midgard/det.h"
 #include "midgard/hash.h"
 #include "midgard/jobs.h"
 #include "midgard/package.h"
@@ -59,6 +60,17 @@ Check data_check() {
         return {"Identical data", Status::Fail,
                 format("hash %016" PRIx64 ", expected %016" PRIx64, got, kCubeHash)};
     return {"Identical data", Status::Pass, format("hash %016" PRIx64, got)};
+}
+
+Check maths_check() {
+    if (!det::strict_floating_point())
+        return {"Identical maths", Status::Fail,
+                "this build fuses multiply-adds (built without strict floating point)"};
+    const std::uint64_t got = det::fingerprint();
+    if (got != det::kFingerprint)
+        return {"Identical maths", Status::Fail,
+                format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, det::kFingerprint)};
+    return {"Identical maths", Status::Pass, format("noise, sin, cos, random: %016" PRIx64, got)};
 }
 
 Check render_check(bool vulkan_required) {
@@ -134,6 +146,7 @@ std::vector<Check> run(const Options& options) {
          std::string("Midgard ") + kVersion + ", engine ABI " + std::to_string(kEngineAbi)});
     checks.push_back(jobs_check());
     checks.push_back(data_check());
+    checks.push_back(maths_check());
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(package_check(options.package));
     checks.push_back(python_check(options));

@@ -65,6 +65,10 @@ py::tuple tuple3(const glm::vec3& v) {
     return py::make_tuple(v.x, v.y, v.z);
 }
 
+py::tuple tuple3(const glm::dvec3& v) {  // positions: Python floats are doubles too
+    return py::make_tuple(v.x, v.y, v.z);
+}
+
 glm::vec3 vec3(const std::array<float, 3>& v) {
     return {v[0], v[1], v[2]};
 }
@@ -107,8 +111,8 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def_property_readonly("exists", &EntityHandle::exists)
         .def_property(
             "position", [](const EntityHandle& h) { return tuple3(h.transform().position); },
-            [](const EntityHandle& h, const std::array<float, 3>& v) {
-                h.transform().position = vec3(v);
+            [](const EntityHandle& h, const std::array<double, 3>& v) {
+                h.transform().position = glm::dvec3(v[0], v[1], v[2]);
             })
         .def_property(
             "rotation", [](const EntityHandle& h) { return tuple3(h.transform().rotation); },
@@ -135,8 +139,8 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             })
         .def(
             "move",
-            [](const EntityHandle& h, float x, float y, float z) {
-                h.transform().position += glm::vec3(x, y, z);
+            [](const EntityHandle& h, double x, double y, double z) {
+                h.transform().position += glm::dvec3(x, y, z);
             },
             py::arg("x"), py::arg("y"), py::arg("z"), "Moves the entity by (x, y, z) metres.")
         .def("__eq__", [](const EntityHandle& a, const EntityHandle& b) { return a.id == b.id; })

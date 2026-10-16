@@ -34,14 +34,14 @@ void Game::update_triggers() {
     }
     std::unordered_set<entt::entity> inside;
     if (player != entt::null) {
-        const glm::vec3 p(scene_.world_matrix(player)[3]);
+        const glm::dvec3 p = scene_.world_position(player);
         for (entt::entity e : scene_.registry.view<const Trigger>()) {
             if (e == player) continue;
-            const glm::mat4 m = scene_.world_matrix(e);
-            const glm::vec3 scale(glm::length(glm::vec3(m[0])), glm::length(glm::vec3(m[1])),
-                                  glm::length(glm::vec3(m[2])));
-            const glm::vec3 half = scene_.registry.get<Trigger>(e).size * scale * 0.5f;
-            const glm::vec3 d = glm::abs(p - glm::vec3(m[3]));
+            const glm::dmat4 m = scene_.world_matrix(e);
+            const glm::dvec3 scale(glm::length(glm::dvec3(m[0])), glm::length(glm::dvec3(m[1])),
+                                   glm::length(glm::dvec3(m[2])));
+            const glm::dvec3 half = glm::dvec3(scene_.registry.get<Trigger>(e).size) * scale * 0.5;
+            const glm::dvec3 d = glm::abs(p - glm::dvec3(m[3]));
             if (d.x <= half.x && d.y <= half.y && d.z <= half.z) inside.insert(e);
         }
     }
@@ -168,13 +168,13 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
     return true;
 }
 
-std::vector<render::DrawItem> Game::draws() const {
+std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
     std::vector<render::DrawItem> out;
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         auto it = meshes_.find(scene_.registry.get<MeshRef>(e).asset);
         if (it == meshes_.end()) continue;  // not uploaded yet
         const Material* material = scene_.registry.try_get<Material>(e);
-        out.push_back({it->second, scene_.world_matrix(e),
+        out.push_back({it->second, scene_.draw_matrix(e, origin),
                        material ? material->color : glm::vec4(0.8f, 0.8f, 0.8f, 1.0f)});
     }
     return out;

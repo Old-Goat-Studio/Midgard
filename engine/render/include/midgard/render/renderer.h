@@ -29,10 +29,18 @@ public:
 
 using MeshId = uint32_t;
 
+// Camera-relative rendering: worlds are tens of kilometres across, more than 32-bit floats can
+// place precisely. So positions are doubles everywhere except here: the view and every draw's
+// model matrix are relative to `origin` (the camera's world position), which keeps the floats
+// small and exact near the camera. The renderer itself never sees world positions.
 struct Camera {
-    glm::mat4 view{1.0f};
+    glm::mat4 view{1.0f};        // from the camera's origin (rotation only, for a scene camera)
     glm::mat4 projection{1.0f};  // Vulkan clip space: depth 0..1, y down
+    glm::dvec3 origin{0.0};      // the world position that view and draws are relative to
 };
+
+// A world transform (double precision) as a model matrix relative to a camera's origin.
+glm::mat4 relative_to(const glm::dmat4& world, const glm::dvec3& origin);
 
 struct Light {
     glm::vec3 direction{-0.4f, -1.0f, -0.6f};  // the direction the light travels

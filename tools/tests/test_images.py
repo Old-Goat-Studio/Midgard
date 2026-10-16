@@ -118,4 +118,41 @@ def test_the_real_scene_list_is_valid():
     assert names and len(names) == len(set(names))
     for scene in images.scenes():
         assert isinstance(scene["args"], list) and "--screenshot" not in scene["args"]
-        assert (images.IMAGES / f"{scene['name']}.png").is_file(), scene["name"]
+        if "same_as" in scene:  # an earlier scene, and no image of its own
+            assert scene["same_as"] in names[:names.index(scene["name"])], scene["name"]
+            assert not (images.IMAGES / f"{scene['name']}.png").exists(), scene["name"]
+        else:
+            assert (images.IMAGES / f"{scene['name']}.png").is_file(), scene["name"]
+
+
+FAKE_FAR = """
+import sys
+from PIL import Image
+args = sys.argv[1:]
+out = args[args.index("--screenshot") + 1]
+img = Image.new("RGB", (64, 36), (20, 28, 46))
+img.paste((155, 120, 20), (20, 10, 40, 26))
+if "--far" in args and "--jitter" in args:
+    img.putpixel((20, 10), (20, 28, 46))  # one pixel off: what float positions do far out
+img.save(out)
+"""
+
+
+def test_same_as_compares_exactly_with_this_runs_image(scene_folder, tmp_path, capsys):
+    folder, _runtime = scene_folder
+    fake = tmp_path / "fake_far.py"
+    fake.write_text(FAKE_FAR, "utf-8")
+    runtime = [sys.executable, str(fake)]
+    (folder / "scenes.json").write_text(json.dumps({"scenes": [
+        {"name": "cube", "args": []},
+        {"name": "cube_far", "args": ["--far"], "same_as": "cube"}]}), "utf-8")
+    assert images.update_all(runtime) == 0
+    assert not (folder / "cube_far.png").exists()  # it has no image of its own
+    assert images.run_all(runtime, tmp_path / "out") == 0
+    # One pixel is within the stored references' allowance, but not same_as's: exact.
+    assert images.run_all([*runtime, "--jitter"], tmp_path / "out") == 1
+    assert "FAIL cube_far: 1 of 2304 pixels" in capsys.readouterr().out
+    (folder / "scenes.json").write_text(json.dumps({"scenes": [
+        {"name": "cube_far", "args": [], "same_as": "cube"}]}), "utf-8")
+    images.run_all(runtime, tmp_path / "fresh")
+    assert "scene cube wasn't drawn before it" in capsys.readouterr().out

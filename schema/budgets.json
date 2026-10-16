@@ -3,6 +3,7 @@
   "margin": 0.25,
   "metric": "median_ms",
   "budgets": {
+    "det.fbm_64x64_6_octaves": {"default": 8},
     "jobs.parallel_for_1m": {"default": 3},
     "jobs.submit_wait_10k": {"default": 15, "ci-linux-arm64-release": 20},
     "overlay.layout_40_lines": {"default": 3},

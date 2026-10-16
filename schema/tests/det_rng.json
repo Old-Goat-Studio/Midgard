@@ -1,0 +1,121 @@
+{
+ "_about": "det::Rng (midgard/det.h): for each seed, the first five next() values, the first three of split(tag(\"weather\")), below(n) for n = 1, 2, 3, 10, 1000 and 2^63+5 drawn in turn from one stream, and the bits of the first three uniform(). Also tag(\"weather\") = 3838e32475f27053.",
+ "cases": [
+  {
+   "seed": "0",
+   "next": [
+    "e220a8397b1dcdaf",
+    "6e789e6aa1b965f4",
+    "06c45d188009454f",
+    "f88bb8a8724c81ec",
+    "1b39896a51a8749b"
+   ],
+   "split_weather": [
+    "f397aee2b701d308",
+    "ac4dd591ebe45be7",
+    "d606baa6bc81c4d3"
+   ],
+   "below_1_2_3_10_1000_2p63p5": [
+    "0",
+    "0",
+    "1",
+    "4",
+    "747",
+    "5009149828745571127"
+   ],
+   "uniform_bits": [
+    "3fec4415072f63b9",
+    "3fdb9e279aa86e58",
+    "3f9b117462002500"
+   ]
+  },
+  {
+   "seed": "1",
+   "next": [
+    "910a2dec89025cc1",
+    "beeb8da1658eec67",
+    "f893a2eefb32555e",
+    "71c18690ee42c90b",
+    "71bb54d8d101b5b9"
+   ],
+   "split_weather": [
+    "4fd7ba3f7f5af5f9",
+    "bad1234e6ae4b825",
+    "9405672c2a2ff699"
+   ],
+   "below_1_2_3_10_1000_2p63p5": [
+    "0",
+    "1",
+    "0",
+    "5",
+    "761",
+    "4849545566009754235"
+   ],
+   "uniform_bits": [
+    "3fe22145bd91204b",
+    "3fe7dd71b42cb1dd",
+    "3fef12745ddf664a"
+   ]
+  },
+  {
+   "seed": "829174332",
+   "next": [
+    "0b285cd08496f38e",
+    "a706bc3dd986320a",
+    "f7e115b4bbcae09b",
+    "cfb4cb9ecc1460bf",
+    "fd97060b03f39876"
+   ],
+   "split_weather": [
+    "494b9355818bd067",
+    "6c70f71ef0a7b522",
+    "83c3678889d5e6ce"
+   ],
+   "below_1_2_3_10_1000_2p63p5": [
+    "0",
+    "0",
+    "1",
+    "9",
+    "702",
+    "2203311331551082469"
+   ],
+   "uniform_bits": [
+    "3fa650b9a1092de0",
+    "3fe4e0d787bb30c6",
+    "3feefc22b697795c"
+   ]
+  },
+  {
+   "seed": "18446744073709551615",
+   "next": [
+    "e4d971771b652c20",
+    "e99ff867dbf682c9",
+    "382ff84cb27281e9",
+    "6d1db36ccba982d2",
+    "b4a0472e578069ae"
+   ],
+   "split_weather": [
+    "c3c84ad3defe390c",
+    "881ae42b05bec4eb",
+    "ba504719c6b66f6a"
+   ],
+   "below_1_2_3_10_1000_2p63p5": [
+    "0",
+    "1",
+    "1",
+    "2",
+    "606",
+    "5989134109488233262"
+   ],
+   "uniform_bits": [
+    "3fec9b2e2ee36ca5",
+    "3fed33ff0cfb7ed0",
+    "3fcc17fc26593940"
+   ]
+  },
+  {
+   "tag": "weather",
+   "value": "3838e32475f27053"
+  }
+ ]
+}

@@ -5,8 +5,9 @@ component names, and its values follow the shapes below. The editor writes them;
 them when it builds a scene. Unknown components are ignored by the engine, so new ones can be
 added without breaking older runtimes.
 
-Colours are sRGB values from 0 to 1, as a designer picks them. Positions are in metres, angles
-in degrees. The world is right-handed with **+Y up** (on curved worlds, "up" comes from the shape
+Colours are sRGB values from 0 to 1, as a designer picks them. Positions are in metres (the
+engine keeps them in double precision and renders relative to the camera, so worlds can be tens
+of kilometres across), angles in degrees. The world is right-handed with **+Y up** (on curved worlds, "up" comes from the shape
 mapping instead, from Phase 5).
 
 | Component | Shape | Notes |

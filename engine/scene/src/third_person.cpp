@@ -28,7 +28,7 @@ ThirdPersonCamera::ThirdPersonCamera(Scene& scene) {
     player_ = first_with<Player>(scene.registry);
     camera_ = first_with<CameraLens>(scene.registry);
     if (!active()) return;
-    const glm::vec3 offset = scene.registry.get<Transform>(camera_).position - target(scene);
+    const glm::vec3 offset(scene.registry.get<Transform>(camera_).position - target(scene));
     distance_ = std::clamp(glm::length(offset), kMinDistance, kMaxDistance);
     elevation_ =
         std::clamp(glm::degrees(std::asin(offset.y / std::max(glm::length(offset), 1e-4f))),
@@ -37,8 +37,8 @@ ThirdPersonCamera::ThirdPersonCamera(Scene& scene) {
     place_camera(scene);
 }
 
-glm::vec3 ThirdPersonCamera::target(const Scene& scene) const {
-    return scene.registry.get<Transform>(player_).position + look_offset_;
+glm::dvec3 ThirdPersonCamera::target(const Scene& scene) const {
+    return scene.registry.get<Transform>(player_).position + glm::dvec3(look_offset_);
 }
 
 void ThirdPersonCamera::place_camera(Scene& scene) const {
@@ -46,8 +46,9 @@ void ThirdPersonCamera::place_camera(Scene& scene) const {
     const glm::vec3 offset(std::sin(yaw) * std::cos(el), std::sin(el),
                            std::cos(yaw) * std::cos(el));
     Transform& cam = scene.registry.get<Transform>(camera_);
-    cam.position = target(scene) + offset * distance_;
-    cam.rotation = look_rotation(cam.position, target(scene));
+    cam.position = target(scene) + glm::dvec3(offset * distance_);
+    // The direction is small and exact relative to the camera, so floats are enough for it.
+    cam.rotation = look_rotation(glm::vec3(0.0f), glm::vec3(target(scene) - cam.position));
 }
 
 void ThirdPersonCamera::set_view(Scene& scene, float yaw, float elevation, float distance) {
@@ -74,7 +75,7 @@ void ThirdPersonCamera::update(Scene& scene, const Actions& actions, float dt) {
     if (const float len = glm::length(move); len > 1.0f) move /= len;
     Transform& player = scene.registry.get<Transform>(player_);
     if (glm::length(move) > 1e-3f) {
-        player.position += move * scene.registry.get<Player>(player_).speed * dt;
+        player.position += glm::dvec3(move * scene.registry.get<Player>(player_).speed * dt);
         player.rotation.y = glm::degrees(std::atan2(-move.x, -move.z));  // face where it goes
     }
     place_camera(scene);

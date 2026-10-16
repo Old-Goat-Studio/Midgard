@@ -21,6 +21,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/det.h"
 #include "midgard/jobs.h"
 #include "midgard/render/overlay.h"
 #include "midgard/render/renderer.h"
@@ -104,6 +105,17 @@ std::vector<Benchmark> benchmarks() {
                                 handles.push_back(jobs->submit(
                                     [](const midgard::JobContext&) { g_sink = g_sink + 1; }));
                             jobs->wait_all(handles);
+                        };
+                    }});
+    list.push_back({"det.fbm_64x64_6_octaves",
+                    "a 64 x 64 field of 6-octave deterministic noise (one thread)", 30,
+                    [](std::string&) -> std::function<void()> {
+                        return [] {
+                            std::int64_t sum = 0;
+                            for (int j = 0; j < 64; ++j)
+                                for (int i = 0; i < 64; ++i)
+                                    sum += midgard::det::fbm(7, i * 0.173, j * 0.173, 2.5, 6);
+                            g_sink = g_sink + static_cast<std::uint64_t>(sum);
                         };
                     }});
     list.push_back({"overlay.layout_40_lines", "the debug overlay's layout of 40 lines of text",
