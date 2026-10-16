@@ -171,7 +171,15 @@ jobs:
         run: python tools/setup_python.py
       - run: cmake --preset ${{ matrix.preset }} -DMIDGARD_REQUIRE_PYTHON=ON
       - run: cmake --build --preset ${{ matrix.preset }}
-      - run: ctest --preset ${{ matrix.preset }}
+      - name: Engine tests
+        shell: bash
+        run: |
+          set -o pipefail
+          ctest --preset ${{ matrix.preset }} --output-on-failure 2>&1 | tee "$RUNNER_TEMP/ctest.log"
+      - name: Show failed engine tests as annotations
+        if: failure()
+        shell: bash
+        run: python tools/junit_annotations.py "$RUNNER_TEMP/none.xml" --log "$RUNNER_TEMP/ctest.log" || true
       - name: Benchmarks against the performance budgets (schema/budgets.json)
         shell: bash
         run: |

@@ -159,7 +159,9 @@ def check_viewport() -> None:
         r, g, b = pixel(rgba, 160, 80, 45)
         assert r > 100 and b < 100, ("the cube is in the middle", r, g, b)
         r, g, b = pixel(rgba, 160, 2, 2)
-        assert b > 200 and r < 30, ("the sky is in the corner", r, g, b)
+        # Full-strength blue is above the tone mapper's 0.76, so it rolls off a little towards
+        # white (about 33, 33, 241).
+        assert b > 200 and r < 60, ("the sky is in the corner", r, g, b)
         view.detach()
         assert not view.attached
         if attempt == 0:
