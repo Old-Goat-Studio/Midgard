@@ -62,7 +62,9 @@ struct RendererDesc {
     uint32_t width = 1280;
     uint32_t height = 720;
     bool offscreen = false;
-    bool validation = false;  // use the Khronos validation layer if it is installed
+    // Use the Khronos validation layer (and fail to start if it isn't installed); its messages
+    // are kept in validation_messages().
+    bool validation = false;
 };
 
 class Renderer {
@@ -80,6 +82,9 @@ public:
     bool render_frame(const Camera& camera, const Light& light, std::span<const DrawItem> draws,
                       const glm::vec4& clear_color);
 
+    // Brightness before tone mapping (1 = as lit); the environment will drive it later.
+    void set_exposure(float exposure);
+
     // The debug text overlay drawn over every frame from now on (empty: none).
     void set_overlay(std::vector<OverlayLine> lines);
 
@@ -95,6 +100,9 @@ public:
     uint32_t width() const;
     uint32_t height() const;
     std::string device_name() const;
+    // With RendererDesc::validation: every message the Khronos validation layer reported (errors
+    // and warnings). Tests fail on any.
+    const std::vector<std::string>& validation_messages() const;
 
 private:
     struct Impl;

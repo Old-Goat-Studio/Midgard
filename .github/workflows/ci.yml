@@ -130,8 +130,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxft-dev libxext-dev libxrandr-dev \
             libxcursor-dev libxi-dev libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev \
-            mesa-vulkan-drivers libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 \
-            libglib2.0-0
+            mesa-vulkan-drivers vulkan-validationlayers libegl1 libgl1 libxkbcommon0 \
+            libdbus-1-3 libfontconfig1 libglib2.0-0
       # Ninja and the Visual Studio compiler environment, without third-party actions (the ones
       # used before still ran on the deprecated Node.js 20).
       - name: Ninja (Windows)
@@ -219,8 +219,10 @@ jobs:
         with:
           name: runtime-template-${{ matrix.preset }}
           path: build/templates/*.zip
-      - name: Image tests with software Vulkan (lavapipe)
+      - name: Image tests with software Vulkan (lavapipe), under the validation layer
         if: runner.os == 'Linux'
+        env:
+          MIDGARD_VULKAN_VALIDATION: "1"  # any validation message fails the test
         run: |
           pip install --quiet pillow
           python tools/images.py run --runtime build/${{ matrix.preset }}/engine/midgard_runtime \

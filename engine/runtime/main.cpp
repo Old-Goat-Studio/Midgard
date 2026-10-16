@@ -11,7 +11,8 @@
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH] [--overlay-text "a|b"]
 //                                       offscreen, no window (image tests); --origin-offset x,y,z
-//                                       places the demo scene far from the world's origin
+//                                       places the demo scene far from the world's origin;
+//                                       --exposure brightens it (highlights roll off)
 //   midgard_runtime --selftest [--show]  checks this device can run games (jobs, identical data,
 //                                       rendering, the package, Python); --show puts the results
 //                                       on screen. On Android, an APK with a selftest.txt asset
@@ -97,6 +98,7 @@ struct Options {
     bool selftest = false;
     bool show = false;              // the self-test's results in a window
     glm::dvec3 origin_offset{0.0};  // where the demo scene is placed (precision tests)
+    float exposure = 1.0f;
     // Overlay lines shown for the whole run (the self-test's results); F3 is off then.
     std::vector<render::OverlayLine> fixed_overlay;
 };
@@ -597,9 +599,19 @@ int run_screenshot(const Options& opt, Source& source) {
     render::Renderer renderer(desc);
     source.upload(renderer);
     if (opt.overlay_text) renderer.set_overlay(overlay_lines(*opt.overlay_text));
+    renderer.set_exposure(opt.exposure);
     const render::Camera camera = source.camera(float(opt.width) / float(opt.height));
     const auto draws = source.draws(0.6f, camera.origin);
     renderer.render_frame(camera, source.light(), draws, source.sky());
+    // With MIDGARD_VULKAN_VALIDATION set, anything the validation layer reports fails the run
+    // (CI's image tests run this way).
+    if (!renderer.validation_messages().empty()) {
+        for (const std::string& m : renderer.validation_messages())
+            std::fprintf(stderr, "validation %s\n", m.c_str());
+        std::fprintf(stderr, "error: the Vulkan validation layer reported %zu problem(s)\n",
+                     renderer.validation_messages().size());
+        return 1;
+    }
     if (!render::write_png(*opt.screenshot, opt.width, opt.height, renderer.read_pixels())) {
         std::fprintf(stderr, "error: could not write %s\n", opt.screenshot->c_str());
         return 1;
@@ -1053,6 +1065,8 @@ int main(int argc, char** argv) {
             opt.overlay_text = argv[++i];
         } else if (arg == "--profile" && has_value) {
             opt.profile = argv[++i];
+        } else if (arg == "--exposure" && has_value) {
+            opt.exposure = static_cast<float>(std::atof(argv[++i]));
         } else if (arg == "--origin-offset" && has_value) {
             double x = 0, y = 0, z = 0;
             if (std::sscanf(argv[++i], "%lf,%lf,%lf", &x, &y, &z) != 3) return usage();

@@ -6,6 +6,11 @@
       "args": ["--size", "320x180"]
     },
     {
+      "name": "bright",
+      "_about": "The demo scene three times brighter: highlights roll off towards white instead of clipping (tone mapping).",
+      "args": ["--size", "320x180", "--exposure", "3"]
+    },
+    {
       "name": "far_50km",
       "_about": "The demo scene 50 km from the world's origin: camera-relative rendering makes it look exactly like the demo at the origin.",
       "args": ["--size", "320x180", "--origin-offset", "50000,0,-50000"],
