@@ -228,8 +228,17 @@ jobs:
           key: game-python-android-arm64-${{ hashFiles('tools/setup_python.py') }}
       - name: The game's Python for Android (python.org's official build, pinned)
         run: python tools/setup_python.py --target android-arm64
-      - run: cmake --preset android-arm64 -DMIDGARD_REQUIRE_PYTHON=ON
-      - run: cmake --build --preset android-arm64
+      - name: Configure
+        run: |
+          set -o pipefail
+          cmake --preset android-arm64 -DMIDGARD_REQUIRE_PYTHON=ON 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build --preset android-arm64 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+      - name: Show a failed configure or build as an annotation
+        if: failure()
+        run: python tools/junit_annotations.py "$RUNNER_TEMP/none.xml" --log "$RUNNER_TEMP/build.log" || true
       - name: Runtime template (template APK, for Build > Export)
         run: python tools/make_template.py --preset android-arm64
       - name: Upload the runtime template

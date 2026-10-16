@@ -182,8 +182,10 @@ if(MIDGARD_SCRIPTING)
             PRIVATE pybind11::headers midgard_options)
         message(STATUS "Scripting: CPython from ${MIDGARD_GAME_PYTHON}")
     elseif(MIDGARD_REQUIRE_PYTHON)
-        message(FATAL_ERROR "Scripting needs the game's CPython (python tools/setup_python.py) "
-                            "and pybind11 (pip install pybind11)")
+        message(FATAL_ERROR "Scripting needs the game's CPython (python tools/setup_python.py "
+                            "--target ${MIDGARD_PY_TARGET}) and pybind11 (pip install pybind11). "
+                            "Found: CPython folder '${MIDGARD_GAME_PYTHON}', host Python "
+                            "'${Python_EXECUTABLE}', pybind11 '${MIDGARD_PYBIND11_DIR}'.")
     else()
         message(STATUS "Scripting: off (run python tools/setup_python.py, and pip install "
                        "pybind11, to embed Python in the runtime)")
