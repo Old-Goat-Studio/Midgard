@@ -10,9 +10,9 @@
     "shape.sphere_64x64_positions": {"default": 10},
     "render.cubes_400_offscreen": {
       "default": 16.7,
-      "_about": "Lavapipe needed about 9 ms once materials and textures came in (CI run 38920735884), so its budget is 20.",
-      "ci-linux-release": 20,
-      "ci-linux-arm64-release": 20
+      "_about": "Lavapipe draws on the CPU: about 9 ms with materials and textures (CI run 38920735884), then 26 ms once the frame drew four 2048 x 2048 shadow maps too (run 38929597644), so its budget is 60.",
+      "ci-linux-release": 60,
+      "ci-linux-arm64-release": 60
     },
     "texture.transcode_512_bc7": {"default": 25},
     "texture.transcode_512_astc": {"default": 10}
