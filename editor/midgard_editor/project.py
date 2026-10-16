@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
-"""A Midgard project: a folder holding {name}.config (JSON) and {name}.db (SQLite).
+"""A Midgard project: a folder holding {name}.config (JSON) and {name}.db (SQLite), and a folder
+for each kind of file the game uses (FOLDERS): objects/ for models (.glb), scripts/ for game
+scripts, and audio/, images/ and textures/.
 
 Edits are written straight away, so there is no separate Save step. Every edit goes through
 the project's undo stack (see undo.py), and backups protect against mistakes (see backup.py).
 """
+import itertools
 import json
+import logging
 import os
 import re
+import shutil
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -18,10 +23,26 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QUndoStack
 
 from . import contract, meshes
-from .scene_model import DEFAULT_SETTINGS, MAIN_SCENE, Entity, default_entities, row_to_entity
+from .scene_model import (
+    DEFAULT_SETTINGS,
+    MAIN_SCENE,
+    WORLD_FOLDER,
+    Entity,
+    default_entities,
+    row_to_entity,
+    sky_component,
+)
 from .version import VERSION
 
+log = logging.getLogger(__name__)
+
 CONFIG_FORMAT = 1
+# The project's folders, made when it is created and again whenever it opens (Git doesn't keep
+# empty folders, so a fresh clone may lack some).
+FOLDERS = ("audio", "images", "objects", "scripts", "textures")
+# Layout 1: models in objects/ (they were in assets/), and scenes grouped in a World folder
+# with a Sky entity. Older projects are brought up to date when they open (upgrade_layout).
+LAYOUT = 1
 WORLD_MODES = {"system_map": "System map", "bounded_surface_map": "Bounded surface map"}
 NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 GAME_TITLE_KEY = "game.title"
@@ -39,7 +60,6 @@ class Project(QObject):
     config_changed = Signal(str)  # key
     string_changed = Signal(str)  # string key
     entities_changed = Signal(str)  # entity id, or "" when entities were added or removed
-    scene_changed = Signal(str)  # scene id: its settings changed
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
         super().__init__()
@@ -56,6 +76,11 @@ class Project(QObject):
     @property
     def db_path(self) -> Path:
         return self.root / f"{self.name}.db"
+
+    @property
+    def objects_dir(self) -> Path:
+        """Models (.glb) that entities can use as meshes."""
+        return self.root / "objects"
 
     @property
     def work_dir(self) -> Path:
@@ -84,6 +109,7 @@ class Project(QObject):
             "max_players": 4,
             "created": now,
             "midgard_version": VERSION,
+            "layout": LAYOUT,
         }
         project = cls(root, name, config)
         project._write_config()
@@ -95,6 +121,7 @@ class Project(QObject):
                         (GAME_TITLE_KEY, game_title.strip() or name,
                          "The game's title, shown to players"))
         project.ensure_main_scene()
+        project.ensure_folders()
         (project.root / ".gitignore").write_text(".midgard/\nbuild/\n", encoding="utf-8")
         return project
 
@@ -118,7 +145,32 @@ class Project(QObject):
         except (ValueError, sqlite3.Error) as e:
             raise ProjectError(str(e)) from e
         project.ensure_main_scene()  # projects made before Phase 2 have no scene yet
+        project.upgrade_layout()
+        project.ensure_folders()
         return project
+
+    def ensure_folders(self) -> None:
+        for folder in FOLDERS:
+            (self.root / folder).mkdir(exist_ok=True)
+
+    def upgrade_layout(self) -> None:
+        """Brings a project made by an older editor up to LAYOUT (not undoable: it happens
+        once, when the project opens)."""
+        if self.config.get("layout", 0) >= LAYOUT:
+            return
+        old = self.root / "assets"
+        if old.is_dir():  # models: assets/ -> objects/ (their ids, "asset:<path>", stay)
+            self.objects_dir.mkdir(exist_ok=True)
+            for item in sorted(old.iterdir()):
+                if (self.objects_dir / item.name).exists():
+                    log.warning("Not moved, as objects/ has one of that name: %s", item)
+                else:
+                    shutil.move(str(item), str(self.objects_dir / item.name))
+            if not any(old.iterdir()):
+                old.rmdir()
+        self.group_in_world()
+        self.config["layout"] = LAYOUT
+        self._write_config()
 
     # ---- config ------------------------------------------------------------------------
     def _write_config(self) -> None:
@@ -194,28 +246,44 @@ class Project(QObject):
                             "VALUES (?, ?, ?, ?, ?)",
                             (e.id, MAIN_SCENE, e.name, e.parent, json.dumps(e.components)))
 
+    def group_in_world(self, scene: str = MAIN_SCENE) -> None:
+        """For scenes made before layout 1: a Sky entity with the scene's sky and ambient
+        colours, and a World folder holding the entities that were at the top."""
+        entities = self.entities(scene)
+        ids = (f"e{n:06d}" for n in itertools.count(int(self.next_entity_id()[1:])))
+        sky = sky_component(self.scene_settings(scene))
+        with self.connect() as con:
+            def add(entity_id: str, name: str, parent: str | None, components: dict) -> None:
+                con.execute("INSERT INTO entity (id, scene, name, parent, components) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (entity_id, scene, name, parent, json.dumps(components)))
+
+            world = None
+            if not any(e.is_folder for e in entities):
+                world = next(ids)
+                add(world, WORLD_FOLDER, None, {"folder": {}})
+                con.execute("UPDATE entity SET parent = ? WHERE scene = ? AND parent IS NULL "
+                            "AND id != ?", (world, scene, world))
+            if not any("sky" in e.components for e in entities):
+                add(next(ids), "Sky", world, {"sky": sky})
+        self.entities_changed.emit("")
+
     def scene_settings(self, scene: str = MAIN_SCENE) -> dict[str, Any]:
-        """A scene's settings (sky and ambient colours), with defaults filled in."""
+        """A scene's settings (sky and ambient colours), with defaults filled in. A Sky entity
+        outranks them; they are kept for scenes without one."""
         with self.connect() as con:
             row = con.execute("SELECT settings FROM scene WHERE id = ?", (scene,)).fetchone()
         stored = json.loads(row[0]) if row and row[0] else {}
         return {**DEFAULT_SETTINGS, **stored}
 
-    def set_scene_settings(self, settings: dict[str, Any], scene: str = MAIN_SCENE) -> None:
-        """Use SetSceneSettingsCommand from the UI."""
-        with self.connect() as con:
-            con.execute("UPDATE scene SET settings = ? WHERE id = ?",
-                        (json.dumps(settings), scene))
-        self.scene_changed.emit(scene)
-
     def mesh_assets(self) -> dict[str, str]:
         """Meshes an entity can use: id -> label. The editor's primitives, then the .glb files
-        in the project's assets/ folder."""
+        in the project's objects/ folder."""
         found = dict(meshes.PRIMITIVES)
-        assets = self.root / "assets"
-        if assets.is_dir():
-            for file in sorted(assets.rglob("*.glb")):
-                relative = file.relative_to(assets).as_posix()
+        objects = self.objects_dir
+        if objects.is_dir():
+            for file in sorted(objects.rglob("*.glb")):
+                relative = file.relative_to(objects).as_posix()
                 found[f"asset:{relative}"] = relative
         return found
 

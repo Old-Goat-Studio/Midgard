@@ -28,7 +28,7 @@ from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
 from .. import engine
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
 from ..project import Project
-from ..scene_model import MAIN_SCENE
+from ..scene_model import MAIN_SCENE, parents_first
 
 log = logging.getLogger("midgard")
 PLATFORMS = ("windows", "xcb")  # window systems the engine can draw into
@@ -164,11 +164,9 @@ class ViewportPanel(QWidget):
             return
         if self.project is not None:
             self.project.entities_changed.disconnect(self._entities_changed)
-            self.project.scene_changed.disconnect(self._scene_changed)
         self.project = project
         if project is not None:
             project.entities_changed.connect(self._entities_changed)
-            project.scene_changed.connect(self._scene_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
                 self.camera = OrbitCamera.looking(camera.transform()["position"],
@@ -178,8 +176,9 @@ class ViewportPanel(QWidget):
     def _sync_all(self) -> None:
         self.view.clear()
         if self.project is not None:
+            # The fallback for a scene without a Sky entity, as in the game.
             self.view.set_settings(json.dumps(self.project.scene_settings(MAIN_SCENE)))
-            for entity in self.project.entities():
+            for entity in parents_first(self.project.entities()):
                 self._put(entity)
         self.camera_changed()
 
@@ -210,11 +209,6 @@ class ViewportPanel(QWidget):
         else:
             self._put(entity)
         self.request_render()
-
-    def _scene_changed(self, scene_id: str) -> None:
-        if scene_id == MAIN_SCENE:
-            self.view.set_settings(json.dumps(self.project.scene_settings(scene_id)))
-            self.request_render()
 
     # ---- the window ---------------------------------------------------------------------
     def _pixels(self) -> tuple[int, int]:

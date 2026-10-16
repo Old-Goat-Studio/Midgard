@@ -12,17 +12,20 @@ mapping instead, from Phase 5).
 | Component | Shape | Notes |
 |---|---|---|
 | `transform` | `{"position": [x, y, z], "rotation": [x, y, z], "scale": [x, y, z]}` | Rotation is Euler degrees combined as `R = Ry · Rx · Rz` (yaw, pitch, roll), and the full local matrix is `T · R · S`. All three keys are optional (defaults: origin, no rotation, scale 1). Relative to the parent entity. |
-| `mesh` | `{"asset": "<content id>"}` | A mesh in the package's `content` list (a `.glb`). Ids: `prim_cube`, `prim_sphere`, `prim_plane` (editor primitives), `asset:<path>` (a `.glb` in the project's `assets/` folder), `builtin:cube` (built into the engine, not in `game.pak`). |
+| `mesh` | `{"asset": "<content id>"}` | A mesh in the package's `content` list (a `.glb`). Ids: `prim_cube`, `prim_sphere`, `prim_plane` (editor primitives), `asset:<path>` (a `.glb` in the project's `objects/` folder; older projects' `assets/` folder is moved there when they open), `builtin:cube` (built into the engine, not in `game.pak`). |
 | `material` | `{"color": [r, g, b, a]}` | Alpha is optional (default 1). |
 | `camera` | `{"fov": 55, "near": 0.05, "far": 500}` | Vertical field of view in degrees. The scene's first camera is used. |
 | `light` | `{"type": "directional", "color": [r, g, b], "intensity": 1.0}` | A directional light shines along the entity's local −Z axis (after rotation). |
 | `script` | `{"module": "door"}` | A Python module in the project's `scripts/` folder that drives the entity (`"door"` is `scripts/door.py`, `"enemies.wolf"` is `scripts/enemies/wolf.py`). Its functions and the `midgard` API are described in `schema/midgard.pyi`. |
 | `trigger` | `{"size": [x, y, z]}` | A box centred on the entity (in its local units, so its scale applies; rotation is ignored) that reports when the player enters or leaves it: `on_trigger_enter` / `on_trigger_exit` in the entity's script, and in the player's. Default size 1 × 1 × 1. |
+| `sky` | `{"color": [r, g, b], "ambient": [r, g, b]}` | The scene's sky colour and ambient light. The first entity with a sky sets them, and the scene settings below are only the fallback for scenes without one. Defaults as in the settings. |
+| `folder` | `{}` | A folder in the editor's Scene panel that groups its child entities. The engine sees an entity with only a transform (the editor keeps it at the origin). |
 | `player` | `{"speed": 4.0}` | The entity the player controls (metres per second). If a scene has a player, its first camera follows it in third person: look orbits, the wheel zooms, and movement is relative to the camera. |
 
 ## Scene settings
 
-The `scene.settings` column (migration 2) holds a JSON object:
+The `scene.settings` column (migration 2) holds a JSON object. A `sky` entity outranks it; the
+editor creates one in every scene's World folder.
 
 | Key | Shape | Default |
 |---|---|---|

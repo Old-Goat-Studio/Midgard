@@ -1,25 +1,29 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The Scene panel: the main scene (its settings) and its entities, with Add and Delete."""
+"""The Scene panel: the main scene's entities as a tree, with folders (a new scene keeps its
+camera, sky, light, ground and player in a World folder). Add, Delete, and drag an entity onto
+a folder (or beside another entity) to move it there."""
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QPushButton,
     QStackedLayout,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from ..meshes import PRIMITIVES
 from ..project import Project
-from ..scene_model import MAIN_SCENE, Entity
-from ..undo import AddEntityCommand, DeleteEntityCommand
+from ..scene_model import Entity, descendants, parents_first, sky_component
+from ..undo import AddEntityCommand, DeleteEntityCommand, SetEntityCommand
 
-ICONS = {"player": "🧍", "camera": "🎥", "light": "☀", "mesh": "■"}
-SCENE_PREFIX = "scene:"  # the list's first row is the scene itself
+ICONS = {"folder": "📁", "player": "🧍", "camera": "🎥", "light": "☀", "sky": "🌌", "mesh": "■"}
+ID_ROLE = Qt.ItemDataRole.UserRole
 
 
 def describe(entity: Entity) -> str:
@@ -27,19 +31,61 @@ def describe(entity: Entity) -> str:
     return f"{' '.join(kinds) or '·'}  {entity.name}"
 
 
+class _SceneTree(QTreeWidget):
+    """A tree whose drops don't move items themselves: they ask for a new parent (moved), and
+    the panel rebuilds from the project."""
+
+    moved = Signal(str, object)  # entity id, new parent id (None: the top of the scene)
+
+    def __init__(self):
+        super().__init__()
+        self.setHeaderHidden(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.folders: set[str] = set()  # ids of the folder entities
+
+    def drop_parent(self, target: QTreeWidgetItem | None,
+                    position: QAbstractItemView.DropIndicatorPosition) -> tuple[bool, str | None]:
+        """Where a drop lands: (allowed, new parent id). Onto a folder goes inside it, beside an
+        entity goes next to it (same parent), onto any other entity is refused."""
+        if target is None:
+            return True, None
+        target_id = target.data(0, ID_ROLE)
+        if position == QAbstractItemView.DropIndicatorPosition.OnItem:
+            return (True, target_id) if target_id in self.folders else (False, None)
+        parent = target.parent()
+        return True, parent.data(0, ID_ROLE) if parent is not None else None
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        item = self.currentItem()
+        target = self.itemAt(event.position().toPoint())
+        allowed, parent = self.drop_parent(target, self.dropIndicatorPosition())
+        event.setDropAction(Qt.DropAction.IgnoreAction)  # the tree is rebuilt instead
+        event.accept()
+        if item is not None and allowed:
+            self.moved.emit(item.data(0, ID_ROLE), parent)
+
+
 class ScenePanel(QWidget):
     entity_selected = Signal(object)  # entity id (str) or None
-    scene_selected = Signal(str)  # the scene row was chosen: show its settings
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.project: Project | None = None
-        self.list = QListWidget()
-        self.list.currentItemChanged.connect(self._selected)
+        self.collapsed: set[str] = set()  # folders the user closed, kept across refreshes
+        self.tree = _SceneTree()
+        self.tree.currentItemChanged.connect(self._selected)
+        self.tree.moved.connect(self.move_entity)
+        self.tree.itemCollapsed.connect(lambda i: self.collapsed.add(i.data(0, ID_ROLE)))
+        self.tree.itemExpanded.connect(lambda i: self.collapsed.discard(i.data(0, ID_ROLE)))
         self.add = QPushButton("Add")
         add_menu = QMenu(self.add)
+        add_menu.addAction("📁  Folder", self.add_folder)
+        self.add_sky_action = add_menu.addAction("🌌  Sky", self.add_sky)
+        add_menu.addSeparator()
         for asset, label in PRIMITIVES.items():
             add_menu.addAction(label, lambda a=asset: self.add_primitive(a))
+        add_menu.aboutToShow.connect(self._update_add_menu)
         self.add.setMenu(add_menu)
         self.delete = QPushButton("Delete")
         self.delete.clicked.connect(self.delete_selected)
@@ -52,7 +98,7 @@ class ScenePanel(QWidget):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addLayout(buttons)
-        layout.addWidget(self.list)
+        layout.addWidget(self.tree)
         self.empty = QLabel("No project open.")
         self.stack = QStackedLayout(self)
         self.stack.addWidget(self.empty)
@@ -60,6 +106,7 @@ class ScenePanel(QWidget):
 
     def set_project(self, project: Project | None) -> None:
         self.project = project
+        self.collapsed.clear()
         if project is None:
             self.stack.setCurrentWidget(self.empty)
             return
@@ -71,64 +118,116 @@ class ScenePanel(QWidget):
         if self.project is None:
             return
         current = self.selected_id()
-        self.list.blockSignals(True)
-        self.list.clear()
-        scene_item = QListWidgetItem("⛰  Main scene")
-        scene_item.setData(Qt.ItemDataRole.UserRole, SCENE_PREFIX + MAIN_SCENE)
-        scene_item.setToolTip("The scene's settings: sky and ambient light")
-        self.list.addItem(scene_item)
-        for entity in self.project.entities():
-            item = QListWidgetItem(describe(entity))
-            item.setData(Qt.ItemDataRole.UserRole, entity.id)
-            self.list.addItem(item)
-            if entity.id == current:
-                self.list.setCurrentItem(item)
-        self.list.blockSignals(False)
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        entities = self.project.entities()
+        self.tree.folders = {e.id for e in entities if e.is_folder}
+        items: dict[str, QTreeWidgetItem] = {}
+        for entity in parents_first(entities):
+            parent = items.get(entity.parent) if entity.parent else None
+            item = QTreeWidgetItem(parent if parent is not None else self.tree)
+            item.setText(0, describe(entity))
+            item.setData(0, ID_ROLE, entity.id)
+            flags = item.flags() | Qt.ItemFlag.ItemIsDragEnabled
+            if entity.is_folder:
+                flags |= Qt.ItemFlag.ItemIsDropEnabled
+            else:
+                flags &= ~Qt.ItemFlag.ItemIsDropEnabled
+            item.setFlags(flags)
+            items[entity.id] = item
+        for entity_id, item in items.items():
+            item.setExpanded(entity_id not in self.collapsed)
+        if current in items:
+            self.tree.setCurrentItem(items[current])
+        self.tree.blockSignals(False)
         if self.selected_id() != current:
             self.entity_selected.emit(self.selected_id())
         self.delete.setEnabled(self.selected_id() is not None)
 
     def selected_id(self) -> str | None:
-        """The selected entity's id (None for nothing, or for the scene row)."""
-        item = self.list.currentItem()
-        key = item.data(Qt.ItemDataRole.UserRole) if item else None
-        return None if key is None or key.startswith(SCENE_PREFIX) else key
-
-    def select_scene(self) -> None:
-        self.list.setCurrentRow(0)
+        item = self.tree.currentItem()
+        return item.data(0, ID_ROLE) if item else None
 
     def select(self, entity_id: str) -> None:
-        for row in range(self.list.count()):
-            if self.list.item(row).data(Qt.ItemDataRole.UserRole) == entity_id:
-                self.list.setCurrentRow(row)
+        for item in self._all_items():
+            if item.data(0, ID_ROLE) == entity_id:
+                self.tree.setCurrentItem(item)
+
+    def _all_items(self) -> list[QTreeWidgetItem]:
+        out, stack = [], [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            item = stack.pop()
+            out.append(item)
+            stack += [item.child(i) for i in range(item.childCount())]
+        return out
 
     def _selected(self, *_args) -> None:
         self.delete.setEnabled(self.selected_id() is not None)
-        item = self.list.currentItem()
-        key = item.data(Qt.ItemDataRole.UserRole) if item else None
-        if key and key.startswith(SCENE_PREFIX):
-            self.entity_selected.emit(None)
-            self.scene_selected.emit(key[len(SCENE_PREFIX):])
-        else:
-            self.entity_selected.emit(self.selected_id())
+        self.entity_selected.emit(self.selected_id())
+
+    def _update_add_menu(self) -> None:
+        has_sky = self.project is not None and any(
+            "sky" in e.components for e in self.project.entities())
+        self.add_sky_action.setEnabled(not has_sky)  # one sky per scene
+
+    # ---- adding, moving and deleting -----------------------------------------------------
+    def target_folder(self) -> str | None:
+        """Where new entities go: the selected folder, or the selected entity's folder."""
+        if self.project is None or (selected := self.selected_id()) is None:
+            return None
+        entity = self.project.entity(selected)
+        if entity is None:
+            return None
+        return entity.id if entity.is_folder else entity.parent
+
+    def _add(self, entity: Entity) -> None:
+        self.project.undo_stack.push(AddEntityCommand(self.project, entity))
+        self.select(entity.id)
+
+    def _unique_name(self, label: str) -> tuple[str, int]:
+        count = sum(1 for e in self.project.entities() if e.name.startswith(label))
+        return (f"{label} {count + 1}" if count else label), count
+
+    def add_folder(self) -> None:
+        if self.project is None:
+            return
+        name, _count = self._unique_name("Folder")
+        self._add(Entity(self.project.next_entity_id(), name, self.target_folder(),
+                         {"folder": {}}))
+
+    def add_sky(self) -> None:
+        if self.project is None:
+            return
+        self._add(Entity(self.project.next_entity_id(), "Sky", self.target_folder(),
+                         {"sky": sky_component(self.project.scene_settings())}))
 
     def add_primitive(self, asset: str) -> None:
         """Adds an entity showing one of the editor's primitives (Add ▸ Cube, Sphere, Plane)."""
         if self.project is None:
             return
-        label = PRIMITIVES[asset]
-        count = sum(1 for e in self.project.entities() if e.name.startswith(label))
-        entity = Entity(self.project.next_entity_id(),
-                        f"{label} {count + 1}" if count else label, None,
-                        {"transform": {"position": [1.5 * count, 0.0 if asset == "prim_plane"
-                                                    else 0.5, 0.0]},
-                         "mesh": {"asset": asset},
-                         "material": {"color": [0.8, 0.8, 0.8, 1.0]}})
-        self.project.undo_stack.push(AddEntityCommand(self.project, entity))
-        self.select(entity.id)
+        name, count = self._unique_name(PRIMITIVES[asset])
+        self._add(Entity(self.project.next_entity_id(), name, self.target_folder(),
+                         {"transform": {"position": [1.5 * count, 0.0 if asset == "prim_plane"
+                                                     else 0.5, 0.0]},
+                          "mesh": {"asset": asset},
+                          "material": {"color": [0.8, 0.8, 0.8, 1.0]}}))
 
     def add_cube_entity(self) -> None:
         self.add_primitive("prim_cube")
+
+    def move_entity(self, entity_id: str, parent: str | None) -> None:
+        """Puts an entity into a folder (or at the top with None). Its position stays relative
+        to its parent, and folders sit at the origin, so it doesn't move in the world."""
+        if self.project is None or (entity := self.project.entity(entity_id)) is None:
+            return
+        inside = {e.id for e in descendants(self.project.entities(), entity_id)}
+        if parent == entity.parent or parent == entity_id or parent in inside:
+            return  # no change, or a folder into itself
+        entity.parent = parent
+        folder = self.project.entity(parent) if parent else None
+        label = f"moved to {folder.name}" if folder else "moved to the top"
+        self.project.undo_stack.push(SetEntityCommand(self.project, entity, label))
+        self.select(entity_id)
 
     def delete_selected(self) -> None:
         if self.project is None or (entity_id := self.selected_id()) is None:

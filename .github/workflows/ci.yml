@@ -257,7 +257,6 @@ jobs:
           app = QCoreApplication([])
           project = Project.create(Path(sys.argv[1]), "HelloCube", "system_map", "Hello Cube")
           # A script, so the APK must carry Python and the game's scripts/.
-          (project.root / "scripts").mkdir()
           (project.root / "scripts" / "spin.py").write_text(
               "def on_update(entity, dt):\n"
               "    x, y, z = entity.rotation\n"

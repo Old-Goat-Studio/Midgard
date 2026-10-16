@@ -153,7 +153,6 @@ class MainWindow(QMainWindow):
         self.history.setEmptyLabel("<project opened>")
         self.browser.file_selected.connect(self.inspector.show_selection)
         self.scene_panel.entity_selected.connect(self.inspector.show_entity)
-        self.scene_panel.scene_selected.connect(self.inspector.show_scene)
         self.inspector.setMinimumWidth(340)
         self.inspector.open_script.connect(self.edit_script)
         self.browser.setMinimumWidth(220)

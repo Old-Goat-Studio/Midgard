@@ -11,9 +11,9 @@ talks to it over a TCP live link, so an engine crash never takes the editor down
                                     <-----   log lines, stats (about once a second),
                                              script.error (file and line)
 
-Hot reload: entity edits travel in the message itself. Scene settings and meshes are rewritten
+Hot reload: entity edits (the sky's too) travel in the message itself. Meshes are rewritten
 in the cooked package first (cook.recook), then named in row.changed / asset.changed. Mesh files
-in the project's assets/ folder and scripts in its scripts/ folder are watched, so saving one
+in the project's objects/ folder and scripts in its scripts/ folder are watched, so saving one
 (from a modelling tool or a text editor) shows in the game.
 
 Each message is a 4-byte big-endian length followed by UTF-8 JSON
@@ -30,6 +30,7 @@ from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .project import Project
+from .scene_model import parents_first
 from .version import VERSION
 
 log = logging.getLogger("midgard")
@@ -118,7 +119,6 @@ class PlaySession(QObject):
         self._asset_timer = QTimer(self, singleShot=True, interval=300)  # saves come in bursts
         self._asset_timer.timeout.connect(self._reload_assets)
         project.entities_changed.connect(self._entities_changed)
-        project.scene_changed.connect(self._scene_changed)
 
     # ---- control ------------------------------------------------------------------------
     def start(self, runtime: Path | list[str], package: Path) -> None:
@@ -274,7 +274,7 @@ class PlaySession(QObject):
     def _entities_changed(self, entity_id: str) -> None:
         if self.socket is None:
             return
-        # A mesh the game's package doesn't have yet (a new shape, a file from assets/) is
+        # A mesh the game's package doesn't have yet (a new shape, a file from objects/) is
         # cooked into game.pak before the entity that uses it is sent.
         if used_mesh_assets(self.project) - self._cooked_assets:
             self._reload_assets()
@@ -283,22 +283,13 @@ class PlaySession(QObject):
             self._known.add(entity_id)
             return
         # Entities were added or removed: bring the game's set of entities up to date.
-        current = {e.id for e in self.project.entities()}
+        entities = self.project.entities()
+        current = {e.id for e in entities}
         for gone in sorted(self._known - current):
             self.send({"type": "entity.delete", "entity": gone})
-        for added in sorted(current - self._known):
-            self.send(entity_message(self.project, added))
+        for added in parents_first([e for e in entities if e.id not in self._known]):
+            self.send(entity_message(self.project, added.id))
         self._known = current
-
-    def _scene_changed(self, scene_id: str) -> None:
-        if self.socket is None or self.package is None:
-            return
-        try:
-            recook(self.project, self.package, database=True)
-        except (CookError, OSError) as e:
-            log.error("Hot reload of the scene settings failed: %s", e)
-            return
-        self.send({"type": "row.changed", "table": "scene", "key": scene_id})
 
     def _reload_assets(self) -> None:
         """Re-cooks game.pak and the scripts, and tells the game what changed."""
@@ -327,11 +318,11 @@ class PlaySession(QObject):
         return {c["id"] for c in manifest.get("content", [])}
 
     def _watch_assets(self) -> None:
-        """Watches the project's assets/ and scripts/ folders, their subfolders and their .glb
+        """Watches the project's objects/ and scripts/ folders, their subfolders and their .glb
         and .py files. Editors often replace a file when saving it, which drops it from the
         watch list, so the list is rebuilt after every reload."""
         wanted = set()
-        for folder, suffix in ((self.project.root / "assets", ".glb"),
+        for folder, suffix in ((self.project.objects_dir, ".glb"),
                                (self.project.root / "scripts", ".py")):
             if folder.is_dir():
                 wanted.add(str(folder))

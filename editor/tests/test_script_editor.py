@@ -116,13 +116,13 @@ def test_adding_a_script_and_a_trigger(qtbot, project):
     assert form.script is None and form.add_component.isEnabled()
 
     form.add("script")
-    assert project.entity("e000004").components["script"] == {"module": "cube"}
-    assert (project.root / "scripts" / "cube.py").is_file()
-    assert opened == ["cube"] and rebuilt == ["e000004"]
+    assert project.entity("e000004").components["script"] == {"module": "player"}
+    assert (project.root / "scripts" / "player.py").is_file()
+    assert opened == ["player"] and rebuilt == ["e000004"]
 
     form = EntityForm(project, "e000004")  # as the Inspector rebuilds it
     qtbot.addWidget(form)
-    assert form.script.currentData() == "cube"
+    assert form.script.currentData() == "player"
     form.add("trigger")
     form = EntityForm(project, "e000004")
     qtbot.addWidget(form)
@@ -133,7 +133,7 @@ def test_adding_a_script_and_a_trigger(qtbot, project):
     form.remove_component("script")
     assert "script" not in project.entity("e000004").components
     project.undo_stack.undo()
-    assert project.entity("e000004").components["script"] == {"module": "cube"}
+    assert project.entity("e000004").components["script"] == {"module": "player"}
 
 
 def test_the_inspector_opens_scripts_in_the_script_editor(qtbot, settings, project):
@@ -144,8 +144,8 @@ def test_the_inspector_opens_scripts_in_the_script_editor(qtbot, settings, proje
     window.set_project(project)
     window.inspector.show_entity("e000004")
     window.inspector.entity_form.add("script")
-    assert window.script_editor.current().path.name == "cube.py"
-    window._script_error({"file": "cube.py", "line": 2, "message": "boom"})
+    assert window.script_editor.current().path.name == "player.py"
+    window._script_error({"file": "player.py", "line": 2, "message": "boom"})
     assert window.script_editor.current().error_line == 2
 
 

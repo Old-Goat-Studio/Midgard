@@ -130,6 +130,7 @@ void Game::remove_entity(const std::string& entity_id) {
 
 void Game::reload_scene_settings() {
     scene_.settings = Scene::read_settings(package_.root / package_.manifest.database, scene_.id);
+    scene_.use_sky();  // a Sky entity outranks the settings
 }
 
 void Game::reload_entity(const std::string& entity_id) {

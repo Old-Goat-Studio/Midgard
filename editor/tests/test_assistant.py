@@ -47,14 +47,13 @@ def test_the_tools_only_read(project):
     tools = Tools(project)
     assert "CREATE TABLE entity" in tools.get_schema()
     rows = json.loads(tools.query_project("SELECT id, name FROM entity ORDER BY id"))
-    assert rows[3] == {"id": "e000004", "name": "Cube"}
+    assert rows[3] == {"id": "e000004", "name": "Player"}
     assert "Error" in tools.query_project("DELETE FROM entity")
     assert "Error" in tools.run("query_project", {"sql": "SELECT 1; DELETE FROM entity"})
     assert "Error" in tools.query_project(
         "WITH x AS (SELECT 1) INSERT INTO meta (key, value) VALUES ('a', 'b')")
-    assert len(project.entities()) == 4  # nothing changed
+    assert len(project.entities()) == 6  # nothing changed
 
-    (project.root / "scripts").mkdir()
     (project.root / "scripts" / "door.py").write_bytes(b"print('door')\n")
     assert tools.read_script("door.py") == "print('door')\n"
     assert "Error" in tools.read_script("../HelloCube.config")
@@ -74,14 +73,14 @@ def test_the_project_can_forbid_it_and_keys_come_from_the_environment(project, m
 
 # ---- a conversation -----------------------------------------------------------------------
 def test_a_question_that_uses_a_tool(project):
-    client = FakeClient(tool_reply("query_project", {"sql": "SELECT name FROM entity"}),
-                        text_reply("There are **4** entities."))
+    client = FakeClient(tool_reply("query_project", {"sql": "SELECT name FROM entity ORDER BY id"}),
+                        text_reply("There are **6** entities."))
     conversation = Conversation()
     streamed, tools_seen = [], []
     turn = assistant.ask(client, project, conversation, "How many entities?",
                          on_text=streamed.append, on_tool=tools_seen.append)
     assert not turn.error
-    assert turn.answer.endswith("There are **4** entities.")
+    assert turn.answer.endswith("There are **6** entities.")
     assert "Let me look." in streamed and len(tools_seen) == 1
     assert json.loads(turn.tools[0].result)[0] == {"name": "Camera"}  # what was sent back
     assert turn.usage["input_tokens"] == 190 and turn.usage["output_tokens"] == 30

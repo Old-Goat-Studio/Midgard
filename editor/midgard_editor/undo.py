@@ -6,7 +6,7 @@ from typing import Any
 from PySide6.QtGui import QUndoCommand
 
 from .project import Project
-from .scene_model import MAIN_SCENE, Entity
+from .scene_model import Entity, descendants
 
 
 class SetConfigCommand(QUndoCommand):
@@ -39,22 +39,6 @@ class SetStringCommand(QUndoCommand):
         self.project.set_string(self.key, self.old, self.context)
 
 
-class SetSceneSettingsCommand(QUndoCommand):
-    """Change a scene's settings (sky, ambient light)."""
-
-    def __init__(self, project: Project, settings: dict[str, Any], label: str,
-                 scene: str = MAIN_SCENE):
-        super().__init__(f"Change {label}")
-        self.project, self.scene, self.new = project, scene, settings
-        self.old = project.scene_settings(scene)
-
-    def redo(self) -> None:
-        self.project.set_scene_settings(self.new, self.scene)
-
-    def undo(self) -> None:
-        self.project.set_scene_settings(self.old, self.scene)
-
-
 class AddEntityCommand(QUndoCommand):
     def __init__(self, project: Project, entity: Entity):
         super().__init__(f"Add {entity.name}")
@@ -68,15 +52,20 @@ class AddEntityCommand(QUndoCommand):
 
 
 class DeleteEntityCommand(QUndoCommand):
+    """Delete an entity and everything inside it (a folder's contents, an entity's children);
+    Undo puts them all back."""
+
     def __init__(self, project: Project, entity: Entity):
         super().__init__(f"Delete {entity.name}")
         self.project, self.entity = project, entity
+        self.inside = descendants(project.entities(), entity.id)
 
     def redo(self) -> None:
-        self.project.delete_entity(self.entity.id)
+        self.project.delete_entity(self.entity.id)  # the database deletes the children too
 
     def undo(self) -> None:
-        self.project.put_entity(self.entity)
+        for entity in [self.entity, *self.inside]:
+            self.project.put_entity(entity)
 
 
 class SetEntityCommand(QUndoCommand):

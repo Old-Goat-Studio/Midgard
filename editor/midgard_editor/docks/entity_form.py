@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Inspector form for one entity: name, transform, and the settings of its components. Add
-Component adds a script (a new file in scripts/, opened in the Script editor) or a trigger."""
+Component adds a script (a new file in scripts/, opened in the Script editor) or a trigger. A
+folder has only its name, and the sky its sky and ambient light colours."""
 import copy
 
 from PySide6.QtCore import Signal
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from .. import scripting
 from ..project import Project
-from ..scene_model import Entity
+from ..scene_model import Entity, sky_component
 from ..undo import SetEntityCommand
 
 
@@ -88,26 +89,38 @@ class EntityForm(QWidget):
     rebuild = Signal(str)  # the entity's set of components changed: build the form again
 
     ADDABLE = {"script": "Script", "trigger": "Trigger"}
+    SKY_COLOURS = {"color": "Sky colour", "ambient": "Ambient light"}
 
     def __init__(self, project: Project, entity_id: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.project, self.entity_id = project, entity_id
         form = QFormLayout(self)
         self.name = QLineEdit()
-        self.position = Vec3Editor(0.1)
-        self.rotation = Vec3Editor(5.0, -360.0, 360.0)
-        self.scale = Vec3Editor(0.1, 0.001)
         form.addRow("Name", self.name)
-        form.addRow("Position", self.position)
-        form.addRow("Rotation", self.rotation)
-        form.addRow("Scale", self.scale)
         self.name.editingFinished.connect(self._name_edited)
-        for label, editor in (("position", self.position), ("rotation", self.rotation),
-                              ("scale", self.scale)):
-            for box in editor.boxes:
-                box.valueChanged.connect(lambda _v, k=label: self._transform_edited(k))
-
         entity = self._entity()
+        # Folders stay at the origin (so moving things in and out doesn't move them), and the
+        # sky is everywhere: neither has a transform to edit.
+        self.position = self.rotation = self.scale = None
+        if not entity.is_folder and "sky" not in entity.components:
+            self.position = Vec3Editor(0.1)
+            self.rotation = Vec3Editor(5.0, -360.0, 360.0)
+            self.scale = Vec3Editor(0.1, 0.001)
+            form.addRow("Position", self.position)
+            form.addRow("Rotation", self.rotation)
+            form.addRow("Scale", self.scale)
+            for label, editor in (("position", self.position), ("rotation", self.rotation),
+                                  ("scale", self.scale)):
+                for box in editor.boxes:
+                    box.valueChanged.connect(lambda _v, k=label: self._transform_edited(k))
+
+        self.sky: dict[str, QPushButton] = {}
+        if "sky" in entity.components:
+            for key, label in self.SKY_COLOURS.items():
+                button = QPushButton()
+                button.clicked.connect(lambda _checked=False, k=key: self._pick_sky(k))
+                form.addRow(label, button)
+                self.sky[key] = button
         self.color = self.fov = self.intensity = self.mesh = None
         if "mesh" in entity.components:
             self.mesh = QComboBox()
@@ -157,7 +170,8 @@ class EntityForm(QWidget):
             menu.addAction(self.ADDABLE[key], lambda k=key: self.add(k))
         self.add_component.setMenu(menu)
         self.add_component.setEnabled(bool(missing))
-        form.addRow("", self.add_component)
+        if self.position is not None:  # things in the world, not folders or the sky
+            form.addRow("", self.add_component)
         self._kinds = set(entity.components)
         project.entities_changed.connect(self._changed)
         self.refresh()
@@ -182,14 +196,17 @@ class EntityForm(QWidget):
     def refresh(self) -> None:
         entity = self._entity()
         self.name.setText(entity.name)
-        t = entity.transform()
-        self.position.set_value(t["position"])
-        self.rotation.set_value(t["rotation"])
-        self.scale.set_value(t["scale"])
+        if self.position is not None:
+            t = entity.transform()
+            self.position.set_value(t["position"])
+            self.rotation.set_value(t["rotation"])
+            self.scale.set_value(t["scale"])
+        for key, button in self.sky.items():
+            style_color_button(button, entity.components["sky"].get(key, sky_component()[key]))
         if self.mesh is not None:
             asset = entity.components["mesh"].get("asset", "")
             self.mesh.blockSignals(True)
-            if self.mesh.findData(asset) < 0:  # e.g. a file that has gone from assets/
+            if self.mesh.findData(asset) < 0:  # e.g. a file that has gone from objects/
                 self.mesh.addItem(f"{asset} (missing)", asset)
             self.mesh.setCurrentIndex(self.mesh.findData(asset))
             self.mesh.blockSignals(False)
@@ -279,6 +296,18 @@ class EntityForm(QWidget):
             return
         entity.components["mesh"] = {**entity.components["mesh"], "asset": asset}
         self._push(entity, "mesh")
+
+    def _pick_sky(self, key: str) -> None:
+        rgb = self._entity().components["sky"].get(key, sky_component()[key])
+        chosen = QColorDialog.getColor(QColor.fromRgbF(*rgb[:3]), self, self.SKY_COLOURS[key])
+        if chosen.isValid():
+            self.set_sky_color(key, [chosen.redF(), chosen.greenF(), chosen.blueF()])
+
+    def set_sky_color(self, key: str, rgb: list[float]) -> None:
+        entity = self._entity()
+        entity.components["sky"] = {**entity.components["sky"],
+                                    key: [round(c, 4) for c in rgb[:3]]}
+        self._push(entity, self.SKY_COLOURS[key].lower())
 
     def _pick_color(self) -> None:
         entity = self._entity()

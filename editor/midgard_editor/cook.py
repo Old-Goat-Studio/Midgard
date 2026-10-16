@@ -33,7 +33,7 @@ FORMAT_VERSION = "1.0"
 RUNTIME_CONFIG_KEYS = ("game_version", "world_mode", "max_players")
 BUILTIN_PREFIX = "builtin:"
 EDITOR_ONLY_TABLES = ("snippet",)
-PROJECT_ASSET_PREFIX = "asset:"  # a file in the project's assets/ folder
+PROJECT_ASSET_PREFIX = "asset:"  # a file in the project's objects/ folder
 
 
 class CookError(Exception):
@@ -102,7 +102,7 @@ def mesh_asset_data(project: Project, asset: str) -> bytes | None:
     if asset in meshes.PRIMITIVES:
         return meshes.to_glb(meshes.primitive(asset))
     if asset.startswith(PROJECT_ASSET_PREFIX):
-        file = project.root / "assets" / asset[len(PROJECT_ASSET_PREFIX):]
+        file = project.objects_dir / asset[len(PROJECT_ASSET_PREFIX):]
         if file.is_file() and file.suffix.lower() == ".glb":
             return file.read_bytes()
     return None

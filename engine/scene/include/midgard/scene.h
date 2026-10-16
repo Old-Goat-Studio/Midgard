@@ -74,6 +74,13 @@ struct SceneSettings {
     glm::vec3 ambient{0.18f, 0.2f, 0.26f};
 };
 
+// The scene's sky: an entity with this component sets the scene's sky and ambient colours
+// (the scene table's settings are only the fallback, for scenes without one).
+struct Sky {
+    glm::vec3 color = SceneSettings{}.sky;
+    glm::vec3 ambient = SceneSettings{}.ambient;
+};
+
 // One row of the entity table.
 struct EntityRow {
     std::string id;
@@ -117,6 +124,13 @@ public:
     std::optional<render::Camera> camera(float aspect) const;
     // The first directional light, combined with the scene's ambient colour.
     render::Light light() const;
+
+    // The first Sky entity's colours become the scene's (after its settings were read again).
+    void use_sky();
+
+private:
+    // A Sky component on e becomes the scene's sky and ambient colours.
+    void apply_sky(entt::entity e);
 };
 
 glm::mat4 rotation_matrix(const glm::vec3& euler_degrees);

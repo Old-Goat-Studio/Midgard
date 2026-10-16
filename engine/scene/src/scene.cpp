@@ -87,6 +87,9 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<ScriptRef>(e, c.at("module").get<std::string>());
     } else if (name == "trigger") {
         reg.emplace_or_replace<Trigger>(e, vec3(c, "size", glm::vec3(1.0f)));
+    } else if (name == "sky") {
+        reg.emplace_or_replace<Sky>(e, vec3(c, "color", SceneSettings{}.sky),
+                                    vec3(c, "ambient", SceneSettings{}.ambient));
     } else if (name == "light") {
         if (c.value("type", "directional") == "directional")
             reg.emplace_or_replace<DirectionalLight>(e, vec3(c, "color", glm::vec3(1.0f)),
@@ -113,12 +116,14 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<ScriptRef>(e);
     else if (name == "trigger")
         reg.remove<Trigger>(e);
+    else if (name == "sky")
+        reg.remove<Sky>(e);
 }
 
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, Player, ScriptRef,
-               Trigger>(e);
+               Trigger, Sky>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
@@ -188,6 +193,7 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
         if (it == by_id.end()) throw SceneError("entity parent '" + parent_id + "' not found");
         scene.registry.get<EntityInfo>(e).parent = it->second;
     }
+    scene.use_sky();
     return scene;
 }
 
@@ -230,6 +236,7 @@ entt::entity Scene::put_entity(const std::string& entity_id, const std::string& 
     } catch (const std::exception& ex) {  // a component of the wrong shape
         throw SceneError("entity '" + entity_id + "': " + ex.what());
     }
+    apply_sky(e);
     return e;
 }
 
@@ -242,6 +249,18 @@ void Scene::set_component(entt::entity e, const std::string& component, const js
     } catch (const std::exception& ex) {
         throw SceneError("component '" + component + "': " + ex.what());
     }
+    apply_sky(e);
+}
+
+void Scene::use_sky() {
+    apply_sky(first_with<Sky>(registry));
+}
+
+void Scene::apply_sky(entt::entity e) {
+    if (e == entt::null || !registry.all_of<Sky>(e)) return;
+    const Sky& sky = registry.get<Sky>(e);
+    settings.sky = sky.color;
+    settings.ambient = sky.ambient;
 }
 
 bool Scene::remove_entity(const std::string& entity_id) {

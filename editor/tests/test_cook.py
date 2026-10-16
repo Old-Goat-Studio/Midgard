@@ -81,7 +81,7 @@ def test_cook_writes_a_valid_package(project, tmp_path):
     con = sqlite3.connect(out / "HelloCube.db")
     names = [r[0] for r in con.execute("SELECT name FROM entity ORDER BY id")]
     con.close()
-    assert names == ["Camera", "Sun", "Ground", "Cube"]
+    assert names == ["Camera", "Sun", "Ground", "Player", "Sky", "World"]
     assert json.loads((out / "HelloCube.config").read_text("utf-8")) == {
         "game_version": "0.1.0", "world_mode": "system_map", "max_players": 4}
 
@@ -112,7 +112,7 @@ def test_the_engine_renders_the_cooked_package(project, tmp_path):
     if run.returncode != 0 and "Vulkan" in (run.stderr + run.stdout):
         pytest.skip("no Vulkan driver available: " + run.stderr.strip())
     assert run.returncode == 0, run.stderr
-    assert "4 entities" in run.stdout
+    assert "6 entities" in run.stdout
     assert shot.stat().st_size > 1000
 
 
@@ -142,8 +142,7 @@ def test_recook_reports_what_changed(project, tmp_path):
     cube = project.entity("e000004")
     cube.components["mesh"]["asset"] = "prim_sphere"
     project.put_entity(cube)
-    (project.root / "assets").mkdir()
-    (project.root / "assets" / "rock.glb").write_bytes(meshes.to_glb(meshes.cube()))
+    (project.objects_dir / "rock.glb").write_bytes(meshes.to_glb(meshes.cube()))
     ground = project.entity("e000003")
     ground.components["mesh"]["asset"] = "asset:rock.glb"
     project.put_entity(ground)

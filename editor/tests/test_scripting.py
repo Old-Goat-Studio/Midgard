@@ -61,10 +61,10 @@ def add_door(project) -> None:
     cube = project.entity("e000004")
     cube.components["script"] = {"module": "mover"}
     project.put_entity(cube)
-    project.put_entity(Entity("e000005", "Door", None, {
+    project.put_entity(Entity("e000007", "Door", None, {
         "transform": {"position": [3.0, 0.5, 0.0]},
         "trigger": {"size": [1.0, 2.0, 1.0]}, "script": {"module": "door"}}))
-    project.put_entity(Entity("e000006", "Gate", None, {
+    project.put_entity(Entity("e000008", "Gate", None, {
         "transform": {"position": [6.0, 1.0, 0.0]}, "mesh": {"asset": "prim_cube"}}))
     write_script(project, "mover", MOVER)
     write_script(project, "door", DOOR)
@@ -94,10 +94,10 @@ def test_a_script_reacts_to_a_trigger_and_changes_the_world(project, tmp_path):
     assert by_name(scene, "Gate")["position"] == [6.0, 1.0, 0.0]
 
     scene, run = simulate(package, 120)  # 2 s: it walked in at x = 2.5
-    assert by_name(scene, "Cube")["position"][0] == pytest.approx(4.0, abs=0.05)
+    assert by_name(scene, "Player")["position"][0] == pytest.approx(4.0, abs=0.05)
     assert by_name(scene, "Gate")["position"] == [0.0, 5.0, 0.0]
     assert scene["sky"] == [1.0, 0.0, 0.0]
-    assert "opened by Cube" in run.stdout
+    assert "opened by Player" in run.stdout
 
 
 @needs_scripting
@@ -150,7 +150,7 @@ def test_a_script_edited_while_playing_reloads(project, session_factory, qtbot):
     session.message_received.connect(received.append)
     # Headless: the real game loop and live link, without a window (CI has no display).
     session.start([str(scripting_runtime()), "--headless"], cook(project).out_dir)
-    qtbot.waitUntil(lambda: any(m.get("text") == "opened by Cube" for m in received),
+    qtbot.waitUntil(lambda: any(m.get("text") == "opened by Player" for m in received),
                     timeout=20000)
 
     write_script(project, "door", DOOR + "\ndef on_reload(entity):\n    print('door v2')\n")

@@ -319,6 +319,24 @@ TEST_CASE("scene settings and entity rows reload from the database") {
     CHECK_FALSE(game.scene().registry.valid(game.scene().find("e9_missing")));
 }
 
+TEST_CASE("a sky entity sets the scene's sky and ambient colours") {
+    TestPackage pkg({{"e1_world", R"(NULL, '{"folder": {}}')"},
+                     {"e2_sky", R"('e1_world', '{"sky": {"color": [0.4, 0.5, 0.6],
+                                                         "ambient": [0.3, 0.3, 0.3]}}')"}});
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    CHECK(near(scene.settings.sky, {0.4f, 0.5f, 0.6f}));  // not the settings' 0.1, 0.2, 0.3
+    CHECK(near(scene.light().ambient, {0.3f, 0.3f, 0.3f}));
+    CHECK(scene.registry.valid(scene.find("e1_world")));  // a folder: only a transform
+
+    // Live edits to the sky reach the scene; reloading the settings keeps the sky's colours.
+    scene.set_component(scene.find("e2_sky"), "sky",
+                        nlohmann::json::parse(R"({"color": [1, 0, 0]})"));
+    CHECK(near(scene.settings.sky, {1, 0, 0}));
+    game.reload_scene_settings();
+    CHECK(near(game.scene().settings.sky, {1, 0, 0}));
+}
+
 TEST_CASE("triggers report the player entering and leaving") {
     TestPackage pkg({
         {"e1_player", R"(NULL, '{"transform": {"position": [0, 0, 0]}, "player": {}}')"},

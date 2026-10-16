@@ -27,7 +27,7 @@ def test_cooked_packages_pass_the_engines_check(project, tmp_path):
     result = cook(project, tmp_path / "pkg")
     report = engine.validate(result.out_dir)
     assert report["ok"], report
-    assert report["entities"] == 4 and report["assets"] == 1
+    assert report["entities"] == 6 and report["assets"] == 1
 
 
 @needs_module
