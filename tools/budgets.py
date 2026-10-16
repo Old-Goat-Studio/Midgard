@@ -66,7 +66,8 @@ def report(checks: list[Check], platform: str) -> int:
         if github:
             kind = "error" if bad else "notice"
             detail = (f"{measured} ms against a budget of {budget} ms (limit {c.limit:.3f} ms)"
-                      if c.limit is not None else c.note or c.status)
+                      if c.limit is not None and c.measured is not None
+                      else c.note or c.status)
             print(f"::{kind} title=Budget {c.name} on {platform}::{c.status}: {detail}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:

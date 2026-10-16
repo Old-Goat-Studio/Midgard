@@ -70,3 +70,10 @@ def test_the_real_budgets_cover_every_benchmark():
     assert names and names == set(real["budgets"])
     for entry in real["budgets"].values():
         assert entry["default"] > 0
+
+
+def test_skipped_notices_give_the_reason(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    run(tmp_path, {"gpu": {"skipped": "no Vulkan: no device"}})
+    assert "::notice title=Budget gpu on default::skipped: no Vulkan: no device" in \
+        capsys.readouterr().out

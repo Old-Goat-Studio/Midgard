@@ -1,15 +1,15 @@
 {
-  "_about": "Performance budgets (milliseconds, the median of midgard_bench's runs), checked by tools/budgets.py. A benchmark fails when it takes longer than its budget plus the margin. 'default' applies everywhere unless a platform has its own value; CI's platforms are named ci-<preset>, and its Linux jobs render with software Vulkan (lavapipe), so GPU budgets there are much larger. Every benchmark needs a budget.",
+  "_about": "Performance budgets (milliseconds, the median of midgard_bench's runs), checked by tools/budgets.py. A benchmark fails when it takes longer than its budget plus the margin. 'default' applies everywhere unless a platform has its own value; CI's platforms are named ci-<preset>, and its Linux jobs render with software Vulkan (lavapipe). Budgets are about 2-3 times the slowest CI timing seen (CI run 38842790692, 15 October 2026), so a real slowdown fails but runner noise doesn't. Every benchmark needs a budget.",
   "margin": 0.25,
   "metric": "median_ms",
   "budgets": {
-    "jobs.parallel_for_1m": {"default": 20},
-    "jobs.submit_wait_10k": {"default": 150},
-    "overlay.layout_40_lines": {"default": 15},
+    "jobs.parallel_for_1m": {"default": 3},
+    "jobs.submit_wait_10k": {"default": 60, "ci-linux-arm64-release": 160},
+    "overlay.layout_40_lines": {"default": 3},
     "render.cubes_400_offscreen": {
       "default": 16.7,
-      "ci-linux-release": 500,
-      "ci-linux-arm64-release": 800
+      "ci-linux-release": 10,
+      "ci-linux-arm64-release": 10
     }
   }
 }
