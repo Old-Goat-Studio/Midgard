@@ -200,6 +200,10 @@ private:
     render::MeshId cube_ = 0;
 };
 
+#if defined(__ANDROID__) && defined(MIDGARD_HAS_SCRIPTING)
+std::filesystem::path android_python_home();  // below, with the other Android file handling
+#endif
+
 class GameSource : public Source {
 public:
     explicit GameSource(const std::string& dir) : game_(dir) {
@@ -526,7 +530,7 @@ std::filesystem::path android_python_home() {
             }
         }
         write_file(home / "VERSION", version.data(), version.size());  // last: a complete copy
-        say("Unpacked Python %s", version.c_str());
+        say("Unpacked Python %s\n", version.c_str());
     }
     mz_zip_reader_end(&zip);
     SDL_free(archive);
