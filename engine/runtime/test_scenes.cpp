@@ -34,9 +34,11 @@ render::Camera look(glm::vec3 eye, glm::vec3 target, float aspect, float fov = 4
     return c;
 }
 
-// A 128 x 128 texture from a function of (u, v) in 0..1 giving RGBA 0..1.
+// A 32 x 32 texture from a function of (u, v) in 0..1 giving RGBA 0..1. Small on purpose: on
+// screen the test objects magnify their textures, which every driver filters alike; shrinking
+// one (mip selection, anisotropy) is approximated differently by each driver.
 render::TextureData texture(bool srgb, const std::function<glm::vec4(float, float)>& f) {
-    constexpr uint32_t size = 128;
+    constexpr uint32_t size = 32;
     std::vector<uint8_t> px;
     px.reserve(size * size * 4);
     for (uint32_t y = 0; y < size; ++y)
@@ -109,7 +111,7 @@ public:
         }));
         // Emissive: a glowing grid.
         const auto grid = r.upload_texture(texture(true, [](float u, float v) {
-            const bool line = glm::fract(u * 5) < 0.12f || glm::fract(v * 5) < 0.12f;
+            const bool line = glm::fract(u * 4) < 0.25f || glm::fract(v * 4) < 0.25f;
             return line ? glm::vec4(1.0f, 0.55f, 0.1f, 1) : glm::vec4(0, 0, 0, 1);
         }));
         render::MaterialTextures t;
@@ -153,7 +155,7 @@ public:
         return relative(out, origin);
     }
     render::Camera camera(float aspect) const override {
-        return look({0, 1.6f, 6.5f}, {0, 0, 0}, aspect, 50.0f);
+        return look({0, 0.6f, 6.0f}, {0, 0, 0}, aspect, 50.0f);
     }
     render::Light light(const glm::dvec3&) const override {
         render::Light l;

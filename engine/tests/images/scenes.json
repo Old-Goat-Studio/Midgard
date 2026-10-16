@@ -29,8 +29,9 @@
     },
     {
       "name": "textures",
-      "_about": "One object per material texture: base colour, normal map, metal/roughness, occlusion, emissive.",
-      "args": ["--size", "480x240", "--scene", "textures"]
+      "_about": "One object per material texture: base colour, normal map, metal/roughness, occlusion, emissive. Its textures are magnified on screen, which drivers filter alike; near the spheres' edges they shrink, where drivers may choose mip levels differently, so up to 1% of pixels may differ.",
+      "args": ["--size", "960x480", "--scene", "textures"],
+      "max_bad": 0.01
     },
     {
       "name": "lights",
