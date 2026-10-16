@@ -16,9 +16,9 @@
     },
     "render.cubes_400_phone": {
       "default": 16.7,
-      "_about": "The phone tier on lavapipe: provisional until CI timings arrive.",
-      "ci-linux-release": 60,
-      "ci-linux-arm64-release": 60
+      "_about": "The phone tier on lavapipe (CPU): 12.2 ms on linux-release and 13.7 ms on linux-arm64 (CI run 38935998601), so its budget is 30.",
+      "ci-linux-release": 30,
+      "ci-linux-arm64-release": 30
     },
     "texture.transcode_512_bc7": {"default": 25},
     "texture.transcode_512_astc": {"default": 10}
