@@ -223,10 +223,118 @@ private:
     render::MeshId cube_ = 0, sphere_ = 0;
 };
 
+// Sun shadows on flat ground: pillars from 2 to 45 metres away (through every cascade), a
+// sphere, and a plank in the air whose shadow lies apart from it.
+class Shadows : public TestScene {
+public:
+    void upload(render::Renderer& r) override {
+        cube_ = r.upload_mesh(render::make_cube());
+        sphere_ = r.upload_mesh(render::make_sphere());
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        std::vector<DrawItem> out;
+        out.push_back(
+            {cube_, at({0, -0.05f, -20}, {120, 0.1f, 120}), glm::vec4(0.6f, 0.6f, 0.58f, 1)});
+        const float depths[] = {-2, -6, -12, -20, -32, -45};
+        for (int i = 0; i < 6; ++i)
+            out.push_back({cube_, at({i % 2 ? 2.5f : -2.5f, 1.0f, depths[i]}, {0.5f, 2.0f, 0.5f}),
+                           glm::vec4(0.75f, 0.45f, 0.3f, 1)});
+        out.push_back({sphere_, at({0.6f, 0.5f, -1.0f}), glm::vec4(0.3f, 0.5f, 0.8f, 1)});
+        out.push_back(
+            {cube_, at({-1.0f, 1.4f, -3.5f}, {2.5f, 0.1f, 0.8f}), glm::vec4(0.4f, 0.7f, 0.4f, 1)});
+        return relative(out, origin);
+    }
+    render::Camera camera(float aspect) const override {
+        return look({0, 2.0f, 4.0f}, {0, 0, -12.0f}, aspect, 55.0f);
+    }
+    render::Light light(const glm::dvec3&) const override {
+        render::Light l;
+        l.direction = glm::normalize(glm::vec3(0.8f, -0.6f, 0.35f));  // a low sun from the left
+        return l;
+    }
+    glm::vec4 sky() const override { return {0.35f, 0.45f, 0.6f, 1.0f}; }
+
+private:
+    render::MeshId cube_ = 0, sphere_ = 0;
+};
+
+// Sun shadows on a small planet (radius 60 m), standing where "up" leans 50 degrees from the
+// world's y axis: objects stand along the local up, and their shadows fall across the curved
+// ground just as they would at the top.
+class ShadowsCurved : public TestScene {
+public:
+    void upload(render::Renderer& r) override {
+        cube_ = r.upload_mesh(render::make_cube());
+        sphere_ = r.upload_mesh(render::make_sphere());
+        planet_ = r.upload_mesh(render::make_sphere(128, 256));
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        std::vector<DrawItem> out;
+        out.push_back(
+            {planet_, at({0, 0, 0}, glm::vec3(2.0f * kRadius)), glm::vec4(0.55f, 0.6f, 0.45f, 1)});
+        // (east, south) on the ground: pillars, a ball and a floating plank.
+        const glm::vec2 pillars[] = {{-3, -2}, {0, -5}, {3, -8}, {-2, -12}};
+        for (const glm::vec2& p : pillars)
+            out.push_back(
+                {cube_, stand(p, 1.25f, {0.6f, 2.5f, 0.6f}), glm::vec4(0.75f, 0.45f, 0.3f, 1)});
+        out.push_back({sphere_, stand({1.5f, 0.0f}, 0.5f), glm::vec4(0.3f, 0.5f, 0.8f, 1)});
+        out.push_back({cube_, stand({-1.0f, -3.0f}, 1.5f, {2.5f, 0.1f, 0.8f}),
+                       glm::vec4(0.4f, 0.7f, 0.4f, 1)});
+        return relative(out, origin);
+    }
+    render::Camera camera(float aspect) const override {
+        const glm::vec3 ground = up() * kRadius;
+        const glm::vec3 eye = ground + up() * 2.5f + south() * 7.0f;
+        render::Camera c;
+        c.origin = glm::dvec3(eye);
+        c.view = glm::lookAt(glm::vec3(0.0f), ground - south() * 6.0f - eye, up());
+        c.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, 300.0f);
+        return c;
+    }
+    render::Light light(const glm::dvec3&) const override {
+        // The sun 35 degrees above the local horizon, from the east and a little south.
+        const float elevation = glm::radians(35.0f);
+        const glm::vec3 to_sun = glm::normalize(
+            std::cos(elevation) * (0.8f * east() + 0.6f * south()) + std::sin(elevation) * up());
+        render::Light l;
+        l.direction = -to_sun;
+        l.up = up();
+        return l;
+    }
+    glm::vec4 sky() const override { return {0.35f, 0.45f, 0.6f, 1.0f}; }
+
+private:
+    static constexpr float kRadius = 60.0f;
+    // The camera's local frame: up, and east and south along the ground.
+    static glm::vec3 up() {
+        const float a = glm::radians(50.0f);
+        return {std::sin(a), std::cos(a), 0.0f};
+    }
+    static glm::vec3 south() { return {0.0f, 0.0f, 1.0f}; }
+    static glm::vec3 east() { return glm::cross(up(), south()); }
+
+    // An object standing on the ground at (east, south) metres from the camera's spot, its
+    // centre `height` above the ground, upright along the up there.
+    static glm::mat4 stand(glm::vec2 at_ground, float height, glm::vec3 scale = glm::vec3(1.0f)) {
+        const glm::vec3 local_up =
+            glm::normalize(up() * kRadius + east() * at_ground.x + south() * at_ground.y);
+        const glm::vec3 local_east = glm::normalize(glm::cross(local_up, south()));
+        const glm::vec3 local_south = glm::cross(local_east, local_up);
+        glm::mat4 m(1.0f);
+        m[0] = glm::vec4(local_east * scale.x, 0.0f);
+        m[1] = glm::vec4(local_up * scale.y, 0.0f);
+        m[2] = glm::vec4(local_south * scale.z, 0.0f);
+        m[3] = glm::vec4(local_up * (kRadius + height), 1.0f);
+        return m;
+    }
+
+    render::MeshId cube_ = 0, sphere_ = 0, planet_ = 0;
+};
+
 }  // namespace
 
 std::vector<std::string> names() {
-    return {"materials", "textures", "compressed", "lights"};
+    return {"materials", "textures", "compressed", "lights", "shadows", "shadows_curved"};
 }
 
 std::unique_ptr<TestScene> make(const std::string& name) {
@@ -234,6 +342,8 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "textures") return std::make_unique<Textures>();
     if (name == "compressed") return std::make_unique<Textures>(true);
     if (name == "lights") return std::make_unique<Lights>();
+    if (name == "shadows") return std::make_unique<Shadows>();
+    if (name == "shadows_curved") return std::make_unique<ShadowsCurved>();
     return nullptr;
 }
 

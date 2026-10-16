@@ -2,6 +2,7 @@
 // The per-frame data every scene shader sees (FrameData in renderer.cpp, which must match).
 
 const int kMaxLocalLights = 8;
+const int kMaxCascades = 4;
 
 struct LocalLight {
     vec4 position_range;   // xyz relative to the camera, w: range (metres)
@@ -19,4 +20,9 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 ambient_ground;  // linear rgb: ambient light from below
     ivec4 counts;         // x: local lights
     LocalLight lights[kMaxLocalLights];
+    mat4 shadow_matrices[kMaxCascades];  // camera-relative position to each cascade's map
+    vec4 shadow_splits;   // the view depth where each cascade ends
+    vec4 shadow_texels;   // metres per texel of each cascade
+    vec4 view_depth;      // a position's view depth: dot(xyz, position) + w
+    vec4 shadow_params;   // x: cascades (0: no shadows), y: shadow distance, z: 1 / resolution
 } frame;

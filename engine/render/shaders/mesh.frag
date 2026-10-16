@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // glTF metal/roughness materials: GGX specular with Smith visibility and Schlick Fresnel, and
-// Lambert diffuse, for the sun and up to 8 point or spot lights (glTF KHR_lights_punctual
-// falloff), plus hemisphere ambient light between the sky and the ground along "up".
+// Lambert diffuse, for the sun (with cascaded shadows) and up to 8 point or spot lights (glTF
+// KHR_lights_punctual falloff), plus hemisphere ambient light between the sky and the ground
+// along "up".
 // Brightness: a light of intensity 1 head-on lights a white matte surface to 1, so plain
 // colours look as picked; that's pi times the physical radiance.
 #version 450
@@ -21,6 +22,7 @@ layout(set = 1, binding = 1) uniform sampler2D metallic_roughness_map;  // G rou
 layout(set = 1, binding = 2) uniform sampler2D normal_map;              // tangent space
 layout(set = 1, binding = 3) uniform sampler2D occlusion_map;           // R
 layout(set = 1, binding = 4) uniform sampler2D emissive_map;            // sRGB
+layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadow_map;   // a layer per cascade
 
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
@@ -67,6 +69,31 @@ vec3 hemisphere(vec3 direction) {
                clamp(dot(direction, frame.up.xyz) * 0.5 + 0.5, 0.0, 1.0));
 }
 
+// How much sunlight reaches a point (0 in shadow, 1 lit): its cascade's map, 3 x 3 filtered
+// lookups. The lookup moves off the surface along its normal by a texel and a half, more where
+// the sun grazes it, so surfaces don't shadow themselves (acne). Shadows fade out over the last
+// tenth of the shadow distance.
+float sun_shadow(vec3 position, vec3 normal, vec3 to_sun) {
+    const int count = int(frame.shadow_params.x);
+    if (count == 0) return 1.0;
+    const float depth = dot(frame.view_depth.xyz, position) + frame.view_depth.w;
+    const float distance = frame.shadow_params.y;
+    if (depth >= distance) return 1.0;
+    int c = 0;
+    while (c < count - 1 && depth > frame.shadow_splits[c]) ++c;
+    const float grazing = 1.0 - clamp(dot(normal, to_sun), 0.0, 1.0);
+    const vec3 p = position + normal * frame.shadow_texels[c] * (1.5 + 2.0 * grazing);
+    const vec4 s = frame.shadow_matrices[c] * vec4(p, 1.0);
+    const vec2 uv = s.xy * 0.5 + 0.5;
+    const float step = frame.shadow_params.z;
+    float lit = 0.0;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x)
+            lit += texture(shadow_map, vec4(uv + vec2(x, y) * step, float(c), s.z));
+    lit /= 9.0;
+    return mix(lit, 1.0, smoothstep(0.9 * distance, distance, depth));
+}
+
 // Karis's analytic fit of the split-sum environment BRDF (Unreal Engine 4, mobile).
 vec3 environment_brdf(vec3 f0, float roughness, float n_dot_v) {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
@@ -86,6 +113,7 @@ void main() {
 
     // The normal, bent by the normal map where the mesh has tangents.
     vec3 n = normalize(v_normal);
+    const vec3 surface = gl_FrontFacing ? n : -n;  // the geometry's own, for shadow lookups
     if (dot(v_tangent.xyz, v_tangent.xyz) > 1e-8) {
         const vec3 t = normalize(v_tangent.xyz - n * dot(n, v_tangent.xyz));
         const vec3 b = cross(n, t) * v_tangent.w;
@@ -99,8 +127,9 @@ void main() {
     const vec3 albedo = base.rgb;
     const vec3 f0 = mix(vec3(0.04), albedo, metallic);
 
-    vec3 color = shade(n, v, -normalize(frame.sun_direction.xyz), frame.sun_color.rgb, albedo, f0,
-                       metallic, alpha);
+    const vec3 to_sun = -normalize(frame.sun_direction.xyz);
+    vec3 color = shade(n, v, to_sun, frame.sun_color.rgb, albedo, f0, metallic, alpha) *
+                 sun_shadow(v_position, surface, to_sun);
     for (int i = 0; i < min(frame.counts.x, kMaxLocalLights); ++i) {
         const LocalLight light = frame.lights[i];
         const vec3 to_light = light.position_range.xyz - v_position;

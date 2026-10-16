@@ -49,7 +49,8 @@ set(SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
 file(MAKE_DIRECTORY "${SHADER_OUT}")
 set(SHADER_HEADERS)
 # Each shader becomes a header with a C array named after it (mesh.vert -> mesh_vert).
-foreach(shader mesh.vert mesh.frag overlay.vert overlay.frag fullscreen.vert tonemap.frag)
+foreach(shader mesh.vert mesh.frag shadow.vert overlay.vert overlay.frag fullscreen.vert
+        tonemap.frag)
     string(REPLACE "." "_" name "${shader}")
     set(src "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/${shader}")
     set(out "${SHADER_OUT}/${name}.h")
@@ -68,6 +69,7 @@ add_library(midgard_render STATIC
     render/src/overlay.cpp
     render/src/mesh_data.cpp
     render/src/ktx.cpp
+    render/src/shadows.cpp
     render/src/third_party_impl.cpp
 )
 add_dependencies(midgard_render midgard_shaders)
@@ -293,6 +295,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_det.cpp
         tests/test_shape.cpp
         tests/test_ktx.cpp
+        tests/test_shadows.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest

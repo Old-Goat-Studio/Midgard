@@ -17,6 +17,7 @@
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/render/overlay.h"
+#include "midgard/render/shadows.h"
 
 struct VkInstance_T;
 struct VkSurfaceKHR_T;
@@ -62,15 +63,15 @@ struct LocalLight {
     float outer_angle = 30.0f;               // and none outside
 };
 
-// The lighting for a frame: the sun, ambient light from above and below along "up", and the
-// local lights nearest the camera (the first kMaxLocalLights are used).
+// The lighting for a frame: the sun (which casts shadows), ambient light from above and below
+// along "up", and the local lights nearest the camera (the first kMaxLocalLights are used).
 struct Light {
     glm::vec3 direction{-0.4f, -1.0f, -0.6f};  // the direction sunlight travels
     glm::vec3 color{1.0f, 0.97f, 0.9f};        // sRGB
     float intensity = 1.0f;
     glm::vec3 ambient{0.18f, 0.2f, 0.26f};          // sRGB, from the sky
     glm::vec3 ambient_ground{0.11f, 0.12f, 0.16f};  // sRGB, from below
-    glm::vec3 up{0.0f, 1.0f, 0.0f};                 // "up" at the camera (the world's shape)
+    glm::vec3 up{0.0f, 1.0f, 0.0f};  // "up" at the camera (the world's shape); shadows use it
     std::vector<LocalLight> local;
 };
 
@@ -109,6 +110,8 @@ struct RendererDesc {
     // Use the Khronos validation layer (and fail to start if it isn't installed); its messages
     // are kept in validation_messages().
     bool validation = false;
+    // The sun's cascaded shadow maps (cascades = 0: no shadows).
+    ShadowSettings shadows;
 };
 
 class Renderer {

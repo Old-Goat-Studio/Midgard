@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Vulkan 1.1 renderer with classic render passes (Android 10 devices support 1.1).
 //
-// A frame: the scene pass draws into a floating-point HDR image (with depth), then the post pass
-// tone maps it onto the output (the swapchain image, or the offscreen image) and draws the
-// debug overlay on top.
+// A frame: the shadow pass draws the sun's cascaded shadow maps (one layer each), the scene pass
+// draws into a floating-point HDR image (with depth), then the post pass tone maps it onto the
+// output (the swapchain image, or the offscreen image) and draws the debug overlay on top.
 #include "midgard/render/renderer.h"
 
 #include "midgard/render/ktx.h"
@@ -26,6 +26,7 @@
 #include "mesh_vert.h"
 #include "overlay_frag.h"
 #include "overlay_vert.h"
+#include "shadow_vert.h"
 #include "tonemap_frag.h"
 
 namespace midgard::render {
@@ -54,6 +55,11 @@ struct FrameData {
     glm::vec4 ambient_ground;
     glm::ivec4 counts;
     GpuLocalLight lights[kMaxLocalLights];
+    glm::mat4 shadow_matrices[kMaxCascades];
+    glm::vec4 shadow_splits;  // the view depth where each cascade ends
+    glm::vec4 shadow_texels;  // metres per texel of each cascade
+    glm::vec4 view_depth;     // depth = dot(xyz, position) + w
+    glm::vec4 shadow_params;  // x: cascades (0: no shadows), y: shadow distance, z: 1 / resolution
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -95,6 +101,8 @@ struct GpuMesh {
     Buffer vertices;
     Buffer indices;
     uint32_t index_count = 0;
+    glm::vec3 center{0.0f};  // a bounding sphere, in the mesh's own space
+    float radius = 0.0f;
 };
 
 struct GpuTexture {
@@ -181,6 +189,19 @@ struct Renderer::Impl {
     bool anisotropy = false;
     float max_anisotropy = 1.0f;
     GpuFormat texture_format = GpuFormat::RGBA8;  // what KTX2 textures are transcoded to
+
+    // The sun's shadow maps: one depth image with a layer per cascade (a 1 x 1 layer when
+    // shadows are off, so the scene shader always has one to read).
+    ShadowSettings shadow_settings;
+    bool depth_clamp = false;  // casters nearer the sun than a cascade's near plane still cast
+    VkFormat shadow_format = VK_FORMAT_UNDEFINED;
+    Image shadow_map;  // its view covers every layer
+    std::vector<VkImageView> shadow_layer_views;
+    std::vector<VkFramebuffer> shadow_framebuffers;
+    VkRenderPass shadow_pass = VK_NULL_HANDLE;
+    VkSampler shadow_sampler = VK_NULL_HANDLE;
+    VkPipelineLayout shadow_layout = VK_NULL_HANDLE;
+    VkPipeline shadow_pipeline = VK_NULL_HANDLE;
 
     // ---- setup -------------------------------------------------------------------------
     void create_instance(const RendererDesc& desc) {
@@ -302,6 +323,8 @@ struct Renderer::Impl {
         VkPhysicalDeviceFeatures features{};
         anisotropy = supported.samplerAnisotropy == VK_TRUE;
         features.samplerAnisotropy = supported.samplerAnisotropy;
+        depth_clamp = supported.depthClamp == VK_TRUE;
+        features.depthClamp = supported.depthClamp;
         // Compressed textures: the first family the GPU reads (sRGB and linear, sampled).
         const auto readable = [&](VkFormat srgb_format, VkFormat unorm_format) {
             for (VkFormat f : {srgb_format, unorm_format}) {
@@ -643,14 +666,19 @@ struct Renderer::Impl {
     }
 
     void create_pipeline() {
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        // Set 0: the frame's data, and the shadow map.
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[1].binding = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo linfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        linfo.bindingCount = 1;
-        linfo.pBindings = &binding;
+        linfo.bindingCount = static_cast<uint32_t>(bindings.size());
+        linfo.pBindings = bindings.data();
         check(vkCreateDescriptorSetLayout(device, &linfo, nullptr, &set_layout),
               "Creating the descriptor set layout");
 
@@ -938,6 +966,257 @@ struct Renderer::Impl {
         check(result, "Creating the post pipeline");
     }
 
+    // ---- shadows ---------------------------------------------------------------------------
+    int shadow_cascades() const { return std::clamp(shadow_settings.cascades, 0, kMaxCascades); }
+
+    // A depth format to draw shadows into and compare against, filtered where the GPU can
+    // (smoother edges from each lookup).
+    VkFormat pick_shadow_format(bool& linear) const {
+        constexpr VkFormatFeatureFlags needed =
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+        for (bool want_linear : {true, false})
+            for (VkFormat f : {VK_FORMAT_D16_UNORM, VK_FORMAT_D32_SFLOAT}) {
+                VkFormatProperties props;
+                vkGetPhysicalDeviceFormatProperties(gpu, f, &props);
+                const VkFormatFeatureFlags has = props.optimalTilingFeatures;
+                if ((has & needed) != needed) continue;
+                linear = (has & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+                if (linear || !want_linear) return f;
+            }
+        throw RenderError("No depth format can hold shadow maps");
+    }
+
+    void create_shadows() {
+        bool linear = false;
+        shadow_format = pick_shadow_format(linear);
+        const int cascades = shadow_cascades();
+        const uint32_t size = cascades > 0 ? std::max(shadow_settings.resolution, 4u) : 1;
+        const auto layers = static_cast<uint32_t>(std::max(cascades, 1));
+
+        VkImageCreateInfo iinfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        iinfo.imageType = VK_IMAGE_TYPE_2D;
+        iinfo.format = shadow_format;
+        iinfo.extent = {size, size, 1};
+        iinfo.mipLevels = 1;
+        iinfo.arrayLayers = layers;
+        iinfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        iinfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        iinfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        VmaAllocationCreateInfo ainfo{};
+        ainfo.usage = VMA_MEMORY_USAGE_AUTO;
+        check(vmaCreateImage(allocator, &iinfo, &ainfo, &shadow_map.image, &shadow_map.allocation,
+                             nullptr),
+              "Creating the shadow map");
+        const auto view_of = [&](VkImageViewType type, uint32_t first, uint32_t count) {
+            VkImageViewCreateInfo vinfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+            vinfo.image = shadow_map.image;
+            vinfo.viewType = type;
+            vinfo.format = shadow_format;
+            vinfo.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, first, count};
+            VkImageView view;
+            check(vkCreateImageView(device, &vinfo, nullptr, &view), "Creating a shadow view");
+            return view;
+        };
+        shadow_map.view = view_of(VK_IMAGE_VIEW_TYPE_2D_ARRAY, 0, layers);
+
+        // Lookups compare depths (the GPU filters the results where it can); outside the map
+        // is lit.
+        VkSamplerCreateInfo sinfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        sinfo.magFilter = sinfo.minFilter = linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+        sinfo.addressModeU = sinfo.addressModeV = sinfo.addressModeW =
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        sinfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        sinfo.compareEnable = VK_TRUE;
+        sinfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        check(vkCreateSampler(device, &sinfo, nullptr, &shadow_sampler),
+              "Creating the shadow sampler");
+
+        if (cascades == 0) {  // never drawn: put it in the layout the scene shader reads once
+            immediate([&](VkCommandBuffer cmd) {
+                VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+                b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                b.image = shadow_map.image;
+                b.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, layers};
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                                     nullptr, 1, &b);
+            });
+            return;
+        }
+
+        // The pass: depth only, cleared, then read by the scene pass. It waits for the previous
+        // frame's scene pass to finish reading the map, and the scene pass waits for it.
+        VkAttachmentDescription attachment{};
+        attachment.format = shadow_format;
+        attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkAttachmentReference depth_ref{0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.pDepthStencilAttachment = &depth_ref;
+        std::array<VkSubpassDependency, 2> deps{};
+        deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        deps[0].dstSubpass = 0;
+        deps[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        deps[0].dstStageMask =
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        deps[0].srcAccessMask = 0;
+        deps[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        deps[1].srcSubpass = 0;
+        deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+        deps[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        deps[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        deps[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        deps[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        VkRenderPassCreateInfo pinfo{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+        pinfo.attachmentCount = 1;
+        pinfo.pAttachments = &attachment;
+        pinfo.subpassCount = 1;
+        pinfo.pSubpasses = &subpass;
+        pinfo.dependencyCount = static_cast<uint32_t>(deps.size());
+        pinfo.pDependencies = deps.data();
+        check(vkCreateRenderPass(device, &pinfo, nullptr, &shadow_pass),
+              "Creating the shadow pass");
+
+        for (uint32_t layer = 0; layer < layers; ++layer) {
+            shadow_layer_views.push_back(view_of(VK_IMAGE_VIEW_TYPE_2D, layer, 1));
+            VkFramebufferCreateInfo finfo{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            finfo.renderPass = shadow_pass;
+            finfo.attachmentCount = 1;
+            finfo.pAttachments = &shadow_layer_views.back();
+            finfo.width = finfo.height = size;
+            finfo.layers = 1;
+            VkFramebuffer fb;
+            check(vkCreateFramebuffer(device, &finfo, nullptr, &fb),
+                  "Creating a shadow framebuffer");
+            shadow_framebuffers.push_back(fb);
+        }
+        create_shadow_pipeline();
+    }
+
+    // Depth only: positions through each cascade's matrix (one push constant per draw), both
+    // faces (thin and open meshes cast too), with a slope-scaled bias against shadow acne.
+    void create_shadow_pipeline() {
+        VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4)};
+        VkPipelineLayoutCreateInfo plinfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        plinfo.pushConstantRangeCount = 1;
+        plinfo.pPushConstantRanges = &push;
+        check(vkCreatePipelineLayout(device, &plinfo, nullptr, &shadow_layout),
+              "Creating the shadow pipeline layout");
+
+        VkShaderModule vert = shader(shadow_vert, sizeof(shadow_vert));
+        VkPipelineShaderStageCreateInfo stage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        stage.module = vert;
+        stage.pName = "main";
+        VkVertexInputBindingDescription vbind{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+        VkVertexInputAttributeDescription attr{0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                               offsetof(Vertex, position)};
+        VkPipelineVertexInputStateCreateInfo vinput{
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        vinput.vertexBindingDescriptionCount = 1;
+        vinput.pVertexBindingDescriptions = &vbind;
+        vinput.vertexAttributeDescriptionCount = 1;
+        vinput.pVertexAttributeDescriptions = &attr;
+        VkPipelineInputAssemblyStateCreateInfo assembly{
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkPipelineViewportStateCreateInfo viewport{
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        viewport.viewportCount = 1;
+        viewport.scissorCount = 1;
+        VkPipelineRasterizationStateCreateInfo raster{
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        raster.depthClampEnable = depth_clamp ? VK_TRUE : VK_FALSE;
+        raster.polygonMode = VK_POLYGON_MODE_FILL;
+        raster.cullMode = VK_CULL_MODE_NONE;
+        raster.depthBiasEnable = VK_TRUE;
+        raster.depthBiasConstantFactor = 2.0f;
+        raster.depthBiasSlopeFactor = 2.0f;
+        raster.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo multisample{
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineDepthStencilStateCreateInfo depth_state{
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        depth_state.depthTestEnable = VK_TRUE;
+        depth_state.depthWriteEnable = VK_TRUE;
+        depth_state.depthCompareOp = VK_COMPARE_OP_LESS;
+        VkPipelineColorBlendStateCreateInfo blend{
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        std::array<VkDynamicState, 2> dyn{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo dynamic{
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+        dynamic.dynamicStateCount = static_cast<uint32_t>(dyn.size());
+        dynamic.pDynamicStates = dyn.data();
+
+        VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        info.stageCount = 1;
+        info.pStages = &stage;
+        info.pVertexInputState = &vinput;
+        info.pInputAssemblyState = &assembly;
+        info.pViewportState = &viewport;
+        info.pRasterizationState = &raster;
+        info.pMultisampleState = &multisample;
+        info.pDepthStencilState = &depth_state;
+        info.pColorBlendState = &blend;
+        info.pDynamicState = &dynamic;
+        info.layout = shadow_layout;
+        info.renderPass = shadow_pass;
+        const VkResult result =
+            vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &shadow_pipeline);
+        vkDestroyShaderModule(device, vert, nullptr);
+        check(result, "Creating the shadow pipeline");
+    }
+
+    // Each cascade's map: every draw whose bounding sphere can cast into it.
+    void record_shadows(VkCommandBuffer cmd, const std::span<const DrawItem> draws,
+                        const ShadowCascades& cascades) {
+        const uint32_t size = shadow_settings.resolution;
+        for (int c = 0; c < cascades.count; ++c) {
+            VkClearValue clear{};
+            clear.depthStencil = {1.0f, 0};
+            VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+            rp.renderPass = shadow_pass;
+            rp.framebuffer = shadow_framebuffers[size_t(c)];
+            rp.renderArea = {{0, 0}, {size, size}};
+            rp.clearValueCount = 1;
+            rp.pClearValues = &clear;
+            vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
+            VkViewport vp{0, 0, float(size), float(size), 0.0f, 1.0f};
+            VkRect2D scissor{{0, 0}, {size, size}};
+            vkCmdSetViewport(cmd, 0, 1, &vp);
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline);
+            for (const DrawItem& d : draws) {
+                if (d.mesh >= meshes.size()) continue;
+                const GpuMesh& m = meshes[d.mesh];
+                const glm::vec3 center(d.model * glm::vec4(m.center, 1.0f));
+                const float scale = std::max({glm::length(glm::vec3(d.model[0])),
+                                              glm::length(glm::vec3(d.model[1])),
+                                              glm::length(glm::vec3(d.model[2]))});
+                if (!casts_into(cascades, c, center, m.radius * scale)) continue;
+                const glm::mat4 mvp = cascades.view_proj[size_t(c)] * d.model;
+                vkCmdPushConstants(cmd, shadow_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mvp),
+                                   &mvp);
+                VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
+                vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+            }
+            vkCmdEndRenderPass(cmd);
+        }
+    }
+
     // Lays out the overlay for this frame into the frame's own vertex buffer.
     void prepare_overlay(Frame& f) {
         f.overlay_vertices = 0;
@@ -956,16 +1235,18 @@ struct Renderer::Impl {
         f.overlay_vertices = static_cast<uint32_t>(vertices.size());
     }
 
-    void create_frames() {
+    void create_command_pool() {
         VkCommandPoolCreateInfo cinfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
         cinfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         cinfo.queueFamilyIndex = queue_family;
         check(vkCreateCommandPool(device, &cinfo, nullptr, &command_pool),
               "Creating the command pool");
+    }
 
+    void create_frames() {
         const std::array<VkDescriptorPoolSize, 2> sizes{{
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFramesInFlight},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 + kFramesInFlight},
         }};
         VkDescriptorPoolCreateInfo pinfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         pinfo.maxSets = kFramesInFlight + 1;
@@ -1001,13 +1282,23 @@ struct Renderer::Impl {
             dinfo.pSetLayouts = &set_layout;
             check(vkAllocateDescriptorSets(device, &dinfo, &f.set), "Allocating a descriptor set");
             VkDescriptorBufferInfo binfo{f.ubo.buffer, 0, sizeof(FrameData)};
-            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-            write.dstSet = f.set;
-            write.dstBinding = 0;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            write.pBufferInfo = &binfo;
-            vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+            VkDescriptorImageInfo shadow{shadow_sampler, shadow_map.view,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            std::array<VkWriteDescriptorSet, 2> writes{};
+            writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            writes[0].dstSet = f.set;
+            writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[0].pBufferInfo = &binfo;
+            writes[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            writes[1].dstSet = f.set;
+            writes[1].dstBinding = 1;
+            writes[1].descriptorCount = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[1].pImageInfo = &shadow;
+            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0,
+                                   nullptr);
         }
     }
 
@@ -1207,10 +1498,12 @@ struct Renderer::Impl {
 
     // ---- drawing -----------------------------------------------------------------------
     void record(VkCommandBuffer cmd, VkFramebuffer fb, const std::span<const DrawItem> draws,
-                const glm::vec4& clear_color, VkDescriptorSet set, const Frame& frame) {
+                const glm::vec4& clear_color, VkDescriptorSet set, const Frame& frame,
+                const ShadowCascades& cascades) {
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         check(vkBeginCommandBuffer(cmd, &begin), "Beginning a command buffer");
+        record_shadows(cmd, draws, cascades);
         std::array<VkClearValue, 2> clears{};
         const glm::vec4 clear = to_linear(clear_color);
         clears[0].color = {{clear.r, clear.g, clear.b, clear.a}};
@@ -1315,6 +1608,13 @@ struct Renderer::Impl {
             if (descriptor_pool) vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
             if (command_pool) vkDestroyCommandPool(device, command_pool, nullptr);
             if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
+            if (shadow_pipeline) vkDestroyPipeline(device, shadow_pipeline, nullptr);
+            if (shadow_layout) vkDestroyPipelineLayout(device, shadow_layout, nullptr);
+            for (VkFramebuffer fb : shadow_framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
+            for (VkImageView v : shadow_layer_views) vkDestroyImageView(device, v, nullptr);
+            destroy_image(shadow_map);
+            if (shadow_sampler) vkDestroySampler(device, shadow_sampler, nullptr);
+            if (shadow_pass) vkDestroyRenderPass(device, shadow_pass, nullptr);
             if (overlay_pipeline) vkDestroyPipeline(device, overlay_pipeline, nullptr);
             if (overlay_layout) vkDestroyPipelineLayout(device, overlay_layout, nullptr);
             if (post_pipeline) vkDestroyPipeline(device, post_pipeline, nullptr);
@@ -1338,6 +1638,7 @@ Renderer::Renderer(const RendererDesc& desc) : impl_(std::make_unique<Impl>()) {
     Impl& r = *impl_;
     r.offscreen = desc.offscreen;
     r.extent = {desc.width, desc.height};
+    r.shadow_settings = desc.shadows;
     r.create_instance(desc);
     if (!r.offscreen) {
         if (!desc.create_surface) throw RenderError("A window target needs create_surface");
@@ -1359,6 +1660,8 @@ Renderer::Renderer(const RendererDesc& desc) : impl_(std::make_unique<Impl>()) {
     r.create_pipeline();
     r.create_overlay_pipeline();
     r.create_post_pipeline();
+    r.create_command_pool();
+    r.create_shadows();  // before the frames: their descriptor sets point at the shadow map
     r.create_frames();
     r.create_material_system();
 }
@@ -1410,6 +1713,22 @@ void Renderer::replace_mesh(MeshId id, const MeshData& mesh) {
     vmaFlushAllocation(r.allocator, gpu.vertices.allocation, 0, VK_WHOLE_SIZE);
     vmaFlushAllocation(r.allocator, gpu.indices.allocation, 0, VK_WHOLE_SIZE);
     gpu.index_count = static_cast<uint32_t>(mesh.indices.size());
+    // A bounding sphere around the box of its vertices (shadow casters are culled with it).
+    if (!mesh.vertices.empty()) {
+        glm::vec3 lo(mesh.vertices[0].position[0], mesh.vertices[0].position[1],
+                     mesh.vertices[0].position[2]);
+        glm::vec3 hi = lo;
+        for (const Vertex& v : mesh.vertices) {
+            const glm::vec3 p(v.position[0], v.position[1], v.position[2]);
+            lo = glm::min(lo, p);
+            hi = glm::max(hi, p);
+        }
+        gpu.center = (lo + hi) * 0.5f;
+        for (const Vertex& v : mesh.vertices)
+            gpu.radius = std::max(
+                gpu.radius,
+                glm::length(glm::vec3(v.position[0], v.position[1], v.position[2]) - gpu.center));
+    }
     r.meshes[id] = gpu;
 }
 
@@ -1453,12 +1772,27 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         g.direction = glm::vec4(glm::normalize(l.direction), std::cos(outer));
         g.cone = glm::vec4(std::cos(glm::radians(l.inner_angle)), 0.0f, 0.0f, 0.0f);
     }
+    // The sun's shadows: cascades fitted to this camera in the local "up" frame.
+    const ShadowCascades cascades = fit_cascades(camera.view, camera.projection, camera.origin,
+                                                 light.direction, light.up, r.shadow_settings);
+    for (int c = 0; c < cascades.count; ++c) {
+        data.shadow_matrices[c] = cascades.view_proj[size_t(c)];
+        data.shadow_splits[c] = cascades.far_depth[size_t(c)];
+        data.shadow_texels[c] = cascades.texel_size[size_t(c)];
+    }
+    data.view_depth =
+        -glm::vec4(camera.view[0][2], camera.view[1][2], camera.view[2][2], camera.view[3][2]);
+    data.shadow_params =
+        glm::vec4(float(cascades.count), cascades.count > 0 ? cascades.far_depth[0] : 0.0f,
+                  1.0f / float(std::max(r.shadow_settings.resolution, 1u)), 0.0f);
+    if (cascades.count > 0) data.shadow_params.y = cascades.far_depth[size_t(cascades.count - 1)];
     std::memcpy(f.ubo.mapped, &data, sizeof(data));
     vmaFlushAllocation(r.allocator, f.ubo.allocation, 0, VK_WHOLE_SIZE);
 
     r.prepare_overlay(f);
     check(vkResetCommandBuffer(f.cmd, 0), "Resetting a command buffer");
-    r.record(f.cmd, r.framebuffers[r.offscreen ? 0 : image], draws, clear_color, f.set, f);
+    r.record(f.cmd, r.framebuffers[r.offscreen ? 0 : image], draws, clear_color, f.set, f,
+             cascades);
 
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};

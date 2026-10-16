@@ -45,6 +45,18 @@
       "args": ["--size", "400x240", "--scene", "lights"]
     },
     {
+      "name": "shadows",
+      "_about": "Sun shadows on flat ground, from 2 to 45 metres away (all four cascades), and a plank's shadow apart from it. Drivers filter shadow edges a little differently, so up to 1% of pixels may differ.",
+      "args": ["--size", "480x270", "--scene", "shadows"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "shadows_curved",
+      "_about": "Sun shadows on a small planet where 'up' leans 50 degrees from y: the cascades are built in the local up frame. The same allowance as shadows.",
+      "args": ["--size", "480x270", "--scene", "shadows_curved"],
+      "max_bad": 0.01
+    },
+    {
       "name": "overlay",
       "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
     }
