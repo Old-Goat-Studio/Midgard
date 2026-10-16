@@ -32,9 +32,13 @@ public:
     void put_entity(const std::string& entity_json);  // {"id", "name", "parent", "components"}
     void remove_entity(const std::string& entity_id);
     void clear();
-    void set_settings(const std::string& settings_json);  // {"sky": [...], "ambient": [...]}
+    // {"sky": [...], "ambient": [...], "body": {...}}; a malformed body is left out.
+    void set_settings(const std::string& settings_json);
     void set_mesh(const std::string& asset, std::span<const uint8_t> glb);
     void set_camera(const glm::vec3& eye, const glm::vec3& target, float fov_degrees);
+    // Outlines of colliders, triggers and the player over the scene (midgard/collider_outlines.h).
+    void set_show_colliders(bool show) { show_colliders_ = show; }
+    bool show_colliders() const { return show_colliders_; }
 
     // ---- the target ----
     // platform: "windows" (handle = HWND) or "xcb" (handle = X11 window id).
@@ -60,6 +64,7 @@ private:
     std::unique_ptr<render::Renderer> renderer_;
     glm::vec3 eye_{4.0f, 3.0f, 6.0f}, target_{0.0f, 0.5f, 0.0f};
     float fov_ = 55.0f;
+    bool show_colliders_ = false;
     struct Platform;
     std::unique_ptr<Platform> platform_;  // per-window-system state (the X11 connection)
 };

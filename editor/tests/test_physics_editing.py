@@ -157,3 +157,22 @@ def test_cylinders_and_wedges_get_a_convex_collider_that_cooks(qtbot, project, t
     if engine.module() is not None:
         cook(project, tmp_path / "pkg")  # the engine builds the convex shape from the mesh
 
+
+def test_the_viewport_toolbar_shows_colliders(qtbot, window, settings):
+    from midgard_editor.main_window import MainWindow
+
+    action = window.viewport.colliders_action
+    view_menu = next(a.menu() for a in window.menuBar().actions() if a.text() == "&View")
+    assert action in window.viewport.toolbar.actions()  # the toolbar's button
+    assert action in view_menu.actions()  # and the View menu's item: the same switch
+    assert not action.isChecked()
+    action.trigger()
+    assert action.isChecked()
+    assert settings.get("show_colliders") is True
+    window.viewport.set_show_colliders(False)  # set from code, the button follows
+    assert not action.isChecked() and settings.get("show_colliders") is False
+
+    window.viewport.set_show_colliders(True)
+    later = MainWindow(settings)  # remembered next time
+    qtbot.addWidget(later)
+    assert later.viewport.colliders_action.isChecked()

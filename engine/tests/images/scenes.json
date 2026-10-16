@@ -81,6 +81,12 @@
       "max_bad": 0.01
     },
     {
+      "name": "colliders",
+      "_about": "Collider outlines (--debug-physics) over the scene: static scenery grey-green, a dynamic crate and ball orange, a kinematic capsule blue, a trigger yellow, a static convex rock grey-green with its faces' diagonals, and the player's capsule cyan. Lines are thin, so drivers draw their pixels a little differently: up to 2% of pixels may differ.",
+      "args": ["--size", "480x270", "--scene", "colliders", "--debug-physics"],
+      "max_bad": 0.02
+    },
+    {
       "name": "overlay",
       "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
     }

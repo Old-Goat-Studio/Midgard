@@ -74,7 +74,8 @@ python tools/images.py run --runtime build/linux-release/engine/midgard_runtime
 build/linux-release/engine/midgard_bench --json bench.json && python tools/budgets.py bench.json
 ```
 
-In a game window, F3 shows the frame rate and timings; `--profile trace.json` records a trace
+In a game window, F3 shows the frame rate and timings and F4 outlines the physics shapes (View ▸
+Show Colliders does the same in the editor's viewport); `--profile trace.json` records a trace
 for [ui.perfetto.dev](https://ui.perfetto.dev). `--quality phone` (or `desktop`) picks the
 renderer's quality tier; phones use the phone tier unless told otherwise, and the self-test times
 frames at the device's tier against 60 frames a second.

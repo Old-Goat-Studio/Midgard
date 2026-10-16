@@ -2,10 +2,12 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -14,6 +16,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/collider_outlines.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
 #include "midgard/pak.h"
@@ -659,4 +662,70 @@ TEST_CASE("on a planet the player stands on its side and the camera stays level 
     const glm::dvec3 up = glm::normalize(p);
     CHECK(glm::dot(cam - p, up) > 0.5);
     CHECK(glm::length(cam) > 1001.0);
+}
+
+TEST_CASE("collider outlines: each shape's lines, coloured by how it moves") {
+    TestPackage pkg({
+        {"e1_box", R"(NULL, '{"transform": {"position": [10, 0, 0]}, "collider": {}}')"},
+        {"e2_ball", R"(NULL, '{"collider": {"shape": "sphere"}, "rigidbody": {}}')"},
+        {"e3_pill", R"(NULL, '{"collider": {"shape": "capsule", "radius": 0.5, "height": 2},
+                      "rigidbody": {"motion": "kinematic"}}')"},
+        {"e4_zone", R"(NULL, '{"trigger": {"size": [2, 2, 2]}}')"},
+        {"e5_rock", R"(NULL, '{"mesh": {"asset": "mesh_cube"}, "collider": {"shape": "convex"}}')"},
+        {"e6_player", R"(NULL, '{"transform": {"position": [0, 0.5, 5]}, "player": {}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    const auto& scene = game.scene();
+    const midgard::render::MeshData cube = midgard::render::make_cube();
+    const auto lines_of = [&](const char* id) {
+        midgard::Scene only;  // the one entity, as the scene has it
+        const entt::entity e = scene.find(id);
+        const entt::entity copy = only.registry.create();
+        only.registry.emplace<midgard::EntityInfo>(copy, id, id, entt::null);
+        only.registry.emplace<midgard::Transform>(copy, scene.registry.get<midgard::Transform>(e));
+        if (auto* c = scene.registry.try_get<midgard::ColliderShape>(e))
+            only.registry.emplace<midgard::ColliderShape>(copy, *c);
+        if (auto* r = scene.registry.try_get<midgard::RigidBody>(e))
+            only.registry.emplace<midgard::RigidBody>(copy, *r);
+        if (auto* t = scene.registry.try_get<midgard::Trigger>(e))
+            only.registry.emplace<midgard::Trigger>(copy, *t);
+        if (auto* p = scene.registry.try_get<midgard::Player>(e))
+            only.registry.emplace<midgard::Player>(copy, *p);
+        if (auto* m = scene.registry.try_get<midgard::MeshRef>(e))
+            only.registry.emplace<midgard::MeshRef>(copy, *m);
+        return midgard::collider_outlines(only, glm::dvec3(10, 0, 0),
+                                          [&](const std::string&) { return &cube; });
+    };
+    const auto box = lines_of("e1_box");
+    REQUIRE(box.size() == 12);   // a box's edges
+    for (const auto& l : box) {  // relative to the origin at x = 10: a 1 m box round 0
+        CHECK(std::abs(l.a.x) <= 0.5f + 1e-5f);
+        CHECK(std::abs(l.b.y) <= 0.5f + 1e-5f);
+    }
+    const auto ball = lines_of("e2_ball");
+    CHECK(ball.size() == 72);  // three circles of 24
+    const auto pill = lines_of("e3_pill");
+    CHECK(pill.size() == 2 * 24 + 4 + 4 * 12);  // two rings, four sides, four half-circles
+    CHECK(lines_of("e4_zone").size() == 12);
+    CHECK(lines_of("e5_rock").size() == 30);  // the cube's edges and face diagonals
+    CHECK(lines_of("e6_player").size() == 2 * 24 + 4 + 4 * 12);  // its capsule
+    // Colours: static, dynamic, kinematic, trigger and player all differ.
+    const std::set<std::array<float, 3>> colours = {
+        {box[0].color.r, box[0].color.g, box[0].color.b},
+        {ball[0].color.r, ball[0].color.g, ball[0].color.b},
+        {pill[0].color.r, pill[0].color.g, pill[0].color.b},
+        {lines_of("e4_zone")[0].color.r, lines_of("e4_zone")[0].color.g,
+         lines_of("e4_zone")[0].color.b},
+        {lines_of("e6_player")[0].color.r, lines_of("e6_player")[0].color.g,
+         lines_of("e6_player")[0].color.b}};
+    CHECK(colours.size() == 5);
+
+    // The whole scene, through the game, capped when asked.
+    CHECK(game.debug_lines(glm::dvec3(0.0)).size() == 12 + 72 + 100 + 12 + 30 + 100);
+    CHECK(midgard::collider_outlines(scene, glm::dvec3(0.0), [](const std::string&) {
+              return static_cast<const midgard::render::MeshData*>(nullptr);
+          }).size() == 12 + 72 + 100 + 12 + 100);  // no mesh, no rock outline
+    CHECK(midgard::collider_outlines(
+              scene, glm::dvec3(0.0), [&](const std::string&) { return &cube; }, 50)
+              .size() == 50);
 }

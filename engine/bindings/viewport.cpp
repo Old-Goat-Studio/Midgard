@@ -16,6 +16,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/body.h"
+#include "midgard/collider_outlines.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
 
@@ -109,6 +111,13 @@ void Viewport::set_settings(const std::string& settings_json) {
     };
     scene_.settings.sky = vec("sky", scene_.settings.sky);
     scene_.settings.ambient = vec("ambient", scene_.settings.ambient);
+    scene_.settings.body.reset();  // the world's shape: "up" for lights and the player's outline
+    if (const auto it = s.find("body"); it != s.end()) {
+        try {
+            scene_.settings.body = body_from_json(*it);
+        } catch (const std::exception&) {  // the World Shape dialog refuses these anyway
+        }
+    }
 }
 
 void Viewport::set_mesh(const std::string& asset, std::span<const uint8_t> glb) {
@@ -219,6 +228,14 @@ bool Viewport::render() {
         if (it == meshes_.end()) continue;
         draws.push_back(scene_.draw_item(e, it->second, camera.origin));
     }
+    renderer_->set_debug_lines(
+        show_colliders_
+            ? collider_outlines(scene_, camera.origin,
+                                [this](const std::string& asset) -> const render::MeshData* {
+                                    const auto it = mesh_data_.find(asset);
+                                    return it == mesh_data_.end() ? nullptr : &it->second;
+                                })
+            : std::vector<render::DebugLine>{});
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
     camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, 2000.0f);
     return renderer_->render_frame(camera, scene_.light(camera.origin), draws,

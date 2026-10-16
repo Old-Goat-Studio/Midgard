@@ -356,6 +356,11 @@ class MainWindow(QMainWindow):
                                                 self.edit_physics_layers)
 
         view = bar.addMenu("&View")
+        # The viewport toolbar's switch, in the menu too.
+        colliders = self.viewport.colliders_action
+        colliders.setChecked(bool(self.settings.get("show_colliders")))
+        colliders.toggled.connect(lambda on: self.settings.set("show_colliders", on))
+        view.addAction(colliders)
         self.themes_menu = view.addMenu("&Themes")
         # Rebuilt each time it opens, so a .qss file added to a Themes folder appears at once.
         self.themes_menu.aboutToShow.connect(self._fill_themes_menu)

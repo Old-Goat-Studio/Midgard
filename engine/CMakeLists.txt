@@ -49,8 +49,8 @@ set(SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
 file(MAKE_DIRECTORY "${SHADER_OUT}")
 set(SHADER_HEADERS)
 # Each shader becomes a header with a C array named after it (mesh.vert -> mesh_vert).
-foreach(shader mesh.vert mesh.frag shadow.vert sky.vert sky.frag overlay.vert overlay.frag
-        fullscreen.vert tonemap.frag)
+foreach(shader mesh.vert mesh.frag shadow.vert sky.vert sky.frag line.vert line.frag
+        overlay.vert overlay.frag fullscreen.vert tonemap.frag)
     string(REPLACE "." "_" name "${shader}")
     set(src "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/${shader}")
     set(out "${SHADER_OUT}/${name}.h")
@@ -122,6 +122,7 @@ add_library(midgard_scene STATIC
     scene/src/third_person.cpp
     scene/src/validate.cpp
     scene/src/scene_physics.cpp
+    scene/src/collider_outlines.cpp
 )
 target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_link_libraries(midgard_scene

@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/collider_outlines.h"
 #include "midgard/gltf.h"
 
 namespace midgard {
@@ -161,6 +162,7 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
     const auto pak_file = package_.root / "game.pak";
     pak_ = std::filesystem::is_regular_file(pak_file) ? std::make_unique<Pak>(pak_file) : nullptr;
     failed_meshes_.erase(asset);
+    outline_meshes_.erase(asset);
     bool used = false;
     for (entt::entity e : scene_.registry.view<const MeshRef>())
         used = used || scene_.registry.get<MeshRef>(e).asset == asset;
@@ -184,6 +186,21 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
         out.push_back(scene_.draw_item(e, it->second, origin));
     }
     return out;
+}
+
+std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const {
+    return collider_outlines(scene_, origin, [this](const std::string& asset) {
+        auto it = outline_meshes_.find(asset);
+        if (it == outline_meshes_.end()) {
+            std::unique_ptr<render::MeshData> data;
+            try {
+                data = std::make_unique<render::MeshData>(load_mesh(asset));
+            } catch (const std::exception&) {  // reported when the scene loaded
+            }
+            it = outline_meshes_.emplace(asset, std::move(data)).first;
+        }
+        return it->second.get();
+    });
 }
 
 render::Camera Game::camera(float aspect) const {

@@ -11,6 +11,8 @@
 //   shadows_curved  sun shadows on a small planet, where "up" leans 50 degrees from y
 //   sky_day    the analytic sky by day, with distance haze over a wide plain
 //   sky_sunset the sun on the horizon: its disc and glow, and low fog lying on the ground
+//   colliders  one of each kind of physics body, a trigger and the player, for
+//              --debug-physics (collider outlines)
 #pragma once
 
 #include <memory>
@@ -33,6 +35,8 @@ public:
     virtual glm::vec4 sky() const = 0;
     // The sky and fog; by default a flat sky (sky()) and no fog.
     virtual render::Environment environment() const { return {}; }
+    // Debug lines (shown with --debug-physics); by default none.
+    virtual std::vector<render::DebugLine> debug_lines(const glm::dvec3&) const { return {}; }
 };
 
 std::unique_ptr<TestScene> make(const std::string& name);  // nullptr for an unknown name

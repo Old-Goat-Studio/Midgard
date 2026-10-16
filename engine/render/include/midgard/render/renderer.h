@@ -77,6 +77,14 @@ struct Light {
     std::vector<LocalLight> local;
 };
 
+// A line drawn into the scene for debugging (collider outlines and the like): its ends relative
+// to the camera's origin, like everything drawn, and its colour (sRGB, unlit). Things in front
+// of it hide it.
+struct DebugLine {
+    glm::vec3 a{0.0f}, b{0.0f};
+    glm::vec4 color{1.0f};
+};
+
 // What to draw: a mesh, its model matrix relative to the camera's origin, and glTF's material
 // factors (multiplied by the material's textures where it has them).
 struct DrawItem {
@@ -149,6 +157,10 @@ public:
 
     // The debug text overlay drawn over every frame from now on (empty: none).
     void set_overlay(std::vector<OverlayLine> lines);
+
+    // Debug lines drawn into every frame from now on (empty: none). Their ends are relative to
+    // the camera's origin, so a moving camera needs them again each frame.
+    void set_debug_lines(std::vector<DebugLine> lines);
 
     // The window's drawable size changed.
     void resize(uint32_t width, uint32_t height);

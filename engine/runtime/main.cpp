@@ -25,7 +25,8 @@
 //                                       starts this way (the self-test APK built in CI).
 //   any of these with --profile trace.json   timed zones, for ui.perfetto.dev or chrome://tracing
 //
-// In a window, F3 (or --debug-overlay) shows the frame rate and timings over the game.
+// In a window, F3 (or --debug-overlay) shows the frame rate and timings over the game, and F4
+// (or --debug-physics, which also works with --screenshot) outlines the physics shapes.
 //
 // --editor-link connects to the editor's live link (play-in-editor): the editor's edits reach the
 // running game, and the game's log and frame rate reach the editor. The game quits when the
@@ -100,6 +101,7 @@ struct Options {
     long frames = -1;       // run until closed
     uint32_t width = 1280, height = 720;
     bool debug_overlay = false;
+    bool debug_physics = false;               // collider outlines (F4)
     std::optional<std::string> overlay_text;  // fixed overlay lines, separated by '|'
     std::optional<std::string> profile;       // where to write the profiling trace
     bool selftest = false;
@@ -116,7 +118,8 @@ int usage() {
     std::puts(
         "usage: midgard_runtime [--version] [--package <dir>] [--frames N] [--size WxH]\n"
         "                       [--screenshot out.png [--overlay-text \"a|b\"]]\n"
-        "                       [--editor-link host:port] [--debug-overlay] [--profile out.json]\n"
+        "                       [--editor-link host:port] [--debug-overlay] [--debug-physics]\n"
+        "                       [--profile out.json]\n"
         "                       [--quality desktop|phone]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
@@ -213,6 +216,8 @@ public:
     virtual std::string title() const { return "Midgard"; }
     // The game's icon (icon.png in its package), for the window and the taskbar.
     virtual std::optional<std::filesystem::path> icon() const { return std::nullopt; }
+    // Collider outlines for debug drawing (F4), relative to the camera's origin.
+    virtual std::vector<render::DebugLine> debug_lines(const glm::dvec3&) const { return {}; }
     // The scene as JSON (entities and their transforms and colours), for tests.
     virtual std::string dump() const { return "{}"; }
     // A message from the editor's live link (entity edits and the like).
@@ -271,6 +276,9 @@ public:
     render::Light light(const glm::dvec3& origin) const override { return scene_->light(origin); }
     glm::vec4 sky() const override { return scene_->sky(); }
     render::Environment environment() const override { return scene_->environment(); }
+    std::vector<render::DebugLine> debug_lines(const glm::dvec3& origin) const override {
+        return scene_->debug_lines(origin);
+    }
 
 private:
     std::unique_ptr<midgard::test_scenes::TestScene> scene_;
@@ -297,6 +305,9 @@ public:
         return game_.scene().light(origin);
     }
     glm::vec4 sky() const override { return {game_.scene().settings.sky, 1.0f}; }
+    std::vector<render::DebugLine> debug_lines(const glm::dvec3& origin) const override {
+        return game_.debug_lines(origin);
+    }
     midgard::InputMap input_map() const override { return game_.input_map(); }
     void update(const midgard::Actions& actions, float dt) override {
         game_.update(actions, dt);
@@ -637,6 +648,7 @@ int run_screenshot(const Options& opt, Source& source) {
     renderer.set_environment(source.environment());
     const render::Camera camera = source.camera(float(opt.width) / float(opt.height));
     const auto draws = source.draws(0.6f, camera.origin);
+    if (opt.debug_physics) renderer.set_debug_lines(source.debug_lines(camera.origin));
     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
     // With MIDGARD_VULKAN_VALIDATION set, anything the validation layer reports fails the run
     // (CI's image tests run this way).
@@ -806,6 +818,7 @@ int run_window(const Options& opt, Source& source) {
         bool background = false;  // Android: the app is not visible and has no surface
         bool paused = false;      // the editor's Pause: drawn, but no gameplay
         bool show_stats = opt.debug_overlay && opt.fixed_overlay.empty();
+        bool show_physics = opt.debug_physics;
         if (!opt.fixed_overlay.empty()) renderer.set_overlay(opt.fixed_overlay);
         long frame = 0;
         long frames_this_second = 0;
@@ -856,6 +869,11 @@ int run_window(const Options& opt, Source& source) {
                             opt.fixed_overlay.empty()) {
                             show_stats = !show_stats;
                             if (!show_stats) renderer.set_overlay({});
+                            consumed = true;
+                        }
+                        if (e.key.scancode == SDL_SCANCODE_F4 && !e.key.repeat &&
+                            opt.fixed_overlay.empty()) {
+                            show_physics = !show_physics;
                             consumed = true;
                         }
                         // Under the editor, its Pause (F6) and Stop (Shift+F5) keys also work
@@ -921,6 +939,8 @@ int run_window(const Options& opt, Source& source) {
             {
                 MIDGARD_PROFILE_SCOPE("render");
                 renderer.set_environment(source.environment());
+                renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
+                                                      : std::vector<render::DebugLine>{});
                 drawn =
                     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
             }
@@ -943,11 +963,12 @@ int run_window(const Options& opt, Source& source) {
                     char timing[96];
                     std::snprintf(timing, sizeof(timing), "%ld fps  %.1f ms  (worst %.1f ms)",
                                   frames_this_second, average * 1000.0, worst_frame * 1000.0);
-                    renderer.set_overlay({{std::string("Midgard ") + midgard::kVersion},
-                                          {timing, {1.0f, 1.0f, 0.6f, 1.0f}},
-                                          {std::to_string(draw_count) + " draws"},
-                                          {renderer.device_name()},
-                                          {"F3 hides this", {0.7f, 0.7f, 0.7f, 1.0f}}});
+                    renderer.set_overlay(
+                        {{std::string("Midgard ") + midgard::kVersion},
+                         {timing, {1.0f, 1.0f, 0.6f, 1.0f}},
+                         {std::to_string(draw_count) + " draws"},
+                         {renderer.device_name()},
+                         {"F3 hides this, F4 outlines physics", {0.7f, 0.7f, 0.7f, 1.0f}}});
                 }
                 frames_this_second = 0;
                 frame_seconds = worst_frame = 0.0;
@@ -1104,6 +1125,8 @@ int main(int argc, char** argv) {
             if (!parse_size(argv[++i], opt.width, opt.height)) return usage();
         } else if (arg == "--debug-overlay") {
             opt.debug_overlay = true;
+        } else if (arg == "--debug-physics") {
+            opt.debug_physics = true;
         } else if (arg == "--overlay-text" && has_value) {
             opt.overlay_text = argv[++i];
         } else if (arg == "--profile" && has_value) {

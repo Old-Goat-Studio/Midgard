@@ -9,6 +9,9 @@ destroys it. Docking, floating or moving the panel to another monitor can replac
 window, so this is what keeps the viewport from drawing into a window that has gone.
 
 Mouse: drag with the left or right button to orbit, the middle button to pan, the wheel to zoom.
+
+The toolbar along its top holds the view's switches (Colliders: the physics shapes' outlines).
+Its actions are the panel's, so menus can share them.
 """
 import json
 import logging
@@ -17,13 +20,14 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 from PySide6.QtGui import (
+    QAction,
     QGuiApplication,
     QMouseEvent,
     QPlatformSurfaceEvent,
     QWheelEvent,
     QWindow,
 )
-from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
+from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
 from .. import engine
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
@@ -129,7 +133,25 @@ class ViewportPanel(QWidget):
         self.message = QLabel()
         self.message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.message.setWordWrap(True)
-        self.stack = QStackedLayout(self)
+
+        # The toolbar, then the view (or a message saying why there isn't one).
+        self.toolbar = QToolBar("Viewport")
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.colliders_action = QAction("Show &Colliders", self)
+        self.colliders_action.setIconText("Colliders")
+        self.colliders_action.setCheckable(True)
+        self.colliders_action.setToolTip(
+            "Outline the physics shapes: static grey-green, dynamic orange, kinematic blue, "
+            "triggers yellow, the player cyan (F4 does the same in the game)")
+        self.colliders_action.toggled.connect(self.set_show_colliders)
+        self.toolbar.addAction(self.colliders_action)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.toolbar)
+        view_area = QWidget()
+        layout.addWidget(view_area, 1)
+        self.stack = QStackedLayout(view_area)
         self.stack.addWidget(self.message)
         self.window: ViewportWindow | None = None
 
@@ -144,13 +166,14 @@ class ViewportPanel(QWidget):
         else:
             self.view = module.Viewport()
             self.window = ViewportWindow(self)
-            container = QWidget.createWindowContainer(self.window, self)
+            container = QWidget.createWindowContainer(self.window, view_area)
             container.setMinimumSize(160, 120)
             container.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
             self.setToolTip("Drag to orbit, middle-drag to pan, wheel to zoom")
             self.stack.addWidget(container)
             self.stack.setCurrentWidget(container)
             self.window.screenChanged.connect(lambda _s: self.window_resized())
+        self.toolbar.setEnabled(self.view is not None)
         self.set_project(None)
 
     def _show_message(self, text: str) -> None:
@@ -164,14 +187,30 @@ class ViewportPanel(QWidget):
             return
         if self.project is not None:
             self.project.entities_changed.disconnect(self._entities_changed)
+            self.project.scene_settings_changed.disconnect(self._settings_changed)
         self.project = project
         if project is not None:
             project.entities_changed.connect(self._entities_changed)
+            project.scene_settings_changed.connect(self._settings_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
                 self.camera = OrbitCamera.looking(camera.transform()["position"],
                                                   [0.0, 0.5, 0.0])
         self._sync_all()
+
+    def set_show_colliders(self, show: bool) -> None:
+        """Outlines of colliders (by how they move), triggers and the player."""
+        if self.colliders_action.isChecked() != show:
+            self.colliders_action.setChecked(show)  # comes back here through toggled
+            return
+        if self.view is not None:
+            self.view.show_colliders = show
+            self.request_render()
+
+    def _settings_changed(self, _scene: str) -> None:
+        if self.project is not None:
+            self.view.set_settings(json.dumps(self.project.scene_settings(MAIN_SCENE)))
+            self.request_render()
 
     def _sync_all(self) -> None:
         self.view.clear()

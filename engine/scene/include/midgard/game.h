@@ -66,6 +66,10 @@ public:
     // What to draw, relative to the camera's origin (camera-relative rendering).
     std::vector<render::DrawItem> draws(const glm::dvec3& origin) const;
 
+    // Outlines of the scene's colliders, triggers and player for debug drawing, relative to the
+    // camera's origin (midgard/collider_outlines.h).
+    std::vector<render::DebugLine> debug_lines(const glm::dvec3& origin) const;
+
     // The scene's camera, or a default view of the origin if it has none.
     render::Camera camera(float aspect) const;
 
@@ -95,6 +99,8 @@ private:
     std::unique_ptr<ScenePhysics> physics_;
     std::unordered_map<std::string, render::MeshId> meshes_;
     std::unordered_set<std::string> failed_meshes_;
+    // Meshes read for collider outlines (once each; nullptr: couldn't be read).
+    mutable std::unordered_map<std::string, std::unique_ptr<render::MeshData>> outline_meshes_;
     std::unordered_set<entt::entity> inside_;  // triggers the player is in
     std::vector<TriggerEvent> trigger_events_;
 };

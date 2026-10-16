@@ -5,11 +5,16 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <nlohmann/json.hpp>
+
+#include "midgard/collider_outlines.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
+#include "midgard/scene.h"
 
 namespace midgard::test_scenes {
 
@@ -401,11 +406,61 @@ private:
     render::MeshId cube_ = 0, sphere_ = 0;
 };
 
+// Collider outlines (drawn with --debug-physics): a scene built from components like a game's,
+// with one of each kind of body, a trigger and the player.
+class Colliders : public TestScene {
+public:
+    Colliders() {
+        const auto put = [&](const char* id, const char* json) {
+            scene_.put_entity(id, id, "", nlohmann::json::parse(json));
+        };
+        put("e1_ground", R"({"transform": {"position": [0, -0.1, 0], "scale": [12, 0.2, 8]},
+            "mesh": {"asset": "cube"}, "collider": {}})");
+        put("e2_crate", R"({"transform": {"position": [-3, 0.5, 0], "rotation": [0, 25, 0]},
+            "mesh": {"asset": "cube"}, "collider": {}, "rigidbody": {}})");
+        put("e3_ball", R"({"transform": {"position": [-1.2, 0.5, 1]}, "mesh": {"asset": "sphere"},
+            "collider": {"shape": "sphere"}, "rigidbody": {}})");
+        put("e4_lift", R"({"transform": {"position": [1, 0.6, -1]}, "collider":
+            {"shape": "capsule", "radius": 0.4, "height": 1.2}, "rigidbody": {"motion": "kinematic"}})");
+        put("e5_zone",
+            R"({"transform": {"position": [3.2, 1, 0]}, "trigger": {"size": [1.6, 2, 1.6]}})");
+        put("e6_rock", R"({"transform": {"position": [-0.6, 0.5, -2], "rotation": [20, 40, 10]},
+            "mesh": {"asset": "cube"}, "collider": {"shape": "convex"}})");
+        put("e7_player", R"({"transform": {"position": [1.2, 0.5, 1.6]}, "player": {}})");
+    }
+    void upload(render::Renderer& r) override {
+        meshes_["cube"] = r.upload_mesh(cube_);
+        meshes_["sphere"] = r.upload_mesh(render::make_sphere());
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        std::vector<DrawItem> out;
+        for (entt::entity e : scene_.registry.view<const MeshRef>())
+            out.push_back(
+                scene_.draw_item(e, meshes_.at(scene_.registry.get<MeshRef>(e).asset), origin));
+        return out;
+    }
+    std::vector<render::DebugLine> debug_lines(const glm::dvec3& origin) const override {
+        return collider_outlines(scene_, origin, [this](const std::string& asset) {
+            return asset == "cube" ? &cube_ : nullptr;
+        });
+    }
+    render::Camera camera(float aspect) const override {
+        return look({4.5f, 4.0f, 7.0f}, {0, 0.3f, 0}, aspect, 50.0f);
+    }
+    render::Light light(const glm::dvec3&) const override { return {}; }
+    glm::vec4 sky() const override { return {0.1f, 0.11f, 0.14f, 1.0f}; }
+
+private:
+    Scene scene_;
+    render::MeshData cube_ = render::make_cube();
+    std::unordered_map<std::string, render::MeshId> meshes_;
+};
+
 }  // namespace
 
 std::vector<std::string> names() {
-    return {"materials", "textures",       "compressed", "lights",
-            "shadows",   "shadows_curved", "sky_day",    "sky_sunset"};
+    return {"materials",      "textures", "compressed", "lights",   "shadows",
+            "shadows_curved", "sky_day",  "sky_sunset", "colliders"};
 }
 
 std::unique_ptr<TestScene> make(const std::string& name) {
@@ -414,6 +469,7 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "compressed") return std::make_unique<Textures>(true);
     if (name == "lights") return std::make_unique<Lights>();
     if (name == "shadows") return std::make_unique<Shadows>();
+    if (name == "colliders") return std::make_unique<Colliders>();
     if (name == "shadows_curved") return std::make_unique<ShadowsCurved>();
     // By day: the sun high behind the camera's right shoulder, a thin haze everywhere.
     if (name == "sky_day")

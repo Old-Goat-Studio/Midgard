@@ -142,7 +142,9 @@ PYBIND11_MODULE(_midgard, m) {
         .def("remove_entity", &Viewport::remove_entity, py::arg("entity_id"))
         .def("clear", &Viewport::clear, "Removes every entity.")
         .def("set_settings", &Viewport::set_settings, py::arg("settings_json"),
-             "The scene settings: JSON {sky, ambient}.")
+             "The scene settings: JSON {sky, ambient, body}.")
+        .def_property("show_colliders", &Viewport::show_colliders, &Viewport::set_show_colliders,
+                      "Outlines of colliders, triggers and the player over the scene.")
         .def(
             "set_mesh",
             [](Viewport& v, const std::string& asset, const py::bytes& glb) {

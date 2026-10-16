@@ -166,6 +166,23 @@ def check_viewport() -> None:
         assert not view.attached
         if attempt == 0:
             view.attach_offscreen(160, 90)
+    # Collider outlines: a trigger round the cube shows as yellow lines only when asked.
+    view.put_entity(json.dumps({"id": "e3", "name": "Zone", "components": {
+        "transform": {"position": [0, 0, 0]}, "trigger": {"size": [1.6, 1.6, 1.6]}}}))
+    view.attach_offscreen(160, 90)
+
+    def yellow(rgba: bytes) -> int:
+        return sum(1 for i in range(0, len(rgba), 4)
+                   if rgba[i] > 200 and rgba[i + 1] > 150 and rgba[i + 2] < 120)
+
+    assert not view.show_colliders
+    assert view.render()
+    assert yellow(view.read_pixels()) == 0
+    view.show_colliders = True
+    assert view.render()
+    assert yellow(view.read_pixels()) > 20, "the trigger's outline is drawn"
+    view.detach()
+    view.remove_entity("e3")
     view.remove_entity("e1")
     assert view.entity_count == 1
     print(f"_midgard: viewport drew on {view.device_name or 'the GPU'}")
