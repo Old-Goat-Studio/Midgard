@@ -28,13 +28,15 @@ add_library(midgard_core STATIC
     core/src/jobs.cpp
     core/src/profile.cpp
     core/src/det.cpp
+    core/src/shape.cpp
+    core/src/body.cpp
 )
 target_include_directories(midgard_core PUBLIC
     core/include
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 target_link_libraries(midgard_core
-    PUBLIC nlohmann_json::nlohmann_json Threads::Threads
+    PUBLIC nlohmann_json::nlohmann_json Threads::Threads glm::glm
     PRIVATE unofficial::sqlite3::sqlite3 midgard_options
 )
 
@@ -285,6 +287,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_hash.cpp
         tests/test_reference_tables.cpp
         tests/test_det.cpp
+        tests/test_shape.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest

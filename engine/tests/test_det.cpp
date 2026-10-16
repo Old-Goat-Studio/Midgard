@@ -4,6 +4,7 @@
 // every target gets the same bits. Then properties the tables can't show.
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
@@ -193,4 +194,33 @@ TEST_CASE("the fingerprint over all of it matches its table") {
     const std::string want = table("det_fingerprint")[0]["fingerprint"].get<std::string>();
     CHECK(hex(det::fingerprint()) == want);
     CHECK(hex(det::kFingerprint) == want);  // the value the self-test compares with
+}
+
+TEST_CASE("tan, atan and atan2 match their table bit for bit") {
+    const auto hexf = [](const nlohmann::json& v) {
+        return std::strtod(v.get<std::string>().c_str(), nullptr);
+    };
+    for (const auto& c : table("det_atan")) {
+        double got = 0.0;
+        if (c.contains("atan"))
+            got = det::atan(hexf(c["atan"]));
+        else if (c.contains("tan"))
+            got = det::tan(hexf(c["tan"]));
+        else
+            got = det::atan2(hexf(c["atan2"][0]), hexf(c["atan2"][1]));
+        CHECK_MESSAGE(bits(got) == c["bits"].get<std::string>(), c.dump());
+    }
+}
+
+TEST_CASE("atan and atan2 are atan and atan2, and odd where they should be") {
+    for (int i = -3000; i <= 3000; ++i) {
+        const double x = i * 0.0137 * (1 + (i % 7));
+        REQUIRE(std::fabs(det::atan(x) - std::atan(x)) < 1e-15 * std::max(1.0, std::fabs(x)));
+        REQUIRE(det::atan(-x) == -det::atan(x));  // exactly: seams depend on it
+        REQUIRE(det::tan(-x * 0.01) == -det::tan(x * 0.01));
+        const double y = (i % 13) - 6.5;
+        REQUIRE(std::fabs(det::atan2(y, x) - std::atan2(y, x)) < 1e-15 * 4);
+    }
+    CHECK(det::atan2(0.0, -1.0) == doctest::Approx(3.141592653589793));
+    CHECK(det::atan2(0.0, 0.0) == 0.0);
 }

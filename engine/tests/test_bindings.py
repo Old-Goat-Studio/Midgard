@@ -71,8 +71,58 @@ def main() -> int:
         report = _midgard.validate(bad)
         assert not report["ok"] and "e1" in report["errors"][0], report
     check_viewport()
+    check_bodies()
     print("_midgard: all checks passed")
     return 0
+
+
+# The shapes of schema/tests/shape_points.json, as body settings.
+TABLE_BODIES = {
+    "bounded_area": {"shape": "bounded_area", "width": 2000, "length": 3000, "gravity": 9.81},
+    "flat_cylinder": {"shape": "flat_cylinder", "circumference": 6283, "length": 5000,
+                      "gravity": 9.81},
+    "curved_cylinder": {"shape": "curved_cylinder", "radius": 1000, "length": 5000,
+                        "gravity": 9.81},
+    "sphere_outside": {"shape": "sphere_outside", "radius": 1000, "gravity": 9.81},
+    "sphere_inside": {"shape": "sphere_inside", "radius": 1500, "gravity": 7.5},
+}
+
+
+def check_bodies() -> None:
+    """The editor's view of world shapes is the engine's, bit for bit (the shared table)."""
+    import struct
+
+    def bits(x: float) -> str:
+        return f"{struct.unpack('<Q', struct.pack('<d', x))[0]:016x}"
+
+    bodies = {name: _midgard.Body(json.dumps(s)) for name, s in TABLE_BODIES.items()}
+    cases = json.loads((schema_dir / "tests" / "shape_points.json").read_text("utf-8"))["cases"]
+    for c in cases:
+        body = bodies[c["shape"]]
+        face = c["surface"][0]
+        u, v, h = (float.fromhex(x) for x in c["surface"][1:])
+        p = body.position(face, u, v, h)
+        assert [bits(x) for x in p] == c["position"], c
+        f2, u2, v2, h2 = body.surface(*p)
+        assert [f2, bits(u2), bits(v2), bits(h2)] == c["back"], c
+        assert [bits(x) for x in body.up(*p)] == c["up"], c
+        assert [bits(x) for x in body.gravity(*p)] == c["gravity"], c
+    fingerprint = json.loads((schema_dir / "tests" / "shape_fingerprint.json")
+                             .read_text("utf-8"))["cases"][0]["fingerprint"]
+    assert f"{_midgard.shape_fingerprint():016x}" == fingerprint
+
+    planet = _midgard.Body(json.dumps({"id": "p", "shape": "sphere_outside", "radius": 1000,
+                                       "seed": 7, "origin": [10, 0, 0]}))
+    assert (planet.id, planet.seed, planet.shape, planet.faces) == ("p", 7, "sphere_outside", 6)
+    up, east, north = planet.frame(*planet.position(4, 0.5, 0.5))
+    assert abs(up[2] - 1.0) < 1e-12
+    for bad in ('{"shape": "sphere_outside", "radius": 50}', "not json"):
+        try:
+            _midgard.Body(bad)
+        except ValueError as e:
+            assert "radius 50" in str(e) or "JSON" in str(e), e
+        else:
+            raise AssertionError(f"{bad} was accepted")
 
 
 def pixel(rgba: bytes, width: int, x: int, y: int) -> tuple[int, int, int]:

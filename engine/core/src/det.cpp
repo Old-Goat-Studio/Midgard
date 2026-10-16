@@ -159,6 +159,55 @@ double cos(double x) {
     }
 }
 
+double tan(double x) {
+    return sin(x) / cos(x);
+}
+
+namespace {
+
+constexpr double kTanPi12 = 0.26794919243112270;  // tan(pi/12) = 2 - sqrt(3)
+constexpr double kSqrt3 = 1.7320508075688772;
+constexpr double kPi6 = 0.52359877559829887;
+constexpr double kPi2 = 1.5707963267948966;  // pi/2, and the part of it a double can't hold
+constexpr double kPi2Lo = 6.123233995736766e-17;
+constexpr double kPi = 3.141592653589793;
+constexpr double kPiLo = 1.2246467991473532e-16;
+
+// atan on [0, tan(pi/12)]: x (1 - x^2/3 + x^4/5 - ... + x^28/29), in Horner form.
+double atan_kernel(double x) {
+    const double x2 = x * x;
+    double p = 1.0 / 29.0;
+    for (int k = 27; k >= 1; k -= 2) p = 1.0 / k - x2 * p;
+    return x * p;
+}
+
+}  // namespace
+
+double atan(double x) {
+    const bool negative = x < 0.0;
+    double a = negative ? -x : x;
+    const bool inverted = a > 1.0;
+    if (inverted) a = 1.0 / a;
+    const bool shifted = a > kTanPi12;
+    // tan(t - pi/6) = (tan t * sqrt3 - 1) / (tan t + sqrt3)
+    if (shifted) a = (a * kSqrt3 - 1.0) / (a + kSqrt3);
+    double r = atan_kernel(a);
+    if (shifted) r = kPi6 + r;
+    if (inverted) r = (kPi2 - r) + kPi2Lo;
+    return negative ? -r : r;
+}
+
+double atan2(double y, double x) {
+    if (x > 0.0) return atan(y / x);
+    if (x < 0.0) {
+        const double a = atan(y / x);
+        return y >= 0.0 ? (a + kPi) + kPiLo : (a - kPi) - kPiLo;
+    }
+    if (y > 0.0) return kPi2;
+    if (y < 0.0) return -kPi2;
+    return 0.0;
+}
+
 double sqrt(double x) {
     return std::sqrt(x);
 }

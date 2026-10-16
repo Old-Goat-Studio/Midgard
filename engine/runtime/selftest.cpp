@@ -16,6 +16,7 @@
 #include "midgard/package.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/render/renderer.h"
+#include "midgard/shape.h"
 #include "midgard/version.h"
 #ifdef MIDGARD_HAS_SCRIPTING
 #include "midgard/script.h"
@@ -71,6 +72,15 @@ Check maths_check() {
         return {"Identical maths", Status::Fail,
                 format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, det::kFingerprint)};
     return {"Identical maths", Status::Pass, format("noise, sin, cos, random: %016" PRIx64, got)};
+}
+
+Check shapes_check() {
+    const std::uint64_t got = shape_fingerprint();
+    if (got != kShapeFingerprint)
+        return {"World shapes", Status::Fail,
+                format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, kShapeFingerprint)};
+    return {"World shapes", Status::Pass,
+            format("planets, hollow worlds, cylinders: %016" PRIx64, got)};
 }
 
 Check render_check(bool vulkan_required) {
@@ -147,6 +157,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(jobs_check());
     checks.push_back(data_check());
     checks.push_back(maths_check());
+    checks.push_back(shapes_check());
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(package_check(options.package));
     checks.push_back(python_check(options));

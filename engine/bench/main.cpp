@@ -25,6 +25,7 @@
 #include "midgard/jobs.h"
 #include "midgard/render/overlay.h"
 #include "midgard/render/renderer.h"
+#include "midgard/shape.h"
 #include "midgard/version.h"
 
 namespace {
@@ -115,6 +116,23 @@ std::vector<Benchmark> benchmarks() {
                             for (int j = 0; j < 64; ++j)
                                 for (int i = 0; i < 64; ++i)
                                     sum += midgard::det::fbm(7, i * 0.173, j * 0.173, 2.5, 6);
+                            g_sink = g_sink + static_cast<std::uint64_t>(sum);
+                        };
+                    }});
+    list.push_back({"shape.sphere_64x64_positions",
+                    "positions and up for a 64 x 64 grid on all 6 faces of a planet", 30,
+                    [](std::string&) -> std::function<void()> {
+                        return [] {
+                            const midgard::Shape planet =
+                                midgard::Shape::sphere_outside(5000.0, 9.81);
+                            double sum = 0.0;
+                            for (int f = 0; f < 6; ++f)
+                                for (int j = 0; j < 64; ++j)
+                                    for (int i = 0; i < 64; ++i) {
+                                        const glm::dvec3 p =
+                                            planet.position({f, i / 64.0, j / 64.0, 1.0});
+                                        sum += p.x + planet.up(p).y;
+                                    }
                             g_sink = g_sink + static_cast<std::uint64_t>(sum);
                         };
                     }});

@@ -112,3 +112,21 @@ def test_det_fingerprint_matches_its_table():
     for _ in range(100):
         data += struct.pack("<Q", r.next())
     assert f"{fnv1a64(bytes(data)):016x}" == table("det_fingerprint")[0]["fingerprint"]
+
+
+def test_det_atan_tan_and_atan2_match_their_table_bit_for_bit():
+    import math
+
+    from reference import det
+    for c in table("det_atan"):
+        if "atan" in c:
+            x = float.fromhex(c["atan"])
+            got, system = det.atan(x), math.atan(x)
+        elif "tan" in c:
+            x = float.fromhex(c["tan"])
+            got, system = det.tan(x), math.tan(x)
+        else:
+            y, x = (float.fromhex(v) for v in c["atan2"])
+            got, system = det.atan2(y, x), math.atan2(y, x)
+        assert _bits(got) == c["bits"], c
+        assert abs(got - system) <= 1e-15 * max(1.0, abs(system)), c

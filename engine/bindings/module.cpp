@@ -6,6 +6,8 @@
 //   _midgard.version()            -> {"engine": "0.1.0", "engine_abi": 0, ...}
 //   _midgard.validate(package)    -> {"ok": bool, "errors": [...], "warnings": [...], ...}
 //   _midgard.Viewport()           the editor's 3D view (see viewport.h)
+//   _midgard.Body(settings_json)  a world body's shape: positions, up and gravity, exactly as
+//                                 the game computes them (see midgard/shape.h)
 #include <array>
 #include <span>
 
@@ -13,6 +15,9 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
+#include <nlohmann/json.hpp>
+
+#include "midgard/body.h"
 #include "midgard/link.h"
 #include "midgard/validate.h"
 #include "midgard/version.h"
@@ -64,6 +69,71 @@ PYBIND11_MODULE(_midgard, m) {
         },
         py::arg("package_dir"),
         "Checks a cooked package the way the runtime loads it (no window or GPU needed).");
+
+    py::register_exception<midgard::BodyError>(m, "BodyError", PyExc_ValueError);
+    const auto xyz = [](const glm::dvec3& v) { return py::make_tuple(v.x, v.y, v.z); };
+    py::class_<midgard::Body>(m, "Body",
+                              "A world body: its shape, size, seed and gravity (midgard/body.h).")
+        .def(
+            py::init([](const std::string& settings) {
+                nlohmann::json j;
+                try {
+                    j = nlohmann::json::parse(settings);
+                } catch (const nlohmann::json::exception& e) {
+                    throw midgard::BodyError(std::string("body settings aren't JSON: ") + e.what());
+                }
+                return midgard::body_from_json(j);
+            }),
+            py::arg("settings_json"))
+        .def_readonly("id", &midgard::Body::id)
+        .def_readonly("seed", &midgard::Body::seed)
+        .def_property_readonly(
+            "shape",
+            [](const midgard::Body& b) { return std::string(midgard::shape_name(b.shape.kind())); })
+        .def_property_readonly("faces", [](const midgard::Body& b) { return b.shape.faces(); })
+        .def_property_readonly("radius", [](const midgard::Body& b) { return b.shape.radius(); })
+        .def_property_readonly("face_size",
+                               [](const midgard::Body& b) {
+                                   const glm::dvec2 s = b.shape.face_size();
+                                   return py::make_tuple(s.x, s.y);
+                               })
+        .def(
+            "position",
+            [xyz](const midgard::Body& b, int face, double u, double v, double height) {
+                if (face < 0 || face >= b.shape.faces())
+                    throw py::value_error("no face " + std::to_string(face));
+                return xyz(b.position({face, u, v, height}));
+            },
+            py::arg("face"), py::arg("u"), py::arg("v"), py::arg("height") = 0.0,
+            "The 3D position of a surface point.")
+        .def(
+            "surface",
+            [](const midgard::Body& b, double x, double y, double z) {
+                const midgard::SurfacePoint s = b.surface({x, y, z});
+                return py::make_tuple(s.face, s.u, s.v, s.height);
+            },
+            py::arg("x"), py::arg("y"), py::arg("z"), "The surface point (face, u, v, height).")
+        .def(
+            "up",
+            [xyz](const midgard::Body& b, double x, double y, double z) {
+                return xyz(b.up({x, y, z}));
+            },
+            py::arg("x"), py::arg("y"), py::arg("z"))
+        .def(
+            "gravity",
+            [xyz](const midgard::Body& b, double x, double y, double z) {
+                return xyz(b.gravity({x, y, z}));
+            },
+            py::arg("x"), py::arg("y"), py::arg("z"))
+        .def(
+            "frame",
+            [xyz](const midgard::Body& b, double x, double y, double z) {
+                const midgard::SurfaceFrame f = b.frame({x, y, z});
+                return py::make_tuple(xyz(f.up), xyz(f.east), xyz(f.north));
+            },
+            py::arg("x"), py::arg("y"), py::arg("z"), "(up, east, north) at a point.");
+    m.def("shape_fingerprint", &midgard::shape_fingerprint,
+          "The shapes' fingerprint (equal to schema/tests/shape_fingerprint.json everywhere).");
 
     py::class_<Viewport>(m, "Viewport", "The editor's 3D view of the scene being edited.")
         .def(py::init<>())

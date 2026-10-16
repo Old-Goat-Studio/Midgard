@@ -49,8 +49,8 @@ ctest --preset linux-release
 Every change comes with tests at the levels it touches (see `Phase5_Roadmap.md`, §2):
 
 - **Unit tests:** doctest in `engine/tests/`, pytest in `editor/tests/` and `tools/tests/`.
-- **Reference tables:** formulas with a specification (hashing and deterministic maths now;
-  shapes, solar phase and calendars later) have a Python version in `tools/reference/` and a table of cases in
+- **Reference tables:** formulas with a specification (hashing, deterministic maths and
+  world shapes now; solar phase and calendars later) have a Python version in `tools/reference/` and a table of cases in
   `schema/tests/`, checked against both the Python and the engine.
 - **Image tests:** `python tools/images.py run --runtime <midgard_runtime>` draws the scenes in
   `engine/tests/images/scenes.json` and compares them with the reference images beside it. CI
@@ -78,6 +78,9 @@ author and source; `python tools/licenses.py check` fails otherwise.
   add fast-math or FMA options.
 - Positions are doubles (`glm::dvec3`); convert to floats only relative to the camera
   (`render::Camera::origin`, `render::relative_to`).
+- Nothing assumes "y is up": ask the body's shape (`midgard/shape.h`, `midgard/body.h`) for
+  positions on the surface, up, gravity and the local frame. Surface grids that must meet
+  exactly at seams use power-of-two steps.
 - Keep the contract in `schema/` the single source of truth: never duplicate its definitions in
   the editor or the engine. Released migrations are never edited, only added to.
 

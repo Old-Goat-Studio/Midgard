@@ -121,6 +121,11 @@ Fixed fbm(std::uint64_t seed, double x, double y, double z, int octaves);
 // |x| up to about 1e6; beyond that less accurate, but still identical everywhere.
 double sin(double x);
 double cos(double x);
+double tan(double x);  // sin / cos
+// atan: |x| > 1 uses pi/2 - atan(1/x), then values above tan(pi/12) are shifted down by pi/6,
+// leaving a Taylor series that converges quickly. atan2 adds the quadrant.
+double atan(double x);
+double atan2(double y, double x);
 // IEEE 754 requires sqrt to be correctly rounded, so the hardware's is already identical
 // everywhere; it's here so generation code uses det:: throughout.
 double sqrt(double x);

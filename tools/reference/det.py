@@ -157,5 +157,56 @@ def cos(x: float) -> float:
     return (_cos_kernel(r), -_sin_kernel(r), -_cos_kernel(r), _sin_kernel(r))[q]
 
 
+def tan(x: float) -> float:
+    return sin(x) / cos(x)
+
+
+TAN_PI12 = 0.26794919243112270
+SQRT3 = 1.7320508075688772
+PI6 = 0.52359877559829887
+PI2 = 1.5707963267948966
+PI2_LO = 6.123233995736766e-17
+PI = 3.141592653589793
+PI_LO = 1.2246467991473532e-16
+
+
+def _atan_kernel(x: float) -> float:
+    x2 = x * x
+    p = 1.0 / 29.0
+    for k in range(27, 0, -2):
+        p = 1.0 / k - x2 * p
+    return x * p
+
+
+def atan(x: float) -> float:
+    negative = x < 0.0
+    a = -x if negative else x
+    inverted = a > 1.0
+    if inverted:
+        a = 1.0 / a
+    shifted = a > TAN_PI12
+    if shifted:
+        a = (a * SQRT3 - 1.0) / (a + SQRT3)
+    r = _atan_kernel(a)
+    if shifted:
+        r = PI6 + r
+    if inverted:
+        r = (PI2 - r) + PI2_LO
+    return -r if negative else r
+
+
+def atan2(y: float, x: float) -> float:
+    if x > 0.0:
+        return atan(y / x)
+    if x < 0.0:
+        a = atan(y / x)
+        return (a + PI) + PI_LO if y >= 0.0 else (a - PI) - PI_LO
+    if y > 0.0:
+        return PI2
+    if y < 0.0:
+        return -PI2
+    return 0.0
+
+
 def sqrt(x: float) -> float:
     return math.sqrt(x)
