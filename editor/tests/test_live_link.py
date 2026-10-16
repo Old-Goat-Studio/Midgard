@@ -188,10 +188,12 @@ def test_hot_reload_messages(project, session, qtbot, tmp_path):
     cube = project.entity("e000004")
     cube.components["mesh"]["asset"] = "prim_sphere"
     project.undo_stack.push(SetEntityCommand(project, cube, "mesh"))
-    qtbot.waitUntil(lambda: {"type": "asset.changed", "id": "prim_sphere"} in echoed(received),
-                    timeout=5000)
-    kinds = [m["type"] for m in echoed(received)]
-    assert kinds.index("asset.changed") < len(kinds) - 1 - kinds[::-1].index("entity.put")
+    sphere_mesh = {"type": "asset.changed", "id": "prim_sphere"}
+    # The new mesh is announced before the entity that uses it (wait for both: they arrive one
+    # by one).
+    qtbot.waitUntil(lambda: sphere_mesh in echoed(received) and any(
+        m["type"] == "entity.put" and m["entity"]["id"] == "e000004"
+        for m in echoed(received)[echoed(received).index(sphere_mesh):]), timeout=5000)
 
     # A mesh file in objects/ that changes on disk is re-cooked and announced.
     assets = project.objects_dir
