@@ -24,6 +24,7 @@
 
 #include "midgard/det.h"
 #include "midgard/jobs.h"
+#include "midgard/physics.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/overlay.h"
 #include "midgard/render/renderer.h"
@@ -189,6 +190,27 @@ std::vector<Benchmark> benchmarks() {
                  };
              }});
     }
+    list.push_back({"physics.step_500_boxes",
+                    "one physics step with 500 boxes tumbling onto the ground and each other", 60,
+                    [](std::string&) -> std::function<void()> {
+                        using namespace midgard::physics;
+                        auto world = std::make_shared<World>();
+                        BodyDesc ground;
+                        ground.collider.size = {100, 1, 100};
+                        ground.position = {0, -0.5, 0};
+                        world->add(ground);
+                        for (int i = 0; i < 500; ++i) {
+                            BodyDesc box;
+                            box.motion = Motion::Dynamic;
+                            box.position = {(i % 10) * 1.1 - 5.0, 0.5 + (i / 100) * 1.1,
+                                            ((i / 10) % 10) * 1.1 - 5.0};
+                            box.rotation =
+                                glm::angleAxis(0.1f * float(i), glm::normalize(glm::vec3(1, 2, 3)));
+                            world->add(box);
+                        }
+                        for (int i = 0; i < 30; ++i) world->step(kStep);  // falling and colliding
+                        return [world] { world->step(kStep); };
+                    }});
     // Loading a texture: a 512 x 512 KTX2 file (all its mip levels) transcoded to the format a
     // PC (BC7) or a phone (ASTC) reads.
     for (const auto& [name, format] :

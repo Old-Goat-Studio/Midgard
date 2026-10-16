@@ -94,6 +94,21 @@ add_library(midgard_input STATIC input/src/input.cpp)
 target_include_directories(midgard_input PUBLIC input/include)
 target_link_libraries(midgard_input PRIVATE unofficial::sqlite3::sqlite3 midgard_options)
 
+# ---- physics: Jolt Physics (double precision; vcpkg-overlays/joltphysics) ---------------------
+find_package(Jolt CONFIG REQUIRED)
+add_library(midgard_physics STATIC physics/src/physics.cpp)
+target_include_directories(midgard_physics PUBLIC physics/include)
+target_link_libraries(midgard_physics PUBLIC midgard_core glm::glm PRIVATE Jolt::Jolt midgard_options)
+# Jolt's x86 build uses SSE4.2 (no AVX, LZCNT or FMA), and its headers must see the same
+# instruction sets as the library; its CMake package doesn't pass them on, so they're set here.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    if(MSVC)
+        target_compile_definitions(midgard_physics PRIVATE JPH_USE_SSE4_1 JPH_USE_SSE4_2)
+    else()
+        target_compile_options(midgard_physics PRIVATE -msse4.2 -mpopcnt)
+    endif()
+endif()
+
 # ---- scene: game.pak, glTF meshes and the EnTT scene built from the database ----------------
 find_package(miniz CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
@@ -301,9 +316,11 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_shadows.cpp
         tests/test_atmosphere.cpp
         tests/test_quality.cpp
+        tests/test_physics.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
-        midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest
+        midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_options
+        doctest::doctest
         unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
     target_compile_definitions(midgard_tests PRIVATE
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema")
@@ -313,7 +330,8 @@ if(MIDGARD_BUILD_TESTS)
     # midgard_bench: timings checked against schema/budgets.json (tools/budgets.py).
     if(NOT ANDROID)
         add_executable(midgard_bench bench/main.cpp)
-        target_link_libraries(midgard_bench PRIVATE midgard_core midgard_render midgard_options
+        target_link_libraries(midgard_bench PRIVATE midgard_core midgard_render midgard_physics
+                              midgard_options
                               nlohmann_json::nlohmann_json)
     endif()
     if(TARGET _midgard)

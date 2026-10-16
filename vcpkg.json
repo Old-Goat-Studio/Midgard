@@ -29,6 +29,7 @@
     "mikktspace",
     { "name": "ktx", "default-features": false },
     "entt",
+    "joltphysics",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]
 }
