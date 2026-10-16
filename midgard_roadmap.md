@@ -1542,27 +1542,37 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 **Exit:** a script reacts to a trigger and changes the world, edited and reloaded without restarting.
 
 ### Phase 5: World building
+**The detailed plan is in [`Phase5_Roadmap.md`](Phase5_Roadmap.md)** (approved 15 October 2026):
+19 milestones (5.0–5.18), foundation first (test tooling, deterministic maths and world
+coordinates, the shape mapping layer, the renderer, physics), each with its own tests and exit
+check. The list below is the phase's scope; where they differ, `Phase5_Roadmap.md` wins.
+Survival status effects, clothing stats, the HUD gauge, weather's effect on AI and space weather
+moved to Phase 6 (see there); Phase 5 builds their foundations.
+
 - Object editor (primitives, glTF import).
 - **Calendar core** (§6): calendar templates and the standard calendar, per-body calendars generated from the seed, `TimeService`, solar phase, **seasons** (daylight, temperature, visuals), time scale, save/restore of `game_time`.
-- **Weather** (§6): weather types and tables per season and biome, regional weather with fronts, forecasts, gameplay effects, controlled weather inside worlds, space weather.
-- **Survival effects** (§6): feels-like temperature, wetness, shelter checks, clothing survival stats, campfires and heaters, cold/heat/soaked status effects, HUD gauge, `survival_scale`.
+- **Weather** (§6): weather types and tables per season and biome, regional weather with fronts, forecasts (script API), controlled and scripted weather, visuals. (Effects on AI perception, forecast devices and space weather are in Phase 6.)
+- **Survival foundation** (§6): feels-like temperature, wetness, shelter checks and heat sources, readable from scripts. (Status effects, clothing stats, placeable campfires and heaters, the HUD gauge and `survival_scale` from the difficulty are in Phase 6.)
 - Environment editor (sky, lighting, fog, water), with lighting curves authored over **solar phase** and previewed with the Calendar's time scrubber.
 - Physics editor (Jolt).
 - **Cameras** (§8): first-person, third-person and top-down views, the Camera editor, collision and shape-aware "up".
 - **Character animation** (§8): glTF import, humanoid retargeting, the Animation editor (state machines, blend spaces, layers, events), foot IK on every world shape, first-person arms.
 - **Audio** (§8): the Audio editor, sound events, buses, 3D sound, reverb zones, music playlists, ambience by biome and solar phase.
+- Renderer foundation: textures (KTX2 / Basis Universal), glTF PBR materials, cascaded shadows in the local "up" frame, HDR, sky, fog, water, desktop and phone quality tiers.
 - Shader system: GLSL editor → SPIR-V, material editor, texture generator.
 - **Shape mapping layer** (§7, *World shapes*) built before any terrain feature, so nothing assumes "y is up": per-body gravity, character "up" vector, double-precision simulation, camera-relative rendering.
 - Terrain in two steps. First **rectangular grids**: bounded area, then cylinder (flat wrap, then curved), with edges and cylinder ends. Then **cube-sphere** for the outside and inside of spheres. Sculpt/paint in the viewport works on all shapes.
 - **World Type editor** v1 (§7): seed + node graph with shape-aware inputs, recipe versioning, run-time generation in the game, chunk streaming, and the cross-target check (identical chunk hashes on x86_64, arm64 and Android in CI), plus generation-time budgets measured on a phone and a Raspberry Pi.
 - **Rooms:** the room manager and room changes. A planet's atmosphere ceiling, habitat docks and hollow-world exit sites lead to a **system-space** room with a procedural sky.
 - **Light models per shape** (§6, *Day and night on each world shape*), plus the inside-world atmosphere preset.
-- Per-chunk navigation meshes linked across chunk edges, cylinder joins and cube-sphere faces; in-game map projections per shape.
+- Per-chunk navigation meshes linked across chunk edges, cylinder joins and cube-sphere faces; map projections per shape as images (the in-game map screen is in Phase 6).
+- Testing foundation: image tests on software Vulkan in CI, cross-target generation hashes, performance budgets, and a self-test APK for phone checks.
 
 **Exit:** a game generates, on the player's device, one world type of each shape at fixed sizes. A player walks all the way around the cylinder and both spheres with correct gravity, sees no seams, and watches a full day/night cycle on each shape. They rise out of the planet's atmosphere into space and come back down. The game ships as a package. An animated character walks the planet in all three camera views, its feet planted on the slopes, with biome ambience and music.
 
 ### Phase 6: Gameplay data systems
-- Shared node-graph and property-grid widgets.
+- Property-grid widget (the shared node-graph widget is built in Phase 5, for world types).
+- **Moved from Phase 5** (they need this phase's systems): cold, heat and soaked **status effects** and the rested bonus; **clothing survival stats**; craftable, placeable **campfires and heaters**; the **HUD temperature gauge** and screen-edge frost and sweat; `survival_scale` from the difficulty; weather reducing **AI perception**; **space weather**; **forecast devices** (weather stations, ship sensors, scanners); camera **lock-on**; the in-game **map screen**.
 - Menu editor + RmlUi runtime (with player-sizable, movable windows).
 - **Combat** (§8): the Combat editor, weapons and abilities, hit boxes on bones, damage types and status effects, dodge, block and parry, the combat sandbox.
 - **AI behaviour** (§8): the AI Behaviour editor, perception, navigation links, groups and factions, Calendar schedules, spawn tables, live behaviour-tree debugging.
@@ -1872,6 +1882,15 @@ Margins of 32/24/32/16 px, 10 px spacing, and width = max(content width, 1.6 × 
 - **Crew always escape** when their craft is destroyed: escape pods, parachutes or lifeboats, depending on the class. **Wrecks stay until they are repaired**; they never decay.
 - **Characters move between worlds.** They are stored in the player's profile and checked by the host on join (§7).
 - **The dedicated server is an export target** for Linux x86_64, **Linux arm64** (Raspberry Pi 4/5 with a 64-bit OS, ARM cloud VMs) and Windows (§2, *Dedicated server export*).
+
+### Decided (15 October 2026): Phase 5
+- **Phase 5 follows `Phase5_Roadmap.md`**: foundation first, with tests at every milestone.
+- Phase 5 items that need Phase 6 systems **move to Phase 6**; Phase 5 builds their foundations.
+- **Rendering by the end of Phase 5:** glTF PBR materials with cascaded shadows, fog, sky and water, plus a phone quality tier.
+- **Device testing:** the developer's Android phone, through self-test APKs. There's no Raspberry Pi yet: CI's arm64 Linux runner stands in until Phase 7.
+- **CC0 assets** may be committed for tests and samples, each recorded with its source and licence.
+- **Terrain sculpting and painting** are stored as **terrain stamps** in the project, placed by world types or used directly by bounded-area maps, and reused for player terrain edits.
+- **Phase 5 sample worlds** use the smallest allowed sizes; larger sizes are tested for precision.
 
 ### Still open
 
