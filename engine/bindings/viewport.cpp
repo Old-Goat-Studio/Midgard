@@ -20,6 +20,7 @@
 #include "midgard/collider_outlines.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
+#include "midgard/world_surface.h"
 
 namespace midgard::editor {
 namespace {
@@ -111,12 +112,24 @@ void Viewport::set_settings(const std::string& settings_json) {
     };
     scene_.settings.sky = vec("sky", scene_.settings.sky);
     scene_.settings.ambient = vec("ambient", scene_.settings.ambient);
-    scene_.settings.body.reset();  // the world's shape: "up" for lights and the player's outline
+    // The world's shape: "up" for lights and the player's outline, and the world's surface.
+    const std::string shape_json = s.contains("body") ? s.at("body").dump() : std::string();
+    scene_.settings.body.reset();
     if (const auto it = s.find("body"); it != s.end()) {
         try {
             scene_.settings.body = body_from_json(*it);
         } catch (const std::exception&) {  // the World Shape dialog refuses these anyway
         }
+    }
+    if (shape_json != body_json_) {  // a new shape: its surface is made again when it's next drawn
+        body_json_ = shape_json;
+        mesh_data_.erase(kBuiltinSurface);
+        if (renderer_) {
+            if (const auto it = meshes_.find(kBuiltinSurface); it != meshes_.end())
+                renderer_->replace_mesh(it->second, surface_mesh(scene_.settings.body));
+        }
+        if (meshes_.contains(kBuiltinSurface) || needs_surface())
+            mesh_data_[kBuiltinSurface] = surface_mesh(scene_.settings.body);
     }
 }
 
@@ -201,13 +214,25 @@ void Viewport::resize(uint32_t width, uint32_t height) {
     if (renderer_) renderer_->resize(width, height);
 }
 
+bool Viewport::needs_surface() const {
+    for (entt::entity e : scene_.registry.view<const MeshRef>())
+        if (scene_.registry.get<MeshRef>(e).asset == kBuiltinSurface) return true;
+    return false;
+}
+
 void Viewport::upload_meshes() {
+    // The world's surface is made here (from the scene's body), not sent by the editor.
+    if (needs_surface() && !mesh_data_.contains(kBuiltinSurface))
+        mesh_data_[kBuiltinSurface] = surface_mesh(scene_.settings.body);
     if (!renderer_) return;
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         const std::string& asset = scene_.registry.get<MeshRef>(e).asset;
         if (meshes_.contains(asset)) continue;
         if (asset == kBuiltinCube) {
             meshes_.emplace(asset, renderer_->upload_mesh(render::make_cube()));
+        } else if (asset == kBuiltinSurface) {
+            if (!mesh_data_.contains(asset)) mesh_data_[asset] = surface_mesh(scene_.settings.body);
+            meshes_.emplace(asset, renderer_->upload_mesh(mesh_data_[asset]));
         } else if (auto it = mesh_data_.find(asset); it != mesh_data_.end()) {
             meshes_.emplace(asset, renderer_->upload_mesh(it->second));
         }

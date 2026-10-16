@@ -6,6 +6,7 @@
 
 #include "midgard/collider_outlines.h"
 #include "midgard/gltf.h"
+#include "midgard/world_surface.h"
 
 namespace midgard {
 
@@ -56,6 +57,7 @@ void Game::update_triggers() {
 
 render::MeshData Game::load_mesh(const std::string& asset) const {
     if (asset == kBuiltinCube) return render::make_cube();
+    if (asset == kBuiltinSurface) return surface_mesh(scene_.settings.body);
     for (const ContentEntry& c : package_.manifest.content) {
         if (c.id != asset) continue;
         if (!pak_) throw AssetError("mesh '" + asset + "' needs game.pak, which is missing");

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""World ▸ World Shape… (the scene's body: which way is up and how gravity pulls) and
+"""World ▸ World Shape… (the scene's body: which way is up and how gravity pulls; it can also
+add ground covering the whole world) and
 World ▸ Physics Layers… (the project's collision layers and which of them pass through each
 other). Both are undoable."""
 import json
@@ -7,6 +8,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -24,7 +26,10 @@ from PySide6.QtWidgets import (
 
 from . import engine
 from .project import PHYSICS_LAYERS, Project
-from .undo import SetPhysicsLayersCommand, SetSceneSettingsCommand
+from .scene_model import WORLD_FOLDER, Entity
+from .undo import AddEntityCommand, SetPhysicsLayersCommand, SetSceneSettingsCommand
+
+SURFACE = "builtin:surface"  # the world's surface, made by the engine from the shape
 
 # Shapes and the sizes each needs, with the roadmap's limits (§7, "Size and precision"; the
 # engine checks the same in midgard/body.h).
@@ -38,6 +43,18 @@ SHAPES: dict[str, tuple[str, dict[str, tuple[float, float, float]]]] = {
     "sphere_outside": ("Planet (outside a sphere)", {"radius": (1_000, 20_000, 1_000)}),
     "sphere_inside": ("Hollow world (inside a sphere)", {"radius": (1_000, 20_000, 1_000)}),
 }
+
+
+def origin(shape: str, sizes: dict[str, float]) -> list[float]:
+    """Where the shape's centre goes so that its surface runs through the scene's origin with
+    "up" along +Y there: a planet's top, a hollow world's or a cylinder's bottom. A scene made on
+    flat ground then stands where it was."""
+    radius = sizes.get("radius", 0.0)
+    if shape == "sphere_outside":
+        return [0.0, -radius, 0.0]
+    if shape in ("sphere_inside", "curved_cylinder"):
+        return [0.0, radius, 0.0]
+    return [0.0, 0.0, 0.0]
 
 
 def _spin(minimum: float, maximum: float, value: float, suffix: str) -> QDoubleSpinBox:
@@ -60,8 +77,9 @@ class WorldShapeDialog(QDialog):
         self.project = project
         body: dict[str, Any] = project.scene_settings().get("body") or {}
         layout = QVBoxLayout(self)
-        intro = QLabel("Which way is up, and how gravity pulls. Applies the next time you "
-                       "press Play.")
+        intro = QLabel("Which way is up, and how gravity pulls. The world's surface runs through "
+                       "the scene's origin, so things there stay where they are. Applies the next "
+                       "time you press Play.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
         self.form = QFormLayout()
@@ -78,6 +96,14 @@ class WorldShapeDialog(QDialog):
                     self.form.addRow(name.capitalize(), self.sizes[name])
         self.gravity = _spin(0.1, 50.0, float(body.get("gravity", 9.81)), " m/s²")
         self.form.addRow("Gravity", self.gravity)
+        has_surface = any(e.components.get("mesh", {}).get("asset") == SURFACE
+                          for e in project.entities())
+        self.add_ground = QCheckBox("Add ground covering the whole world")
+        self.add_ground.setToolTip("A World Surface entity: the shape's surface to walk on, "
+                                   "drawn and solid (a mesh collider)")
+        self.add_ground.setChecked(not has_surface)
+        self.offers_ground = not has_surface  # a scene with ground already isn't offered more
+        self.form.addRow("", self.add_ground)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -96,6 +122,7 @@ class WorldShapeDialog(QDialog):
                 low, high, _default = needed[name]
                 box.setRange(low, high)
         self.form.setRowVisible(self.gravity, bool(key))
+        self.form.setRowVisible(self.add_ground, bool(key) and self.offers_ground)
 
     def body(self) -> dict[str, Any] | None:
         """The body as the scene settings keep it, or None for flat ground."""
@@ -106,6 +133,7 @@ class WorldShapeDialog(QDialog):
                                 "gravity": round(self.gravity.value(), 3)}
         for name in SHAPES[key][1]:
             body[name] = round(self.sizes[name].value(), 1)
+        body["origin"] = origin(key, body)
         return body
 
     def accept(self) -> None:
@@ -122,9 +150,20 @@ class WorldShapeDialog(QDialog):
             settings.pop("body", None)
         else:
             settings["body"] = body
+        add_ground = body is not None and self.offers_ground and self.add_ground.isChecked()
+        stack = self.project.undo_stack
+        stack.beginMacro("Change world shape")
         if settings != self.project.scene_settings():
-            self.project.undo_stack.push(
-                SetSceneSettingsCommand(self.project, settings, "world shape"))
+            stack.push(SetSceneSettingsCommand(self.project, settings, "world shape"))
+        if add_ground:
+            folder = next((e.id for e in self.project.entities()
+                           if e.is_folder and e.name == WORLD_FOLDER), None)
+            stack.push(AddEntityCommand(self.project, Entity(
+                self.project.next_entity_id(), "World Surface", folder, {
+                    "mesh": {"asset": SURFACE},
+                    "material": {"color": [0.35, 0.42, 0.3, 1.0]},
+                    "collider": {"shape": "mesh"}})))
+        stack.endMacro()
         super().accept()
 
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // The runtime's self-test: quick checks that the engine works on this device (jobs, identical
-// data, rendering and its frame time, the game's package, Python), with the results shown on screen
-// by the debug overlay. midgard_runtime --selftest runs it; on Android the self-test APK (an APK
-// with a selftest.txt asset) does.
+// data, world shapes, physics, rendering and its frame time, the game's package, Python), with the
+// results shown on screen by the debug overlay. midgard_runtime --selftest runs it; on Android the
+// self-test APK (an APK with a selftest.txt asset) does.
 #pragma once
 
 #include <filesystem>

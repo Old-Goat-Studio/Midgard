@@ -87,9 +87,11 @@ def test_world_shape_dialog(qtbot, project):
     assert not dialog.form.isRowVisible(dialog.sizes["width"])
     dialog.sizes["radius"].setValue(1500)
     dialog.gravity.setValue(5.0)
+    dialog.add_ground.setChecked(False)
     dialog.accept()
     assert project.scene_settings()["body"] == {
-        "id": "world", "shape": "sphere_outside", "gravity": 5.0, "radius": 1500.0}
+        "id": "world", "shape": "sphere_outside", "gravity": 5.0, "radius": 1500.0,
+        "origin": [0.0, -1500.0, 0.0]}  # its top at the scene's origin
     assert project.scene_settings()["sky"]  # the other settings stay
 
     dialog = WorldShapeDialog(project)  # shows what's set
@@ -176,3 +178,30 @@ def test_the_viewport_toolbar_shows_colliders(qtbot, window, settings):
     later = MainWindow(settings)  # remembered next time
     qtbot.addWidget(later)
     assert later.viewport.colliders_action.isChecked()
+
+
+def test_world_shape_adds_ground_covering_the_world(qtbot, project, tmp_path):
+    before = len(project.entities())
+    dialog = WorldShapeDialog(project)
+    qtbot.addWidget(dialog)
+    dialog.shape.setCurrentIndex(dialog.shape.findData("curved_cylinder"))
+    assert dialog.add_ground.isChecked()
+    dialog.accept()
+    assert project.scene_settings()["body"]["origin"] == [0.0, 1000.0, 0.0]  # bottom at y = 0
+    surface = [e for e in project.entities()
+               if e.components.get("mesh", {}).get("asset") == "builtin:surface"]
+    assert len(surface) == 1 and surface[0].name == "World Surface"
+    assert surface[0].components["collider"] == {"shape": "mesh"}
+    assert project.entity(surface[0].parent).name == "World"
+    assert "builtin:surface" in project.mesh_assets()
+
+    dialog = WorldShapeDialog(project)  # already has ground: not offered again
+    qtbot.addWidget(dialog)
+    assert not dialog.offers_ground
+
+    if engine.module() is not None:
+        cook(project, tmp_path / "pkg")  # the engine makes the surface and its collider
+    project.undo_stack.undo()  # shape and ground go together
+    assert len(project.entities()) == before
+    assert "body" not in project.scene_settings()
+

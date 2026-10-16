@@ -13,6 +13,7 @@
 #include "midgard/pak.h"
 #include "midgard/scene.h"
 #include "midgard/scene_physics.h"
+#include "midgard/world_surface.h"
 
 namespace midgard {
 
@@ -65,7 +66,7 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
         }
         for (entt::entity e : scene.registry.view<const MeshRef>()) {
             const std::string& asset = scene.registry.get<MeshRef>(e).asset;
-            if (asset != kBuiltinCube && !content_ids.contains(asset))
+            if (asset != kBuiltinCube && asset != kBuiltinSurface && !content_ids.contains(asset))
                 report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
                                           "' uses mesh '" + asset +
                                           "', which is not in the package; it will not be drawn");
@@ -78,6 +79,7 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
         const PhysicsLayers layers = PhysicsLayers::load(database);
         const ScenePhysics physics(scene, layers, [&](const std::string& asset) {
             if (asset == kBuiltinCube) return render::make_cube();
+            if (asset == kBuiltinSurface) return surface_mesh(scene.settings.body);
             for (const ContentEntry& c : m.content)
                 if (c.id == asset) {
                     if (!paks) throw AssetError("game.pak is missing");

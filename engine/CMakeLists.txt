@@ -123,6 +123,7 @@ add_library(midgard_scene STATIC
     scene/src/validate.cpp
     scene/src/scene_physics.cpp
     scene/src/collider_outlines.cpp
+    scene/src/world_surface.cpp
 )
 target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_link_libraries(midgard_scene

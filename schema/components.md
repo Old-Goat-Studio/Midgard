@@ -13,7 +13,7 @@ mapping instead, from Phase 5).
 | Component | Shape | Notes |
 |---|---|---|
 | `transform` | `{"position": [x, y, z], "rotation": [x, y, z], "scale": [x, y, z]}` | Rotation is Euler degrees combined as `R = Ry · Rx · Rz` (yaw, pitch, roll), and the full local matrix is `T · R · S`. All three keys are optional (defaults: origin, no rotation, scale 1). Relative to the parent entity. |
-| `mesh` | `{"asset": "<content id>"}` | A mesh in the package's `content` list (a `.glb`). Ids: `prim_cube`, `prim_sphere`, `prim_plane` (editor primitives), `asset:<path>` (a `.glb` in the project's `objects/` folder; older projects' `assets/` folder is moved there when they open), `builtin:cube` (built into the engine, not in `game.pak`). |
+| `mesh` | `{"asset": "<content id>"}` | A mesh in the package's `content` list (a `.glb`). Ids: `prim_cube`, `prim_sphere`, `prim_plane` (editor primitives), `asset:<path>` (a `.glb` in the project's `objects/` folder; older projects' `assets/` folder is moved there when they open), `builtin:cube` (built into the engine, not in `game.pak`), `builtin:surface` (the world's surface, made by the engine from the scene's `body`: within a few centimetres of the true curve, facing up into the world, placed with the entity at the origin and no rotation or scale; with a `{"shape": "mesh"}` collider it is the ground to walk on; it casts no shadow, so the far side of a cylinder or a hollow world doesn't shade the floor). |
 | `material` | `{"color": [r, g, b, a], "metallic": 0, "roughness": 0.8, "emissive": [r, g, b], "emissive_strength": 1}` | glTF's metal/roughness factors. Alpha is optional (default 1); metallic and roughness are 0 to 1 (defaults: not metal, fairly rough); emissive light is its colour times its strength (default none). Textures come with the object pipeline. |
 | `camera` | `{"fov": 55, "near": 0.05, "far": 500}` | Vertical field of view in degrees. The scene's first camera is used. |
 | `light` | `{"type": "directional", "color": [r, g, b], "intensity": 1.0}`, or `"point"`/`"spot"` with `"range": 10`, and for spots `"inner_angle": 20, "outer_angle": 30` (degrees) | Directional lights and spots shine along the entity's local −Z axis (after rotation). The scene's first directional light is the sun. Point and spot lights fade as glTF's KHR_lights_punctual does (inverse square, to zero at the range); the eight nearest the camera are used. Intensity 1 lights a white surface facing the light to white. |
@@ -41,7 +41,9 @@ editor creates one in every scene's World folder.
 Shapes and their sizes in metres: `bounded_area` (`width`, `length`), `flat_cylinder`
 (`circumference`, `length`), `curved_cylinder` (`radius`, `length`; you live inside it, spin
 gravity pulls outwards), `sphere_outside` (`radius`; a planet) and `sphere_inside` (`radius`; a
-hollow world). `origin` is where the shape's centre is (default the origin), and sizes must lie
+hollow world). `origin` is where the shape's centre is (default the origin; the editor's World ▸
+World Shape… puts the surface through the scene's origin with "up" along +Y there: a planet's
+centre at `[0, -radius, 0]`, a hollow world's or a cylinder's at `[0, radius, 0]`), and sizes must lie
 within the roadmap's limits (§7, "Size and precision"); the engine refuses others. Physics pulls
 every moving body along the shape's gravity where it is, and the sun's shadows use its "up".
 

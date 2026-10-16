@@ -10,10 +10,12 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "midgard/body.h"
 #include "midgard/det.h"
 #include "midgard/hash.h"
 #include "midgard/jobs.h"
 #include "midgard/package.h"
+#include "midgard/physics.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/render/renderer.h"
 #include "midgard/shape.h"
@@ -162,6 +164,48 @@ Check frame_check(const Options& options) {
     }
 }
 
+// Jolt on this device: a box dropped on a 1 km planet lands on its surface, and a character
+// walks 20 m round it without falling or sinking.
+Check physics_check() {
+    try {
+        const auto start = std::chrono::steady_clock::now();
+        Body planet{"planet", Shape::sphere_outside(1000.0, 9.81), 0, glm::dvec3(0.0)};
+        physics::World world(planet);
+        physics::BodyDesc ground;
+        ground.collider.kind = physics::Collider::Kind::Sphere;
+        ground.collider.radius = 1000.0f;
+        world.add(ground);
+        physics::BodyDesc box;
+        box.motion = physics::Motion::Dynamic;
+        box.position = {0.0, 0.0, 1003.0};
+        const physics::BodyId crate = world.add(box);
+        physics::CharacterDesc walker;
+        walker.position = {1000.5, 0.0, 0.0};
+        physics::Character character(world, walker);
+        for (int i = 0; i < 180; ++i)  // three seconds
+            world.step(physics::kStep, [&] {
+                const glm::dvec3 up = planet.up(character.position());
+                const glm::vec3 east(glm::normalize(glm::cross(up, glm::dvec3(0, 0, 1))));
+                character.step(i < 60 ? glm::vec3(0.0f) : east * 10.0f);
+            });
+        const double ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                .count();
+        const double landed = glm::length(world.state(crate).position) - 1000.0;
+        const double standing = glm::length(character.position()) - 1000.0;
+        const double walked = glm::length(character.position() - glm::dvec3(1000.5, 0, 0));
+        if (std::abs(landed - 0.5) > 0.05 || std::abs(standing - 0.5) > 0.05 ||
+            std::abs(walked - 20.0) > 1.0 || !character.on_ground())
+            return {"Physics", Status::Fail,
+                    format("box at %.2f m, character at %.2f m after %.1f m", landed, standing,
+                           walked)};
+        return {"Physics", Status::Pass,
+                format("a box lands and a character walks on a planet, %.0f ms", ms)};
+    } catch (const std::exception& e) {
+        return {"Physics", Status::Fail, e.what()};
+    }
+}
+
 Check package_check(const std::optional<std::filesystem::path>& package) {
     if (!package) return {"Game package", Status::Skip, "none (the demo scene)"};
     try {
@@ -207,6 +251,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(data_check());
     checks.push_back(maths_check());
     checks.push_back(shapes_check());
+    checks.push_back(physics_check());
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(frame_check(options));
     checks.push_back(package_check(options.package));

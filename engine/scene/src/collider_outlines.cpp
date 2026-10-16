@@ -23,6 +23,7 @@ public:
         : out_(out), origin_(origin), max_(max) {}
 
     bool full() const { return out_.size() >= max_; }
+    const glm::dvec3& origin() const { return origin_; }
     void add(const glm::dvec3& a, const glm::dvec3& b, const glm::vec4& c) {
         if (!full()) out_.push_back({glm::vec3(a - origin_), glm::vec3(b - origin_), c});
     }
@@ -134,8 +135,12 @@ void collider(Lines& lines, const Placement& p, const ColliderShape& s, const Me
                 const float* v = data->vertices[i].position;
                 return p.at(s.offset + glm::vec3(v[0], v[1], v[2]));
             };
+            // A mesh as big as the world's surface: only its edges near the camera.
+            const bool huge = edges.size() > 20000;
             for (const auto& [a, b] : edges) {
                 if (lines.full()) break;
+                if (huge && glm::length(0.5 * (point(a) + point(b)) - lines.origin()) > 40.0)
+                    continue;
                 if (data->vertices[a].position[0] == data->vertices[b].position[0] &&
                     data->vertices[a].position[1] == data->vertices[b].position[1] &&
                     data->vertices[a].position[2] == data->vertices[b].position[2])

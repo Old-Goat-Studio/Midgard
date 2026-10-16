@@ -10,6 +10,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/world_surface.h"
+
 namespace midgard {
 namespace {
 
@@ -399,6 +401,10 @@ render::DrawItem Scene::draw_item(entt::entity e, render::MeshId mesh,
         d.emissive = m->emissive;
         d.emissive_strength = m->emissive_strength;
     }
+    // The world's surface casts no shadow: inside a cylinder or a hollow world its far side
+    // would shade everything (inside worlds get their own light in milestone 5.8).
+    if (const MeshRef* r = registry.try_get<MeshRef>(e); r && r->asset == kBuiltinSurface)
+        d.casts_shadow = false;
     return d;
 }
 

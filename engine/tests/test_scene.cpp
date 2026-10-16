@@ -16,11 +16,13 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/body.h"
 #include "midgard/collider_outlines.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
 #include "midgard/pak.h"
 #include "midgard/scene.h"
+#include "midgard/world_surface.h"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -728,4 +730,123 @@ TEST_CASE("collider outlines: each shape's lines, coloured by how it moves") {
     CHECK(midgard::collider_outlines(
               scene, glm::dvec3(0.0), [&](const std::string&) { return &cube; }, 50)
               .size() == 50);
+}
+
+namespace {
+
+midgard::Body test_body(const char* json) {
+    return midgard::body_from_json(json::parse(json));
+}
+
+}  // namespace
+
+TEST_CASE("the world's surface lies on the shape, faces up, and passes through y = 0") {
+    for (const char* settings : {
+             R"({"shape": "sphere_outside", "radius": 1000, "origin": [0, -1000, 0]})",
+             R"({"shape": "sphere_inside", "radius": 1000, "origin": [0, 1000, 0]})",
+             R"({"shape": "curved_cylinder", "radius": 1000, "length": 5000,
+                 "origin": [0, 1000, 0]})",
+             R"({"shape": "bounded_area", "width": 2000, "length": 2000})",
+         }) {
+        CAPTURE(std::string(settings));
+        const midgard::Body body = test_body(settings);
+        const midgard::render::MeshData mesh = midgard::surface_mesh(body);
+        REQUIRE(mesh.indices.size() % 3 == 0);
+        CHECK(mesh.indices.size() / 3 < 250'000);  // a mesh a phone can draw
+        double worst_vertex = 0.0, worst_middle = 0.0;
+        int facing_down = 0;
+        for (const auto& v : mesh.vertices)
+            worst_vertex = std::max(
+                worst_vertex,
+                std::abs(body.surface({v.position[0], v.position[1], v.position[2]}).height));
+        for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+            glm::dvec3 p[3];
+            for (int k = 0; k < 3; ++k) {
+                const float* v = mesh.vertices[mesh.indices[i + k]].position;
+                p[k] = {v[0], v[1], v[2]};
+            }
+            const glm::dvec3 middle = (p[0] + p[1] + p[2]) / 3.0;
+            if (glm::dot(glm::cross(p[1] - p[0], p[2] - p[0]), body.up(middle)) <= 0.0)
+                ++facing_down;
+            worst_middle = std::max(worst_middle, std::abs(body.surface(middle).height));
+        }
+        CHECK(worst_vertex < 0.001);  // on the surface (floats, 1 km out)
+        CHECK(worst_middle < 0.05);   // the flat triangles stay within 5 cm of the curve
+        CHECK(facing_down == 0);
+        // The scene's ground (the origin) is on the surface, with up along +Y there.
+        CHECK(std::abs(body.surface({0, 0, 0}).height) < 1e-9);
+        CHECK(body.up({0, 0, 0}).y == doctest::Approx(1.0));
+    }
+}
+
+TEST_CASE("the exit: the player walks all the way round a planet and inside a cylinder") {
+    struct Walk {
+        const char* name;
+        const char* body;
+        const char* key;    // W along -Z (round the planet), D along +X (round the tube)
+        glm::dvec3 centre;  // what it walks round
+        bool round_z_axis;  // the tube's axis is Z: measure the turn in XY only
+    };
+    for (const Walk& w : {
+             Walk{"planet",
+                  R"({"shape": "sphere_outside", "radius": 1000, "origin": [0, -1000, 0]})",
+                  "W",
+                  {0, -1000, 0},
+                  false},
+             Walk{"cylinder",
+                  R"({"shape": "curved_cylinder", "radius": 1000, "length": 5000,
+                               "origin": [0, 1000, 0]})",
+                  "D",
+                  {0, 1000, 0},
+                  true},
+         }) {
+        CAPTURE(std::string(w.name));
+        TestPackage pkg(
+            {
+                {"e1_ground", R"(NULL, '{"mesh": {"asset": "builtin:surface"},
+                                "collider": {"shape": "mesh"}}')"},
+                {"e2_player", R"(NULL, '{"transform": {"position": [0, 0.5, 0]},
+                                "player": {"speed": 20}}')"},
+                {"e3_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]}, "camera": {}}')"},
+            },
+            std::string(R"({"body": )") + w.body + "}");
+        midgard::Game game(pkg.dir);
+        midgard::Scene& scene = game.scene();
+        const midgard::Body& body = *scene.settings.body;
+        const entt::entity player = scene.find("e2_player");
+        midgard::Actions actions(midgard::InputMap::defaults());
+        actions.set("keyboard", w.key, 1.0f);
+        const auto relative = [&](const glm::dvec3& p) {
+            glm::dvec3 r = p - w.centre;
+            if (w.round_z_axis) r.z = 0.0;
+            return glm::normalize(r);
+        };
+        glm::dvec3 last = relative(scene.registry.get<midgard::Transform>(player).position);
+        double turned = 0.0, lowest = 1e9, highest = -1e9;
+        int frames = 0, airborne = 0;
+        while (turned < 2.0 * 3.14159265358979 && frames < 25000) {
+            game.update(actions, 1.0f / 60.0f);
+            ++frames;
+            const glm::dvec3 p = scene.registry.get<midgard::Transform>(player).position;
+            const glm::dvec3 now = relative(p);
+            turned += std::acos(std::clamp(glm::dot(last, now), -1.0, 1.0));
+            last = now;
+            if (!game.physics().character()->on_ground()) ++airborne;
+            if (frames > 30) {
+                lowest = std::min(lowest, body.surface(p).height);
+                highest = std::max(highest, body.surface(p).height);
+            }
+        }
+        // Round in 2 pi R / 20 m/s = 314 s: 18850 frames at 60 a second, give or take.
+        CHECK(frames == doctest::Approx(18850).epsilon(0.05));
+        CHECK(glm::length(scene.registry.get<midgard::Transform>(player).position -
+                          glm::dvec3(0, 0.5, 0)) < 50.0);  // back where it started
+        CHECK(lowest > 0.4);                               // never fell into the ground
+        CHECK(highest < 0.65);                             // nor left it
+        CHECK(airborne < 30);                              // on its feet all the way
+        // The camera followed, above the ground behind the player.
+        const glm::dvec3 cam =
+            scene.registry.get<midgard::Transform>(scene.find("e3_camera")).position;
+        CHECK(body.surface(cam).height > 1.0);
+    }
 }

@@ -57,6 +57,7 @@ public:
 
 private:
     void upload_meshes();
+    bool needs_surface() const;  // an entity draws the world's surface
 
     Scene scene_;
     std::unordered_map<std::string, render::MeshData> mesh_data_;
@@ -65,6 +66,7 @@ private:
     glm::vec3 eye_{4.0f, 3.0f, 6.0f}, target_{0.0f, 0.5f, 0.0f};
     float fov_ = 55.0f;
     bool show_colliders_ = false;
+    std::string body_json_;  // the world shape the surface mesh was made for
     struct Platform;
     std::unique_ptr<Platform> platform_;  // per-window-system state (the X11 connection)
 };

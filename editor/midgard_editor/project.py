@@ -318,9 +318,10 @@ class Project(QObject):
         self.physics_layers_changed.emit()
 
     def mesh_assets(self) -> dict[str, str]:
-        """Meshes an entity can use: id -> label. The editor's primitives, then the .glb files
-        in the project's objects/ folder."""
+        """Meshes an entity can use: id -> label. The editor's primitives, the world's surface,
+        then the .glb files in the project's objects/ folder."""
         found = dict(meshes.PRIMITIVES)
+        found["builtin:surface"] = "World surface"  # made by the engine from the world shape
         objects = self.objects_dir
         if objects.is_dir():
             for file in sorted(objects.rglob("*.glb")):

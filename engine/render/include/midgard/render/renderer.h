@@ -98,6 +98,7 @@ struct DrawItem {
     float normal_scale = 1.0f;
     float occlusion_strength = 1.0f;
     MaterialId material = 0;
+    bool casts_shadow = true;  // false: lit and shadowed, but leaves no shadow of its own
 };
 
 // The textures of a material (kNoTexture: none, a neutral default).

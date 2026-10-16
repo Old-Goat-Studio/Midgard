@@ -1265,7 +1265,7 @@ struct Renderer::Impl {
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline);
             for (const DrawItem& d : draws) {
-                if (d.mesh >= meshes.size()) continue;
+                if (d.mesh >= meshes.size() || !d.casts_shadow) continue;
                 const GpuMesh& m = meshes[d.mesh];
                 const glm::vec3 center(d.model * glm::vec4(m.center, 1.0f));
                 const float scale = std::max({glm::length(glm::vec3(d.model[0])),
