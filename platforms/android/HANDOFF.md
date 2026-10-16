@@ -42,6 +42,11 @@ Android games join co-op sessions but never host. Package format: 1.0. Engine AB
 - `runtime-template-android-arm64`: the template zip, from every CI run
 - `HelloCube-android-arm64`: a sample game exported by the editor in CI, checked with the
   SDK's `zipalign -c`, `apksigner verify` and `aapt2 dump badging`
+- `Midgard-selftest-android-arm64`: the engine's self-test APK (`midgard-editor export …
+  --selftest`), the sample game plus an `assets/selftest.txt` marker, under its own package name
+  (`<game>.selftest`, titled *Midgard Self-test*) so it installs beside the game. It checks the
+  job system, identical data, Vulkan rendering, the game's package and Python, and shows PASS or
+  FAIL on screen.
 
 ## Verify
 1. The `android-arm64` preset configures and builds in CI, and the sample APK passes the checks.
@@ -49,4 +54,6 @@ Android games join co-op sessions but never host. Package format: 1.0. Engine AB
    the phone and open it (allow installing from that source when asked), or run
    `adb install -r HelloCube-0.1.0-android-arm64.apk`. The scene appears in landscape; the
    Back button quits. Switching away and back keeps the game running.
-3. If it fails, `adb logcat -s SDL SDL/APP AndroidRuntime DEBUG` shows the reason.
+3. Install the self-test APK and open *Midgard Self-test*: it shows **SELF-TEST PASSED** in
+   green, or FAILED in red with the failing check.
+4. If anything fails, `adb logcat -s SDL SDL/APP AndroidRuntime DEBUG` shows the reason.

@@ -3,6 +3,9 @@
 
     python tools/licenses.py check      # fail if anything is unlisted, unlicensed or not allowed
     python tools/licenses.py notices [--role runtime|editor] [--out FILE]
+
+The check covers third-party code (tools/third_party.json), SPDX headers in Midgard's own
+sources, and third-party assets (assets/third_party/SOURCES.toml: CC0 only, every file listed).
 """
 import argparse
 import json
@@ -13,6 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 THIRD_PARTY = ROOT / "tools" / "third_party.json"
+ASSETS = ROOT / "assets" / "third_party"
+ASSET_LICENSES = {"CC0-1.0"}  # decided 15 October 2026: public-domain assets only
 SPDX = "SPDX-License-Identifier: Apache-2.0"
 
 # Source files that must start with an SPDX header (within their first three lines).
@@ -53,6 +58,44 @@ def declared_dependencies() -> dict[str, set[str]]:
     return {"vcpkg": cpp, "python": py}
 
 
+def asset_problems(folder: Path = ASSETS) -> list[str]:
+    """Every file in the assets folder is listed in SOURCES.toml with an allowed licence and a
+    source, and every entry exists."""
+    register = folder / "SOURCES.toml"
+    if not register.is_file():
+        return ["assets/third_party/SOURCES.toml is missing"]
+    try:
+        entries = tomllib.loads(register.read_text(encoding="utf-8")).get("asset", [])
+    except tomllib.TOMLDecodeError as e:
+        return [f"SOURCES.toml: {e}"]
+    found, covered = [], []
+    for e in entries:
+        path = str(e.get("path", ""))
+        where = f"SOURCES.toml entry '{path or '?'}'"
+        if not path:
+            found.append(f"{where}: no path")
+            continue
+        if e.get("license") not in ASSET_LICENSES:
+            found.append(f"{where}: licence {e.get('license')!r} is not allowed "
+                         f"(only {', '.join(sorted(ASSET_LICENSES))})")
+        if not str(e.get("source", "")).startswith("https://"):
+            found.append(f"{where}: needs a source (an https:// address)")
+        for key in ("title", "author"):
+            if not e.get(key):
+                found.append(f"{where}: needs a {key}")
+        target = folder / path
+        if not (target.is_dir() if path.endswith("/") else target.is_file()):
+            found.append(f"{where}: no such {'folder' if path.endswith('/') else 'file'}")
+        covered.append(path)
+    for file in sorted(folder.rglob("*")):
+        rel = file.relative_to(folder).as_posix()
+        if not file.is_file() or rel in ("SOURCES.toml", "README.md"):
+            continue
+        if not any(rel == c or (c.endswith("/") and rel.startswith(c)) for c in covered):
+            found.append(f"assets/third_party/{rel} is not listed in SOURCES.toml")
+    return found
+
+
 def problems() -> list[str]:
     data = load()
     allowed = data["allowed"]
@@ -74,6 +117,7 @@ def problems() -> list[str]:
             if not any(choice in allowed[role] for choice in choices):
                 found.append(f"{c['name']}: licence {term} is not allowed for '{role}'")
     found += [f"{p}: missing '{SPDX}' header" for p in missing_headers()]
+    found += asset_problems()
     return found
 
 

@@ -161,6 +161,27 @@ def test_android_export(project, tmp_path):
     assert manifest["target"] == {"os": "android", "arch": "arm64", "role": "game"}
 
 
+def test_the_selftest_apk_installs_beside_the_game(project, tmp_path, capsys):
+    from midgard_editor.__main__ import main
+
+    code = main(["export", str(project.config_path), "--target", "android-arm64", "--selftest",
+                 "--out", str(tmp_path / "out"), "--template", str(android_template(tmp_path)),
+                 "--settings", str(tmp_path / "settings")])
+    assert code == 0, capsys.readouterr().err
+    archive = tmp_path / "out" / "Midgard-selftest-0.1.0-android-arm64.apk"
+    apk.verify_v2(archive.read_bytes())
+    with zipfile.ZipFile(archive) as z:
+        strings = apk.manifest_strings(z.read("AndroidManifest.xml"))
+        assert "assets/selftest.txt" in z.namelist()  # what starts the runtime's self-test
+        assert "assets/data/HelloCube.db" in z.namelist()  # with the game's package to check
+    assert "com.example.hellocube.selftest" in strings and "Midgard Self-test" in strings
+    assert "com.example.hellocube" not in strings  # a different app from the game
+
+    settings = tmp_path / "settings"
+    with pytest.raises(exporter.ExportError, match="for Android"):
+        exporter.export(project, "windows-x86_64", tmp_path / "pc", settings, selftest=True)
+
+
 def test_android_package_comes_from_the_project(project, tmp_path):
     assert exporter.android_package(project) == "com.example.hellocube"
     project.set_config("android_package", "com.oldgoat.cube")

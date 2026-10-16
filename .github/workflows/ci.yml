@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff pytest clang-format==18.1.8
+      - run: pip install ruff pytest pillow clang-format==18.1.8
       - name: Ruff
         run: ruff check .
       - name: Licence check (third-party list, allowed licences, SPDX headers)
@@ -159,12 +159,27 @@ jobs:
       - run: cmake --preset ${{ matrix.preset }} -DMIDGARD_REQUIRE_PYTHON=ON
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
+      - name: Benchmarks against the performance budgets (schema/budgets.json)
+        shell: bash
+        run: |
+          build/${{ matrix.preset }}/engine/midgard_bench --json "$RUNNER_TEMP/bench.json"
+          python tools/budgets.py "$RUNNER_TEMP/bench.json" --platform ci-${{ matrix.preset }}
+      - name: Upload the benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.preset }}
+          path: ${{ runner.temp }}/bench.json
+          if-no-files-found: ignore
       - name: Runtime reports its version
         shell: bash
         run: build/${{ matrix.preset }}/engine/midgard_runtime --version
       - name: Runtime starts the game's Python
         shell: bash
         run: build/${{ matrix.preset }}/engine/midgard_runtime --check-python
+      - name: Runtime self-test (rendering with lavapipe on Linux; skipped without Vulkan)
+        shell: bash
+        run: build/${{ matrix.preset }}/engine/midgard_runtime --selftest
       - name: Game scripts with this engine (triggers, errors, reload while playing, API stub)
         shell: bash
         env:
@@ -191,18 +206,18 @@ jobs:
         with:
           name: runtime-template-${{ matrix.preset }}
           path: build/templates/*.zip
-      - name: Render the demo scene offscreen with software Vulkan (lavapipe)
+      - name: Image tests with software Vulkan (lavapipe)
         if: runner.os == 'Linux'
         run: |
-          build/${{ matrix.preset }}/engine/midgard_runtime --screenshot "$RUNNER_TEMP/render.png" --size 640x360
           pip install --quiet pillow
-          python tools/check_render.py "$RUNNER_TEMP/render.png"
-      - name: Upload the rendered image
-        if: runner.os == 'Linux'
+          python tools/images.py run --runtime build/${{ matrix.preset }}/engine/midgard_runtime \
+            --out "$RUNNER_TEMP/images"
+      - name: Upload the rendered images and their differences
+        if: always() && runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: render-${{ matrix.preset }}
-          path: ${{ runner.temp }}/render.png
+          name: images-${{ matrix.preset }}
+          path: ${{ runner.temp }}/images
 
   android:
     name: Engine (android-arm64, NDK)
@@ -296,3 +311,21 @@ jobs:
         with:
           name: HelloCube-android-arm64
           path: ${{ runner.temp }}/export/*.apk
+      - name: The self-test APK (installs beside the game; shows PASS or FAIL on the phone)
+        run: |
+          python -m midgard_editor export "$RUNNER_TEMP/projects/HelloCube/HelloCube.config" \
+            --target android-arm64 --selftest --out "$RUNNER_TEMP/selftest" \
+            --settings "$RUNNER_TEMP/settings"
+          TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls "$RUNNER_TEMP"/selftest/*.apk)
+          "$TOOLS/zipalign" -c 4 "$APK"
+          "$TOOLS/apksigner" verify --min-sdk-version 29 "$APK"
+          "$TOOLS/aapt2" dump badging "$APK" > "$RUNNER_TEMP/selftest-badging.txt"
+          grep -q "package: name='com.example.hellocube.selftest'" "$RUNNER_TEMP/selftest-badging.txt"
+          grep -q "application-label:'Midgard Self-test'" "$RUNNER_TEMP/selftest-badging.txt"
+          unzip -l "$APK" | grep -q " assets/selftest.txt$"
+      - name: Upload the self-test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Midgard-selftest-android-arm64
+          path: ${{ runner.temp }}/selftest/*.apk

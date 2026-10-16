@@ -137,9 +137,15 @@ def _notices(template: Template) -> str:
                           capture_output=True, text=True, check=True).stdout
 
 
-def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> Path:
-    """Export the project for a target. Returns the archive; the unpacked game is beside it."""
+def export(project: Project, target: str, out_dir: Path, settings_dir: Path,
+           selftest: bool = False) -> Path:
+    """Export the project for a target. Returns the archive; the unpacked game is beside it.
+    selftest (Android only): the engine's self-test APK instead, which installs beside the game
+    and shows whether the engine works on the device (see the runtime's --selftest)."""
     spec = TARGETS[target]
+    if selftest and spec["os"] != "android":
+        raise ExportError("The self-test APK is for Android; on PCs run the game with "
+                          "--selftest --show")
     template = find_template(target, settings_dir)
     if template is None:
         raise ExportError(f"No runtime template for {spec['label']} is installed. Download "
@@ -148,7 +154,9 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> 
     name = project.name
     version = project.config.get("game_version", "0.1.0")
     if spec["os"] == "android":
-        return _export_android(project, template, out_dir, settings_dir, target, version)
+        return _export_android(project, template, out_dir, settings_dir, target, version,
+                               selftest)
+
     game_dir = out_dir / f"{name}-{target}" / name
     if game_dir.parent.exists():
         shutil.rmtree(game_dir.parent)
@@ -216,8 +224,11 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path) -> 
     return archive
 
 
+SELFTEST_TITLE = "Midgard Self-test"
+
+
 def _export_android(project: Project, template: Template, out_dir: Path, settings_dir: Path,
-                    target: str, version: str) -> Path:
+                    target: str, version: str, selftest: bool = False) -> Path:
     spec = TARGETS[target]
     work = out_dir / f"{project.name}-{target}"
     if work.exists():
@@ -232,15 +243,20 @@ def _export_android(project: Project, template: Template, out_dir: Path, setting
         src = template.folder / doc if (template.folder / doc).is_file() else BUNDLE_DIR / doc
         if src.is_file():
             assets[f"licenses/MIDGARD_{doc}.txt"] = src.read_bytes()
+    package, title, stem = android_package(project), project.game_title, project.name
+    if selftest:
+        # The runtime starts in self-test mode when it finds this asset. Its own package name
+        # lets it install beside the game rather than over it.
+        assets["selftest.txt"] = b"The Midgard runtime's self-test (midgard_runtime --selftest)\n"
+        package, title, stem = f"{package}.selftest", SELFTEST_TITLE, "Midgard-selftest"
     key, _ = android_apk.development_key(settings_dir)
     try:
         icon = work / "data" / "icon.png"
-        apk = android_apk.build_apk(template.runtime, work / "data", assets,
-                                    android_package(project), project.game_title, version, key,
-                                    icon.read_bytes() if icon.is_file() else None)
+        apk = android_apk.build_apk(template.runtime, work / "data", assets, package, title,
+                                    version, key, icon.read_bytes() if icon.is_file() else None)
     except android_apk.ApkError as e:
         raise ExportError(f"The Android export failed: {e}") from e
-    archive = out_dir / f"{project.name}-{version}-{target}.apk"
+    archive = out_dir / f"{stem}-{version}-{target}.apk"
     archive.write_bytes(apk)
     return archive
 

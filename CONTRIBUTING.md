@@ -44,6 +44,29 @@ cmake --build --preset linux-release
 ctest --preset linux-release
 ```
 
+## Kinds of tests
+
+Every change comes with tests at the levels it touches (see `Phase5_Roadmap.md`, §2):
+
+- **Unit tests:** doctest in `engine/tests/`, pytest in `editor/tests/` and `tools/tests/`.
+- **Reference tables:** formulas with a specification (hashing now; shapes, solar phase and
+  calendars later) have a Python version in `tools/reference/` and a table of cases in
+  `schema/tests/`, checked against both the Python and the engine.
+- **Image tests:** `python tools/images.py run --runtime <midgard_runtime>` draws the scenes in
+  `engine/tests/images/scenes.json` and compares them with the reference images beside it. CI
+  runs them on Linux with software Vulkan. When a change is meant to alter the pictures, run
+  `tools/images.py update` and review the new images like code.
+- **Budgets:** `midgard_bench --json r.json` then `python tools/budgets.py r.json` checks timings
+  against `schema/budgets.json`. Every benchmark needs a budget.
+- **Device checks:** `midgard_runtime --selftest` (with `--show` on screen), and on Android the
+  self-test APK from CI (`midgard-editor export … --selftest`).
+
+## Third-party assets
+
+Models, sounds and textures from others go in `assets/third_party/`, and only under **CC0**.
+List each file (or a folder from one pack) in `assets/third_party/SOURCES.toml` with its title,
+author and source; `python tools/licenses.py check` fails otherwise.
+
 ## Style
 
 - Python: `ruff check .` must pass (settings in `ruff.toml`).
@@ -55,8 +78,8 @@ ctest --preset linux-release
 ## Pull requests
 
 - One topic per pull request, with tests where behaviour changes.
-- CI must be green: lint, licences, editor tests on Linux and Windows, engine builds on Windows,
-  Linux x86_64, Linux arm64 and Android.
+- CI must be green: lint, licences, editor tests on Linux and Windows, engine builds and tests on
+  Windows, Linux x86_64, Linux arm64 and Android, image tests, budgets and the self-test.
 - Describe what changed and why, and link the roadmap phase it belongs to.
 
 ## Code of conduct

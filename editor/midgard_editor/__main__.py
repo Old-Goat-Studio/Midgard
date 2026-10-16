@@ -6,6 +6,7 @@
     midgard-editor migrate X.db          command-line contract tools
     midgard-editor validate-manifest manifest.json
     midgard-editor export X.config --target android-arm64 --out DIR [--template T.zip]
+                   [--selftest]           the engine's self-test APK (Android)
 """
 import argparse
 import json
@@ -34,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("--out", type=Path, required=True, help="output folder")
     exp.add_argument("--template", type=Path, help="install this runtime template zip first")
     exp.add_argument("--settings", type=Path, help="editor settings folder (templates, keys)")
+    exp.add_argument("--selftest", action="store_true",
+                     help="Android: the engine's self-test APK, which installs beside the game")
     args = parser.parse_args(argv)
 
     if args.version:
@@ -76,7 +79,8 @@ def export_command(args: argparse.Namespace) -> int:
     try:
         if args.template:
             print(f"Installed {install_template(args.template, settings.dir)}")
-        archive = export(Project.open(args.project), args.target, args.out, settings.dir)
+        archive = export(Project.open(args.project), args.target, args.out, settings.dir,
+                         selftest=args.selftest)
     except (ExportError, CookError, ProjectError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

@@ -1,0 +1,12 @@
+# Third-party assets in this folder: models, animations, sounds, music and textures used by the
+# engine's tests and the sample projects. Only CC0 (public domain) assets are accepted, and every
+# file here needs an entry, which tools/licenses.py checks in CI. For example:
+#
+#   [[asset]]
+#   path = "characters/universal_base.glb"   # relative to this folder
+#   title = "Universal Base Characters"
+#   author = "Quaternius"
+#   source = "https://quaternius.com/packs/universalbasecharacters.html"
+#   license = "CC0-1.0"
+#
+# A folder of files from one pack can be listed once, with path = "folder/" (ending in /).

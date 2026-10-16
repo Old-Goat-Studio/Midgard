@@ -9,7 +9,15 @@
 //   midgard_runtime --package <dir> --headless --editor-link host:port
 //                                       play under the editor without a window or GPU (tests, CI)
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
-//   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH]   (offscreen, no window)
+//   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH] [--overlay-text "a|b"]
+//                                       offscreen, no window (image tests)
+//   midgard_runtime --selftest [--show]  checks this device can run games (jobs, identical data,
+//                                       rendering, the package, Python); --show puts the results
+//                                       on screen. On Android, an APK with a selftest.txt asset
+//                                       starts this way (the self-test APK built in CI).
+//   any of these with --profile trace.json   timed zones, for ui.perfetto.dev or chrome://tracing
+//
+// In a window, F3 (or --debug-overlay) shows the frame rate and timings over the game.
 //
 // --editor-link connects to the editor's live link (play-in-editor): the editor's edits reach the
 // running game, and the game's log and frame rate reach the editor. The game quits when the
@@ -60,8 +68,10 @@
 #include "midgard/input.h"
 #include "midgard/link.h"
 #include "midgard/manifest.h"
+#include "midgard/profile.h"
 #include "midgard/render/renderer.h"
 #include "midgard/version.h"
+#include "selftest.h"
 #ifdef MIDGARD_HAS_SCRIPTING
 #include "midgard/script.h"
 #include "midgard/script_system.h"
@@ -80,13 +90,35 @@ struct Options {
     bool headless = false;  // the game loop and live link, without a window or GPU
     long frames = -1;       // run until closed
     uint32_t width = 1280, height = 720;
+    bool debug_overlay = false;
+    std::optional<std::string> overlay_text;  // fixed overlay lines, separated by '|'
+    std::optional<std::string> profile;       // where to write the profiling trace
+    bool selftest = false;
+    bool show = false;  // the self-test's results in a window
+    // Overlay lines shown for the whole run (the self-test's results); F3 is off then.
+    std::vector<render::OverlayLine> fixed_overlay;
 };
 
 int usage() {
     std::puts(
         "usage: midgard_runtime [--version] [--package <dir>] [--frames N] [--size WxH]\n"
-        "                       [--screenshot out.png] [--editor-link host:port]");
+        "                       [--screenshot out.png [--overlay-text \"a|b\"]]\n"
+        "                       [--editor-link host:port] [--debug-overlay] [--profile out.json]\n"
+        "       midgard_runtime --selftest [--show]");
     return 2;
+}
+
+std::vector<render::OverlayLine> overlay_lines(const std::string& text) {
+    std::vector<render::OverlayLine> lines;
+    size_t start = 0;
+    while (start <= text.size()) {
+        const size_t bar = text.find('|', start);
+        lines.push_back(
+            {text.substr(start, bar == std::string::npos ? std::string::npos : bar - start)});
+        if (bar == std::string::npos) break;
+        start = bar + 1;
+    }
+    return lines;
 }
 
 // The editor's live link, while the game runs under the editor.
@@ -551,6 +583,7 @@ int run_screenshot(const Options& opt, Source& source) {
     desc.validation = want_validation();
     render::Renderer renderer(desc);
     source.upload(renderer);
+    if (opt.overlay_text) renderer.set_overlay(overlay_lines(*opt.overlay_text));
     const auto draws = source.draws(0.6f);
     renderer.render_frame(source.camera(float(opt.width) / float(opt.height)), source.light(),
                           draws, source.sky());
@@ -711,8 +744,11 @@ int run_window(const Options& opt, Source& source) {
         bool running = true;
         bool background = false;  // Android: the app is not visible and has no surface
         bool paused = false;      // the editor's Pause: drawn, but no gameplay
+        bool show_stats = opt.debug_overlay && opt.fixed_overlay.empty();
+        if (!opt.fixed_overlay.empty()) renderer.set_overlay(opt.fixed_overlay);
         long frame = 0;
         long frames_this_second = 0;
+        double frame_seconds = 0.0, worst_frame = 0.0;  // over the last second
         size_t draw_count = 0;
         auto stats_due = start + std::chrono::seconds(1);
         while (running && (opt.frames < 0 || frame < opt.frames)) {
@@ -752,6 +788,15 @@ int run_window(const Options& opt, Source& source) {
                     case SDL_EVENT_KEY_DOWN:
                         // Android's Back button quits until in-game menus exist (Phase 6).
                         if (e.key.scancode == SDL_SCANCODE_AC_BACK) running = false;
+                        if (e.key.scancode == SDL_SCANCODE_ESCAPE && !link &&
+                            !opt.fixed_overlay.empty())
+                            running = false;  // closes the self-test's results
+                        if (e.key.scancode == SDL_SCANCODE_F3 && !e.key.repeat &&
+                            opt.fixed_overlay.empty()) {
+                            show_stats = !show_stats;
+                            if (!show_stats) renderer.set_overlay({});
+                            consumed = true;
+                        }
                         // Under the editor, its Pause (F6) and Stop (Shift+F5) keys also work
                         // while the game window has the keyboard.
                         if (link && !e.key.repeat) {
@@ -798,24 +843,51 @@ int run_window(const Options& opt, Source& source) {
             }
             // The menu action quits until in-game menus exist (Phase 6).
             if (actions.pressed("menu")) running = false;
+            MIDGARD_PROFILE_SCOPE("frame");
             const auto now = std::chrono::steady_clock::now();
-            const float dt = std::min(std::chrono::duration<float>(now - last).count(), 0.1f);
+            const double real_dt = std::chrono::duration<double>(now - last).count();
+            const float dt = std::min(float(real_dt), 0.1f);
             last = now;
-            if (!paused) source.update(actions, dt);
+            if (!paused) {
+                MIDGARD_PROFILE_SCOPE("update");
+                source.update(actions, dt);
+            }
             const float t = std::chrono::duration<float>(now - start).count();
             const auto draws = source.draws(t);
             const float aspect = float(renderer.width()) / float(renderer.height());
-            if (renderer.render_frame(source.camera(aspect), source.light(), draws, source.sky())) {
+            bool drawn = false;
+            {
+                MIDGARD_PROFILE_SCOPE("render");
+                drawn = renderer.render_frame(source.camera(aspect), source.light(), draws,
+                                              source.sky());
+            }
+            if (drawn) {
                 ++frame;
                 ++frames_this_second;
+                frame_seconds += real_dt;
+                worst_frame = std::max(worst_frame, real_dt);
                 draw_count = draws.size();
             }
-            if (link && now >= stats_due) {
-                link->send({{"type", "stats"},
-                            {"fps", frames_this_second},
-                            {"draw_calls", draw_count},
-                            {"paused", paused}});
+            if (now >= stats_due) {
+                if (link)
+                    link->send({{"type", "stats"},
+                                {"fps", frames_this_second},
+                                {"draw_calls", draw_count},
+                                {"paused", paused}});
+                if (show_stats) {
+                    const double average =
+                        frames_this_second ? frame_seconds / double(frames_this_second) : 0.0;
+                    char timing[96];
+                    std::snprintf(timing, sizeof(timing), "%ld fps  %.1f ms  (worst %.1f ms)",
+                                  frames_this_second, average * 1000.0, worst_frame * 1000.0);
+                    renderer.set_overlay({{std::string("Midgard ") + midgard::kVersion},
+                                          {timing, {1.0f, 1.0f, 0.6f, 1.0f}},
+                                          {std::to_string(draw_count) + " draws"},
+                                          {renderer.device_name()},
+                                          {"F3 hides this", {0.7f, 0.7f, 0.7f, 1.0f}}});
+                }
                 frames_this_second = 0;
+                frame_seconds = worst_frame = 0.0;
                 stats_due = now + std::chrono::seconds(1);
             }
         }
@@ -887,6 +959,50 @@ int check_python() {
 
 }  // namespace
 
+namespace {
+
+int run_selftest(Options& opt) {
+    midgard::selftest::Options options;
+    if (opt.package_dir) options.package = std::filesystem::path(*opt.package_dir);
+#ifdef __ANDROID__
+    options.vulkan_required = true;
+#ifdef MIDGARD_HAS_SCRIPTING
+    options.python_home = [] { return android_python_home(); };
+#endif
+#else
+#ifdef MIDGARD_HAS_SCRIPTING
+    options.python_home = [] { return midgard::script::python_home_beside(executable_dir()); };
+#endif
+#endif
+    const auto checks = midgard::selftest::run(options);
+    say("%s", midgard::selftest::report(checks).c_str());
+    const int result = midgard::selftest::passed(checks) ? 0 : 1;
+    if (!opt.show) return result;
+#ifdef __ANDROID__
+    opt.fixed_overlay = midgard::selftest::overlay(checks, true);
+#else
+    opt.fixed_overlay = midgard::selftest::overlay(checks, false);
+#endif
+    DemoSource demo;  // the results over a spinning cube, which shows rendering keeps going
+    const int shown = run_window(opt, demo);
+    return result != 0 ? result : shown;
+}
+
+int finish(const Options& opt, bool windowed, int result) {
+    if (opt.profile) {
+        midgard::profile::set_enabled(false);
+        const auto zones = midgard::profile::take();
+        if (midgard::profile::write_chrome_trace(*opt.profile, zones))
+            say("Wrote %zu profiling zones to %s\n", zones.size(), opt.profile->c_str());
+        else
+            warn("Could not write the profile to %s\n", opt.profile->c_str());
+    }
+    if (windowed) SDL_Quit();
+    return result;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     attach_parent_console();
     Options opt;
@@ -918,22 +1034,41 @@ int main(int argc, char** argv) {
             opt.frames = std::atol(argv[++i]);
         } else if (arg == "--size" && has_value) {
             if (!parse_size(argv[++i], opt.width, opt.height)) return usage();
+        } else if (arg == "--debug-overlay") {
+            opt.debug_overlay = true;
+        } else if (arg == "--overlay-text" && has_value) {
+            opt.overlay_text = argv[++i];
+        } else if (arg == "--profile" && has_value) {
+            opt.profile = argv[++i];
+        } else if (arg == "--selftest") {
+            opt.selftest = true;
+        } else if (arg == "--show") {
+            opt.show = true;
         } else {
             return usage();
         }
     }
     // SDL starts first: on Android it also reads the package from the APK.
-    const bool windowed = !opt.screenshot && opt.simulate < 0 && !opt.headless;
+    const bool windowed =
+        !opt.screenshot && opt.simulate < 0 && !opt.headless && (!opt.selftest || opt.show);
     if (windowed && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         fail(std::string("SDL_Init failed: ") + SDL_GetError());
         return 1;
     }
     int result = 0;
+    if (opt.profile) midgard::profile::set_enabled(true);
     try {
 #ifdef __ANDROID__
+        // The self-test APK is a game APK with this marker among its assets.
+        size_t marker_size = 0;
+        if (void* marker = SDL_LoadFile("selftest.txt", &marker_size)) {
+            SDL_free(marker);
+            opt.selftest = opt.show = true;
+        }
         if (!opt.package_dir) opt.package_dir = package_from_assets();
 #endif
         if (!opt.package_dir) opt.package_dir = package_beside_executable();
+        if (opt.selftest) return finish(opt, windowed, run_selftest(opt));
         std::unique_ptr<Source> source;
         if (opt.package_dir)
             source = std::make_unique<GameSource>(*opt.package_dir);
@@ -949,6 +1084,5 @@ int main(int argc, char** argv) {
         fail(e.what());
         result = 1;
     }
-    if (windowed) SDL_Quit();
-    return result;
+    return finish(opt, windowed, result);
 }

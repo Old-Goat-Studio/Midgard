@@ -1,0 +1,13 @@
+{
+  "_about": "Image tests (tools/images.py): each scene is drawn with midgard_runtime and these arguments plus --screenshot, then compared with <name>.png in this folder. A scene may set its own tolerance (0-255 per colour channel) and max_bad (the fraction of pixels allowed past it).",
+  "scenes": [
+    {
+      "name": "demo",
+      "args": ["--size", "320x180"]
+    },
+    {
+      "name": "overlay",
+      "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
+    }
+  ]
+}

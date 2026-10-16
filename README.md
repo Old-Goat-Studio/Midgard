@@ -18,9 +18,9 @@ Midgard has two halves:
 The editor **cooks** a project into a package (`manifest.json` + a SQLite database + assets),
 and the engine runs packages. The contract between them lives in [`schema/`](schema/).
 
-> **Status: Phase 1 (editor shell).** The editor opens projects in a window with dockable panels
-> that can spread across monitors, saved layouts, undo, themes, backups and an About box, and it
-> can be packaged. The first rendered scene arrives in Phase 2.
+> **Status: Phase 5 (world building).** Phases 0–4 are done: the editor, the Vulkan runtime on
+> Windows, Linux and Android, the live link and Python scripting. Phase 5 follows
+> [`Phase5_Roadmap.md`](Phase5_Roadmap.md), foundation first.
 > See [`midgard_roadmap.md`](midgard_roadmap.md) for the full design and plan, and
 > [`midgard_plan.md`](midgard_plan.md) for the original brief.
 
@@ -33,7 +33,8 @@ and the engine runs packages. The contract between them lives in [`schema/`](sch
 | `schema/` | The editor ↔ engine contract: manifest schema, database migrations, live-link messages |
 | `platforms/` | Per-platform packaging notes and handoff documents |
 | `Themes/` | Editor colour themes (`.qss`), from Phase 1 |
-| `tools/` | Build and maintenance scripts: vcpkg setup, licence checks |
+| `tools/` | Build and maintenance scripts: vcpkg setup, licence checks, image tests, budgets, and the Python reference implementations (`tools/reference/`) |
+| `assets/third_party/` | CC0 assets for tests and samples, each listed in `SOURCES.toml` |
 | `VERSION` | The single version number for the editor and the engine |
 
 ## Building
@@ -68,7 +69,13 @@ cmake --build --preset linux-release
 ctest --preset linux-release
 build/linux-release/engine/midgard_runtime --version
 build/linux-release/engine/midgard_runtime --check-python
+build/linux-release/engine/midgard_runtime --selftest   # add --show to see it on screen
+python tools/images.py run --runtime build/linux-release/engine/midgard_runtime
+build/linux-release/engine/midgard_bench --json bench.json && python tools/budgets.py bench.json
 ```
+
+In a game window, F3 shows the frame rate and timings; `--profile trace.json` records a trace
+for [ui.perfetto.dev](https://ui.perfetto.dev).
 
 Other presets: `linux-arm64-release` (on an ARM host) and `android-arm64` (needs
 `ANDROID_NDK_HOME`, and `python tools/setup_python.py --target android-arm64` for scripting).

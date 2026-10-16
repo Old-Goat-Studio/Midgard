@@ -21,16 +21,19 @@ endif()
 configure_file(core/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/midgard/version.h" @ONLY)
 
 # ---- core: packages and data, no graphics (shared by the runtime, server and tools) ----------
+find_package(Threads REQUIRED)
 add_library(midgard_core STATIC
     core/src/manifest.cpp
     core/src/package.cpp
+    core/src/jobs.cpp
+    core/src/profile.cpp
 )
 target_include_directories(midgard_core PUBLIC
     core/include
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 target_link_libraries(midgard_core
-    PUBLIC nlohmann_json::nlohmann_json
+    PUBLIC nlohmann_json::nlohmann_json Threads::Threads
     PRIVATE unofficial::sqlite3::sqlite3 midgard_options
 )
 
@@ -42,14 +45,16 @@ find_program(GLSLANG_VALIDATOR glslangValidator HINTS ${GLSLANG_TOOL_DIRS} REQUI
 set(SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
 file(MAKE_DIRECTORY "${SHADER_OUT}")
 set(SHADER_HEADERS)
-foreach(stage vert frag)
-    set(src "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/mesh.${stage}")
-    set(out "${SHADER_OUT}/mesh_${stage}.h")
+# Each shader becomes a header with a C array named after it (mesh.vert -> mesh_vert).
+foreach(shader mesh.vert mesh.frag overlay.vert overlay.frag)
+    string(REPLACE "." "_" name "${shader}")
+    set(src "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/${shader}")
+    set(out "${SHADER_OUT}/${name}.h")
     add_custom_command(
         OUTPUT "${out}"
-        COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --vn mesh_${stage} -o "${out}" "${src}"
+        COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --vn ${name} -o "${out}" "${src}"
         DEPENDS "${src}"
-        COMMENT "Compiling shader mesh.${stage}")
+        COMMENT "Compiling shader ${shader}")
     list(APPEND SHADER_HEADERS "${out}")
 endforeach()
 add_custom_target(midgard_shaders DEPENDS ${SHADER_HEADERS})
@@ -57,6 +62,7 @@ add_custom_target(midgard_shaders DEPENDS ${SHADER_HEADERS})
 # ---- render: the Vulkan renderer -----------------------------------------------------------
 add_library(midgard_render STATIC
     render/src/renderer.cpp
+    render/src/overlay.cpp
     render/src/mesh_data.cpp
     render/src/third_party_impl.cpp
 )
@@ -208,6 +214,7 @@ if(MIDGARD_BUILD_PROGRAMS)
         add_executable(midgard_runtime runtime/main.cpp
                        $<$<PLATFORM_ID:Windows>:runtime/runtime.rc>)
     endif()
+    target_sources(midgard_runtime PRIVATE runtime/selftest.cpp)
     target_link_libraries(midgard_runtime PRIVATE
         midgard_core midgard_render midgard_scene midgard_link SDL3::SDL3 Vulkan::Headers
         midgard_options)
@@ -272,6 +279,10 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_scene.cpp
         tests/test_input.cpp
         tests/test_link.cpp
+        tests/test_jobs.cpp
+        tests/test_overlay.cpp
+        tests/test_hash.cpp
+        tests/test_reference_tables.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest
@@ -280,6 +291,12 @@ if(MIDGARD_BUILD_TESTS)
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema")
     if(NOT CMAKE_CROSSCOMPILING)
         add_test(NAME midgard_tests COMMAND midgard_tests)
+    endif()
+    # midgard_bench: timings checked against schema/budgets.json (tools/budgets.py).
+    if(NOT ANDROID)
+        add_executable(midgard_bench bench/main.cpp)
+        target_link_libraries(midgard_bench PRIVATE midgard_core midgard_render midgard_options
+                              nlohmann_json::nlohmann_json)
     endif()
     if(TARGET _midgard)
         add_test(NAME python_module

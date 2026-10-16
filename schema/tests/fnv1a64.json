@@ -1,0 +1,11 @@
+{
+  "_about": "FNV-1a 64-bit hashes (engine/core/include/midgard/hash.h). Input is UTF-8 'text' or 'hex' bytes; 'hash' is the expected value in hex. The first three are the published test vectors. Checked by tools/tests/test_reference.py (Python reference) and engine/tests/test_reference_tables.cpp (engine).",
+  "cases": [
+    {"text": "", "hash": "cbf29ce484222325"},
+    {"text": "a", "hash": "af63dc4c8601ec8c"},
+    {"text": "foobar", "hash": "85944171f73967e8"},
+    {"hex": "00", "hash": "af63bd4c8601b7df"},
+    {"hex": "00010203040506070809fffefd", "hash": "6ebd27ea93a1d2e2"},
+    {"text": "Midgard 0.1.0: the same bytes, the same hash, on every target.", "hash": "d7ca98075fd39190"}
+  ]
+}

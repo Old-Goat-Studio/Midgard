@@ -15,6 +15,7 @@
 #include <glm/glm.hpp>
 
 #include "midgard/render/mesh_data.h"
+#include "midgard/render/overlay.h"
 
 struct VkInstance_T;
 struct VkSurfaceKHR_T;
@@ -70,6 +71,9 @@ public:
     // Draws one frame. Returns false if the window surface changed and the frame was skipped.
     bool render_frame(const Camera& camera, const Light& light, std::span<const DrawItem> draws,
                       const glm::vec4& clear_color);
+
+    // The debug text overlay drawn over every frame from now on (empty: none).
+    void set_overlay(std::vector<OverlayLine> lines);
 
     // The window's drawable size changed.
     void resize(uint32_t width, uint32_t height);
