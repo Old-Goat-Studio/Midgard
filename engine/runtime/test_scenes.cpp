@@ -7,6 +7,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 
 namespace midgard::test_scenes {
@@ -83,16 +84,21 @@ private:
 
 class Textures : public TestScene {
 public:
+    // compressed: every texture goes through KTX2 (Basis UASTC) and the GPU's own format.
+    explicit Textures(bool compressed = false) : compressed_(compressed) {}
     void upload(render::Renderer& r) override {
         cube_ = r.upload_mesh(render::make_cube());
         sphere_ = r.upload_mesh(render::make_sphere());
+        const auto upload = [&](const render::TextureData& t) {
+            return compressed_ ? r.upload_ktx2(render::encode_ktx2(t)) : r.upload_texture(t);
+        };
         // Base colour: an 8 x 8 checker of two colours.
-        const auto checker = r.upload_texture(texture(true, [](float u, float v) {
+        const auto checker = upload(texture(true, [](float u, float v) {
             const bool odd = (int(u * 8) + int(v * 8)) % 2;
             return odd ? glm::vec4(0.9f, 0.85f, 0.7f, 1) : glm::vec4(0.2f, 0.35f, 0.6f, 1);
         }));
         // Normal map: a 4 x 4 grid of round bumps.
-        const auto bumps = r.upload_texture(texture(false, [](float u, float v) {
+        const auto bumps = upload(texture(false, [](float u, float v) {
             const glm::vec2 c = glm::fract(glm::vec2(u, v) * 4.0f) - 0.5f;
             const float d = glm::length(c);
             glm::vec3 n(0, 0, 1);
@@ -100,17 +106,17 @@ public:
             return glm::vec4(n * 0.5f + 0.5f, 1.0f);
         }));
         // Metal/roughness: smooth metal stripes on a rough plastic (G roughness, B metal).
-        const auto stripes = r.upload_texture(texture(false, [](float u, float) {
+        const auto stripes = upload(texture(false, [](float u, float) {
             const bool metal = int(u * 6) % 2;
             return metal ? glm::vec4(0, 0.15f, 1, 1) : glm::vec4(0, 0.9f, 0, 1);
         }));
         // Occlusion: dark towards the face's edges.
-        const auto occlusion = r.upload_texture(texture(false, [](float u, float v) {
+        const auto occlusion = upload(texture(false, [](float u, float v) {
             const float e = std::min(std::min(u, 1 - u), std::min(v, 1 - v)) * 5.0f;
             return glm::vec4(glm::vec3(std::min(1.0f, e)), 1.0f);
         }));
         // Emissive: a glowing grid.
-        const auto grid = r.upload_texture(texture(true, [](float u, float v) {
+        const auto grid = upload(texture(true, [](float u, float v) {
             const bool line = glm::fract(u * 4) < 0.25f || glm::fract(v * 4) < 0.25f;
             return line ? glm::vec4(1.0f, 0.55f, 0.1f, 1) : glm::vec4(0, 0, 0, 1);
         }));
@@ -165,6 +171,7 @@ public:
     glm::vec4 sky() const override { return {0.12f, 0.13f, 0.16f, 1.0f}; }
 
 private:
+    bool compressed_;
     render::MeshId cube_ = 0, sphere_ = 0;
     render::MaterialId base_ = 0, normal_ = 0, stripes_ = 0, occlusion_ = 0, emissive_ = 0;
 };
@@ -219,12 +226,13 @@ private:
 }  // namespace
 
 std::vector<std::string> names() {
-    return {"materials", "textures", "lights"};
+    return {"materials", "textures", "compressed", "lights"};
 }
 
 std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "materials") return std::make_unique<Materials>();
     if (name == "textures") return std::make_unique<Textures>();
+    if (name == "compressed") return std::make_unique<Textures>(true);
     if (name == "lights") return std::make_unique<Lights>();
     return nullptr;
 }

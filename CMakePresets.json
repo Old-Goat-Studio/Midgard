@@ -8,7 +8,10 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "toolchainFile": "${sourceDir}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_OVERLAY_PORTS": "${sourceDir}/vcpkg-overlays"
+      }
     },
     {
       "name": "windows-release",

@@ -10,8 +10,11 @@
     "shape.sphere_64x64_positions": {"default": 10},
     "render.cubes_400_offscreen": {
       "default": 16.7,
-      "ci-linux-release": 10,
-      "ci-linux-arm64-release": 10
-    }
+      "_about": "Lavapipe needed about 9 ms once materials and textures came in (CI run 38920735884), so its budget is 20.",
+      "ci-linux-release": 20,
+      "ci-linux-arm64-release": 20
+    },
+    "texture.transcode_512_bc7": {"default": 40},
+    "texture.transcode_512_astc": {"default": 40}
   }
 }

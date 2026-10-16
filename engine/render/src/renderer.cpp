@@ -6,6 +6,8 @@
 // debug overlay on top.
 #include "midgard/render/renderer.h"
 
+#include "midgard/render/ktx.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -178,6 +180,7 @@ struct Renderer::Impl {
     std::vector<VkDescriptorSet> materials;           // by MaterialId; 0 is the default
     bool anisotropy = false;
     float max_anisotropy = 1.0f;
+    GpuFormat texture_format = GpuFormat::RGBA8;  // what KTX2 textures are transcoded to
 
     // ---- setup -------------------------------------------------------------------------
     void create_instance(const RendererDesc& desc) {
@@ -299,6 +302,30 @@ struct Renderer::Impl {
         VkPhysicalDeviceFeatures features{};
         anisotropy = supported.samplerAnisotropy == VK_TRUE;
         features.samplerAnisotropy = supported.samplerAnisotropy;
+        // Compressed textures: the first family the GPU reads (sRGB and linear, sampled).
+        const auto readable = [&](VkFormat srgb_format, VkFormat unorm_format) {
+            for (VkFormat f : {srgb_format, unorm_format}) {
+                VkFormatProperties props;
+                vkGetPhysicalDeviceFormatProperties(gpu, f, &props);
+                if (!(props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
+                    return false;
+            }
+            return true;
+        };
+        if (supported.textureCompressionBC &&
+            readable(VK_FORMAT_BC7_SRGB_BLOCK, VK_FORMAT_BC7_UNORM_BLOCK)) {
+            texture_format = GpuFormat::BC7;
+            features.textureCompressionBC = VK_TRUE;
+        } else if (supported.textureCompressionASTC_LDR &&
+                   readable(VK_FORMAT_ASTC_4x4_SRGB_BLOCK, VK_FORMAT_ASTC_4x4_UNORM_BLOCK)) {
+            texture_format = GpuFormat::ASTC4x4;
+            features.textureCompressionASTC_LDR = VK_TRUE;
+        } else if (supported.textureCompressionETC2 &&
+                   readable(VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK,
+                            VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK)) {
+            texture_format = GpuFormat::ETC2;
+            features.textureCompressionETC2 = VK_TRUE;
+        }
         max_anisotropy = anisotropy ? std::min(8.0f, gpu_props.limits.maxSamplerAnisotropy) : 1.0f;
         VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         info.queueCreateInfoCount = 1;
@@ -1012,14 +1039,32 @@ struct Renderer::Impl {
     }
 
     TextureId upload_texture(const TextureData& t) {
-        if (t.levels.empty() || t.width == 0 || t.height == 0)
+        return upload_levels(t.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM, t.width,
+                             t.height, t.srgb, t.levels, 4);
+    }
+
+    // A KTX2 texture, transcoded to the best format this GPU reads.
+    TextureId upload_ktx2(std::span<const uint8_t> ktx2) {
+        try {
+            const TranscodedTexture t = transcode_ktx2(ktx2, texture_format);
+            return upload_levels(static_cast<VkFormat>(t.vk_format), t.width, t.height, t.srgb,
+                                 t.levels, texture_format == GpuFormat::RGBA8 ? 4 : 0);
+        } catch (const TextureError& e) {
+            throw RenderError(e.what());
+        }
+    }
+
+    // A texture's mip levels in `format`; bytes_per_pixel checks each level's size (0: a block
+    // format, whose sizes the transcoder already got right).
+    TextureId upload_levels(VkFormat format, uint32_t width, uint32_t height, bool srgb,
+                            const std::vector<std::vector<uint8_t>>& data, size_t bytes_per_pixel) {
+        if (data.empty() || width == 0 || height == 0)
             throw RenderError("upload_texture: an empty texture");
-        const auto levels = static_cast<uint32_t>(t.levels.size());
-        const VkFormat format = t.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        const auto levels = static_cast<uint32_t>(data.size());
         VkImageCreateInfo iinfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         iinfo.imageType = VK_IMAGE_TYPE_2D;
         iinfo.format = format;
-        iinfo.extent = {t.width, t.height, 1};
+        iinfo.extent = {width, height, 1};
         iinfo.mipLevels = levels;
         iinfo.arrayLayers = 1;
         iinfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -1028,7 +1073,7 @@ struct Renderer::Impl {
         VmaAllocationCreateInfo ainfo{};
         ainfo.usage = VMA_MEMORY_USAGE_AUTO;
         GpuTexture tex;
-        tex.srgb = t.srgb;
+        tex.srgb = srgb;
         check(vmaCreateImage(allocator, &iinfo, &ainfo, &tex.image.image, &tex.image.allocation,
                              nullptr),
               "Creating a texture");
@@ -1036,27 +1081,27 @@ struct Renderer::Impl {
 
         // Every level through one staging buffer, then one copy per level.
         VkDeviceSize total = 0;
-        for (const auto& level : t.levels) total += level.size();
+        for (const auto& level : data) total += level.size();
         Buffer staging = create_buffer(total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
         std::vector<VkBufferImageCopy> copies;
         VkDeviceSize offset = 0;
-        uint32_t w = t.width, h = t.height;
+        uint32_t w = width, h = height;
         for (uint32_t i = 0; i < levels; ++i) {
-            if (t.levels[i].size() != size_t(w) * h * 4) {
+            if (bytes_per_pixel != 0 && data[i].size() != size_t(w) * h * bytes_per_pixel) {
                 destroy_buffer(staging);
                 vmaDestroyImage(allocator, tex.image.image, tex.image.allocation);
                 vkDestroyImageView(device, tex.image.view, nullptr);
                 throw RenderError("upload_texture: mip level " + std::to_string(i) +
                                   " has the wrong size");
             }
-            std::memcpy(static_cast<uint8_t*>(staging.mapped) + offset, t.levels[i].data(),
-                        t.levels[i].size());
+            std::memcpy(static_cast<uint8_t*>(staging.mapped) + offset, data[i].data(),
+                        data[i].size());
             VkBufferImageCopy copy{};
             copy.bufferOffset = offset;
             copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i, 0, 1};
             copy.imageExtent = {w, h, 1};
             copies.push_back(copy);
-            offset += t.levels[i].size();
+            offset += data[i].size();
             w = std::max(1u, w / 2);
             h = std::max(1u, h / 2);
         }
@@ -1322,6 +1367,14 @@ Renderer::~Renderer() = default;
 
 TextureId Renderer::upload_texture(const TextureData& texture) {
     return impl_->upload_texture(texture);
+}
+
+TextureId Renderer::upload_ktx2(std::span<const uint8_t> ktx2) {
+    return impl_->upload_ktx2(ktx2);
+}
+
+GpuFormat Renderer::texture_format() const {
+    return impl_->texture_format;
 }
 
 MaterialId Renderer::create_material(const MaterialTextures& textures) {

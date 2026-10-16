@@ -67,6 +67,7 @@ add_library(midgard_render STATIC
     render/src/renderer.cpp
     render/src/overlay.cpp
     render/src/mesh_data.cpp
+    render/src/ktx.cpp
     render/src/third_party_impl.cpp
 )
 add_dependencies(midgard_render midgard_shaders)
@@ -76,10 +77,11 @@ target_include_directories(midgard_render
 )
 target_compile_definitions(midgard_render PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS)
 find_package(mikktspace CONFIG REQUIRED)
+find_package(Ktx CONFIG REQUIRED)
 target_link_libraries(midgard_render
     PUBLIC glm::glm
     PRIVATE volk::volk Vulkan::Headers GPUOpen::VulkanMemoryAllocator mikktspace::mikktspace
-            midgard_options
+            KTX::ktx midgard_options
 )
 
 # ---- input: the actions layer (platform independent) ----------------------------------------
@@ -290,6 +292,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_reference_tables.cpp
         tests/test_det.cpp
         tests/test_shape.cpp
+        tests/test_ktx.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest

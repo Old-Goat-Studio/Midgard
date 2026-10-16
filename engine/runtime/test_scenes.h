@@ -5,6 +5,7 @@
 //   materials  spheres from smooth to rough (left to right) and plain to metal (top to bottom)
 //   textures   one object per material texture: base colour, normal, metal/roughness,
 //              occlusion, emissive
+//   compressed the same, with every texture through KTX2 (Basis UASTC) and the GPU's format
 //   lights     a dim scene lit by a red point light and a blue spot light
 #pragma once
 

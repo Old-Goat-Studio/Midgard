@@ -27,6 +27,7 @@
     "miniz",
     "cgltf",
     "mikktspace",
+    { "name": "ktx", "default-features": false },
     "entt",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]

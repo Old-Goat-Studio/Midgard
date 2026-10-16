@@ -14,6 +14,7 @@
 
 #include <glm/glm.hpp>
 
+#include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/render/overlay.h"
 
@@ -120,6 +121,10 @@ public:
     MeshId upload_mesh(const MeshData& mesh);
     // A texture with its mipmaps (render::make_texture builds them), on the GPU.
     TextureId upload_texture(const TextureData& texture);
+    // A KTX2 texture (render::encode_ktx2), transcoded to texture_format(). Throws RenderError.
+    TextureId upload_ktx2(std::span<const uint8_t> ktx2);
+    // The compressed format this GPU reads (BC7, ASTC 4x4 or ETC2, else RGBA8).
+    GpuFormat texture_format() const;
     MaterialId create_material(const MaterialTextures& textures);
     // Replaces an uploaded mesh (hot reload). Waits for the GPU to finish with the old one.
     void replace_mesh(MeshId id, const MeshData& mesh);

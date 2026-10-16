@@ -105,7 +105,9 @@ Check render_check(bool vulkan_required) {
             return {"Rendering", Status::Fail,
                     format("wrong colours: centre %d,%d,%d corner %d,%d,%d", centre[0], centre[1],
                            centre[2], corner[0], corner[1], corner[2])};
-        return {"Rendering", Status::Pass, renderer.device_name()};
+        return {"Rendering", Status::Pass,
+                renderer.device_name() + ", textures " +
+                    render::gpu_format_name(renderer.texture_format())};
     } catch (const std::exception& e) {
         const std::string what = e.what();
         const bool no_driver = what.find("Loading the Vulkan library") != std::string::npos ||

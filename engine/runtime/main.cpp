@@ -13,8 +13,8 @@
 //                                       offscreen, no window (image tests); --origin-offset x,y,z
 //                                       places the demo scene far from the world's origin;
 //                                       --exposure brightens it (highlights roll off);
-//                                       --scene materials|textures|lights draws a built-in
-//                                       test scene instead (runtime/test_scenes.h)
+//                                       --scene materials|textures|compressed|lights draws a
+//                                       built-in test scene (runtime/test_scenes.h)
 //   midgard_runtime --selftest [--show]  checks this device can run games (jobs, identical data,
 //                                       rendering, the package, Python); --show puts the results
 //                                       on screen. On Android, an APK with a selftest.txt asset

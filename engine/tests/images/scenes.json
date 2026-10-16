@@ -34,6 +34,12 @@
       "max_bad": 0.01
     },
     {
+      "name": "compressed",
+      "_about": "The textures scene with every texture through KTX2 (Basis UASTC) and the GPU's compressed format (BC7 here; RGBA where a GPU reads none). The same allowance as textures.",
+      "args": ["--size", "960x480", "--scene", "compressed"],
+      "max_bad": 0.01
+    },
+    {
       "name": "lights",
       "_about": "A red point light and a blue spot light in a dim scene.",
       "args": ["--size", "400x240", "--scene", "lights"]

@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -23,6 +24,7 @@
 
 #include "midgard/det.h"
 #include "midgard/jobs.h"
+#include "midgard/render/ktx.h"
 #include "midgard/render/overlay.h"
 #include "midgard/render/renderer.h"
 #include "midgard/shape.h"
@@ -177,6 +179,26 @@ std::vector<Benchmark> benchmarks() {
                  renderer->render_frame(camera, Light{}, *draws, glm::vec4(0.1f, 0.1f, 0.2f, 1));
              };
          }});
+    // Loading a texture: a 512 x 512 KTX2 file (all its mip levels) transcoded to the format a
+    // PC (BC7) or a phone (ASTC) reads.
+    for (const auto& [name, format] :
+         {std::pair{"texture.transcode_512_bc7", midgard::render::GpuFormat::BC7},
+          std::pair{"texture.transcode_512_astc", midgard::render::GpuFormat::ASTC4x4}}) {
+        list.push_back(
+            {name,
+             std::string("a 512 x 512 KTX2 texture with mipmaps, transcoded to ") +
+                 midgard::render::gpu_format_name(format),
+             20, [format](std::string&) -> std::function<void()> {
+                 std::vector<uint8_t> rgba(512 * 512 * 4);
+                 for (uint32_t i = 0; i < rgba.size(); ++i)
+                     rgba[i] = static_cast<uint8_t>((i * 2654435761u) >> 24);  // busy detail
+                 auto ktx2 = std::make_shared<std::vector<uint8_t>>(midgard::render::encode_ktx2(
+                     midgard::render::make_texture(512, 512, true, std::move(rgba))));
+                 return [ktx2, format] {
+                     g_sink = g_sink + midgard::render::transcode_ktx2(*ktx2, format).levels.size();
+                 };
+             }});
+    }
     return list;
 }
 

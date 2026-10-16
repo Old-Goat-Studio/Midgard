@@ -34,7 +34,7 @@ milestone becomes a task list of its own when work on it starts.
 | miniaudio | Public domain / MIT-0 | Audio playback on every target |
 | libvorbis / libopus (+ libogg) | BSD | Cooking audio to Ogg Vorbis and Opus, and decoding |
 | Recast & Detour | zlib | Navigation meshes and path queries |
-| Basis Universal | Apache-2.0 | Textures cooked once to KTX2, transcoded per device (BC7 on PCs, ASTC/ETC2 on phones) |
+| Basis Universal (in KTX-Software) | Apache-2.0 | Textures cooked once to KTX2, transcoded per device (BC7 on PCs, ASTC/ETC2 on phones). Built without KTX's ETC unpacker, whose Ericsson licence is OpenGL-only (vcpkg-overlays/README.md) |
 | Mesa lavapipe | MIT | Software Vulkan in Linux CI, so rendering is tested without a GPU (CI only, never shipped) |
 
 Noise and the other generation maths are written in Midgard itself rather than taken from a
