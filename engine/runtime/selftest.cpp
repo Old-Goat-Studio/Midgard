@@ -18,6 +18,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/shape.h"
 #include "midgard/version.h"
+#include "test_scenes.h"
 #ifdef MIDGARD_HAS_SCRIPTING
 #include "midgard/script.h"
 #endif
@@ -83,6 +84,14 @@ Check shapes_check() {
             format("planets, hollow worlds, cylinders: %016" PRIx64, got)};
 }
 
+// A missing Vulkan driver: skipped on PCs (CI machines have none), a failure on phones.
+Check no_vulkan(const char* name, const std::exception& e, bool vulkan_required) {
+    const std::string what = e.what();
+    const bool no_driver = what.find("Loading the Vulkan library") != std::string::npos ||
+                           what.find("No Vulkan device") != std::string::npos;
+    return {name, no_driver && !vulkan_required ? Status::Skip : Status::Fail, what};
+}
+
 Check render_check(bool vulkan_required) {
     try {
         render::RendererDesc desc;
@@ -109,10 +118,47 @@ Check render_check(bool vulkan_required) {
                 renderer.device_name() + ", textures " +
                     render::gpu_format_name(renderer.texture_format())};
     } catch (const std::exception& e) {
-        const std::string what = e.what();
-        const bool no_driver = what.find("Loading the Vulkan library") != std::string::npos ||
-                               what.find("No Vulkan device") != std::string::npos;
-        return {"Rendering", no_driver && !vulkan_required ? Status::Skip : Status::Fail, what};
+        return no_vulkan("Rendering", e, vulkan_required);
+    }
+}
+
+// Frames must keep up with 60 a second at this device's quality tier: the sunset test scene
+// (shadows, sky and fog) at 1280 x 720, the median of 30 frames after 5 to warm up. Software
+// renderers (CI's lavapipe) are far slower than any GPU, so they're timed but not held to it.
+constexpr double kFrameBudgetMs = 1000.0 / 60.0;
+
+Check frame_check(const Options& options) {
+    const render::Quality tier = options.quality.value_or(render::default_quality());
+    try {
+        render::RendererDesc desc;
+        desc.offscreen = true;
+        desc.width = 1280;
+        desc.height = 720;
+        desc.quality = render::quality_settings(tier);
+        render::Renderer renderer(desc);
+        const auto scene = test_scenes::make("sky_sunset");
+        scene->upload(renderer);
+        renderer.set_environment(scene->environment());
+        const render::Camera camera = scene->camera(1280.0f / 720.0f);
+        const auto draws = scene->draws(camera.origin);
+        const render::Light light = scene->light(camera.origin);
+        std::vector<double> times;
+        for (int i = 0; i < 35; ++i) {
+            const auto start = std::chrono::steady_clock::now();
+            renderer.render_frame(camera, light, draws, scene->sky());  // waits for the GPU
+            const auto end = std::chrono::steady_clock::now();
+            if (i >= 5)
+                times.push_back(std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        std::sort(times.begin(), times.end());
+        const double median = times[times.size() / 2];
+        const std::string detail = format("%.1f ms a frame (budget %.1f), %s quality, 1280 x 720",
+                                          median, kFrameBudgetMs, render::quality_name(tier));
+        if (renderer.software())
+            return {"Frame time", Status::Skip, detail + ", software renderer: not checked"};
+        return {"Frame time", median <= kFrameBudgetMs ? Status::Pass : Status::Fail, detail};
+    } catch (const std::exception& e) {
+        return no_vulkan("Frame time", e, options.vulkan_required);
     }
 }
 
@@ -162,6 +208,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(maths_check());
     checks.push_back(shapes_check());
     checks.push_back(render_check(options.vulkan_required));
+    checks.push_back(frame_check(options));
     checks.push_back(package_check(options.package));
     checks.push_back(python_check(options));
     return checks;

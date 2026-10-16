@@ -18,6 +18,7 @@
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/render/overlay.h"
+#include "midgard/render/quality.h"
 #include "midgard/render/shadows.h"
 
 struct VkInstance_T;
@@ -111,8 +112,9 @@ struct RendererDesc {
     // Use the Khronos validation layer (and fail to start if it isn't installed); its messages
     // are kept in validation_messages().
     bool validation = false;
-    // The sun's cascaded shadow maps (cascades = 0: no shadows).
-    ShadowSettings shadows;
+    // What the renderer spends on a frame: the tier's shadows, texture size and so on (the
+    // phone tier on phones). Its parts can be changed one by one (shadows.cascades = 0: none).
+    QualitySettings quality = quality_settings(default_quality());
 };
 
 class Renderer {
@@ -160,6 +162,9 @@ public:
     uint32_t width() const;
     uint32_t height() const;
     std::string device_name() const;
+    // A software renderer (like lavapipe): right, but far slower than any GPU.
+    bool software() const;
+    const QualitySettings& quality() const;
     // With RendererDesc::validation: every message the Khronos validation layer reported (errors
     // and warnings). Tests fail on any.
     const std::vector<std::string>& validation_messages() const;

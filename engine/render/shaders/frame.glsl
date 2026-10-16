@@ -24,7 +24,7 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 shadow_splits;   // the view depth where each cascade ends
     vec4 shadow_texels;   // metres per texel of each cascade
     vec4 view_depth;      // a position's view depth: dot(xyz, position) + w
-    vec4 shadow_params;   // x: cascades (0: no shadows), y: shadow distance, z: 1 / resolution
+    vec4 shadow_params;   // x: cascades (0: none), y: distance, z: 1 / resolution, w: soft
     mat4 inverse_view_proj;  // clip space back to camera-relative positions
     vec4 sky_zenith;         // linear rgb, brightness included
     vec4 sky_horizon;        // on the sun's side

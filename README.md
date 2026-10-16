@@ -75,7 +75,9 @@ build/linux-release/engine/midgard_bench --json bench.json && python tools/budge
 ```
 
 In a game window, F3 shows the frame rate and timings; `--profile trace.json` records a trace
-for [ui.perfetto.dev](https://ui.perfetto.dev).
+for [ui.perfetto.dev](https://ui.perfetto.dev). `--quality phone` (or `desktop`) picks the
+renderer's quality tier; phones use the phone tier unless told otherwise, and the self-test times
+frames at the device's tier against 60 frames a second.
 
 Other presets: `linux-arm64-release` (on an ARM host) and `android-arm64` (needs
 `ANDROID_NDK_HOME`, and `python tools/setup_python.py --target android-arm64` for scripting).

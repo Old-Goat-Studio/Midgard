@@ -69,6 +69,18 @@
       "max_bad": 0.01
     },
     {
+      "name": "shadows_phone",
+      "_about": "The shadows scene at the phone quality tier: two smaller cascades over 30 m, so the farther pillars cast none, and harder shadow edges.",
+      "args": ["--size", "480x270", "--scene", "shadows", "--quality", "phone"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "sky_sunset_phone",
+      "_about": "The sunset at the phone quality tier: the same sky and fog, shorter and harder shadows.",
+      "args": ["--size", "480x270", "--scene", "sky_sunset", "--quality", "phone"],
+      "max_bad": 0.01
+    },
+    {
       "name": "overlay",
       "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
     }

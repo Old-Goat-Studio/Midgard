@@ -72,6 +72,7 @@ add_library(midgard_render STATIC
     render/src/ktx.cpp
     render/src/shadows.cpp
     render/src/atmosphere.cpp
+    render/src/quality.cpp
     render/src/third_party_impl.cpp
 )
 add_dependencies(midgard_render midgard_shaders)
@@ -299,6 +300,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_ktx.cpp
         tests/test_shadows.cpp
         tests/test_atmosphere.cpp
+        tests/test_quality.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_link midgard_options doctest::doctest

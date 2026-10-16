@@ -147,38 +147,48 @@ std::vector<Benchmark> benchmarks() {
                                 g_sink + midgard::render::layout_overlay(lines, 1920, 1080).size();
                         };
                     }});
-    list.push_back(
-        {"render.cubes_400_offscreen", "400 lit cubes drawn offscreen at 640x360 (GPU)", 60,
-         [](std::string& skip) -> std::function<void()> {
-             using namespace midgard::render;
-             std::shared_ptr<Renderer> renderer;
-             try {
-                 RendererDesc desc;
-                 desc.offscreen = true;
-                 desc.width = 640;
-                 desc.height = 360;
-                 renderer = std::make_shared<Renderer>(desc);
-             } catch (const std::exception& e) {
-                 skip = std::string("no Vulkan: ") + e.what();
-                 return {};
-             }
-             const MeshId cube = renderer->upload_mesh(make_cube());
-             auto draws = std::make_shared<std::vector<DrawItem>>();
-             for (int x = 0; x < 20; ++x)
-                 for (int z = 0; z < 20; ++z)
-                     draws->push_back(
-                         {cube,
-                          glm::translate(glm::mat4(1.0f), glm::vec3(x * 1.5f - 15, 0, z * -1.5f)),
-                          glm::vec4(0.8f, 0.6f, 0.2f, 1.0f)});
-             Camera camera;
-             camera.view =
-                 glm::lookAt(glm::vec3(0, 12, 12), glm::vec3(0, 0, -12), glm::vec3(0, 1, 0));
-             camera.projection = perspective(glm::radians(55.0f), 640.0f / 360.0f, 0.1f, 200.0f);
-             return [renderer, draws, camera] {
-                 // Offscreen frames wait for the GPU, so this is the whole frame's time.
-                 renderer->render_frame(camera, Light{}, *draws, glm::vec4(0.1f, 0.1f, 0.2f, 1));
-             };
-         }});
+    // A frame at each quality tier: the desktop's (the agreed look) and the phone's.
+    for (const auto& [name, tier] :
+         {std::pair{"render.cubes_400_offscreen", midgard::render::Quality::Desktop},
+          std::pair{"render.cubes_400_phone", midgard::render::Quality::Phone}}) {
+        list.push_back(
+            {name,
+             std::string("400 lit cubes with sun shadows drawn offscreen at 640x360, ") +
+                 midgard::render::quality_name(tier) + " quality (GPU)",
+             60, [tier](std::string& skip) -> std::function<void()> {
+                 using namespace midgard::render;
+                 std::shared_ptr<Renderer> renderer;
+                 try {
+                     RendererDesc desc;
+                     desc.offscreen = true;
+                     desc.width = 640;
+                     desc.height = 360;
+                     desc.quality = quality_settings(tier);
+                     renderer = std::make_shared<Renderer>(desc);
+                 } catch (const std::exception& e) {
+                     skip = std::string("no Vulkan: ") + e.what();
+                     return {};
+                 }
+                 const MeshId cube = renderer->upload_mesh(make_cube());
+                 auto draws = std::make_shared<std::vector<DrawItem>>();
+                 for (int x = 0; x < 20; ++x)
+                     for (int z = 0; z < 20; ++z)
+                         draws->push_back({cube,
+                                           glm::translate(glm::mat4(1.0f),
+                                                          glm::vec3(x * 1.5f - 15, 0, z * -1.5f)),
+                                           glm::vec4(0.8f, 0.6f, 0.2f, 1.0f)});
+                 Camera camera;
+                 camera.view =
+                     glm::lookAt(glm::vec3(0, 12, 12), glm::vec3(0, 0, -12), glm::vec3(0, 1, 0));
+                 camera.projection =
+                     perspective(glm::radians(55.0f), 640.0f / 360.0f, 0.1f, 200.0f);
+                 return [renderer, draws, camera] {
+                     // Offscreen frames wait for the GPU, so this is the whole frame's time.
+                     renderer->render_frame(camera, Light{}, *draws,
+                                            glm::vec4(0.1f, 0.1f, 0.2f, 1));
+                 };
+             }});
+    }
     // Loading a texture: a 512 x 512 KTX2 file (all its mip levels) transcoded to the format a
     // PC (BC7) or a phone (ASTC) reads.
     for (const auto& [name, format] :

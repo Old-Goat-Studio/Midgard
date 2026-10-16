@@ -15,8 +15,12 @@
 //                                       --exposure brightens it (highlights roll off);
 //                                       --scene <name> draws a built-in test scene instead
 //                                       (runtime/test_scenes.h lists them)
+//   --quality desktop|phone             the renderer's quality tier (by default phone on phones,
+//                                       desktop elsewhere), for a window, a screenshot or the
+//                                       self-test
 //   midgard_runtime --selftest [--show]  checks this device can run games (jobs, identical data,
-//                                       rendering, the package, Python); --show puts the results
+//                                       rendering and its frame time, the package, Python);
+//                                       --show puts the results
 //                                       on screen. On Android, an APK with a selftest.txt asset
 //                                       starts this way (the self-test APK built in CI).
 //   any of these with --profile trace.json   timed zones, for ui.perfetto.dev or chrome://tracing
@@ -102,7 +106,8 @@ struct Options {
     bool show = false;              // the self-test's results in a window
     glm::dvec3 origin_offset{0.0};  // where the demo scene is placed (precision tests)
     float exposure = 1.0f;
-    std::optional<std::string> scene;  // a built-in test scene
+    std::optional<std::string> scene;        // a built-in test scene
+    std::optional<render::Quality> quality;  // the renderer's tier (default: the device's)
     // Overlay lines shown for the whole run (the self-test's results); F3 is off then.
     std::vector<render::OverlayLine> fixed_overlay;
 };
@@ -112,7 +117,8 @@ int usage() {
         "usage: midgard_runtime [--version] [--package <dir>] [--frames N] [--size WxH]\n"
         "                       [--screenshot out.png [--overlay-text \"a|b\"]]\n"
         "                       [--editor-link host:port] [--debug-overlay] [--profile out.json]\n"
-        "       midgard_runtime --selftest [--show]");
+        "                       [--quality desktop|phone]\n"
+        "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
 }
 
@@ -623,6 +629,7 @@ int run_screenshot(const Options& opt, Source& source) {
     desc.width = opt.width;
     desc.height = opt.height;
     desc.validation = want_validation();
+    desc.quality = render::quality_settings(opt.quality.value_or(render::default_quality()));
     render::Renderer renderer(desc);
     source.upload(renderer);
     if (opt.overlay_text) renderer.set_overlay(overlay_lines(*opt.overlay_text));
@@ -770,6 +777,7 @@ int run_window(const Options& opt, Source& source) {
         desc.width = uint32_t(pw);
         desc.height = uint32_t(ph);
         desc.validation = want_validation();
+        desc.quality = render::quality_settings(opt.quality.value_or(render::default_quality()));
         render::Renderer renderer(desc);
         say("Rendering on %s\n", renderer.device_name().c_str());
         source.upload(renderer);
@@ -1019,6 +1027,7 @@ namespace {
 int run_selftest(Options& opt) {
     midgard::selftest::Options options;
     if (opt.package_dir) options.package = std::filesystem::path(*opt.package_dir);
+    options.quality = opt.quality;
 #ifdef __ANDROID__
     options.vulkan_required = true;
 #ifdef MIDGARD_HAS_SCRIPTING
@@ -1101,6 +1110,9 @@ int main(int argc, char** argv) {
             opt.profile = argv[++i];
         } else if (arg == "--scene" && has_value) {
             opt.scene = argv[++i];
+        } else if (arg == "--quality" && has_value) {
+            opt.quality = render::parse_quality(argv[++i]);
+            if (!opt.quality) return usage();
         } else if (arg == "--exposure" && has_value) {
             opt.exposure = static_cast<float>(std::atof(argv[++i]));
         } else if (arg == "--origin-offset" && has_value) {

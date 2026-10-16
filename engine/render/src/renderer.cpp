@@ -62,7 +62,7 @@ struct FrameData {
     glm::vec4 shadow_splits;  // the view depth where each cascade ends
     glm::vec4 shadow_texels;  // metres per texel of each cascade
     glm::vec4 view_depth;     // depth = dot(xyz, position) + w
-    glm::vec4 shadow_params;  // x: cascades (0: no shadows), y: shadow distance, z: 1 / resolution
+    glm::vec4 shadow_params;  // x: cascades (0: none), y: distance, z: 1 / resolution, w: soft
     glm::mat4 inverse_view_proj;
     glm::vec4 sky_zenith;  // linear, brightness included
     glm::vec4 sky_horizon;
@@ -205,6 +205,7 @@ struct Renderer::Impl {
     float max_anisotropy = 1.0f;
     GpuFormat texture_format = GpuFormat::RGBA8;  // what KTX2 textures are transcoded to
 
+    QualitySettings quality;
     // The sun's shadow maps: one depth image with a layer per cascade (a 1 x 1 layer when
     // shadows are off, so the scene shader always has one to read).
     ShadowSettings shadow_settings;
@@ -1379,11 +1380,22 @@ struct Renderer::Impl {
     }
 
     // A texture's mip levels in `format`; bytes_per_pixel checks each level's size (0: a block
-    // format, whose sizes the transcoder already got right).
+    // format, whose sizes the transcoder already got right). Levels larger than the quality
+    // tier's texture size are left out.
     TextureId upload_levels(VkFormat format, uint32_t width, uint32_t height, bool srgb,
-                            const std::vector<std::vector<uint8_t>>& data, size_t bytes_per_pixel) {
-        if (data.empty() || width == 0 || height == 0)
+                            const std::vector<std::vector<uint8_t>>& all_levels,
+                            size_t bytes_per_pixel) {
+        if (all_levels.empty() || width == 0 || height == 0)
             throw RenderError("upload_texture: an empty texture");
+        size_t first = 0;
+        while (first + 1 < all_levels.size() &&
+               std::max(width, height) > std::max(quality.max_texture_size, 1u)) {
+            ++first;
+            width = std::max(1u, width / 2);
+            height = std::max(1u, height / 2);
+        }
+        const std::span<const std::vector<uint8_t>> data(all_levels.data() + first,
+                                                         all_levels.size() - first);
         const auto levels = static_cast<uint32_t>(data.size());
         VkImageCreateInfo iinfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         iinfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1676,7 +1688,8 @@ Renderer::Renderer(const RendererDesc& desc) : impl_(std::make_unique<Impl>()) {
     Impl& r = *impl_;
     r.offscreen = desc.offscreen;
     r.extent = {desc.width, desc.height};
-    r.shadow_settings = desc.shadows;
+    r.quality = desc.quality;
+    r.shadow_settings = desc.quality.shadows;
     r.create_instance(desc);
     if (!r.offscreen) {
         if (!desc.create_surface) throw RenderError("A window target needs create_surface");
@@ -1822,7 +1835,8 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         -glm::vec4(camera.view[0][2], camera.view[1][2], camera.view[2][2], camera.view[3][2]);
     data.shadow_params =
         glm::vec4(float(cascades.count), cascades.count > 0 ? cascades.far_depth[0] : 0.0f,
-                  1.0f / float(std::max(r.shadow_settings.resolution, 1u)), 0.0f);
+                  1.0f / float(std::max(r.shadow_settings.resolution, 1u)),
+                  r.quality.soft_shadows ? 1.0f : 0.0f);
     if (cascades.count > 0) data.shadow_params.y = cascades.far_depth[size_t(cascades.count - 1)];
 
     // The sky and fog.
@@ -1934,6 +1948,12 @@ uint32_t Renderer::height() const {
 }
 std::string Renderer::device_name() const {
     return impl_->gpu_props.deviceName;
+}
+bool Renderer::software() const {
+    return impl_->gpu_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
+}
+const QualitySettings& Renderer::quality() const {
+    return impl_->quality;
 }
 
 glm::mat4 relative_to(const glm::dmat4& world, const glm::dvec3& origin) {

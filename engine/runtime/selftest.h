@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // The runtime's self-test: quick checks that the engine works on this device (jobs, identical
-// data, rendering, the game's package, Python), with the results shown on screen by the debug
-// overlay. midgard_runtime --selftest runs it; on Android the self-test APK (an APK with a
-// selftest.txt asset) does.
+// data, rendering and its frame time, the game's package, Python), with the results shown on screen
+// by the debug overlay. midgard_runtime --selftest runs it; on Android the self-test APK (an APK
+// with a selftest.txt asset) does.
 #pragma once
 
 #include <filesystem>
@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "midgard/render/overlay.h"
+#include "midgard/render/quality.h"
 
 namespace midgard::selftest {
 
@@ -30,6 +31,8 @@ struct Options {
     // A missing Vulkan driver counts as a skip on PCs (CI machines have no GPU) but as a
     // failure on phones, which always have one.
     bool vulkan_required = false;
+    // The quality tier the frame time is measured at (default: this device's).
+    std::optional<render::Quality> quality;
 };
 
 std::vector<Check> run(const Options& options);

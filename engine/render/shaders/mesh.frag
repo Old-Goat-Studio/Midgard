@@ -71,7 +71,7 @@ vec3 hemisphere(vec3 direction) {
 }
 
 // How much sunlight reaches a point (0 in shadow, 1 lit): its cascade's map, 3 x 3 filtered
-// lookups. The lookup moves off the surface along its normal by a texel and a half, more where
+// lookups (one on the phone tier). The lookup moves off the surface along its normal by a texel and a half, more where
 // the sun grazes it, so surfaces don't shadow themselves (acne). Shadows fade out over the last
 // tenth of the shadow distance.
 float sun_shadow(vec3 position, vec3 normal, vec3 sun) {
@@ -87,11 +87,16 @@ float sun_shadow(vec3 position, vec3 normal, vec3 sun) {
     const vec4 s = frame.shadow_matrices[c] * vec4(p, 1.0);
     const vec2 uv = s.xy * 0.5 + 0.5;
     const float step = frame.shadow_params.z;
-    float lit = 0.0;
-    for (int y = -1; y <= 1; ++y)
-        for (int x = -1; x <= 1; ++x)
-            lit += texture(shadow_map, vec4(uv + vec2(x, y) * step, float(c), s.z));
-    lit /= 9.0;
+    float lit;
+    if (frame.shadow_params.w > 0.5) {
+        lit = 0.0;
+        for (int y = -1; y <= 1; ++y)
+            for (int x = -1; x <= 1; ++x)
+                lit += texture(shadow_map, vec4(uv + vec2(x, y) * step, float(c), s.z));
+        lit /= 9.0;
+    } else {
+        lit = texture(shadow_map, vec4(uv, float(c), s.z));
+    }
     return mix(lit, 1.0, smoothstep(0.9 * distance, distance, depth));
 }
 
