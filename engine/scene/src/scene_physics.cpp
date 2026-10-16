@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include <sqlite3.h>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace midgard {
 
@@ -171,11 +172,64 @@ physics::Collider ScenePhysics::collider_for(const Scene& scene, entt::entity e)
     return c;
 }
 
+namespace {
+
+bool moves(const Scene& scene, entt::entity e) {
+    const auto* rb = scene.registry.try_get<RigidBody>(e);
+    return rb && rb->motion != physics::Motion::Static;
+}
+
+}  // namespace
+
+entt::entity ScenePhysics::moving_group(const Scene& scene, entt::entity e) const {
+    int depth = 0;
+    for (entt::entity p = scene.registry.get<EntityInfo>(e).parent;
+         p != entt::null && scene.registry.valid(p) && ++depth < 256;
+         p = scene.registry.get<EntityInfo>(p).parent)
+        if (scene.registry.all_of<Group>(p) && moves(scene, p)) return p;
+    return entt::null;
+}
+
+std::vector<physics::Part> ScenePhysics::parts_of(const Scene& scene, entt::entity group) const {
+    // In the group's own units: the body gets the group's (even) scale as a whole.
+    const Placed g = placement(scene, group);
+    const glm::dmat4 frame = glm::translate(glm::dmat4(1.0), g.position) *
+                             glm::dmat4(glm::mat4_cast(g.rotation)) *
+                             glm::scale(glm::dmat4(1.0), glm::dvec3(g.scale));
+    const glm::dmat4 to_group = glm::inverse(frame);
+    std::vector<physics::Part> out;
+    std::vector<entt::entity> parts;
+    for (entt::entity e : scene.registry.view<const ColliderShape, const EntityInfo>())
+        if (e != group && moving_group(scene, e) == group) parts.push_back(e);
+    std::sort(parts.begin(), parts.end());
+    for (entt::entity e : parts) {
+        const glm::dmat4 m = to_group * scene.world_matrix(e);
+        physics::Part part;
+        part.collider = collider_for(scene, e);
+        part.position = glm::vec3(m[3]);
+        for (int i = 0; i < 3; ++i) part.scale[i] = float(glm::length(glm::dvec3(m[i])));
+        glm::mat3 r;
+        for (int i = 0; i < 3; ++i)
+            r[i] =
+                glm::vec3(glm::dvec3(m[i]) / (part.scale[i] > 0.0f ? double(part.scale[i]) : 1.0));
+        part.rotation = glm::normalize(glm::quat_cast(r));
+        out.push_back(std::move(part));
+    }
+    return out;
+}
+
 void ScenePhysics::add(const Scene& scene, entt::entity e) {
     if (scene.registry.all_of<Player>(e)) return;  // the player is a character instead
-    const auto* shape = scene.registry.try_get<ColliderShape>(e);
+    // A part of a moving group: its collider is in the group's body (its trigger is its own).
+    const bool in_group = moving_group(scene, e) != entt::null;
+    const bool moving_group_itself = scene.registry.all_of<Group>(e) && moves(scene, e);
+    const auto* shape = in_group ? nullptr : scene.registry.try_get<ColliderShape>(e);
     const auto* trigger = scene.registry.try_get<Trigger>(e);
-    if (!shape && !trigger) return;
+    if (moving_group_itself) {
+        if (parts_of(scene, e).empty()) return;  // nothing solid in it yet
+    } else if (!shape && !trigger) {
+        return;
+    }
     const std::string& id = scene.registry.get<EntityInfo>(e).id;
     try {
         const Placed p = placement(scene, e);
@@ -191,7 +245,12 @@ void ScenePhysics::add(const Scene& scene, entt::entity e) {
             d.layer = rb->layer;
         }
         t.motion = d.motion;
-        if (shape) {  // the solid body: what collides
+        if (moving_group_itself) {  // one body of all its parts' colliders
+            d.parts = parts_of(scene, e);
+            if (const auto* m = scene.registry.try_get<PhysicsMaterial>(e))
+                d.surface = {m->friction, m->bounciness};
+            t.id = world_->add(d);
+        } else if (shape) {  // the solid body: what collides
             d.collider = collider_for(scene, e);
             if (const auto* m = scene.registry.try_get<PhysicsMaterial>(e))
                 d.surface = {m->friction, m->bounciness};
@@ -201,11 +260,14 @@ void ScenePhysics::add(const Scene& scene, entt::entity e) {
             // The trigger: a box sensor of its own, moving with the entity (kinematic when the
             // entity moves, so it's carried along without colliding).
             physics::BodyDesc s = d;
+            s.parts.clear();
             s.collider = {};
             s.collider.size = trigger->size;
             s.sensor = true;
-            s.motion = shape && t.motion != physics::Motion::Static ? physics::Motion::Kinematic
-                                                                    : physics::Motion::Static;
+            s.motion = (shape || moving_group_itself || in_group) &&
+                               (t.motion != physics::Motion::Static || in_group)
+                           ? physics::Motion::Kinematic
+                           : physics::Motion::Static;
             s.surface = {};
             t.sensor = world_->add(s);
         }
@@ -219,7 +281,22 @@ void ScenePhysics::add(const Scene& scene, entt::entity e) {
 
 void ScenePhysics::rebuild(const Scene& scene, entt::entity e) {
     remove(e);
-    if (scene.registry.valid(e)) add(scene, e);
+    if (scene.registry.valid(e)) {
+        add(scene, e);
+        // A part or a group changed: the moving group it belongs to (or is) is built again,
+        // and so are a group's parts (they may have joined or left its body).
+        const entt::entity group = moving_group(scene, e);
+        if (group != entt::null) {
+            remove(group);
+            add(scene, group);
+        }
+        if (scene.registry.all_of<Group>(e))
+            for (entt::entity c : scene.registry.view<const EntityInfo>())
+                if (c != e && scene.registry.get<EntityInfo>(c).parent == e) {
+                    remove(c);
+                    add(scene, c);
+                }
+    }
     if (e == player_ || (scene.registry.valid(e) && scene.registry.all_of<Player>(e)))
         make_character(scene);
 }

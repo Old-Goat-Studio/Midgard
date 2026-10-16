@@ -850,3 +850,68 @@ TEST_CASE("the exit: the player walks all the way round a planet and inside a cy
         CHECK(body.surface(cam).height > 1.0);
     }
 }
+
+TEST_CASE("groups: a dynamic group's parts move as one body") {
+    TestPackage pkg({
+        {"e1_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                        "collider": {"size": [40, 1, 40]}}')"},
+        // A bench of two boxes side by side, dropped from 3 m, tilted 25 degrees.
+        {"e2_bench", R"(NULL, '{"transform": {"position": [0, 3, 0], "rotation": [0, 0, 25]},
+                       "group": {}, "rigidbody": {}}')"},
+        {"e3_left", R"('e2_bench', '{"transform": {"position": [-0.5, 0, 0]}, "collider": {}}')"},
+        {"e4_right", R"('e2_bench', '{"transform": {"position": [0.5, 0, 0]}, "collider": {},
+                       "rigidbody": {}}')"},  // its own rigid body is ignored: the group's rules
+        // A kinematic group and a static one.
+        {"e5_lift", R"(NULL, '{"transform": {"position": [10, 0.5, 0]}, "group": {},
+                      "rigidbody": {"motion": "kinematic"}}')"},
+        {"e6_step", R"('e5_lift', '{"transform": {"position": [0, 0, 2]}, "collider": {}}')"},
+        {"e7_wall", R"(NULL, '{"transform": {"position": [-10, 0, 0]}, "group": {}}')"},
+        {"e8_brick", R"('e7_wall', '{"transform": {"position": [0, 0.5, 0]}, "collider": {}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    // Bodies: the ground, the bench (one), the lift (one), the brick (a static group's parts
+    // keep their own).
+    CHECK(game.physics().world().body_count() == 4);
+    CHECK(game.physics().body(scene.find("e3_left")) == midgard::physics::kNoBody);
+
+    play(game, 4.0);
+    // The bench tipped flat and landed as one: both boxes rest on the ground, side by side.
+    const glm::dvec3 left = scene.world_position(scene.find("e3_left"));
+    const glm::dvec3 right = scene.world_position(scene.find("e4_right"));
+    CHECK(std::abs(left.y - 0.5) < 0.05);
+    CHECK(std::abs(right.y - 0.5) < 0.05);
+    CHECK(glm::length(right - left) == doctest::Approx(1.0).epsilon(0.01));  // still 1 m apart
+    // The parts kept their places in the group; the group itself moved.
+    CHECK(scene.registry.get<midgard::Transform>(scene.find("e3_left")).position.x == -0.5);
+    CHECK(std::abs(scene.registry.get<midgard::Transform>(scene.find("e2_bench")).rotation.z) <
+          1.0f);
+
+    // Moving the kinematic group carries its part's collider with it.
+    auto& lift = scene.registry.get<midgard::Transform>(scene.find("e5_lift"));
+    lift.position = {10, 0.5, 6};
+    play(game, 0.1);
+    const auto hit = game.physics().world().raycast({10, 5, 8}, {0, -1, 0}, 10.0);
+    REQUIRE(hit.has_value());  // the step, now at z = 8
+    CHECK(static_cast<entt::entity>(hit->user) == scene.find("e5_lift"));
+
+    // Editing a part builds the group's body again: the right box becomes a ball.
+    game.set_component("e4_right", "collider", json::parse(R"({"shape": "sphere"})"));
+    CHECK(game.physics().world().body_count() == 4);
+    CHECK(game.physics().body(scene.find("e2_bench")) != midgard::physics::kNoBody);
+}
+
+TEST_CASE("groups: a moving group can't hold a mesh part") {
+    TestPackage pkg({
+        {"e1_group", R"(NULL, '{"group": {}, "rigidbody": {}}')"},
+        {"e2_part",
+         R"('e1_group', '{"mesh": {"asset": "mesh_cube"}, "collider": {"shape": "mesh"}}')"},
+    });
+    try {
+        midgard::Game game(pkg.dir);
+        FAIL("a dynamic group with a mesh part was accepted");
+    } catch (const std::exception& e) {
+        CHECK(std::string(e.what()).find("e1_group") != std::string::npos);
+        CHECK(std::string(e.what()).find("convex") != std::string::npos);
+    }
+}

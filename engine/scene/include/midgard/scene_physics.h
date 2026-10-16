@@ -76,6 +76,10 @@ private:
         Placed placed;  // where the entity was when the body last matched it
     };
     void add(const Scene& scene, entt::entity e);
+    // The group whose compound body holds this entity's collider, or entt::null.
+    entt::entity moving_group(const Scene& scene, entt::entity e) const;
+    // A moving group's parts: its descendants' colliders, in the group's own space.
+    std::vector<physics::Part> parts_of(const Scene& scene, entt::entity group) const;
     void make_character(const Scene& scene);
     void write_back(Scene& scene, entt::entity e, const glm::dvec3& position,
                     const glm::quat* rotation);

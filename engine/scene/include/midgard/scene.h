@@ -117,6 +117,11 @@ struct ColliderShape {
     float spacing = 1.0f;
 };
 
+// A group: an entity whose children are the parts of one thing. It has its own transform (its
+// centre, which the editor keeps evenly scaled), so moving it moves them all. With a dynamic or
+// kinematic rigid body, its parts' colliders make one compound body that moves as a whole.
+struct Group {};
+
 struct PhysicsMaterial {
     float friction = 0.5f;
     float bounciness = 0.0f;

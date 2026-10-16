@@ -61,9 +61,20 @@ struct Surface {
     float bounciness = 0.0f;  // 0 stops dead, 1 bounces back as fast as it came
 };
 
+// One shape of a compound body: a collider placed in the body's own space.
+struct Part {
+    Collider collider;
+    glm::vec3 position{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 scale{1.0f};
+};
+
 struct BodyDesc {
     Motion motion = Motion::Static;
     Collider collider;
+    // A compound body (a group's parts moving as one): these shapes together, in place of
+    // `collider`. Its centre of mass is the parts' together.
+    std::vector<Part> parts;
     glm::dvec3 position{0.0};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 scale{1.0f};

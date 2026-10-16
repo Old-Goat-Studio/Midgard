@@ -159,6 +159,8 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         s.heights = c.value("heights", std::vector<float>{});
         s.spacing = c.value("spacing", 1.0f);
         reg.emplace_or_replace<ColliderShape>(e, std::move(s));
+    } else if (name == "group") {
+        reg.emplace_or_replace<Group>(e);
     } else if (name == "physics_material") {
         reg.emplace_or_replace<PhysicsMaterial>(
             e, std::max(c.value("friction", 0.5f), 0.0f),
@@ -207,12 +209,14 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<ColliderShape>(e);
     else if (name == "physics_material")
         reg.remove<PhysicsMaterial>(e);
+    else if (name == "group")
+        reg.remove<Group>(e);
 }
 
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
-               ScriptRef, Trigger, Sky, RigidBody, ColliderShape, PhysicsMaterial>(e);
+               ScriptRef, Trigger, Sky, RigidBody, ColliderShape, PhysicsMaterial, Group>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }

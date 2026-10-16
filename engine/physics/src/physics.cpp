@@ -20,6 +20,7 @@
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsStepListener.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
@@ -270,13 +271,31 @@ BodyId World::add(const BodyDesc& d) {
     if (d.layer < 0 || d.layer >= kLayers)
         throw PhysicsError("layer " + std::to_string(d.layer) + " is not 0 to " +
                            std::to_string(kLayers - 1));
-    const bool fixed_only =
+    const bool compound = !d.parts.empty();
+    bool fixed_only =
         d.collider.kind == Collider::Kind::Mesh || d.collider.kind == Collider::Kind::Heightfield;
     if (fixed_only && d.motion == Motion::Dynamic && !d.sensor)
         throw PhysicsError(
             "collider: meshes and heightfields can't be dynamic (use a convex "
             "shape, or make the body static or kinematic)");
-    const JPH::ShapeRefC shape = make_shape(d.collider, d.scale);
+    for (const Part& part : d.parts)
+        fixed_only = fixed_only || part.collider.kind == Collider::Kind::Mesh ||
+                     part.collider.kind == Collider::Kind::Heightfield;
+    if (compound && fixed_only && d.motion == Motion::Dynamic && !d.sensor)
+        throw PhysicsError(
+            "collider: a group that moves can't have mesh or heightfield parts "
+            "(use convex shapes)");
+    JPH::ShapeRefC shape;
+    if (compound) {
+        JPH::StaticCompoundShapeSettings settings;
+        for (const Part& part : d.parts)
+            settings.AddShape(to_jolt(part.position * d.scale),
+                              to_jolt(glm::normalize(part.rotation)),
+                              make_shape(part.collider, part.scale * d.scale));
+        shape = make(settings);
+    } else {
+        shape = make_shape(d.collider, d.scale);
+    }
     const JPH::EMotionType motion = d.motion == Motion::Static      ? JPH::EMotionType::Static
                                     : d.motion == Motion::Kinematic ? JPH::EMotionType::Kinematic
                                                                     : JPH::EMotionType::Dynamic;
