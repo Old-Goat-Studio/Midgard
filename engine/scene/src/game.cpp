@@ -173,9 +173,7 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         auto it = meshes_.find(scene_.registry.get<MeshRef>(e).asset);
         if (it == meshes_.end()) continue;  // not uploaded yet
-        const Material* material = scene_.registry.try_get<Material>(e);
-        out.push_back({it->second, scene_.draw_matrix(e, origin),
-                       material ? material->color : glm::vec4(0.8f, 0.8f, 0.8f, 1.0f)});
+        out.push_back(scene_.draw_item(e, it->second, origin));
     }
     return out;
 }

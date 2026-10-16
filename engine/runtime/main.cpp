@@ -12,7 +12,9 @@
 //   midgard_runtime [--package <dir>] --screenshot out.png [--size WxH] [--overlay-text "a|b"]
 //                                       offscreen, no window (image tests); --origin-offset x,y,z
 //                                       places the demo scene far from the world's origin;
-//                                       --exposure brightens it (highlights roll off)
+//                                       --exposure brightens it (highlights roll off);
+//                                       --scene materials|textures|lights draws a built-in
+//                                       test scene instead (runtime/test_scenes.h)
 //   midgard_runtime --selftest [--show]  checks this device can run games (jobs, identical data,
 //                                       rendering, the package, Python); --show puts the results
 //                                       on screen. On Android, an APK with a selftest.txt asset
@@ -74,6 +76,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/version.h"
 #include "selftest.h"
+#include "test_scenes.h"
 #ifdef MIDGARD_HAS_SCRIPTING
 #include "midgard/script.h"
 #include "midgard/script_system.h"
@@ -99,6 +102,7 @@ struct Options {
     bool show = false;              // the self-test's results in a window
     glm::dvec3 origin_offset{0.0};  // where the demo scene is placed (precision tests)
     float exposure = 1.0f;
+    std::optional<std::string> scene;  // a built-in test scene
     // Overlay lines shown for the whole run (the self-test's results); F3 is off then.
     std::vector<render::OverlayLine> fixed_overlay;
 };
@@ -192,7 +196,8 @@ public:
     // What to draw, relative to the camera's origin (camera-relative rendering).
     virtual std::vector<render::DrawItem> draws(float seconds, const glm::dvec3& origin) const = 0;
     virtual render::Camera camera(float aspect) const = 0;
-    virtual render::Light light() const = 0;
+    // The lighting, with local lights relative to the camera's origin.
+    virtual render::Light light(const glm::dvec3& origin) const = 0;
     virtual glm::vec4 sky() const = 0;
     virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
     virtual void update(const midgard::Actions&, float) {}
@@ -237,12 +242,29 @@ public:
         c.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, 200.0f);
         return c;
     }
-    render::Light light() const override { return {}; }
+    render::Light light(const glm::dvec3&) const override { return {}; }
     glm::vec4 sky() const override { return {0.08f, 0.11f, 0.18f, 1.0f}; }  // night blue
 
 private:
     glm::dvec3 offset_;
     render::MeshId cube_ = 0;
+};
+
+// A built-in test scene (--scene), for image tests of the renderer.
+class TestSceneSource : public Source {
+public:
+    explicit TestSceneSource(std::unique_ptr<midgard::test_scenes::TestScene> scene)
+        : scene_(std::move(scene)) {}
+    void upload(render::Renderer& renderer) override { scene_->upload(renderer); }
+    std::vector<render::DrawItem> draws(float, const glm::dvec3& origin) const override {
+        return scene_->draws(origin);
+    }
+    render::Camera camera(float aspect) const override { return scene_->camera(aspect); }
+    render::Light light(const glm::dvec3& origin) const override { return scene_->light(origin); }
+    glm::vec4 sky() const override { return scene_->sky(); }
+
+private:
+    std::unique_ptr<midgard::test_scenes::TestScene> scene_;
 };
 
 #if defined(__ANDROID__) && defined(MIDGARD_HAS_SCRIPTING)
@@ -262,7 +284,9 @@ public:
         return game_.draws(origin);
     }
     render::Camera camera(float aspect) const override { return game_.camera(aspect); }
-    render::Light light() const override { return game_.scene().light(); }
+    render::Light light(const glm::dvec3& origin) const override {
+        return game_.scene().light(origin);
+    }
     glm::vec4 sky() const override { return {game_.scene().settings.sky, 1.0f}; }
     midgard::InputMap input_map() const override { return game_.input_map(); }
     void update(const midgard::Actions& actions, float dt) override {
@@ -602,7 +626,7 @@ int run_screenshot(const Options& opt, Source& source) {
     renderer.set_exposure(opt.exposure);
     const render::Camera camera = source.camera(float(opt.width) / float(opt.height));
     const auto draws = source.draws(0.6f, camera.origin);
-    renderer.render_frame(camera, source.light(), draws, source.sky());
+    renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
     // With MIDGARD_VULKAN_VALIDATION set, anything the validation layer reports fails the run
     // (CI's image tests run this way).
     if (!renderer.validation_messages().empty()) {
@@ -884,7 +908,8 @@ int run_window(const Options& opt, Source& source) {
             bool drawn = false;
             {
                 MIDGARD_PROFILE_SCOPE("render");
-                drawn = renderer.render_frame(camera, source.light(), draws, source.sky());
+                drawn =
+                    renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
             }
             if (drawn) {
                 ++frame;
@@ -1069,6 +1094,8 @@ int main(int argc, char** argv) {
             opt.overlay_text = argv[++i];
         } else if (arg == "--profile" && has_value) {
             opt.profile = argv[++i];
+        } else if (arg == "--scene" && has_value) {
+            opt.scene = argv[++i];
         } else if (arg == "--exposure" && has_value) {
             opt.exposure = static_cast<float>(std::atof(argv[++i]));
         } else if (arg == "--origin-offset" && has_value) {
@@ -1105,7 +1132,16 @@ int main(int argc, char** argv) {
         if (!opt.package_dir) opt.package_dir = package_beside_executable();
         if (opt.selftest) return finish(opt, windowed, run_selftest(opt));
         std::unique_ptr<Source> source;
-        if (opt.package_dir)
+        if (opt.scene) {
+            auto scene = midgard::test_scenes::make(*opt.scene);
+            if (!scene) {
+                std::string known;
+                for (const std::string& n : midgard::test_scenes::names()) known += " " + n;
+                fail("no test scene called '" + *opt.scene + "' (there are:" + known + ")");
+                return finish(opt, windowed, 2);
+            }
+            source = std::make_unique<TestSceneSource>(std::move(scene));
+        } else if (opt.package_dir)
             source = std::make_unique<GameSource>(*opt.package_dir);
         else
             source = std::make_unique<DemoSource>(opt.origin_offset);

@@ -37,8 +37,13 @@ struct MeshRef {
     std::string asset;  // content id in the manifest
 };
 
+// glTF's metal/roughness factors (textures arrive with the object pipeline).
 struct Material {
-    glm::vec4 color{1.0f};
+    glm::vec4 color{1.0f};  // base colour, sRGB, and alpha
+    float metallic = 0.0f;
+    float roughness = 0.8f;
+    glm::vec3 emissive{0.0f};  // sRGB
+    float emissive_strength = 1.0f;
 };
 
 struct CameraLens {
@@ -50,6 +55,15 @@ struct CameraLens {
 struct DirectionalLight {
     glm::vec3 color{1.0f};
     float intensity = 1.0f;
+};
+
+// A point or spot light (a spot shines along the entity's local -Z).
+struct LocalLightSource {
+    bool spot = false;
+    glm::vec3 color{1.0f};
+    float intensity = 1.0f;
+    float range = 10.0f;
+    float inner_angle = 20.0f, outer_angle = 30.0f;  // degrees
 };
 
 // The entity the player controls. The first camera follows it in third person.
@@ -122,12 +136,16 @@ public:
     glm::dvec3 world_position(entt::entity e) const;
     // The entity's model matrix for drawing, relative to a camera's origin.
     glm::mat4 draw_matrix(entt::entity e, const glm::dvec3& origin) const;
+    // How to draw the entity with this mesh: its matrix relative to `origin` and its material
+    // (a plain light grey without one). The game and the editor's viewport share it.
+    render::DrawItem draw_item(entt::entity e, render::MeshId mesh, const glm::dvec3& origin) const;
 
     // The first camera (by entity id order), for the given aspect ratio: its origin is its world
     // position and its view only turns (camera-relative rendering, see render::Camera).
     std::optional<render::Camera> camera(float aspect) const;
-    // The first directional light, combined with the scene's ambient colour.
-    render::Light light() const;
+    // The lighting: the first directional light, the ambient colours, and the point and spot
+    // lights nearest `origin` (the camera's), relative to it.
+    render::Light light(const glm::dvec3& origin = glm::dvec3(0.0)) const;
 
     // The first Sky entity's colours become the scene's (after its settings were read again).
     void use_sky();

@@ -28,7 +28,7 @@ namespace {
 
 // The FNV-1a hash of the unit cube's mesh data. It's the same on every target, so a different
 // value means data isn't identical here (engine/tests/test_hash.cpp checks the same value).
-constexpr std::uint64_t kCubeHash = 0xce0a694172de14a5ULL;
+constexpr std::uint64_t kCubeHash = 0x48cc279e660d43e5ULL;
 
 std::string format(const char* fmt, auto... args) {
     char text[256];
@@ -100,8 +100,8 @@ Check render_check(bool vulkan_required) {
         const std::vector<uint8_t> pixels = renderer.read_pixels();
         const uint8_t* centre = &pixels[(32 * 64 + 32) * 4];
         const uint8_t* corner = &pixels[0];
-        // A red cube in the middle of a blue background.
-        if (centre[0] < 100 || centre[2] > 30 || corner[2] < 180 || corner[0] > 30)
+        // A red cube (with a little of the bluish ambient light) on a blue background.
+        if (centre[0] < 100 || centre[2] > 60 || corner[2] < 180 || corner[0] > 30)
             return {"Rendering", Status::Fail,
                     format("wrong colours: centre %d,%d,%d corner %d,%d,%d", centre[0], centre[1],
                            centre[2], corner[0], corner[1], corner[2])};

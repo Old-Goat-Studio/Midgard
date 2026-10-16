@@ -23,6 +23,21 @@
       "same_as": "demo"
     },
     {
+      "name": "materials",
+      "_about": "Spheres from smooth to rough (left to right) and plain to metal (top to bottom).",
+      "args": ["--size", "480x360", "--scene", "materials"]
+    },
+    {
+      "name": "textures",
+      "_about": "One object per material texture: base colour, normal map, metal/roughness, occlusion, emissive.",
+      "args": ["--size", "480x240", "--scene", "textures"]
+    },
+    {
+      "name": "lights",
+      "_about": "A red point light and a blue spot light in a dim scene.",
+      "args": ["--size", "400x240", "--scene", "lights"]
+    },
+    {
       "name": "overlay",
       "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
     }

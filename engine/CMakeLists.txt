@@ -56,7 +56,7 @@ foreach(shader mesh.vert mesh.frag overlay.vert overlay.frag fullscreen.vert ton
     add_custom_command(
         OUTPUT "${out}"
         COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --vn ${name} -o "${out}" "${src}"
-        DEPENDS "${src}"
+        DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/frame.glsl"
         COMMENT "Compiling shader ${shader}")
     list(APPEND SHADER_HEADERS "${out}")
 endforeach()
@@ -75,9 +75,11 @@ target_include_directories(midgard_render
     PRIVATE "${SHADER_OUT}" ${Stb_INCLUDE_DIR}
 )
 target_compile_definitions(midgard_render PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS)
+find_package(mikktspace CONFIG REQUIRED)
 target_link_libraries(midgard_render
     PUBLIC glm::glm
-    PRIVATE volk::volk Vulkan::Headers GPUOpen::VulkanMemoryAllocator midgard_options
+    PRIVATE volk::volk Vulkan::Headers GPUOpen::VulkanMemoryAllocator mikktspace::mikktspace
+            midgard_options
 )
 
 # ---- input: the actions layer (platform independent) ----------------------------------------
@@ -217,7 +219,7 @@ if(MIDGARD_BUILD_PROGRAMS)
         add_executable(midgard_runtime runtime/main.cpp
                        $<$<PLATFORM_ID:Windows>:runtime/runtime.rc>)
     endif()
-    target_sources(midgard_runtime PRIVATE runtime/selftest.cpp)
+    target_sources(midgard_runtime PRIVATE runtime/selftest.cpp runtime/test_scenes.cpp)
     target_link_libraries(midgard_runtime PRIVATE
         midgard_core midgard_render midgard_scene midgard_link SDL3::SDL3 Vulkan::Headers
         midgard_options)

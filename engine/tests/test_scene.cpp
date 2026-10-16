@@ -216,7 +216,8 @@ TEST_CASE("the scene is built from the entity table") {
 
     const auto light = scene.light();
     CHECK(near(light.direction, {0, -1, 0}));  // pitched down 90 degrees: shining straight down
-    CHECK(near(light.color, {2, 2, 2}));
+    CHECK(near(light.color, {1, 1, 1}));
+    CHECK(light.intensity == doctest::Approx(2.0f));  // kept apart, so bright lights don't clip
 }
 
 TEST_CASE("a scene without a camera gets a default view") {
@@ -338,6 +339,65 @@ TEST_CASE("a sky entity sets the scene's sky and ambient colours") {
     CHECK(near(scene.settings.sky, {1, 0, 0}));
     game.reload_scene_settings();
     CHECK(near(game.scene().settings.sky, {1, 0, 0}));
+}
+
+TEST_CASE("materials carry glTF's factors, clamped to their ranges") {
+    TestPackage pkg({
+        {"e1_shiny", R"(NULL, '{"mesh": {"asset": "builtin:cube"}, "material": {
+            "color": [0.9, 0.5, 0.1], "metallic": 1, "roughness": 0.2,
+            "emissive": [1, 0.5, 0], "emissive_strength": 4}}')"},
+        {"e2_wild", R"(NULL, '{"mesh": {"asset": "builtin:cube"}, "material": {
+            "metallic": 3, "roughness": -1, "emissive_strength": -2}}')"},
+        {"e3_plain", R"(NULL, '{"mesh": {"asset": "builtin:cube"}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    const auto& scene = game.scene();
+    const auto shiny = scene.draw_item(scene.find("e1_shiny"), 7, glm::dvec3(0.0));
+    CHECK(shiny.mesh == 7);
+    CHECK(shiny.metallic == 1.0f);
+    CHECK(shiny.roughness == doctest::Approx(0.2f));
+    CHECK(near(shiny.emissive, {1, 0.5f, 0}));
+    CHECK(shiny.emissive_strength == 4.0f);
+    const auto wild = scene.draw_item(scene.find("e2_wild"), 0, glm::dvec3(0.0));
+    CHECK(wild.metallic == 1.0f);
+    CHECK(wild.roughness == 0.0f);
+    CHECK(wild.emissive_strength == 0.0f);
+    const auto plain = scene.draw_item(scene.find("e3_plain"), 0, glm::dvec3(0.0));
+    CHECK(plain.metallic == 0.0f);  // without a material: matte light grey
+    CHECK(plain.roughness == doctest::Approx(0.8f));
+    CHECK(plain.color.r == doctest::Approx(0.8f));
+}
+
+TEST_CASE("point and spot lights: the nearest eight, relative to the camera") {
+    std::vector<std::pair<std::string, std::string>> entities;
+    for (int i = 0; i < 12; ++i)  // 12 point lights at x = 0, 10, 20, ... 110
+        entities.push_back({"p" + std::string(i < 10 ? "0" : "") + std::to_string(i),
+                            "NULL, '{\"transform\": {\"position\": [" + std::to_string(i * 10) +
+                                ", 0, 0]}, \"light\": {\"type\": \"point\", \"range\": 25, "
+                                "\"intensity\": 3}}'"});
+    entities.push_back({"s_spot", R"(NULL, '{"transform": {"position": [200, 5, 0],
+        "rotation": [-90, 0, 0]}, "light": {"type": "spot", "inner_angle": 10,
+        "outer_angle": 5, "color": [0, 0, 1]}}')"});
+    entities.push_back({"sun", R"(NULL, '{"light": {"type": "directional", "intensity": 2}}')"});
+    TestPackage pkg(entities);
+    midgard::Game game(pkg.dir);
+    // Seen from x = 205: the spot, then the farthest point lights.
+    const midgard::render::Light light = game.scene().light(glm::dvec3(205, 0, 0));
+    REQUIRE(light.local.size() == size_t(midgard::render::kMaxLocalLights));
+    CHECK(light.local[0].spot);
+    CHECK(near(light.local[0].position, {-5, 5, 0}));   // relative to the camera
+    CHECK(near(light.local[0].direction, {0, -1, 0}));  // pitched down: shining straight down
+    CHECK(light.local[0].outer_angle == doctest::Approx(10.0f));  // never inside the inner cone
+    CHECK(near(light.local[1].position, {-95, 0, 0}));            // the point light at x = 110
+    CHECK(light.local[1].range == doctest::Approx(25.0f));
+    CHECK(light.local[1].intensity == doctest::Approx(3.0f));
+    // The spot and seven point lights (x = 110 down to 50); those at 0 to 40 are left out.
+    CHECK(near(light.local[7].position, {-155, 0, 0}));
+    CHECK(light.intensity == doctest::Approx(2.0f));  // the sun's
+    // Turning a light into the sun moves it out of the local lights.
+    game.scene().set_component(game.scene().find("s_spot"), "light",
+                               nlohmann::json::parse(R"({"type": "directional"})"));
+    CHECK_FALSE(game.scene().light(glm::dvec3(205, 0, 0)).local[0].spot);
 }
 
 TEST_CASE("positions far from the origin stay exact (double precision, camera-relative)") {

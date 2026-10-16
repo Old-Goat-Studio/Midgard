@@ -8,8 +8,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 
 #include <volk.h>
 // volk must come first: it defines VK_NO_PROTOTYPES users and the function pointers VMA uses.
@@ -34,26 +36,46 @@ void check(VkResult result, const char* what) {
         throw RenderError(std::string(what) + " failed (VkResult " + std::to_string(result) + ")");
 }
 
+// Must match shaders/frame.glsl (std140: every member is a vec4 or made of them).
+struct GpuLocalLight {
+    glm::vec4 position_range;
+    glm::vec4 color;      // w: 0 point, 1 spot
+    glm::vec4 direction;  // w: cos(outer cone)
+    glm::vec4 cone;       // x: cos(inner cone)
+};
 struct FrameData {
     glm::mat4 view_proj;
-    glm::vec4 light_dir;
-    glm::vec4 light_color;
-    glm::vec4 ambient;
+    glm::vec4 up;
+    glm::vec4 sun_direction;
+    glm::vec4 sun_color;
+    glm::vec4 ambient_sky;
+    glm::vec4 ambient_ground;
+    glm::ivec4 counts;
+    GpuLocalLight lights[kMaxLocalLights];
 };
 
+// Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
+// bytes).
 struct PushData {
     glm::mat4 model;
-    glm::vec4 color;
+    glm::vec4 base_color;
+    glm::vec4 emissive;
+    glm::vec4 params;  // metallic, roughness, normal scale, occlusion strength
 };
+static_assert(sizeof(PushData) <= 128);
 
-// Colours arrive as designers pick them (sRGB). Lighting maths and the sRGB framebuffer
-// expect linear values, so convert once here; alpha is already linear.
+// Colours arrive as designers pick them (sRGB). Lighting maths and the HDR target expect linear
+// values, so convert once here, with the standard sRGB curve (as the GPU does for sRGB
+// textures); alpha is already linear.
 glm::vec3 to_linear(const glm::vec3& srgb) {
-    return glm::pow(glm::clamp(srgb, 0.0f, 1.0f), glm::vec3(2.2f));
+    return {srgb_to_linear(srgb.r), srgb_to_linear(srgb.g), srgb_to_linear(srgb.b)};
 }
 glm::vec4 to_linear(const glm::vec4& srgb) {
     return glm::vec4(to_linear(glm::vec3(srgb)), srgb.a);
 }
+
+constexpr uint32_t kMaterialsPerPool = 64;
+constexpr uint32_t kMaterialBindings = 5;
 
 struct Buffer {
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -71,6 +93,11 @@ struct GpuMesh {
     Buffer vertices;
     Buffer indices;
     uint32_t index_count = 0;
+};
+
+struct GpuTexture {
+    Image image;
+    bool srgb = true;
 };
 
 }  // namespace
@@ -140,6 +167,17 @@ struct Renderer::Impl {
     std::array<Frame, kFramesInFlight> frames{};
     uint32_t frame_index = 0;
     std::vector<GpuMesh> meshes;
+
+    // Textures and materials (sets of textures, set 1 of the mesh pipeline).
+    std::vector<GpuTexture> textures;
+    TextureId white_srgb = 0, white_linear = 0, flat_normal = 0;  // the defaults
+    VkSampler material_sampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout material_set_layout = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> material_pools;
+    uint32_t material_pool_used = kMaterialsPerPool;  // sets taken from the newest pool
+    std::vector<VkDescriptorSet> materials;           // by MaterialId; 0 is the default
+    bool anisotropy = false;
+    float max_anisotropy = 1.0f;
 
     // ---- setup -------------------------------------------------------------------------
     void create_instance(const RendererDesc& desc) {
@@ -256,11 +294,18 @@ struct Renderer::Impl {
         qinfo.pQueuePriorities = &priority;
         std::vector<const char*> extensions;
         if (!offscreen) extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        VkPhysicalDeviceFeatures supported{};
+        vkGetPhysicalDeviceFeatures(gpu, &supported);
+        VkPhysicalDeviceFeatures features{};
+        anisotropy = supported.samplerAnisotropy == VK_TRUE;
+        features.samplerAnisotropy = supported.samplerAnisotropy;
+        max_anisotropy = anisotropy ? std::min(8.0f, gpu_props.limits.maxSamplerAnisotropy) : 1.0f;
         VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         info.queueCreateInfoCount = 1;
         info.pQueueCreateInfos = &qinfo;
         info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         info.ppEnabledExtensionNames = extensions.data();
+        info.pEnabledFeatures = &features;
         check(vkCreateDevice(gpu, &info, nullptr, &device), "Creating the Vulkan device");
         volkLoadDevice(device);
         vkGetDeviceQueue(device, queue_family, 0, &queue);
@@ -335,12 +380,13 @@ struct Renderer::Impl {
         img = {};
     }
 
-    VkImageView create_view(VkImage image, VkFormat format, VkImageAspectFlags aspect) {
+    VkImageView create_view(VkImage image, VkFormat format, VkImageAspectFlags aspect,
+                            uint32_t levels = 1) {
         VkImageViewCreateInfo vinfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         vinfo.image = image;
         vinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         vinfo.format = format;
-        vinfo.subresourceRange = {aspect, 0, 1, 0, 1};
+        vinfo.subresourceRange = {aspect, 0, levels, 0, 1};
         VkImageView view;
         check(vkCreateImageView(device, &vinfo, nullptr, &view), "Creating an image view");
         return view;
@@ -581,11 +627,25 @@ struct Renderer::Impl {
         check(vkCreateDescriptorSetLayout(device, &linfo, nullptr, &set_layout),
               "Creating the descriptor set layout");
 
+        std::array<VkDescriptorSetLayoutBinding, kMaterialBindings> material_bindings{};
+        for (uint32_t i = 0; i < kMaterialBindings; ++i) {
+            material_bindings[i].binding = i;
+            material_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            material_bindings[i].descriptorCount = 1;
+            material_bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
+        VkDescriptorSetLayoutCreateInfo minfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        minfo.bindingCount = kMaterialBindings;
+        minfo.pBindings = material_bindings.data();
+        check(vkCreateDescriptorSetLayout(device, &minfo, nullptr, &material_set_layout),
+              "Creating the material set layout");
+
         VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                  sizeof(PushData)};
+        const std::array<VkDescriptorSetLayout, 2> layouts{set_layout, material_set_layout};
         VkPipelineLayoutCreateInfo plinfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-        plinfo.setLayoutCount = 1;
-        plinfo.pSetLayouts = &set_layout;
+        plinfo.setLayoutCount = static_cast<uint32_t>(layouts.size());
+        plinfo.pSetLayouts = layouts.data();
         plinfo.pushConstantRangeCount = 1;
         plinfo.pPushConstantRanges = &push;
         check(vkCreatePipelineLayout(device, &plinfo, nullptr, &pipeline_layout),
@@ -604,9 +664,11 @@ struct Renderer::Impl {
         stages[1].pName = "main";
 
         VkVertexInputBindingDescription vbind{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
-        std::array<VkVertexInputAttributeDescription, 2> attrs{{
+        std::array<VkVertexInputAttributeDescription, 4> attrs{{
             {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)},
             {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)},
+            {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)},
+            {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, tangent)},
         }};
         VkPipelineVertexInputStateCreateInfo vinput{
             VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
@@ -922,6 +984,182 @@ struct Renderer::Impl {
         }
     }
 
+    // ---- textures and materials ------------------------------------------------------------
+    // Records work into a one-off command buffer and waits for the GPU to finish it.
+    void immediate(const std::function<void(VkCommandBuffer)>& work) {
+        VkCommandBufferAllocateInfo ainfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        ainfo.commandPool = command_pool;
+        ainfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        ainfo.commandBufferCount = 1;
+        VkCommandBuffer cmd;
+        check(vkAllocateCommandBuffers(device, &ainfo, &cmd), "Allocating a command buffer");
+        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmd, &begin);
+        work(cmd);
+        vkEndCommandBuffer(cmd);
+        VkFenceCreateInfo finfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VkFence fence;
+        check(vkCreateFence(device, &finfo, nullptr, &fence), "Creating a fence");
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &cmd;
+        const VkResult result = vkQueueSubmit(queue, 1, &submit, fence);
+        if (result == VK_SUCCESS) vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(device, fence, nullptr);
+        vkFreeCommandBuffers(device, command_pool, 1, &cmd);
+        check(result, "Submitting an upload");
+    }
+
+    TextureId upload_texture(const TextureData& t) {
+        if (t.levels.empty() || t.width == 0 || t.height == 0)
+            throw RenderError("upload_texture: an empty texture");
+        const auto levels = static_cast<uint32_t>(t.levels.size());
+        const VkFormat format = t.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        VkImageCreateInfo iinfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        iinfo.imageType = VK_IMAGE_TYPE_2D;
+        iinfo.format = format;
+        iinfo.extent = {t.width, t.height, 1};
+        iinfo.mipLevels = levels;
+        iinfo.arrayLayers = 1;
+        iinfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        iinfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        iinfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        VmaAllocationCreateInfo ainfo{};
+        ainfo.usage = VMA_MEMORY_USAGE_AUTO;
+        GpuTexture tex;
+        tex.srgb = t.srgb;
+        check(vmaCreateImage(allocator, &iinfo, &ainfo, &tex.image.image, &tex.image.allocation,
+                             nullptr),
+              "Creating a texture");
+        tex.image.view = create_view(tex.image.image, format, VK_IMAGE_ASPECT_COLOR_BIT, levels);
+
+        // Every level through one staging buffer, then one copy per level.
+        VkDeviceSize total = 0;
+        for (const auto& level : t.levels) total += level.size();
+        Buffer staging = create_buffer(total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
+        std::vector<VkBufferImageCopy> copies;
+        VkDeviceSize offset = 0;
+        uint32_t w = t.width, h = t.height;
+        for (uint32_t i = 0; i < levels; ++i) {
+            if (t.levels[i].size() != size_t(w) * h * 4) {
+                destroy_buffer(staging);
+                vmaDestroyImage(allocator, tex.image.image, tex.image.allocation);
+                vkDestroyImageView(device, tex.image.view, nullptr);
+                throw RenderError("upload_texture: mip level " + std::to_string(i) +
+                                  " has the wrong size");
+            }
+            std::memcpy(static_cast<uint8_t*>(staging.mapped) + offset, t.levels[i].data(),
+                        t.levels[i].size());
+            VkBufferImageCopy copy{};
+            copy.bufferOffset = offset;
+            copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i, 0, 1};
+            copy.imageExtent = {w, h, 1};
+            copies.push_back(copy);
+            offset += t.levels[i].size();
+            w = std::max(1u, w / 2);
+            h = std::max(1u, h / 2);
+        }
+        vmaFlushAllocation(allocator, staging.allocation, 0, VK_WHOLE_SIZE);
+        immediate([&](VkCommandBuffer cmd) {
+            VkImageMemoryBarrier to_dst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            to_dst.srcAccessMask = 0;
+            to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            to_dst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            to_dst.srcQueueFamilyIndex = to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            to_dst.image = tex.image.image;
+            to_dst.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                                 &to_dst);
+            vkCmdCopyBufferToImage(cmd, staging.buffer, tex.image.image,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   static_cast<uint32_t>(copies.size()), copies.data());
+            VkImageMemoryBarrier to_read = to_dst;
+            to_read.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            to_read.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            to_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            to_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
+                                 1, &to_read);
+        });
+        destroy_buffer(staging);
+        textures.push_back(tex);
+        return static_cast<TextureId>(textures.size() - 1);
+    }
+
+    TextureId solid_texture(uint8_t r, uint8_t g, uint8_t b, bool srgb) {
+        return upload_texture(make_texture(1, 1, srgb, {r, g, b, 255}));
+    }
+
+    void create_material_system() {
+        VkSamplerCreateInfo sinfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        sinfo.magFilter = sinfo.minFilter = VK_FILTER_LINEAR;
+        sinfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        sinfo.addressModeU = sinfo.addressModeV = sinfo.addressModeW =
+            VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sinfo.maxLod = VK_LOD_CLAMP_NONE;
+        sinfo.anisotropyEnable = anisotropy ? VK_TRUE : VK_FALSE;
+        sinfo.maxAnisotropy = max_anisotropy;
+        check(vkCreateSampler(device, &sinfo, nullptr, &material_sampler),
+              "Creating the material sampler");
+        white_srgb = solid_texture(255, 255, 255, true);
+        white_linear = solid_texture(255, 255, 255, false);
+        flat_normal = solid_texture(128, 128, 255, false);  // straight out of the surface
+        create_material(MaterialTextures{});                // MaterialId 0: no textures
+    }
+
+    VkDescriptorSet allocate_material_set() {
+        if (material_pool_used == kMaterialsPerPool) {
+            VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                      kMaterialsPerPool * kMaterialBindings};
+            VkDescriptorPoolCreateInfo pinfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+            pinfo.maxSets = kMaterialsPerPool;
+            pinfo.poolSizeCount = 1;
+            pinfo.pPoolSizes = &size;
+            VkDescriptorPool pool;
+            check(vkCreateDescriptorPool(device, &pinfo, nullptr, &pool),
+                  "Creating a material descriptor pool");
+            material_pools.push_back(pool);
+            material_pool_used = 0;
+        }
+        VkDescriptorSetAllocateInfo ainfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ainfo.descriptorPool = material_pools.back();
+        ainfo.descriptorSetCount = 1;
+        ainfo.pSetLayouts = &material_set_layout;
+        VkDescriptorSet set;
+        check(vkAllocateDescriptorSets(device, &ainfo, &set), "Allocating a material");
+        ++material_pool_used;
+        return set;
+    }
+
+    MaterialId create_material(const MaterialTextures& t) {
+        const TextureId chosen[kMaterialBindings] = {t.base_color, t.metallic_roughness, t.normal,
+                                                     t.occlusion, t.emissive};
+        const TextureId defaults[kMaterialBindings] = {white_srgb, white_linear, flat_normal,
+                                                       white_linear, white_srgb};
+        std::array<VkDescriptorImageInfo, kMaterialBindings> images{};
+        std::array<VkWriteDescriptorSet, kMaterialBindings> writes{};
+        const VkDescriptorSet set = allocate_material_set();
+        for (uint32_t i = 0; i < kMaterialBindings; ++i) {
+            const TextureId id = chosen[i] == kNoTexture ? defaults[i] : chosen[i];
+            if (id >= textures.size()) throw RenderError("create_material: no such texture");
+            images[i] = {material_sampler, textures[id].image.view,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            writes[i].dstSet = set;
+            writes[i].dstBinding = i;
+            writes[i].descriptorCount = 1;
+            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[i].pImageInfo = &images[i];
+        }
+        vkUpdateDescriptorSets(device, kMaterialBindings, writes.data(), 0, nullptr);
+        materials.push_back(set);
+        return static_cast<MaterialId>(materials.size() - 1);
+    }
+
     // ---- drawing -----------------------------------------------------------------------
     void record(VkCommandBuffer cmd, VkFramebuffer fb, const std::span<const DrawItem> draws,
                 const glm::vec4& clear_color, VkDescriptorSet set, const Frame& frame) {
@@ -946,10 +1184,19 @@ struct Renderer::Impl {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &set,
                                 0, nullptr);
+        MaterialId bound = ~0u;
         for (const DrawItem& d : draws) {
             if (d.mesh >= meshes.size()) continue;
             const GpuMesh& m = meshes[d.mesh];
-            PushData push{d.model, to_linear(d.color)};
+            const MaterialId material = d.material < materials.size() ? d.material : 0;
+            if (material != bound) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1,
+                                        &materials[material], 0, nullptr);
+                bound = material;
+            }
+            PushData push{d.model, to_linear(d.color),
+                          glm::vec4(to_linear(d.emissive) * d.emissive_strength, 0.0f),
+                          glm::vec4(d.metallic, d.roughness, d.normal_scale, d.occlusion_strength)};
             vkCmdPushConstants(cmd, pipeline_layout,
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                sizeof(push), &push);
@@ -1008,6 +1255,11 @@ struct Renderer::Impl {
                 destroy_buffer(m.vertices);
                 destroy_buffer(m.indices);
             }
+            for (GpuTexture& t : textures) destroy_image(t.image);
+            for (VkDescriptorPool p : material_pools) vkDestroyDescriptorPool(device, p, nullptr);
+            if (material_sampler) vkDestroySampler(device, material_sampler, nullptr);
+            if (material_set_layout)
+                vkDestroyDescriptorSetLayout(device, material_set_layout, nullptr);
             for (Frame& f : frames) {
                 destroy_buffer(f.ubo);
                 destroy_buffer(f.overlay);
@@ -1063,9 +1315,18 @@ Renderer::Renderer(const RendererDesc& desc) : impl_(std::make_unique<Impl>()) {
     r.create_overlay_pipeline();
     r.create_post_pipeline();
     r.create_frames();
+    r.create_material_system();
 }
 
 Renderer::~Renderer() = default;
+
+TextureId Renderer::upload_texture(const TextureData& texture) {
+    return impl_->upload_texture(texture);
+}
+
+MaterialId Renderer::create_material(const MaterialTextures& textures) {
+    return impl_->create_material(textures);
+}
 
 MeshId Renderer::upload_mesh(const MeshData& mesh) {
     Impl& r = *impl_;
@@ -1121,9 +1382,24 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
     }
     check(vkResetFences(r.device, 1, &f.fence), "Resetting a fence");
 
-    FrameData data{camera.projection * camera.view, glm::vec4(light.direction, 0.0f),
-                   glm::vec4(to_linear(light.color), 1.0f),
-                   glm::vec4(to_linear(light.ambient), 1.0f)};
+    FrameData data{};
+    data.view_proj = camera.projection * camera.view;
+    data.up = glm::vec4(glm::normalize(light.up), 0.0f);
+    data.sun_direction = glm::vec4(light.direction, 0.0f);
+    data.sun_color = glm::vec4(to_linear(light.color) * light.intensity, 1.0f);
+    data.ambient_sky = glm::vec4(to_linear(light.ambient), 1.0f);
+    data.ambient_ground = glm::vec4(to_linear(light.ambient_ground), 1.0f);
+    const int local = std::min<int>(static_cast<int>(light.local.size()), kMaxLocalLights);
+    data.counts = glm::ivec4(local, 0, 0, 0);
+    for (int i = 0; i < local; ++i) {
+        const LocalLight& l = light.local[size_t(i)];
+        GpuLocalLight& g = data.lights[i];
+        g.position_range = glm::vec4(l.position, std::max(l.range, 1e-3f));
+        g.color = glm::vec4(to_linear(l.color) * l.intensity, l.spot ? 1.0f : 0.0f);
+        const float outer = glm::radians(std::max(l.outer_angle, l.inner_angle + 0.01f));
+        g.direction = glm::vec4(glm::normalize(l.direction), std::cos(outer));
+        g.cone = glm::vec4(std::cos(glm::radians(l.inner_angle)), 0.0f, 0.0f, 0.0f);
+    }
     std::memcpy(f.ubo.mapped, &data, sizeof(data));
     vmaFlushAllocation(r.allocator, f.ubo.allocation, 0, VK_WHOLE_SIZE);
 

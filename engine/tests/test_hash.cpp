@@ -20,5 +20,5 @@ TEST_CASE("the test cube hashes the same on every target") {
     midgard::Fnv1a64 hash;
     hash.add(cube.vertices.data(), cube.vertices.size() * sizeof(midgard::render::Vertex));
     hash.add(cube.indices.data(), cube.indices.size() * sizeof(std::uint32_t));
-    CHECK(hash.value() == 0xce0a694172de14a5ULL);
+    CHECK(hash.value() == 0x48cc279e660d43e5ULL);
 }

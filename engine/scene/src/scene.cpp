@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/scene.h"
 
+#include <algorithm>
+
 #include <memory>
 #include <unordered_map>
 
@@ -85,7 +87,13 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
     } else if (name == "mesh") {
         reg.emplace_or_replace<MeshRef>(e, c.at("asset").get<std::string>());
     } else if (name == "material") {
-        reg.emplace_or_replace<Material>(e, color4(c, "color"));
+        Material m;
+        m.color = color4(c, "color");
+        m.metallic = std::clamp(c.value("metallic", 0.0f), 0.0f, 1.0f);
+        m.roughness = std::clamp(c.value("roughness", 0.8f), 0.0f, 1.0f);
+        m.emissive = vec3(c, "emissive", glm::vec3(0.0f));
+        m.emissive_strength = std::max(c.value("emissive_strength", 1.0f), 0.0f);
+        reg.emplace_or_replace<Material>(e, m);
     } else if (name == "camera") {
         reg.emplace_or_replace<CameraLens>(e, c.value("fov", 55.0f), c.value("near", 0.05f),
                                            c.value("far", 500.0f));
@@ -99,11 +107,21 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<Sky>(e, vec3(c, "color", SceneSettings{}.sky),
                                     vec3(c, "ambient", SceneSettings{}.ambient));
     } else if (name == "light") {
-        if (c.value("type", "directional") == "directional")
-            reg.emplace_or_replace<DirectionalLight>(e, vec3(c, "color", glm::vec3(1.0f)),
-                                                     c.value("intensity", 1.0f));
-        else
-            reg.remove<DirectionalLight>(e);
+        const std::string type = c.value("type", "directional");
+        reg.remove<DirectionalLight, LocalLightSource>(e);
+        if (type == "directional") {
+            reg.emplace<DirectionalLight>(e, vec3(c, "color", glm::vec3(1.0f)),
+                                          c.value("intensity", 1.0f));
+        } else if (type == "point" || type == "spot") {
+            LocalLightSource l;
+            l.spot = type == "spot";
+            l.color = vec3(c, "color", glm::vec3(1.0f));
+            l.intensity = std::max(c.value("intensity", 1.0f), 0.0f);
+            l.range = std::max(c.value("range", 10.0f), 0.01f);
+            l.inner_angle = std::clamp(c.value("inner_angle", 20.0f), 0.0f, 89.0f);
+            l.outer_angle = std::clamp(c.value("outer_angle", 30.0f), l.inner_angle, 90.0f);
+            reg.emplace<LocalLightSource>(e, l);
+        }
     }
 }
 
@@ -119,7 +137,7 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
     else if (name == "player")
         reg.remove<Player>(e);
     else if (name == "light")
-        reg.remove<DirectionalLight>(e);
+        reg.remove<DirectionalLight, LocalLightSource>(e);
     else if (name == "script")
         reg.remove<ScriptRef>(e);
     else if (name == "trigger")
@@ -130,8 +148,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
 
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
-    reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, Player, ScriptRef,
-               Trigger, Sky>(e);
+    reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
+               ScriptRef, Trigger, Sky>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
@@ -306,6 +324,22 @@ glm::mat4 Scene::draw_matrix(entt::entity e, const glm::dvec3& origin) const {
     return render::relative_to(world_matrix(e), origin);
 }
 
+render::DrawItem Scene::draw_item(entt::entity e, render::MeshId mesh,
+                                  const glm::dvec3& origin) const {
+    render::DrawItem d;
+    d.mesh = mesh;
+    d.model = draw_matrix(e, origin);
+    d.color = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);
+    if (const Material* m = registry.try_get<Material>(e)) {
+        d.color = m->color;
+        d.metallic = m->metallic;
+        d.roughness = m->roughness;
+        d.emissive = m->emissive;
+        d.emissive_strength = m->emissive_strength;
+    }
+    return d;
+}
+
 std::optional<render::Camera> Scene::camera(float aspect) const {
     const entt::entity e = first_with<CameraLens>(registry);
     if (e == entt::null) return std::nullopt;
@@ -319,15 +353,43 @@ std::optional<render::Camera> Scene::camera(float aspect) const {
     return cam;
 }
 
-render::Light Scene::light() const {
+render::Light Scene::light(const glm::dvec3& origin) const {
     render::Light light;
     light.ambient = settings.ambient;
+    // Until environments are authored (Phase 5.8), the ground reflects some of the sky.
+    light.ambient_ground = settings.ambient * 0.6f;
     const entt::entity e = first_with<DirectionalLight>(registry);
     if (e != entt::null) {
         const DirectionalLight& l = registry.get<DirectionalLight>(e);
         light.direction = glm::vec3(world_matrix(e) * glm::dvec4(0, 0, -1, 0));
-        light.color = l.color * l.intensity;
+        light.color = l.color;
+        light.intensity = l.intensity;
     }
+    // The local lights nearest the camera, positioned relative to it.
+    struct Near {
+        double distance;
+        render::LocalLight light;
+    };
+    std::vector<Near> near;
+    for (entt::entity le : registry.view<const LocalLightSource>()) {
+        const LocalLightSource& s = registry.get<LocalLightSource>(le);
+        const glm::dmat4 m = world_matrix(le);
+        const glm::dvec3 relative = glm::dvec3(m[3]) - origin;
+        render::LocalLight l;
+        l.position = glm::vec3(relative);
+        l.color = s.color;
+        l.intensity = s.intensity;
+        l.range = s.range;
+        l.spot = s.spot;
+        l.direction = glm::vec3(m * glm::dvec4(0, 0, -1, 0));
+        l.inner_angle = s.inner_angle;
+        l.outer_angle = s.outer_angle;
+        near.push_back({glm::length(relative), l});
+    }
+    std::stable_sort(near.begin(), near.end(),
+                     [](const Near& a, const Near& b) { return a.distance < b.distance; });
+    for (size_t i = 0; i < near.size() && i < size_t(render::kMaxLocalLights); ++i)
+        light.local.push_back(near[i].light);
     return light;
 }
 

@@ -26,6 +26,7 @@
     "stb",
     "miniz",
     "cgltf",
+    "mikktspace",
     "entt",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]

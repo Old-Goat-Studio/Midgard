@@ -217,13 +217,11 @@ bool Viewport::render() {
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         const auto it = meshes_.find(scene_.registry.get<MeshRef>(e).asset);
         if (it == meshes_.end()) continue;
-        const Material* material = scene_.registry.try_get<Material>(e);
-        draws.push_back({it->second, scene_.draw_matrix(e, camera.origin),
-                         material ? material->color : glm::vec4(0.8f, 0.8f, 0.8f, 1.0f)});
+        draws.push_back(scene_.draw_item(e, it->second, camera.origin));
     }
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
     camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, 2000.0f);
-    return renderer_->render_frame(camera, scene_.light(), draws,
+    return renderer_->render_frame(camera, scene_.light(camera.origin), draws,
                                    glm::vec4(scene_.settings.sky, 1.0f));
 }
 
