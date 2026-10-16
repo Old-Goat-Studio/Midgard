@@ -153,3 +153,15 @@ def test_recook_reports_what_changed(project, tmp_path):
     with zipfile.ZipFile(out / "game.pak") as pak:
         assert sorted(pak.namelist()) == ["meshes/prim_sphere.glb", "meshes/rock.glb"]
     assert not list(out.glob("*.tmp"))
+
+
+@pytest.mark.parametrize("asset", sorted(meshes.PRIMITIVES))
+def test_primitives_fill_the_unit_box(asset):
+    """Every primitive spans 1 m (the plane is flat), centred on the origin."""
+    mesh = meshes.primitive(asset)
+    for axis in range(3):
+        lo = min(p[axis] for p in mesh.positions)
+        hi = max(p[axis] for p in mesh.positions)
+        flat = asset == "prim_plane" and axis == 1
+        assert (lo, hi) == ((0.0, 0.0) if flat else (-0.5, 0.5))
+

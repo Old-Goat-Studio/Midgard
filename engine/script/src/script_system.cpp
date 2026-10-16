@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/script_system.h"
 
+#include <algorithm>
 #include <array>
 #include <map>
 #include <set>
@@ -10,6 +11,8 @@
 
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
+
+#include <glm/gtc/quaternion.hpp>
 
 namespace py = pybind11;
 
@@ -86,6 +89,54 @@ void emit(const std::string& level, const std::string& text) {
     if (g_context && g_context->report) g_context->report({level, text, "", "", 0});
 }
 
+// ---- physics ------------------------------------------------------------------------------
+ScenePhysics& scene_physics() {
+    return current_game().physics();
+}
+
+// The entity a physics body belongs to, if it is still in the scene.
+std::optional<EntityHandle> entity_of(std::uint64_t user) {
+    const auto e = static_cast<entt::entity>(user);
+    if (!registry().valid(e) || !registry().all_of<EntityInfo>(e)) return std::nullopt;
+    return handle(e);
+}
+
+// An entity's body for forces and velocity, or a ValueError saying why it has none.
+physics::BodyId moving_body(const EntityHandle& h) {
+    const entt::entity e = h.resolve();
+    if (e == scene_physics().player())
+        throw py::value_error("the player walks as a character: move it to move it");
+    const auto* rb = registry().try_get<RigidBody>(e);
+    const physics::BodyId id = scene_physics().body(e);
+    if (!rb || rb->motion != physics::Motion::Dynamic || id == physics::kNoBody)
+        throw py::value_error("entity '" + h.id + "' has no dynamic rigid body");
+    return id;
+}
+
+glm::dvec3 dvec3(const std::array<double, 3>& v) {
+    return {v[0], v[1], v[2]};
+}
+
+// midgard.Hit: what a raycast met.
+struct Hit {
+    std::optional<EntityHandle> entity;
+    py::tuple point, normal;
+    double distance = 0.0;
+};
+
+std::vector<EntityHandle> entities_of(const std::vector<std::uint64_t>& users) {
+    std::vector<EntityHandle> out;
+    for (std::uint64_t u : users)
+        if (auto h = entity_of(u)) out.push_back(*h);
+    std::sort(out.begin(), out.end(),
+              [](const EntityHandle& a, const EntityHandle& b) { return a.id < b.id; });
+    return out;
+}
+
+physics::Touching touching(bool triggers) {
+    return triggers ? physics::Touching::All : physics::Touching::Solid;
+}
+
 template <typename Component>
 std::optional<EntityHandle> first_with() {
     entt::entity found = entt::null;
@@ -143,11 +194,110 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
                 h.transform().position += glm::dvec3(x, y, z);
             },
             py::arg("x"), py::arg("y"), py::arg("z"), "Moves the entity by (x, y, z) metres.")
+        .def_property(
+            "velocity",
+            [](const EntityHandle& h) {
+                const entt::entity e = h.resolve();
+                ScenePhysics& p = scene_physics();
+                if (e == p.player() && p.character()) return tuple3(p.character()->velocity());
+                const physics::BodyId id = p.body(e);
+                if (id == physics::kNoBody) return tuple3(glm::vec3(0.0f));
+                return tuple3(p.world().state(id).velocity);
+            },
+            [](const EntityHandle& h, const std::array<float, 3>& v) {
+                scene_physics().world().set_velocity(moving_body(h), vec3(v));
+            })
+        .def_property_readonly("on_ground",
+                               [](const EntityHandle& h) {
+                                   ScenePhysics& p = scene_physics();
+                                   return h.resolve() == p.player() && p.character() &&
+                                          p.character()->on_ground();
+                               })
+        .def(
+            "add_force",
+            [](const EntityHandle& h, float x, float y, float z) {
+                scene_physics().world().add_force(moving_body(h), {x, y, z});
+            },
+            py::arg("x"), py::arg("y"), py::arg("z"),
+            "Pushes a dynamic body with a force in newtons, for the next physics step.")
+        .def(
+            "add_impulse",
+            [](const EntityHandle& h, float x, float y, float z) {
+                scene_physics().world().add_impulse(moving_body(h), {x, y, z});
+            },
+            py::arg("x"), py::arg("y"), py::arg("z"),
+            "Gives a dynamic body a sudden push (kg m/s): its speed changes by this over its mass.")
         .def("__eq__", [](const EntityHandle& a, const EntityHandle& b) { return a.id == b.id; })
         .def("__hash__", [](const EntityHandle& h) { return py::hash(py::str(h.id)); })
         .def("__repr__", [](const EntityHandle& h) {
             return "<midgard.Entity " + h.id + (h.exists() ? "" : " (gone)") + ">";
         });
+
+    py::class_<Hit>(m, "Hit", "What a raycast met.")
+        .def_readonly("entity", &Hit::entity)
+        .def_readonly("point", &Hit::point)
+        .def_readonly("normal", &Hit::normal)
+        .def_readonly("distance", &Hit::distance)
+        .def("__repr__", [](const Hit& h) {
+            return "<midgard.Hit " + (h.entity ? h.entity->id : std::string("?")) + " at " +
+                   std::to_string(h.distance) + " m>";
+        });
+
+    m.def(
+        "raycast",
+        [](const std::array<double, 3>& origin, const std::array<double, 3>& direction,
+           double distance, std::optional<EntityHandle> ignore,
+           bool triggers) -> std::optional<Hit> {
+            ScenePhysics& p = scene_physics();
+            const physics::BodyId skip = ignore ? p.body(ignore->resolve()) : physics::kNoBody;
+            const auto hit = p.world().raycast(dvec3(origin), glm::vec3(dvec3(direction)), distance,
+                                               touching(triggers), skip);
+            if (!hit) return std::nullopt;
+            return Hit{entity_of(hit->user), tuple3(hit->point), tuple3(hit->normal),
+                       hit->distance};
+        },
+        py::arg("origin"), py::arg("direction"), py::arg("distance") = 1000.0, py::kw_only(),
+        py::arg("ignore") = py::none(), py::arg("triggers") = false,
+        "The first thing a ray meets, or None.");
+    m.def(
+        "overlap_sphere",
+        [](const std::array<double, 3>& centre, float radius, bool triggers) {
+            physics::Collider sphere;
+            sphere.kind = physics::Collider::Kind::Sphere;
+            sphere.radius = radius;
+            return entities_of(scene_physics().world().overlaps(
+                sphere, dvec3(centre), glm::quat(1, 0, 0, 0), glm::vec3(1.0f), touching(triggers)));
+        },
+        py::arg("centre"), py::arg("radius"), py::kw_only(), py::arg("triggers") = false,
+        "Every entity whose collider is inside a sphere.");
+    m.def(
+        "overlap_box",
+        [](const std::array<double, 3>& centre, const std::array<float, 3>& size,
+           const std::array<float, 3>& rotation, bool triggers) {
+            physics::Collider box;
+            box.size = vec3(size);
+            const glm::quat turn = glm::quat_cast(glm::mat3(rotation_matrix(vec3(rotation))));
+            return entities_of(scene_physics().world().overlaps(
+                box, dvec3(centre), turn, glm::vec3(1.0f), touching(triggers)));
+        },
+        py::arg("centre"), py::arg("size"), py::arg("rotation") = std::array<float, 3>{0, 0, 0},
+        py::kw_only(), py::arg("triggers") = false,
+        "Every entity whose collider is inside a box (full size, turned by rotation in degrees).");
+    m.def(
+        "gravity",
+        [](const std::array<double, 3>& position) {
+            return tuple3(scene_physics().world().gravity(dvec3(position)));
+        },
+        py::arg("position"), "Gravity at a point (m/s^2), from the world's shape.");
+    m.def(
+        "up",
+        [](const std::array<double, 3>& position) {
+            const glm::dvec3 g = scene_physics().world().gravity(dvec3(position));
+            glm::dvec3 up = glm::length(g) > 0.0 ? -g / glm::length(g) : glm::dvec3(0, 1, 0);
+            for (int i = 0; i < 3; ++i) up[i] = up[i] == 0.0 ? 0.0 : up[i];  // no -0.0
+            return tuple3(up);
+        },
+        py::arg("position"), "Which way is up at a point, from the world's shape.");
 
     m.def(
         "log", [](const py::args& args) { emit("info", join(args)); },

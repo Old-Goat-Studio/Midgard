@@ -41,12 +41,65 @@ class Entity:
     """Scale on each axis."""
     color: Color
     """Its material colour (r, g, b, a) from 0 to 1. Assign 3 or 4 numbers."""
+    velocity: Vector
+    """Its speed and direction in metres per second (0, 0, 0 if it has no physics). Assign one
+    to a dynamic rigid body to set it moving; the player walks, so assigning its velocity raises
+    ValueError."""
+    on_ground: bool
+    """True while the player stands on something (False for every other entity; read-only)."""
 
     def move(self, x: float, y: float, z: float) -> None:
-        """Moves the entity by (x, y, z) metres."""
+        """Moves the entity by (x, y, z) metres. A physics body jumps there with it."""
+
+    def add_force(self, x: float, y: float, z: float) -> None:
+        """Pushes a dynamic rigid body with a force in newtons, for the next physics step (call it
+        every frame for a steady push). ValueError if it has no dynamic rigid body."""
+
+    def add_impulse(self, x: float, y: float, z: float) -> None:
+        """Gives a dynamic rigid body a sudden push in kg m/s: its speed changes by this divided
+        by its mass. ValueError if it has no dynamic rigid body."""
 
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
+
+
+class Hit:
+    """What a raycast met (read-only)."""
+
+    entity: Entity | None
+    """The entity whose collider was hit."""
+    point: Vector
+    """Where, in metres."""
+    normal: Vector
+    """The surface's direction there, facing the ray."""
+    distance: float
+    """Metres from the ray's origin."""
+
+
+def raycast(origin: Vector, direction: Vector, distance: float = 1000.0, *,
+            ignore: Entity | None = None, triggers: bool = False) -> Hit | None:
+    """The first collider a ray from origin along direction meets within distance metres, or
+    None. ignore skips one entity (often the one casting the ray); triggers=True includes
+    triggers."""
+
+
+def overlap_sphere(centre: Vector, radius: float, *, triggers: bool = False) -> list[Entity]:
+    """Every entity whose collider is at least partly inside a sphere, in id order."""
+
+
+def overlap_box(centre: Vector, size: Vector, rotation: Vector = (0.0, 0.0, 0.0), *,
+                triggers: bool = False) -> list[Entity]:
+    """Every entity whose collider is at least partly inside a box (its full size, turned by
+    rotation in degrees), in id order."""
+
+
+def gravity(position: Vector) -> Vector:
+    """Gravity at a point in m/s², from the world's shape (towards a planet's centre, outwards
+    in a hollow world or a cylinder)."""
+
+
+def up(position: Vector) -> Vector:
+    """Which way is up at a point, from the world's shape."""
 
 
 def log(*values: object) -> None:

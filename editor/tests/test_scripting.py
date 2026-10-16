@@ -185,3 +185,48 @@ def test_cooking_warns_about_missing_scripts(project, tmp_path):
     project.undo_stack.push(SetEntityCommand(project, cube, "script"))
     result = cook(project, tmp_path / "pkg")
     assert any("nowhere" in w for w in result.warnings)
+
+
+PHYSICS = """
+import midgard
+
+def on_start(entity):
+    hit = midgard.raycast((2, 10, 2), (0, -1, 0))
+    midgard.log("hit", hit.entity.name, round(hit.point[1], 3) + 0.0, round(hit.normal[1], 3),
+                round(hit.distance, 3))
+    midgard.log("miss", midgard.raycast((50, 10, 50), (0, -1, 0)))
+    midgard.log("near", [e.name for e in midgard.overlap_sphere((0, 0.5, 0), 0.6)])
+    midgard.log("gravity", midgard.gravity((0, 0, 0)), "up", midgard.up((0, 0, 0)))
+    entity.velocity = (4, 0, 0)  # sent sliding along the ground
+    try:
+        midgard.player().velocity = (1, 0, 0)
+    except ValueError as e:
+        midgard.log("refused:", e)
+
+def on_update(entity, dt):
+    if 0.5 < midgard.time() <= 0.5 + dt:
+        midgard.log("standing", midgard.player().on_ground)
+"""
+
+
+@needs_scripting
+def test_scripts_use_physics(project, tmp_path):
+    """Raycasts, overlaps, gravity, velocity and the player's footing from a game script."""
+    project.put_entity(Entity("e000050", "Crate", None, {
+        "transform": {"position": [0.0, 0.5, -3.0]}, "mesh": {"asset": "prim_cube"},
+        "collider": {"shape": "box"}, "rigidbody": {"motion": "dynamic"},
+        "script": {"module": "physics_probe"}}))
+    write_script(project, "physics_probe", PHYSICS)
+    package = cook(project, tmp_path / "pkg").out_dir
+    scene, run = simulate(package, 60)
+    assert run.returncode == 0, run.stderr
+    log = run.stdout
+    assert "hit Ground 0.0 1.0 10.0" in log
+    assert "miss None" in log
+    assert "near ['Ground', 'Player']" in log
+    assert "gravity (0.0, -9.81, 0.0) up (0.0, 1.0, 0.0)" in log
+    assert "refused: the player walks as a character" in log
+    assert "standing True" in log
+    # Friction stops the crate after about 1.6 m (4 m/s, slowing at half of g).
+    assert by_name(scene, "Crate")["position"][0] == pytest.approx(1.63, abs=0.25)
+

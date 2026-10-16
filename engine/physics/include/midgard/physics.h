@@ -84,6 +84,15 @@ enum class Touching {
     Solid,    // everything but sensors
 };
 
+// Where a ray hit something.
+struct RayHit {
+    std::uint64_t user = 0;  // the body's user value (the entity)
+    BodyId body = kNoBody;
+    glm::dvec3 point{0.0};
+    glm::vec3 normal{0.0f};  // the surface's, facing the ray
+    double distance = 0.0;   // metres from the ray's origin
+};
+
 struct BodyState {
     glm::dvec3 position{0.0};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
@@ -120,6 +129,12 @@ public:
     void set_velocity(BodyId id, const glm::vec3& velocity);
     void add_impulse(BodyId id, const glm::vec3& impulse);  // kg m/s, at the centre of mass
     void add_force(BodyId id, const glm::vec3& force);      // newtons, for the next step only
+
+    // The first thing a ray from `origin` along `direction` (normalised here) meets within
+    // `distance` metres, skipping `ignore` (the caster's own body, say).
+    std::optional<RayHit> raycast(const glm::dvec3& origin, const glm::vec3& direction,
+                                  double distance, Touching which = Touching::Solid,
+                                  BodyId ignore = kNoBody) const;
 
     // The bodies a shape overlaps where it is placed (their user values, smallest first).
     std::vector<std::uint64_t> overlaps(const Collider& shape, const glm::dvec3& position,

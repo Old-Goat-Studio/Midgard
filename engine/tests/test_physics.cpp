@@ -385,3 +385,39 @@ TEST_CASE("the character walks all the way round a planet and along inside a cyl
         CHECK(airborne < 30);   // on its feet all the way (half a second in all, at most)
     }
 }
+
+TEST_CASE("raycasts find the first solid thing, its point, normal and distance") {
+    World world;
+    const BodyId ground = add_box(world, {0, -0.5, 0}, {20, 1, 20});
+    const BodyId crate = add_box(world, {2, 0.5, 0}, {1, 1, 1});
+    BodyDesc zone;  // a trigger in the way
+    zone.collider.size = {4, 4, 4};
+    zone.position = {0, 3, 0};
+    zone.sensor = true;
+    zone.user = 7;
+    world.add(zone);
+
+    auto hit = world.raycast({0, 10, 0}, {0, -1, 0}, 100.0);
+    REQUIRE(hit.has_value());
+    CHECK(hit->body == ground);  // straight through the trigger
+    CHECK(hit->point.y == doctest::Approx(0.0).epsilon(1e-4));
+    CHECK(hit->normal.y == doctest::Approx(1.0f));
+    CHECK(hit->distance == doctest::Approx(10.0).epsilon(1e-4));
+
+    hit = world.raycast({0, 10, 0}, {0, -1, 0}, 100.0, Touching::All);
+    REQUIRE(hit.has_value());
+    CHECK(hit->user == 7);  // the trigger's top, at y = 5
+    CHECK(hit->distance == doctest::Approx(5.0).epsilon(1e-4));
+
+    // Sideways into the crate's face, which faces back along the ray; or past it, ignored.
+    hit = world.raycast({-3, 0.5, 0}, {1, 0, 0}, 100.0);
+    REQUIRE(hit.has_value());
+    CHECK(hit->body == crate);
+    CHECK(hit->normal.x == doctest::Approx(-1.0f));
+    CHECK(hit->point.x == doctest::Approx(1.5).epsilon(1e-4));
+    CHECK_FALSE(world.raycast({-3, 0.5, 0}, {1, 0, 0}, 100.0, Touching::Solid, crate));
+
+    CHECK_FALSE(world.raycast({0, 10, 0}, {0, 1, 0}, 100.0));  // nothing above
+    CHECK_FALSE(world.raycast({0, 10, 0}, {0, -1, 0}, 5.0));   // too short
+    CHECK_FALSE(world.raycast({0, 10, 0}, {0, 0, 0}, 5.0));    // no direction
+}

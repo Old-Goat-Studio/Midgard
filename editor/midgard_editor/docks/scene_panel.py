@@ -202,7 +202,8 @@ class ScenePanel(QWidget):
                          {"sky": sky_component(self.project.scene_settings())}))
 
     def add_primitive(self, asset: str) -> None:
-        """Adds an entity showing one of the editor's primitives (Add ▸ Cube, Sphere, Plane)."""
+        """Adds an entity showing one of the editor's primitives (Add ▸ Cube, Sphere, Plane,
+        Cylinder, Wedge)."""
         if self.project is None:
             return
         name, count = self._unique_name(PRIMITIVES[asset])

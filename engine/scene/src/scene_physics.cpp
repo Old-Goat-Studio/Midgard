@@ -237,6 +237,7 @@ void ScenePhysics::remove(entt::entity e) {
 }
 
 physics::BodyId ScenePhysics::body(entt::entity e) const {
+    if (e == player_ && character_) return character_->body();
     const auto it = bodies_.find(e);
     if (it == bodies_.end()) return physics::kNoBody;
     return it->second.id != physics::kNoBody ? it->second.id : it->second.sensor;

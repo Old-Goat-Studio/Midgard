@@ -57,7 +57,8 @@ public:
 
     physics::World& world() { return *world_; }
     const physics::World& world() const { return *world_; }
-    physics::BodyId body(entt::entity e) const;  // the solid body, else the trigger's
+    // The entity's body: the player's character, else its solid body, else its trigger's.
+    physics::BodyId body(entt::entity e) const;
     // The player's character (the scene's first player), or nullptr.
     physics::Character* character() { return character_.get(); }
     entt::entity player() const { return player_; }

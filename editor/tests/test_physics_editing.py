@@ -146,3 +146,14 @@ def test_the_players_walking_settings(qtbot, project):
     assert project.entity("e000004").components["player"] == {
         "speed": 4.0, "jump": 6.0, "height": 1.8}
 
+
+@pytest.mark.parametrize("asset", ["prim_cylinder", "prim_wedge"])
+def test_cylinders_and_wedges_get_a_convex_collider_that_cooks(qtbot, project, tmp_path, asset):
+    project.put_entity(Entity("e000070", "Shape", None, {
+        "transform": {"position": [0.0, 2.0, 0.0]}, "mesh": {"asset": asset}}))
+    form = form_for(qtbot, project, "e000070")
+    form.add("rigidbody")
+    assert project.entity("e000070").components["collider"] == {"shape": "convex"}
+    if engine.module() is not None:
+        cook(project, tmp_path / "pkg")  # the engine builds the convex shape from the mesh
+

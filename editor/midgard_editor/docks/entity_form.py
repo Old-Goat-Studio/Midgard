@@ -314,12 +314,13 @@ class EntityForm(QWidget):
         self._push(entity, label)
 
     def default_collider(self, entity: Entity) -> dict[str, Any]:
-        """A collider that fits the entity's mesh: a sphere for a sphere, a box otherwise."""
+        """A collider that fits the entity's mesh: a sphere for a sphere, a convex shape for a
+        cylinder, a wedge or a model, a box otherwise."""
         asset = entity.components.get("mesh", {}).get("asset", "")
         if asset == "prim_sphere":
             return {"shape": "sphere", "radius": 0.5}
-        if asset.startswith("asset:"):
-            return {"shape": "convex"}  # wraps the model
+        if asset.startswith("asset:") or asset in ("prim_cylinder", "prim_wedge"):
+            return {"shape": "convex"}  # wraps the shape
         return {"shape": "box", "size": [1.0, 1.0, 1.0]}
 
     def _entity(self) -> Entity:

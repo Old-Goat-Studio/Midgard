@@ -8,8 +8,10 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
@@ -406,16 +408,43 @@ namespace {
 
 class TouchingFilter final : public JPH::BodyFilter {
 public:
-    explicit TouchingFilter(Touching which) : which_(which) {}
+    explicit TouchingFilter(Touching which, JPH::BodyID ignore = {})
+        : which_(which), ignore_(ignore) {}
+    bool ShouldCollide(const JPH::BodyID& id) const override { return id != ignore_; }
     bool ShouldCollideLocked(const JPH::Body& body) const override {
         return which_ == Touching::All || (which_ == Touching::Sensors) == body.IsSensor();
     }
 
 private:
     Touching which_;
+    JPH::BodyID ignore_;
 };
 
 }  // namespace
+
+std::optional<RayHit> World::raycast(const glm::dvec3& origin, const glm::vec3& direction,
+                                     double distance, Touching which, BodyId ignore) const {
+    if (!(distance > 0.0) || glm::dot(direction, direction) < 1e-12f) return std::nullopt;
+    const glm::vec3 d = glm::normalize(direction);
+    const JPH::RRayCast ray{to_jolt(origin), to_jolt(d * float(distance))};
+    JPH::RayCastResult hit;
+    const TouchingFilter filter(which, ignore == kNoBody ? JPH::BodyID() : JPH::BodyID(ignore));
+    if (!impl_->system.GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, filter)) return std::nullopt;
+    RayHit out;
+    out.body = hit.mBodyID.GetIndexAndSequenceNumber();
+    const JPH::RVec3 point = ray.GetPointOnRay(hit.mFraction);
+    out.point = from_jolt(point);
+    out.distance = double(hit.mFraction) * distance;
+    JPH::BodyLockRead lock(impl_->system.GetBodyLockInterface(), hit.mBodyID);
+    if (lock.Succeeded()) {
+        const JPH::Body& body = lock.GetBody();
+        out.user = body.GetUserData();
+        glm::vec3 n = from_jolt(body.GetWorldSpaceSurfaceNormal(hit.mSubShapeID2, point));
+        if (glm::dot(n, d) > 0.0f) n = -n;  // the side the ray came from
+        out.normal = n;
+    }
+    return out;
+}
 
 std::vector<std::uint64_t> World::overlaps(const Collider& c, const glm::dvec3& position,
                                            const glm::quat& rotation, const glm::vec3& scale,

@@ -10,7 +10,8 @@ import math
 import struct
 from dataclasses import dataclass, field
 
-PRIMITIVES = {"prim_cube": "Cube", "prim_sphere": "Sphere", "prim_plane": "Plane"}  # id -> label
+PRIMITIVES = {"prim_cube": "Cube", "prim_sphere": "Sphere", "prim_plane": "Plane",
+              "prim_cylinder": "Cylinder", "prim_wedge": "Wedge"}  # id -> label
 
 
 @dataclass
@@ -66,8 +67,60 @@ def plane() -> Mesh:
                 [(0.0, 1.0, 0.0)] * 4, [0, 1, 2, 0, 2, 3])
 
 
+def cylinder(segments: int = 32) -> Mesh:
+    """An upright cylinder 1 m across and 1 m tall: smooth sides, flat caps."""
+    mesh = Mesh()
+    # The rim as (x, z), anticlockwise seen from above; the last step repeats the first.
+    steps = [2 * math.pi * j / segments for j in range(segments + 1)]
+    ring = [(0.5 * math.cos(a), -0.5 * math.sin(a)) for a in steps]
+    for x, z in ring:  # the side: a bottom and a top vertex per step, facing outwards
+        n = (2.0 * x, 0.0, 2.0 * z)
+        mesh.positions += [(x, -0.5, z), (x, 0.5, z)]
+        mesh.normals += [n, n]
+    for j in range(segments):
+        a, b = 2 * j, 2 * j + 2  # bottom vertices here and at the next step
+        mesh.indices += [a, b, b + 1, a, b + 1, a + 1]
+    for y, up in ((0.5, True), (-0.5, False)):  # the caps: a fan round their centres
+        centre = len(mesh.positions)
+        n = (0.0, 1.0 if up else -1.0, 0.0)
+        mesh.positions.append((0.0, y, 0.0))
+        mesh.normals.append(n)
+        for x, z in ring[:-1]:
+            mesh.positions.append((x, y, z))
+            mesh.normals.append(n)
+        for j in range(segments):
+            a, b = centre + 1 + j, centre + 1 + (j + 1) % segments
+            mesh.indices += [centre, a, b] if up else [centre, b, a]
+    return mesh
+
+
+def wedge() -> Mesh:
+    """A ramp filling the 1 m box: flat underneath, rising from its front edge (+Z) to a
+    vertical back (-Z), 45 degrees on a cube."""
+    s = 1.0 / math.sqrt(2.0)
+    faces = [  # flat faces, each with its corners counter-clockwise from outside
+        ((0.0, -1.0, 0.0), [(-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (0.5, -0.5, 0.5),
+                            (-0.5, -0.5, 0.5)]),
+        ((0.0, 0.0, -1.0), [(0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5),
+                            (0.5, 0.5, -0.5)]),
+        ((0.0, s, s), [(-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, 0.5, -0.5),
+                       (-0.5, 0.5, -0.5)]),
+        ((1.0, 0.0, 0.0), [(0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (0.5, 0.5, -0.5)]),
+        ((-1.0, 0.0, 0.0), [(-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5), (-0.5, 0.5, -0.5)]),
+    ]
+    mesh = Mesh()
+    for n, corners in faces:
+        base = len(mesh.positions)
+        mesh.positions += corners
+        mesh.normals += [n] * len(corners)
+        for k in range(1, len(corners) - 1):
+            mesh.indices += [base, base + k, base + k + 1]
+    return mesh
+
+
 def primitive(asset_id: str) -> Mesh:
-    makers = {"prim_cube": cube, "prim_sphere": sphere, "prim_plane": plane}
+    makers = {"prim_cube": cube, "prim_sphere": sphere, "prim_plane": plane,
+              "prim_cylinder": cylinder, "prim_wedge": wedge}
     if asset_id not in makers:
         raise KeyError(asset_id)
     return makers[asset_id]()
