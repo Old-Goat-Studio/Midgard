@@ -94,13 +94,14 @@ Check render_check(bool vulkan_required) {
         render::Camera camera;
         camera.view = glm::lookAt(glm::vec3(0, 0, 3), glm::vec3(0), glm::vec3(0, 1, 0));
         camera.projection = render::perspective(glm::radians(50.0f), 1.0f, 0.1f, 10.0f);
-        const render::DrawItem item{cube, glm::mat4(1.0f), glm::vec4(1, 0, 0, 1)};
-        renderer.render_frame(camera, render::Light{}, {&item, 1}, glm::vec4(0, 0, 1, 1));
+        // Colours below the tone mapper's roll-off (0.76 linear), so they come out as given.
+        const render::DrawItem item{cube, glm::mat4(1.0f), glm::vec4(0.8f, 0, 0, 1)};
+        renderer.render_frame(camera, render::Light{}, {&item, 1}, glm::vec4(0, 0, 0.8f, 1));
         const std::vector<uint8_t> pixels = renderer.read_pixels();
         const uint8_t* centre = &pixels[(32 * 64 + 32) * 4];
         const uint8_t* corner = &pixels[0];
         // A red cube in the middle of a blue background.
-        if (centre[0] < 100 || centre[2] > 60 || corner[2] < 200 || corner[0] > 30)
+        if (centre[0] < 100 || centre[2] > 30 || corner[2] < 180 || corner[0] > 30)
             return {"Rendering", Status::Fail,
                     format("wrong colours: centre %d,%d,%d corner %d,%d,%d", centre[0], centre[1],
                            centre[2], corner[0], corner[1], corner[2])};

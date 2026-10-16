@@ -1001,6 +1001,10 @@ int run_selftest(Options& opt) {
 #endif
     const auto checks = midgard::selftest::run(options);
     say("%s", midgard::selftest::report(checks).c_str());
+    if (std::getenv("GITHUB_ACTIONS"))  // in CI, failures show on the run's page as well
+        for (const auto& c : checks)
+            if (c.status == midgard::selftest::Status::Fail)
+                std::printf("::error title=Self-test %s::%s\n", c.name.c_str(), c.detail.c_str());
     const int result = midgard::selftest::passed(checks) ? 0 : 1;
     if (!opt.show) return result;
 #ifdef __ANDROID__
