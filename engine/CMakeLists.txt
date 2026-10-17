@@ -124,8 +124,11 @@ add_library(midgard_scene STATIC
     scene/src/scene_physics.cpp
     scene/src/collider_outlines.cpp
     scene/src/world_surface.cpp
+    scene/src/model.cpp
+    scene/src/stb_image_impl.cpp
 )
-target_include_directories(midgard_scene PUBLIC scene/include PRIVATE "${CGLTF_INCLUDE_DIR}")
+target_include_directories(midgard_scene PUBLIC scene/include
+                           PRIVATE "${CGLTF_INCLUDE_DIR}" ${Stb_INCLUDE_DIR})
 target_link_libraries(midgard_scene
     PUBLIC midgard_core midgard_render midgard_input midgard_physics EnTT::EnTT glm::glm
            nlohmann_json::nlohmann_json
@@ -321,6 +324,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_atmosphere.cpp
         tests/test_quality.cpp
         tests/test_physics.cpp
+        tests/test_model.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_options
