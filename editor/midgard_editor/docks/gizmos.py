@@ -4,8 +4,9 @@ and scale the selected entity (the Viewport toolbar's Gizmos button shows or hid
 the gizmos and their captions are drawn: the scene shows through the rest.
 
 Each draws the world's X, Y and Z axes (red, green, blue) as the viewport's camera sees them.
-Drag a handle along its axis: Move slides the entity along that axis, Rotate turns it about that
-axis, Scale stretches it along that axis (the white centre scales it evenly). The entity updates
+Drag a handle along its axis: Move slides the entity along that world axis, Rotate turns it about
+that world axis (even inside a turned group), Scale stretches it along its own axis (the white
+centre scales it evenly; a group always scales evenly). The entity updates
 as you drag, and each drag is one step on the undo stack.
 """
 import copy
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import transforms
 from ..project import Project
 from ..scene_model import Entity
 from ..undo import SetEntityCommand
@@ -211,15 +213,34 @@ class GizmoPanel(QWidget):
             return
         entity = copy.deepcopy(self.start)
         t = entity.transform()
-        if self.kind == "position":
-            t["position"][self.axis] += pixels * self.metres_per_pixel()
-        elif self.kind == "rotation":
-            t["rotation"][self.axis] += pixels * 0.5  # degrees
-        else:
+        if self.kind == "scale":
             factor = max(0.001, 1.0 + pixels * 0.01)
-            for axis in (range(3) if self.axis == UNIFORM else (self.axis,)):
+            even = self.axis == UNIFORM or "group" in entity.components  # groups scale evenly
+            for axis in (range(3) if even else (self.axis,)):
                 t["scale"][axis] = max(0.001, t["scale"][axis] * factor)
-        entity.components["transform"] = {k: [round(v, 4) for v in t[k]] for k in t}
+            entity.components["transform"] = {k: [round(v, 4) for v in t[k]] for k in t}
+        else:
+            # Along or about the world's axis, whatever the parents' turn: the change is made in
+            # the world, then expressed relative to the parent.
+            entities = {e.id: e for e in self.project.entities()}
+            entities[entity.id] = entity
+            world = transforms.world_matrix(entities, entity.id)
+            if self.kind == "position":
+                world[self.axis][3] += pixels * self.metres_per_pixel()
+            else:
+                turn = transforms.axis_rotation(AXES[self.axis], pixels * 0.5)  # degrees
+                for col in range(3):
+                    column = [world[row][col] for row in range(3)]
+                    for row in range(3):
+                        world[row][col] = sum(turn[row][k] * column[k] for k in range(3))
+            try:
+                local = transforms.relative_to(transforms.world_matrix(entities, entity.parent),
+                                               world)
+            except ValueError:
+                return
+            if self.kind == "rotation":
+                local["scale"] = t["scale"]  # turning never changes the size
+            entity.components["transform"] = local
         self.project.put_entity(entity)  # live; the undo step is made when the drag ends
         self.changed.emit()
 

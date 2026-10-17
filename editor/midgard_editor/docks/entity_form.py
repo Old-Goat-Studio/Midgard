@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import scripting
+from .. import scripting, transforms
 from ..project import Project
 from ..scene_model import Entity, sky_component
 from ..undo import SetEntityCommand
@@ -176,6 +176,11 @@ class EntityForm(QWidget):
             form.addRow("Trigger size", _row(self.trigger, _remove_button(
                 "Remove the trigger", lambda: self.remove_component("trigger"))))
         self._build_physics_rows(entity)
+        if "group" in entity.components:
+            centre = QPushButton("Centre on contents")
+            centre.setToolTip("Move the group's centre to the middle of its parts (they stay put)")
+            centre.clicked.connect(self.centre_group)
+            form.addRow("Group", centre)
         missing = [k for k in self.ADDABLE if k not in entity.components]
         self.add_component = QPushButton("Add Component")
         menu = QMenu(self.add_component)
@@ -323,6 +328,37 @@ class EntityForm(QWidget):
             return {"shape": "convex"}  # wraps the shape
         return {"shape": "box", "size": [1.0, 1.0, 1.0]}
 
+    def centre_group(self) -> None:
+        """Puts the group's centre in the middle of its parts' positions, keeping every part where
+        it is in the world. One undo step."""
+        entities = {e.id: e for e in self.project.entities()}
+        group = entities[self.entity_id]
+        parts = [e for e in entities.values() if e.parent == group.id and "transform"
+                 in e.components]
+        if not parts:
+            return
+        worlds = {p.id: transforms.world_matrix(entities, p.id) for p in parts}
+        points = [transforms.position_of(m) for m in worlds.values()]
+        lo = [min(p[i] for p in points) for i in range(3)]
+        hi = [max(p[i] for p in points) for i in range(3)]
+        centre = [(lo[i] + hi[i]) / 2 for i in range(3)]
+        group_world = transforms.world_matrix(entities, group.id)
+        for i in range(3):
+            group_world[i][3] = centre[i]
+        new_group = copy.deepcopy(group)
+        new_group.components["transform"] = transforms.relative_to(
+            transforms.world_matrix(entities, group.parent), group_world)
+        stack = self.project.undo_stack
+        stack.beginMacro(f"Centre {group.name} on contents")
+        self._push(new_group, "centre")
+        entities[group.id] = new_group
+        for part in parts:
+            moved = copy.deepcopy(part)
+            moved.components["transform"] = transforms.relative_to(
+                transforms.world_matrix(entities, group.id), worlds[part.id])
+            self.project.undo_stack.push(SetEntityCommand(self.project, moved, "kept in place"))
+        stack.endMacro()
+
     def _entity(self) -> Entity:
         entity = self.project.entity(self.entity_id)
         if entity is None:
@@ -391,9 +427,16 @@ class EntityForm(QWidget):
         entity = self._entity()
         editor = {"position": self.position, "rotation": self.rotation, "scale": self.scale}[key]
         transform = copy.deepcopy(entity.components.get("transform", {}))
-        if transform.get(key) == editor.value():
+        value = editor.value()
+        if key == "scale" and "group" in entity.components:
+            # A group scales evenly: the changed box sets all three.
+            old = entity.transform()["scale"]
+            changed = next((v for v, o in zip(value, old, strict=True) if v != o), value[0])
+            value = [changed] * 3
+            editor.set_value(value)
+        if transform.get(key) == value:
             return
-        transform[key] = editor.value()
+        transform[key] = value
         entity.components["transform"] = transform
         self._push(entity, key)
 
