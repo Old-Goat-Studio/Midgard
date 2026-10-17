@@ -120,8 +120,10 @@ void main() {
     // The normal, bent by the normal map where the mesh has tangents.
     vec3 n = normalize(v_normal);
     const vec3 surface = gl_FrontFacing ? n : -n;  // the geometry's own, for shadow lookups
-    if (dot(v_tangent.xyz, v_tangent.xyz) > 1e-8) {
-        const vec3 t = normalize(v_tangent.xyz - n * dot(n, v_tangent.xyz));
+    // (A tangent along the normal, from uvs that don't vary, has no direction left: no map.)
+    const vec3 along = v_tangent.xyz - n * dot(n, v_tangent.xyz);
+    if (dot(along, along) > 1e-6 * max(dot(v_tangent.xyz, v_tangent.xyz), 1e-8)) {
+        const vec3 t = normalize(along);
         const vec3 b = cross(n, t) * v_tangent.w;
         vec3 m = texture(normal_map, v_uv).xyz * 2.0 - 1.0;
         m.xy *= pc.params.z;

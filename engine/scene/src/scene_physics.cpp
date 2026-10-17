@@ -174,6 +174,11 @@ physics::Collider ScenePhysics::collider_for(const Scene& scene, entt::entity e)
 
 namespace {
 
+// A group, or an object's instance (which acts as one).
+bool is_group(const Scene& scene, entt::entity e) {
+    return scene.registry.any_of<Group, ObjectRef>(e);
+}
+
 bool moves(const Scene& scene, entt::entity e) {
     const auto* rb = scene.registry.try_get<RigidBody>(e);
     return rb && rb->motion != physics::Motion::Static;
@@ -186,7 +191,7 @@ entt::entity ScenePhysics::moving_group(const Scene& scene, entt::entity e) cons
     for (entt::entity p = scene.registry.get<EntityInfo>(e).parent;
          p != entt::null && scene.registry.valid(p) && ++depth < 256;
          p = scene.registry.get<EntityInfo>(p).parent)
-        if (scene.registry.all_of<Group>(p) && moves(scene, p)) return p;
+        if (is_group(scene, p) && moves(scene, p)) return p;
     return entt::null;
 }
 
@@ -222,7 +227,7 @@ void ScenePhysics::add(const Scene& scene, entt::entity e) {
     if (scene.registry.all_of<Player>(e)) return;  // the player is a character instead
     // A part of a moving group: its collider is in the group's body (its trigger is its own).
     const bool in_group = moving_group(scene, e) != entt::null;
-    const bool moving_group_itself = scene.registry.all_of<Group>(e) && moves(scene, e);
+    const bool moving_group_itself = is_group(scene, e) && moves(scene, e);
     const auto* shape = in_group ? nullptr : scene.registry.try_get<ColliderShape>(e);
     const auto* trigger = scene.registry.try_get<Trigger>(e);
     if (moving_group_itself) {
@@ -279,7 +284,15 @@ void ScenePhysics::add(const Scene& scene, entt::entity e) {
     }
 }
 
+void ScenePhysics::prune(const Scene& scene) {
+    std::vector<entt::entity> gone;
+    for (const auto& [e, t] : bodies_)
+        if (!scene.registry.valid(e)) gone.push_back(e);
+    for (entt::entity e : gone) remove(e);
+}
+
 void ScenePhysics::rebuild(const Scene& scene, entt::entity e) {
+    prune(scene);  // e.g. an instance's old parts
     remove(e);
     if (scene.registry.valid(e)) {
         add(scene, e);
@@ -290,7 +303,7 @@ void ScenePhysics::rebuild(const Scene& scene, entt::entity e) {
             remove(group);
             add(scene, group);
         }
-        if (scene.registry.all_of<Group>(e))
+        if (is_group(scene, e))
             for (entt::entity c : scene.registry.view<const EntityInfo>())
                 if (c != e && scene.registry.get<EntityInfo>(c).parent == e) {
                     remove(c);

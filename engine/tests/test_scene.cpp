@@ -22,6 +22,7 @@
 #include "midgard/gltf.h"
 #include "midgard/pak.h"
 #include "midgard/scene.h"
+#include "midgard/validate.h"
 #include "midgard/world_surface.h"
 
 namespace fs = std::filesystem;
@@ -108,7 +109,8 @@ struct TestPackage {
     fs::path dir;
 
     explicit TestPackage(const std::vector<std::pair<std::string, std::string>>& entities,
-                         const std::string& settings = R"({"sky": [0.1, 0.2, 0.3]})") {
+                         const std::string& settings = R"({"sky": [0.1, 0.2, 0.3]})",
+                         const std::vector<std::pair<std::string, std::string>>& objects = {}) {
         std::random_device rd;
         dir = fs::temp_directory_path() / ("midgard_scene_" + std::to_string(rd()));
         fs::create_directories(dir);
@@ -133,6 +135,9 @@ struct TestPackage {
         for (const auto& [id, rest] : entities)
             exec(db, "INSERT INTO entity (id, scene, name, parent, components) VALUES ('" + id +
                          "', 'scn_main', '" + id + "', " + rest + ")");
+        for (const auto& [id, parts] : objects)
+            exec(db, "INSERT INTO object (id, name, parts) VALUES ('" + id + "', '" + id + "', '" +
+                         parts + "')");
         sqlite3_close(db);
 
         const auto glb = write_glb(midgard::render::make_cube());
@@ -914,4 +919,113 @@ TEST_CASE("groups: a moving group can't hold a mesh part") {
         CHECK(std::string(e.what()).find("e1_group") != std::string::npos);
         CHECK(std::string(e.what()).find("convex") != std::string::npos);
     }
+}
+
+namespace {
+
+// A crate of two parts: a box body with a mesh, and a lid with a collider only.
+const char* kCrate = R"([
+    {"name": "body", "components": {"mesh": {"asset": "mesh_cube"}, "collider": {},
+                                    "material": {"color": [0.6, 0.4, 0.2, 1]}}},
+    {"name": "lid", "components": {"transform": {"position": [0, 0.6, 0]},
+                                   "collider": {"size": [1, 0.2, 1]}}}
+])";
+
+std::vector<entt::entity> parts_of_instance(const midgard::Scene& scene, entt::entity e) {
+    std::vector<entt::entity> out;
+    for (entt::entity p : scene.registry.view<const midgard::ObjectPart>())
+        if (scene.registry.get<midgard::ObjectPart>(p).instance == e) out.push_back(p);
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("objects: instances are filled in from their template, and follow it") {
+    TestPackage pkg(
+        {
+            {"e1_crate", R"(NULL, '{"transform": {"position": [3, 0.5, 0]},
+                            "object": {"id": "obj_crate"}}')"},
+            {"e2_crate", R"(NULL, '{"transform": {"position": [-3, 0.5, 0]},
+                            "object": {"id": "obj_crate"}}')"},
+            {"e3_ghost", R"(NULL, '{"object": {"id": "obj_missing"}}')"},
+        },
+        R"({"sky": [0.1, 0.2, 0.3]})", {{"obj_crate", kCrate}});
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity crate = scene.find("e1_crate");
+
+    // Each instance has the template's parts as its children, placed relative to it.
+    const auto parts = parts_of_instance(scene, crate);
+    REQUIRE(parts.size() == 2);
+    const entt::entity lid = scene.find("e1_crate/1");
+    REQUIRE((lid != entt::null));
+    CHECK(scene.registry.get<midgard::EntityInfo>(lid).name == "lid");
+    CHECK(scene.registry.get<midgard::EntityInfo>(lid).parent == crate);
+    CHECK(near(glm::vec3(scene.world_position(lid)), {3, 1.1f, 0}));
+    CHECK(parts_of_instance(scene, scene.find("e3_ghost")).empty());  // unknown: nothing shown
+    // Static instances: each part is a body of its own (and the ground-less scene has no others).
+    CHECK(game.physics().world().body_count() == 4);
+
+    // The template changes: both instances follow, and their old parts' bodies go.
+    game.set_object("obj_crate", R"([{"name": "only", "components": {"collider": {}}}])");
+    CHECK(parts_of_instance(scene, crate).size() == 1);
+    CHECK((scene.find("e1_crate/1") == entt::null));
+    CHECK(game.physics().world().body_count() == 2);
+
+    // Removing an instance removes its parts.
+    game.remove_entity("e1_crate");
+    CHECK((scene.find("e1_crate/0") == entt::null));
+    CHECK(game.physics().world().body_count() == 1);
+
+    // An entity becomes an instance when it gains the component, and stops when it loses it.
+    game.set_component("e3_ghost", "object", json::parse(R"({"id": "obj_crate"})"));
+    CHECK(parts_of_instance(scene, scene.find("e3_ghost")).size() == 1);
+    game.set_component("e3_ghost", "object", nullptr);
+    CHECK(parts_of_instance(scene, scene.find("e3_ghost")).empty());
+    CHECK(game.physics().world().body_count() == 1);
+}
+
+TEST_CASE("objects: a moving instance is one body of its parts' colliders") {
+    TestPackage pkg(
+        {
+            {"e1_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                            "collider": {"size": [20, 1, 20]}}')"},
+            {"e2_crate", R"(NULL, '{"transform": {"position": [0, 4, 0]},
+                            "object": {"id": "obj_crate"}, "rigidbody": {}}')"},
+        },
+        R"({"sky": [0.1, 0.2, 0.3]})", {{"obj_crate", kCrate}});
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    CHECK(game.physics().world().body_count() == 2);  // the ground, and the crate as one
+    play(game, 3.0);
+    // It fell and rests on its body (the lid stays on top, 0.6 m up).
+    const glm::dvec3 body = scene.world_position(scene.find("e2_crate/0"));
+    const glm::dvec3 lid = scene.world_position(scene.find("e2_crate/1"));
+    CHECK(std::abs(body.y - 0.5) < 0.05);
+    CHECK(lid.y - body.y == doctest::Approx(0.6).epsilon(0.01));
+    // The game draws the part with a mesh, with the template's material.
+    CHECK(scene.registry.get<midgard::Material>(scene.find("e2_crate/0")).color.r ==
+          doctest::Approx(0.6f));
+}
+
+TEST_CASE("objects: validation warns about unknown objects and missing textures") {
+    TestPackage pkg({
+        {"e1_ghost", R"(NULL, '{"object": {"id": "obj_missing"}}')"},
+        {"e2_box", R"(NULL, '{"mesh": {"asset": "mesh_cube"},
+                          "material": {"textures": {"base_color": "tex_missing"}}}')"},
+    });
+    const midgard::ValidationReport report = midgard::validate_package(pkg.dir);
+    std::string all;
+    for (const std::string& w : report.warnings) all += w + "\n";
+    CHECK(all.find("obj_missing") != std::string::npos);
+    CHECK(all.find("tex_missing") != std::string::npos);
+}
+
+TEST_CASE("save_glb writes what load_glb reads back exactly") {
+    const midgard::render::MeshData cube = midgard::render::make_cube();
+    const midgard::render::MeshData back = midgard::load_glb(midgard::save_glb(cube));
+    REQUIRE(back.vertices.size() == cube.vertices.size());
+    CHECK(back.indices == cube.indices);
+    CHECK(std::memcmp(back.vertices.data(), cube.vertices.data(),
+                      cube.vertices.size() * sizeof(midgard::render::Vertex)) == 0);
 }

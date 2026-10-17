@@ -77,6 +77,46 @@ void Game::upload_meshes(render::Renderer& renderer) {
         if (!meshes_.contains(asset))
             meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
     }
+    upload_materials(renderer);  // a missing texture is drawn without (the cook warned)
+}
+
+std::string Game::material_key(const Material& m) const {
+    std::string key;
+    for (const std::string& t : m.textures) key += t + '\n';
+    return key;
+}
+
+std::vector<std::string> Game::upload_materials(render::Renderer& renderer) {
+    std::vector<std::string> errors;
+    for (entt::entity e : scene_.registry.view<const Material>()) {
+        const Material& m = scene_.registry.get<Material>(e);
+        if (!m.textured() || materials_.contains(material_key(m))) continue;
+        render::MaterialTextures set;
+        render::TextureId* slots[5] = {&set.base_color, &set.metallic_roughness, &set.normal,
+                                       &set.occlusion, &set.emissive};
+        for (size_t i = 0; i < 5; ++i) {
+            const std::string& asset = m.textures[i];
+            if (asset.empty() || failed_textures_.contains(asset)) continue;
+            if (auto it = textures_.find(asset); it != textures_.end()) {
+                *slots[i] = it->second;
+                continue;
+            }
+            try {
+                const ContentEntry* entry = nullptr;
+                for (const ContentEntry& c : package_.manifest.content)
+                    if (c.id == asset) entry = &c;
+                if (!entry) throw AssetError("texture '" + asset + "' is not in the package");
+                if (!pak_) throw AssetError("texture '" + asset + "' needs game.pak");
+                const std::vector<uint8_t> bytes = pak_->read(entry->path);
+                *slots[i] = textures_.emplace(asset, renderer.upload_ktx2(bytes)).first->second;
+            } catch (const std::exception& ex) {
+                failed_textures_.insert(asset);
+                errors.emplace_back(ex.what());
+            }
+        }
+        materials_.emplace(material_key(m), renderer.create_material(set));
+    }
+    return errors;
 }
 
 std::vector<std::string> Game::upload_new_meshes(render::Renderer& renderer) {
@@ -91,6 +131,7 @@ std::vector<std::string> Game::upload_new_meshes(render::Renderer& renderer) {
             errors.emplace_back(ex.what());
         }
     }
+    for (std::string& error : upload_materials(renderer)) errors.push_back(std::move(error));
     return errors;
 }
 
@@ -120,6 +161,10 @@ void Game::refresh_third_person(entt::entity edited) {
         third_person_->set_view(scene_, old.yaw(), old.elevation(), old.distance());
 }
 
+void Game::set_object(const std::string& object_id, const std::string& parts_json) {
+    for (entt::entity e : scene_.set_object(object_id, parts_json)) physics_->rebuild(scene_, e);
+}
+
 void Game::set_component(const std::string& entity_id, const std::string& component,
                          const nlohmann::json& value) {
     const entt::entity e = scene_.find(entity_id);
@@ -132,6 +177,7 @@ void Game::set_component(const std::string& entity_id, const std::string& compon
 void Game::remove_entity(const std::string& entity_id) {
     physics_->remove(scene_.find(entity_id));
     scene_.remove_entity(entity_id);
+    physics_->prune(scene_);  // an instance's parts went with it
     refresh_third_person(entt::null);
 }
 
@@ -185,7 +231,11 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         auto it = meshes_.find(scene_.registry.get<MeshRef>(e).asset);
         if (it == meshes_.end()) continue;  // not uploaded yet
-        out.push_back(scene_.draw_item(e, it->second, origin));
+        render::DrawItem d = scene_.draw_item(e, it->second, origin);
+        if (const Material* m = scene_.registry.try_get<Material>(e); m && m->textured())
+            if (const auto mat = materials_.find(material_key(*m)); mat != materials_.end())
+                d.material = mat->second;
+        out.push_back(d);
     }
     return out;
 }

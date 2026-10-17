@@ -8,6 +8,9 @@
 //   _midgard.Viewport()           the editor's 3D view (see viewport.h)
 //   _midgard.Body(settings_json)  a world body's shape: positions, up and gravity, exactly as
 //                                 the game computes them (see midgard/shape.h)
+//   _midgard.import_model(path, settings_json)
+//                                 a glTF model cooked for a package: its parts as .glb bytes,
+//                                 its textures as KTX2 bytes, its materials (midgard/model.h)
 #include <array>
 #include <span>
 
@@ -18,7 +21,11 @@
 #include <nlohmann/json.hpp>
 
 #include "midgard/body.h"
+#include "midgard/gltf.h"
 #include "midgard/link.h"
+#include "midgard/model.h"
+#include "midgard/render/ktx.h"
+#include "midgard/render/mesh_data.h"
 #include "midgard/validate.h"
 #include "midgard/version.h"
 #include "viewport.h"
@@ -50,6 +57,77 @@ PYBIND11_MODULE(_midgard, m) {
             return v;
         },
         "The engine's version and the package formats it reads.");
+
+    m.def(
+        "import_model",
+        [](const std::filesystem::path& path, const std::string& settings_json) {
+            const nlohmann::json s = nlohmann::json::parse(settings_json);
+            midgard::ImportSettings settings;
+            settings.scale = s.value("scale", 1.0f);
+            settings.z_up = s.value("z_up", false);
+            midgard::Model model;
+            std::vector<std::vector<uint8_t>> glbs, ktx2s;
+            {
+                py::gil_scoped_release release;  // importing and encoding take a while
+                model = midgard::load_model(path, settings);
+                for (const auto& part : model.parts) glbs.push_back(midgard::save_glb(part.mesh));
+                for (const auto& texture : model.textures)
+                    ktx2s.push_back(midgard::render::encode_ktx2(texture.data));
+            }
+            const auto bytes = [](const std::vector<uint8_t>& b) {
+                return py::bytes(reinterpret_cast<const char*>(b.data()), b.size());
+            };
+            py::list parts, materials, textures;
+            for (size_t i = 0; i < model.parts.size(); ++i) {
+                py::dict p;
+                p["name"] = model.parts[i].name;
+                p["glb"] = bytes(glbs[i]);
+                p["material"] = model.parts[i].material;
+                parts.append(p);
+            }
+            for (const auto& mat : model.materials) {
+                py::dict d;
+                d["name"] = mat.name;
+                d["color"] = std::vector<float>{mat.base_color.r, mat.base_color.g,
+                                                mat.base_color.b, mat.base_color.a};
+                d["metallic"] = mat.metallic;
+                d["roughness"] = mat.roughness;
+                d["emissive"] = std::vector<float>{mat.emissive.r, mat.emissive.g, mat.emissive.b};
+                d["emissive_strength"] = mat.emissive_strength;
+                d["normal_scale"] = mat.normal_scale;
+                d["occlusion_strength"] = mat.occlusion_strength;
+                py::dict slots;
+                const std::pair<const char*, int> texture_slots[] = {
+                    {"base_color", mat.base_color_texture},
+                    {"metallic_roughness", mat.metallic_roughness_texture},
+                    {"normal", mat.normal_texture},
+                    {"occlusion", mat.occlusion_texture},
+                    {"emissive", mat.emissive_texture}};
+                for (const auto& [slot, index] : texture_slots)
+                    if (index >= 0) slots[slot] = index;
+                d["textures"] = slots;
+                materials.append(d);
+            }
+            for (size_t i = 0; i < model.textures.size(); ++i) {
+                py::dict t;
+                t["name"] = model.textures[i].name;
+                t["ktx2"] = bytes(ktx2s[i]);
+                textures.append(t);
+            }
+            py::dict out;
+            out["parts"] = parts;
+            out["materials"] = materials;
+            out["textures"] = textures;
+            out["bounds"] =
+                std::vector<float>{model.bounds_min.x, model.bounds_min.y, model.bounds_min.z,
+                                   model.bounds_max.x, model.bounds_max.y, model.bounds_max.z};
+            out["warnings"] = model.warnings;
+            return out;
+        },
+        py::arg("path"), py::arg("settings_json") = "{}",
+        "A glTF model cooked for a package: {parts: [{name, glb, material}], materials: [...], "
+        "textures: [{name, ktx2}], bounds: [min xyz, max xyz], warnings}. Raises RuntimeError "
+        "for a file that can't be imported.");
 
     m.def(
         "validate",

@@ -10,6 +10,16 @@ read these files; neither side owns a private copy.
 | `live_link.schema.json` | Messages between the editor and a running game (length-prefixed JSON over TCP). |
 | `examples/` | Valid examples, used by the tests of both halves. |
 
+## Objects
+
+The `object` table (migration 6) holds templates: `parts` is a JSON list of
+`{"name", "components"}`, each part's components as in `components.md`. An entity with an
+`object` component is an instance of one. Objects imported from a model file (`source`, under
+the project's `objects/` folder, with `settings` such as `scale`, `z_up` and `collider`) have
+their parts written by the cook step: a part per material, its mesh as content
+`obj:<id>/<n>` (`models/<id>/<n>.glb` in `game.pak`) and its textures as `obj:<id>/tex<n>`
+(`models/<id>/tex<n>.ktx2`).
+
 ## Versioning
 
 - `format_version` in the manifest is `major.minor`. The engine refuses a package whose **major**

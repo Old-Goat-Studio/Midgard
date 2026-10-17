@@ -3,10 +3,12 @@
 // shapes are defined in schema/components.md.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <entt/entity/registry.hpp>
@@ -41,13 +43,23 @@ struct MeshRef {
     std::string asset;  // content id in the manifest
 };
 
-// glTF's metal/roughness factors (textures arrive with the object pipeline).
+// glTF's metal/roughness material: factors, and textures (content ids of KTX2 textures in the
+// package, multiplied by the factors) in the order base colour, metal/roughness, normal,
+// occlusion, emissive.
 struct Material {
     glm::vec4 color{1.0f};  // base colour, sRGB, and alpha
     float metallic = 0.0f;
     float roughness = 0.8f;
     glm::vec3 emissive{0.0f};  // sRGB
     float emissive_strength = 1.0f;
+    float normal_scale = 1.0f;
+    float occlusion_strength = 1.0f;
+    std::array<std::string, 5> textures;  // empty: none
+    bool textured() const {
+        for (const std::string& t : textures)
+            if (!t.empty()) return true;
+        return false;
+    }
 };
 
 struct CameraLens {
@@ -122,6 +134,18 @@ struct ColliderShape {
 // kinematic rigid body, its parts' colliders make one compound body that moves as a whole.
 struct Group {};
 
+// An instance of an object (a template in the package's object table): the scene fills in
+// the template's parts as this entity's children. It acts as a group.
+struct ObjectRef {
+    std::string id;
+};
+
+// A part filled in from an instance's template (not in the database; made again whenever the
+// instance or its template changes).
+struct ObjectPart {
+    entt::entity instance = entt::null;
+};
+
 struct PhysicsMaterial {
     float friction = 0.5f;
     float bounciness = 0.0f;
@@ -166,6 +190,12 @@ public:
     entt::registry registry;
     SceneSettings settings;
     std::string id;
+    // The object templates by id: each a JSON array of parts ({"name", "components"}).
+    std::unordered_map<std::string, std::string> objects;
+
+    // A template changed (or arrived): every instance of it is filled in again. Returns them.
+    std::vector<entt::entity> set_object(const std::string& object_id,
+                                         const std::string& parts_json);
 
     // The entity with this id, or entt::null.
     entt::entity find(const std::string& entity_id) const;
@@ -200,6 +230,8 @@ public:
 private:
     // A Sky component on e becomes the scene's sky and ambient colours.
     void apply_sky(entt::entity e);
+    // An instance's parts made again from its template (removed if it isn't one any more).
+    void expand(entt::entity e);
 };
 
 glm::mat4 rotation_matrix(const glm::vec3& euler_degrees);

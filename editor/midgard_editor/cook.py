@@ -4,7 +4,8 @@
     <out>/manifest.json      what the package is, what built it, where to start
     <out>/{name}.config      the runtime part of {project}.config
     <out>/{name}.db          a read-only copy of {project}.db
-    <out>/game.pak           cooked assets (zip): meshes as .glb
+    <out>/game.pak           cooked assets (zip): meshes as .glb; imported objects' meshes
+                             and KTX2 textures under models/<object id>/
     <out>/scripts/           the project's scripts/ (*.py), for entity scripts
     <out>/icon.png           the game's icon (Project Page), for the game's window, if it has one
 
@@ -23,7 +24,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import contract, engine, meshes
+from . import contract, engine, meshes, objects
 from .project import Project
 from .scene_model import MAIN_SCENE
 from .version import BUILD, VERSION
@@ -115,26 +116,93 @@ def used_mesh_assets(project: Project) -> set[str]:
             not a.startswith(BUILTIN_PREFIX)}
 
 
-def _cook_assets(project: Project, out: Path, warnings: list[str]) -> list[dict[str, str]]:
-    """game.pak: every mesh the main scene uses, as .glb files. Returns the content list."""
-    assets: dict[str, bytes] = {}
+@dataclass
+class CookedObjects:
+    parts: dict[str, str] = field(default_factory=dict)  # imported object id -> parts JSON
+    files: dict[str, tuple[str, bytes]] = field(default_factory=dict)  # content id -> (path, data)
+
+
+def _cook_objects(project: Project, warnings: list[str]) -> CookedObjects:
+    """The objects the main scene places: imported ones made from their model files by the
+    engine. Those made in the editor need nothing (their meshes are cooked with the rest)."""
+    library = {o.id: o for o in project.objects()}
+    cooked = CookedObjects()
+    done: set[str] = set()
     for entity in project.entities(MAIN_SCENE):
-        asset = entity.components.get("mesh", {}).get("asset")
+        object_id = entity.components.get("object", {}).get("id")
+        if not object_id or object_id in done:
+            continue
+        done.add(object_id)
+        obj = library.get(object_id)
+        if obj is None:
+            warnings.append(f"Entity '{entity.name}' places object '{object_id}', which is not "
+                            "in the project; nothing will be shown.")
+            continue
+        if not obj.source:
+            continue
+        try:
+            result = objects.cook_object(project.objects_dir, obj)
+        except objects.ObjectError as e:
+            warnings.append(f"Object '{obj.name}' can't be imported: {e}")
+            continue
+        cooked.parts[obj.id] = json.dumps(result.parts)
+        cooked.files |= result.files
+        warnings += [f"Object '{obj.name}': {w}" for w in result.warnings]
+    return cooked
+
+
+def _write_object_parts(project: Project, out: Path, cooked: CookedObjects) -> None:
+    """Imported objects' parts, as cooked, into the package's database."""
+    con = sqlite3.connect(out / f"{project.name}.db")
+    try:
+        con.executemany("UPDATE object SET parts = ? WHERE id = ?",
+                        [(parts, object_id) for object_id, parts in cooked.parts.items()])
+        con.commit()
+    finally:
+        con.close()
+
+
+def _template_meshes(project: Project) -> list[tuple[str, str]]:
+    """(object name, mesh asset) for the parts of objects made in the editor."""
+    out = []
+    for obj in project.objects():
+        if obj.source:
+            continue
+        for part in obj.parts:
+            if asset := part.get("components", {}).get("mesh", {}).get("asset"):
+                out.append((obj.name, asset))
+    return out
+
+
+def _cook_assets(project: Project, out: Path, warnings: list[str],
+                 cooked: CookedObjects | None = None) -> list[dict[str, str]]:
+    """game.pak: every mesh the main scene and its objects use, as .glb files, and imported
+    objects' content. Returns the content list."""
+    assets: dict[str, bytes] = {}
+    users = [(f"Entity '{e.name}'", e.components.get("mesh", {}).get("asset"))
+             for e in project.entities(MAIN_SCENE)]
+    users += [(f"Object '{name}'", asset) for name, asset in _template_meshes(project)]
+    for user, asset in users:
         if not asset or asset.startswith(BUILTIN_PREFIX) or asset in assets:
             continue
         data = mesh_asset_data(project, asset)
         if data is None:
-            warnings.append(f"Entity '{entity.name}' uses mesh '{asset}', which is not in the "
+            warnings.append(f"{user} uses mesh '{asset}', which is not in the "
                             "project; it will not be drawn.")
         else:
             assets[asset] = data
+    files: dict[str, tuple[str, bytes]] = {}
+    for asset, data in assets.items():
+        path = f"meshes/{asset.removeprefix(PROJECT_ASSET_PREFIX)}"
+        if not path.endswith(".glb"):
+            path += ".glb"
+        files[asset] = (path, data)
+    if cooked:
+        files |= cooked.files
     content: list[dict[str, str]] = []
     tmp = out / "game.pak.tmp"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as pak:
-        for asset, data in sorted(assets.items()):
-            path = f"meshes/{asset.removeprefix(PROJECT_ASSET_PREFIX)}"
-            if not path.endswith(".glb"):
-                path += ".glb"
+        for asset, (path, data) in sorted(files.items()):
             pak.writestr(path, data)
             content.append({"id": asset, "path": path, "sha256": _sha256(data)})
     replace_file(tmp, out / "game.pak")
@@ -253,7 +321,9 @@ def cook(project: Project, out_dir: Path | None = None,
     out.mkdir(parents=True)
     warnings: list[str] = []
     schema_version = _cook_database(project, out)
-    content = _cook_assets(project, out, warnings)
+    cooked = _cook_objects(project, warnings)
+    _write_object_parts(project, out, cooked)
+    content = _cook_assets(project, out, warnings, cooked)
     warnings += _script_warnings(project, _cook_scripts(project, out))
     _cook_icon(project, out)
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
@@ -270,8 +340,8 @@ def cook(project: Project, out_dir: Path | None = None,
 
 
 def _already_warned(engine_warning: str, warnings: list[str]) -> bool:
-    """The editor already warns about meshes it couldn't find; the engine's version of the
-    same warning would only repeat it."""
+    """The editor already warns about meshes and objects it couldn't find; the engine's
+    version of the same warning would only repeat it."""
     return "not in the package" in engine_warning and any("not in the project" in w
                                                           for w in warnings)
 
@@ -284,7 +354,10 @@ def recook(project: Project, out: Path, database: bool = False, assets: bool = F
     old = json.loads((out / "manifest.json").read_text("utf-8"))
     warnings: list[str] = []
     schema_version = _cook_database(project, out) if database else old["schema_version"]
-    content = _cook_assets(project, out, warnings) if assets else old["content"]
+    cooked = _cook_objects(project, warnings) if database or assets else CookedObjects()
+    if database:
+        _write_object_parts(project, out, cooked)
+    content = _cook_assets(project, out, warnings, cooked) if assets else old["content"]
     before = {c["id"]: c["sha256"] for c in old["content"]}
     after = {c["id"]: c["sha256"] for c in content}
     if scripts:

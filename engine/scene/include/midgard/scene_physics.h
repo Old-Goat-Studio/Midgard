@@ -42,6 +42,8 @@ public:
     // Throws SceneError like the constructor.
     void rebuild(const Scene& scene, entt::entity e);
     void remove(entt::entity e);
+    // Bodies whose entities are gone (an object's parts, made again) are removed.
+    void prune(const Scene& scene);
 
     // What the player wants this frame (from the third-person camera); a jump waits for the
     // next physics step.

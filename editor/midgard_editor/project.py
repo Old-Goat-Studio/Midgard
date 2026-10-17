@@ -23,6 +23,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QUndoStack
 
 from . import contract, meshes
+from .objects import ObjectDef
 from .scene_model import (
     DEFAULT_SETTINGS,
     MAIN_SCENE,
@@ -63,6 +64,7 @@ class Project(QObject):
     entities_changed = Signal(str)  # entity id, or "" when entities were added or removed
     scene_settings_changed = Signal(str)  # scene id
     physics_layers_changed = Signal()
+    objects_changed = Signal(str)  # object id, or "" when objects were added or removed
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
         super().__init__()
@@ -363,3 +365,29 @@ class Project(QObject):
         with self.connect() as con:
             con.execute("DELETE FROM entity WHERE id = ?", (entity_id,))
         self.entities_changed.emit("")
+
+    # ---- objects (templates placed by instances; see objects.py) ----
+
+    def objects(self) -> list[ObjectDef]:
+        with self.connect() as con:
+            rows = con.execute("SELECT id, name, source, settings, parts FROM object "
+                               "ORDER BY id").fetchall()
+        return [ObjectDef(r[0], r[1], r[2], json.loads(r[3]), json.loads(r[4])) for r in rows]
+
+    def object(self, object_id: str) -> ObjectDef | None:
+        return next((o for o in self.objects() if o.id == object_id), None)
+
+    def put_object(self, obj: ObjectDef) -> None:
+        with self.connect() as con:
+            con.execute("INSERT INTO object (id, name, source, settings, parts) "
+                        "VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                        "name = excluded.name, source = excluded.source, "
+                        "settings = excluded.settings, parts = excluded.parts",
+                        (obj.id, obj.name, obj.source, json.dumps(obj.settings),
+                         json.dumps(obj.parts)))
+        self.objects_changed.emit(obj.id)
+
+    def delete_object(self, object_id: str) -> None:
+        with self.connect() as con:
+            con.execute("DELETE FROM object WHERE id = ?", (object_id,))
+        self.objects_changed.emit("")

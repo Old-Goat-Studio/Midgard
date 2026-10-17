@@ -2,6 +2,7 @@
 #include "midgard/validate.h"
 
 #include <algorithm>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <set>
@@ -42,7 +43,15 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
     if (pak) {
         for (const ContentEntry& c : m.content) {
             try {
-                load_glb(pak->read(c.path));
+                const std::vector<uint8_t> bytes = pak->read(c.path);
+                if (c.path.size() > 5 && c.path.ends_with(".ktx2")) {
+                    static const uint8_t magic[12] = {0xAB, 'K',  'T',  'X',  ' ',  '2',
+                                                      '0',  0xBB, '\r', '\n', 0x1A, '\n'};
+                    if (bytes.size() < 12 || std::memcmp(bytes.data(), magic, 12) != 0)
+                        throw AssetError("not a KTX2 texture");
+                } else {
+                    load_glb(bytes);
+                }
                 ++report.assets;
             } catch (const std::exception& e) {
                 report.errors.emplace_back("content '" + c.id + "' (" + c.path + "): " + e.what());
@@ -71,6 +80,19 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                                           "' uses mesh '" + asset +
                                           "', which is not in the package; it will not be drawn");
         }
+        for (entt::entity e : scene.registry.view<const ObjectRef>()) {
+            const std::string& object = scene.registry.get<ObjectRef>(e).id;
+            if (!scene.objects.contains(object))
+                report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
+                                          "' places object '" + object +
+                                          "', which is not in the package; nothing is shown");
+        }
+        for (entt::entity e : scene.registry.view<const Material>())
+            for (const std::string& texture : scene.registry.get<Material>(e).textures)
+                if (!texture.empty() && !content_ids.contains(texture))
+                    report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
+                                              "' uses texture '" + texture +
+                                              "', which is not in the package; drawn without it");
         (void)scene.light();
         (void)scene.camera(16.0f / 9.0f);
         // Every collider builds (a missing mesh, a malformed shape or a dynamic mesh is an

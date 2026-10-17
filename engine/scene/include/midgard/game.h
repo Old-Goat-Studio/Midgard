@@ -41,12 +41,16 @@ public:
     Scene& scene() { return scene_; }
     const Scene& scene() const { return scene_; }
 
-    // Reads every mesh the scene uses (from game.pak or the built-ins) and uploads it once.
+    // Reads every mesh and texture the scene uses (from game.pak or the built-ins) and uploads it
+    // once, with the materials that use the textures.
     void upload_meshes(render::Renderer& renderer);
 
-    // Live editing: uploads meshes the scene uses that aren't on the GPU yet. Meshes that fail
-    // to load are skipped (and not retried); the returned messages say why.
+    // Live editing: uploads meshes and textures the scene uses that aren't on the GPU yet. Those
+    // that fail to load are skipped (and not retried); the returned messages say why.
     std::vector<std::string> upload_new_meshes(render::Renderer& renderer);
+
+    // An object's template changed (the editor's live link): its instances are filled in again.
+    void set_object(const std::string& object_id, const std::string& parts_json);
 
     // Live editing (the editor's live link). Each throws SceneError on malformed data.
     // entity: {"id", "name", "parent", "components"} as in the entity table.
@@ -99,6 +103,13 @@ private:
     std::unique_ptr<ScenePhysics> physics_;
     std::unordered_map<std::string, render::MeshId> meshes_;
     std::unordered_set<std::string> failed_meshes_;
+    // Textures by content id, and materials (the renderer's sets of textures) by their texture
+    // ids joined: made once each.
+    std::unordered_map<std::string, render::TextureId> textures_;
+    std::unordered_map<std::string, render::MaterialId> materials_;
+    std::unordered_set<std::string> failed_textures_;
+    std::vector<std::string> upload_materials(render::Renderer& renderer);
+    std::string material_key(const Material& m) const;
     // Meshes read for collider outlines (once each; nullptr: couldn't be read).
     mutable std::unordered_map<std::string, std::unique_ptr<render::MeshData>> outline_meshes_;
     std::unordered_set<entt::entity> inside_;  // triggers the player is in

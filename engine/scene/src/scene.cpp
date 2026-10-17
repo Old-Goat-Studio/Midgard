@@ -95,6 +95,13 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         m.roughness = std::clamp(c.value("roughness", 0.8f), 0.0f, 1.0f);
         m.emissive = vec3(c, "emissive", glm::vec3(0.0f));
         m.emissive_strength = std::max(c.value("emissive_strength", 1.0f), 0.0f);
+        m.normal_scale = c.value("normal_scale", 1.0f);
+        m.occlusion_strength = std::clamp(c.value("occlusion_strength", 1.0f), 0.0f, 1.0f);
+        if (const auto t = c.find("textures"); t != c.end() && t->is_object()) {
+            const char* slots[5] = {"base_color", "metallic_roughness", "normal", "occlusion",
+                                    "emissive"};
+            for (int i = 0; i < 5; ++i) m.textures[size_t(i)] = t->value(slots[i], "");
+        }
         reg.emplace_or_replace<Material>(e, m);
     } else if (name == "camera") {
         reg.emplace_or_replace<CameraLens>(e, c.value("fov", 55.0f), c.value("near", 0.05f),
@@ -161,6 +168,8 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<ColliderShape>(e, std::move(s));
     } else if (name == "group") {
         reg.emplace_or_replace<Group>(e);
+    } else if (name == "object") {
+        reg.emplace_or_replace<ObjectRef>(e, c.at("id").get<std::string>());
     } else if (name == "physics_material") {
         reg.emplace_or_replace<PhysicsMaterial>(
             e, std::max(c.value("friction", 0.5f), 0.0f),
@@ -211,12 +220,15 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<PhysicsMaterial>(e);
     else if (name == "group")
         reg.remove<Group>(e);
+    else if (name == "object")
+        reg.remove<ObjectRef>(e);
 }
 
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
-               ScriptRef, Trigger, Sky, RigidBody, ColliderShape, PhysicsMaterial, Group>(e);
+               ScriptRef, Trigger, Sky, RigidBody, ColliderShape, PhysicsMaterial, Group,
+               ObjectRef>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
@@ -287,6 +299,16 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
         if (it == by_id.end()) throw SceneError("entity parent '" + parent_id + "' not found");
         scene.registry.get<EntityInfo>(e).parent = it->second;
     }
+    // Object templates (migration 6), then every instance filled in.
+    if (has_column(db.get(), "object", "parts")) {
+        Stmt o = prepare(db.get(), "SELECT id, parts FROM object ORDER BY id");
+        while (sqlite3_step(o.get()) == SQLITE_ROW)
+            scene.objects.emplace(column_text(o.get(), 0), column_text(o.get(), 1));
+    }
+    std::vector<entt::entity> instances;
+    for (entt::entity e : scene.registry.view<const ObjectRef>()) instances.push_back(e);
+    std::sort(instances.begin(), instances.end());
+    for (entt::entity e : instances) scene.expand(e);
     scene.use_sky();
     return scene;
 }
@@ -330,8 +352,53 @@ entt::entity Scene::put_entity(const std::string& entity_id, const std::string& 
     } catch (const std::exception& ex) {  // a component of the wrong shape
         throw SceneError("entity '" + entity_id + "': " + ex.what());
     }
+    expand(e);
     apply_sky(e);
     return e;
+}
+
+void Scene::expand(entt::entity e) {
+    // The old parts go (they are made from the template, never edited on their own).
+    std::vector<entt::entity> old;
+    for (entt::entity p : registry.view<const ObjectPart>())
+        if (registry.get<ObjectPart>(p).instance == e) old.push_back(p);
+    for (entt::entity p : old) registry.destroy(p);
+    const auto* ref = registry.try_get<ObjectRef>(e);
+    if (!ref) return;
+    const auto it = objects.find(ref->id);
+    if (it == objects.end()) return;  // an unknown object: nothing to show (cooking warns)
+    const std::string& instance_id = registry.get<EntityInfo>(e).id;
+    json parts;
+    try {
+        parts = json::parse(it->second);
+    } catch (const std::exception& ex) {
+        throw SceneError("object '" + ref->id + "': " + ex.what());
+    }
+    if (!parts.is_array()) throw SceneError("object '" + ref->id + "': parts must be a list");
+    for (size_t i = 0; i < parts.size(); ++i) {
+        const json& part = parts[i];
+        const entt::entity p = registry.create();
+        registry.emplace<EntityInfo>(p, instance_id + "/" + std::to_string(i),
+                                     part.value("name", "part"), e);
+        registry.emplace<ObjectPart>(p, e);
+        try {
+            add_components(registry, p, part.value("components", json::object()));
+        } catch (const std::exception& ex) {
+            throw SceneError("object '" + ref->id + "', part " + std::to_string(i) + ": " +
+                             ex.what());
+        }
+    }
+}
+
+std::vector<entt::entity> Scene::set_object(const std::string& object_id,
+                                            const std::string& parts_json) {
+    objects[object_id] = parts_json;
+    std::vector<entt::entity> instances;
+    for (entt::entity e : registry.view<const ObjectRef>())
+        if (registry.get<ObjectRef>(e).id == object_id) instances.push_back(e);
+    std::sort(instances.begin(), instances.end());
+    for (entt::entity e : instances) expand(e);
+    return instances;
 }
 
 void Scene::set_component(entt::entity e, const std::string& component, const json& value) {
@@ -343,6 +410,7 @@ void Scene::set_component(entt::entity e, const std::string& component, const js
     } catch (const std::exception& ex) {
         throw SceneError("component '" + component + "': " + ex.what());
     }
+    if (component == "object") expand(e);
     apply_sky(e);
 }
 
@@ -360,6 +428,8 @@ void Scene::apply_sky(entt::entity e) {
 bool Scene::remove_entity(const std::string& entity_id) {
     const entt::entity e = find(entity_id);
     if (e == entt::null) return false;
+    registry.remove<ObjectRef>(e);
+    expand(e);  // an instance's parts go with it
     for (entt::entity child : registry.view<EntityInfo>())
         if (registry.get<EntityInfo>(child).parent == e)
             registry.get<EntityInfo>(child).parent = entt::null;
@@ -404,6 +474,8 @@ render::DrawItem Scene::draw_item(entt::entity e, render::MeshId mesh,
         d.roughness = m->roughness;
         d.emissive = m->emissive;
         d.emissive_strength = m->emissive_strength;
+        d.normal_scale = m->normal_scale;
+        d.occlusion_strength = m->occlusion_strength;
     }
     // The world's surface casts no shadow: inside a cylinder or a hollow world its far side
     // would shade everything (inside worlds get their own light in milestone 5.8).

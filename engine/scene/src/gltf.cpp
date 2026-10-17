@@ -3,6 +3,11 @@
 #include <cgltf.h>
 
 #include "midgard/gltf.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <string>
+
 #include "midgard/pak.h"
 
 namespace midgard {
@@ -64,6 +69,80 @@ render::MeshData load_glb(std::span<const uint8_t> bytes) {
     if (mesh.indices.empty()) throw AssetError("the glTF file contains no triangles");
     if (!all_tangents && all_uvs) render::generate_tangents(mesh);
     return mesh;
+}
+
+std::vector<uint8_t> save_glb(const render::MeshData& mesh) {
+    std::vector<uint8_t> bin;
+    const auto append = [&](const void* data, size_t bytes) {
+        const auto* b = static_cast<const uint8_t*>(data);
+        bin.insert(bin.end(), b, b + bytes);
+        while (bin.size() % 4) bin.push_back(0);
+    };
+    std::vector<float> pos, nrm, uv, tan;
+    float lo[3] = {0, 0, 0}, hi[3] = {0, 0, 0};
+    for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+        const render::Vertex& v = mesh.vertices[i];
+        pos.insert(pos.end(), v.position, v.position + 3);
+        nrm.insert(nrm.end(), v.normal, v.normal + 3);
+        uv.insert(uv.end(), v.uv, v.uv + 2);
+        tan.insert(tan.end(), v.tangent, v.tangent + 4);
+        for (int k = 0; k < 3; ++k) {
+            lo[k] = i ? std::min(lo[k], v.position[k]) : v.position[k];
+            hi[k] = i ? std::max(hi[k], v.position[k]) : v.position[k];
+        }
+    }
+    std::string views, accessors;
+    const auto view = [&](const void* data, size_t bytes, const char* type, int component,
+                          size_t count, bool bounds) {
+        const size_t offset = bin.size();
+        append(data, bytes);
+        const size_t index = std::count(views.begin(), views.end(), '{');
+        if (!views.empty()) views += ",";
+        views += "{\"buffer\":0,\"byteOffset\":" + std::to_string(offset) +
+                 ",\"byteLength\":" + std::to_string(bytes) + "}";
+        if (!accessors.empty()) accessors += ",";
+        accessors += "{\"bufferView\":" + std::to_string(index) +
+                     ",\"componentType\":" + std::to_string(component) +
+                     ",\"count\":" + std::to_string(count) + ",\"type\":\"" + type + "\"";
+        if (bounds) {
+            char text[160];
+            std::snprintf(text, sizeof text, ",\"min\":[%.9g,%.9g,%.9g],\"max\":[%.9g,%.9g,%.9g]",
+                          lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+            accessors += text;
+        }
+        accessors += "}";
+    };
+    const size_t n = mesh.vertices.size();
+    view(pos.data(), pos.size() * 4, "VEC3", 5126, n, true);
+    view(nrm.data(), nrm.size() * 4, "VEC3", 5126, n, false);
+    view(uv.data(), uv.size() * 4, "VEC2", 5126, n, false);
+    view(tan.data(), tan.size() * 4, "VEC4", 5126, n, false);
+    view(mesh.indices.data(), mesh.indices.size() * 4, "SCALAR", 5125, mesh.indices.size(), false);
+    std::string text =
+        "{\"asset\":{\"version\":\"2.0\",\"generator\":\"Midgard\"},\"scene\":0,"
+        "\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,"
+        "\"TEXCOORD_0\":2,\"TANGENT\":3},\"indices\":4}]}],"
+        "\"buffers\":[{\"byteLength\":" +
+        std::to_string(bin.size()) +
+        "}],"
+        "\"bufferViews\":[" +
+        views + "],\"accessors\":[" + accessors + "]}";
+    while (text.size() % 4) text.push_back(' ');
+    std::vector<uint8_t> out;
+    const auto u32 = [&](uint32_t v) {
+        for (int i = 0; i < 4; ++i) out.push_back(uint8_t(v >> (8 * i)));
+    };
+    u32(0x46546C67);  // "glTF"
+    u32(2);
+    u32(uint32_t(12 + 8 + text.size() + 8 + bin.size()));
+    u32(uint32_t(text.size()));
+    u32(0x4E4F534A);  // "JSON"
+    out.insert(out.end(), text.begin(), text.end());
+    u32(uint32_t(bin.size()));
+    u32(0x004E4942);  // "BIN"
+    out.insert(out.end(), bin.begin(), bin.end());
+    return out;
 }
 
 }  // namespace midgard
