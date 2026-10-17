@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import transforms
+from ..group_objects import ask_save_group_as_object
 from ..meshes import PRIMITIVES
 from ..objects import new_models, object_for_model
 from ..project import Project
@@ -196,6 +197,11 @@ class ScenePanel(QWidget):
         """The right-click menu for an entity (which becomes the selection)."""
         self.tree.setCurrentItem(item)
         menu = QMenu(self.tree)
+        entity = self.project.entity(item.data(0, ID_ROLE)) if self.project else None
+        if entity is not None and "group" in entity.components:
+            menu.addAction("Save as Object…", lambda: ask_save_group_as_object(
+                self.project, entity.id, self))
+            menu.addSeparator()
         menu.addAction("Delete", self.delete_selected)
         return menu
 

@@ -97,6 +97,19 @@
       "required": ["type", "object", "parts"]
     },
     {
+      "description": "Editor → runtime: asks what the game has now; answered with scene.",
+      "properties": { "type": { "const": "scene.dump" } },
+      "required": ["type"]
+    },
+    {
+      "description": "Runtime → editor: the game's entities as it has them (id, name, position, rotation, scale, material colour) and its sky, answering scene.dump.",
+      "properties": {
+        "type": { "const": "scene" },
+        "scene": { "type": "object" }
+      },
+      "required": ["type", "scene"]
+    },
+    {
       "description": "Runtime → editor: a script raised an error and is paused until it is reloaded. file is relative to scripts/; file and line are empty and 0 when unknown.",
       "properties": {
         "type": { "const": "script.error" },

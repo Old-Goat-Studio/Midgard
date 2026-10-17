@@ -21,7 +21,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 2 Engine core and the vertical slice | **Done** (14 October): a cube placed in the editor runs on Windows, Linux and Android, all exported from one editor host. |
 | 3 Live link and engine bindings | **Done** (14 October): Play, Pause and Stop, hot reload, the `_midgard` module, the embedded Vulkan viewport. |
 | 4 Scripting | **Done** (14 October): games embed CPython 3.14 (Android too), the `midgard` API v1, the Script editor, Assistant v1. |
-| 5 World building | **In progress:** milestones 5.0–5.4 are done and 5.5 is in its last step (below). |
+| 5 World building | **In progress:** milestones 5.0–5.5 are done (below). |
 | 6–9 | Not started. |
 
 **Phase 5 milestones**
@@ -33,7 +33,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 5.2 Shape mapping layer | **Done** | Bounded area, flat-wrap and curved cylinders, sphere outside and inside: positions, "up", gravity and wrap rules, shared with the editor through `_midgard.Body`. |
 | 5.3 Renderer foundation | **Done** | HDR and tone mapping, glTF PBR materials, KTX2/Basis textures, point and spot lights, cascaded shadows in the local "up" frame, analytic sky and fog, desktop and phone quality tiers. |
 | 5.4 Physics (Jolt) | **Done** | Jolt in double precision with gravity from the shape, rigid bodies, colliders, physics materials, layers, triggers, the character controller, the script API (raycasts, overlaps, forces), collider outlines, the world's surface mesh. The player walks round a planet and inside a cylinder. |
-| 5.5 Object editor and asset pipeline | **Steps 1–5 of 6 done** | glTF import, objects as templates placed as instances, the Objects panel (Object editor), the Material editor, re-import on change, live objects in the running game, content-hashed cooking. **Next:** step 6, Save Group as Object and the exit check. |
+| 5.5 Object editor and asset pipeline | **Done** | glTF import, objects as templates placed as instances, the Objects panel (Object editor), the Material editor, re-import on change, live objects in the running game, content-hashed cooking, Save Group as Object, and the first CC0 model (Avocado) with an import corpus test. The exit check runs as a test with the real game. |
 | 5.6–5.18 | Not started | Next are 5.6 Cameras and 5.7 Calendar (stage 2 in `Phase5_Roadmap.md` §5). |
 
 **Also built along the way** (asked for while using the editor): **groups** (complex objects made of primitives, moved as one, and one compound physics body when they move), **viewport gizmos** (move, rotate and scale in the view's corner, following the dock onto any monitor), a viewport toolbar (Colliders, Gizmos), **cylinder and wedge** primitives, layouts saved as they change (tab order included), delete by key and right-click, **Git from the editor** (put a project under Git, commit, change markers in the Script editor), the **Project Page** (tagline, description, logo and the game's icon), opening the last project on start, and picture buttons for Play, Pause and Stop.
@@ -180,6 +180,7 @@ The messages are defined in `schema/live_link.schema.json` (protocol 0):
 | `script.changed` | editor → game | A script was edited; the game reloads it. |
 | `script.error` | game → editor | A script raised an error; the Script editor marks the line. |
 | `log`, `state`, `stats` | game → editor | Log lines, Play state, and frame figures about once a second. |
+| `scene.dump`, `scene` | editor → game, and back | What the game has now (entities, their places and colours, the sky), for tests and tools. |
 
 Edits reach the running game in well under a second. New or changed content (a mesh, a model, an image) is cooked into `game.pak` before the message that uses it is sent.
 
@@ -557,7 +558,7 @@ Today, when a listen-server host quits, the session ends. **Host migration** mea
 | Physics editor | Body/shape/material inspector, collision layers matrix | Jolt | **Built (5.4):** collider, rigid body and physics material rows in the Inspector, *World ▸ Physics Layers* and *World ▸ World Shape*, collider outlines in the viewport and the game (F4). |
 | Vulkan shaders + texture generation | GLSL editor first, node graph later; texture generator (noise, gradients, tiling) | shaderc → SPIR-V; generators in C++, called via `_midgard` | One generator implementation for editor preview and runtime. Image textures (KTX2) are built (5.3, 5.5); shaders and generators are 5.17. |
 | Terrain | Procedural parameters (FastNoise2 graph) + sculpt/paint brushes | Chunked heightmaps, clipmap LOD, splat materials | Sculpting needs the embedded viewport, so it comes late. |
-| Object editor | Primitives, groups, glTF import, the Objects panel and Material editor | glTF loader, objects as templates | **Built (5.5):** cube, sphere, plane, cylinder and wedge primitives; groups; imported glTF objects with scale, up axis, collider (box, convex, mesh or none), levels of detail and thumbnails; the Material editor; re-import on change. *Next:* Save Group as Object. |
+| Object editor | Primitives, groups, glTF import, the Objects panel and Material editor | glTF loader, objects as templates | **Built (5.5):** cube, sphere, plane, cylinder and wedge primitives; groups; imported glTF objects with scale, up axis, collider (box, convex, mesh or none), levels of detail and thumbnails; the Material editor; re-import on change; Save Group as Object. |
 | Inventory | Item table, categories, stacking, containers | Server-authoritative inventory | |
 | Wallet + banking | Currencies, exchange rates, **Banking editor**: bank templates with interest, fees, insurance, withdrawal rules and risk profiles (see §7, *Banks*) | Host-authoritative ledger (append-only), monthly risk events from the Calendar | **In-game currency only.** The wallet travels with the character. Banks stay in each universe, with several banks of different risk and reward. |
 | Quests | Quest list + goal editor + prerequisite graph | Quest state machine, events from game systems | Validate at cook time: unknown targets, impossible prerequisites, cycles. |
@@ -1643,7 +1644,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 **Status: done** (14 October 2026).
 
 ### Phase 5: World building
-**Status: in progress.** 5.0–5.4 are done and 5.5 is in its last step (§0 lists what each milestone brought).
+**Status: in progress.** 5.0–5.5 are done (§0 lists what each milestone brought).
 
 **The detailed plan is in [`Phase5_Roadmap.md`](Phase5_Roadmap.md)** (approved 15 October 2026):
 19 milestones (5.0–5.18), foundation first (test tooling, deterministic maths and world

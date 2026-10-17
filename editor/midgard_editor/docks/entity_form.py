@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import scripting, transforms
+from ..group_objects import ask_save_group_as_object
 from ..project import Project
 from ..scene_model import Entity, sky_component
 from ..undo import SetEntityCommand
@@ -199,7 +200,12 @@ class EntityForm(QWidget):
             centre = QPushButton("Centre on contents")
             centre.setToolTip("Move the group's centre to the middle of its parts (they stay put)")
             centre.clicked.connect(self.centre_group)
-            form.addRow("Group", centre)
+            save = QPushButton("Save as Object…")
+            save.setToolTip("Make an object of the group, to place many times from "
+                            "Add ▸ Object")
+            save.clicked.connect(lambda: ask_save_group_as_object(self.project, self.entity_id,
+                                                                  self.window()))
+            form.addRow("Group", _row(centre, save))
         missing = [k for k in self.ADDABLE if k not in entity.components]
         self.add_component = QPushButton("Add Component")
         menu = QMenu(self.add_component)

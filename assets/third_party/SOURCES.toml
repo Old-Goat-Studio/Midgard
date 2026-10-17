@@ -10,3 +10,10 @@
 #   license = "CC0-1.0"
 #
 # A folder of files from one pack can be listed once, with path = "folder/" (ending in /).
+
+[[asset]]
+path = "models/avocado/"
+title = "Avocado (glTF Sample Assets), textures reduced from 2048 to 512 pixels"
+author = "Microsoft"
+source = "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Avocado"
+license = "CC0-1.0"

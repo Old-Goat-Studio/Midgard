@@ -345,6 +345,10 @@ public:
 
     void apply(const nlohmann::json& message, render::Renderer* renderer) override {
         const std::string type = message.value("type", "");
+        if (type == "scene.dump") {  // what the game has, for the editor's tests and tools
+            if (g_link) g_link->send({{"type", "scene"}, {"scene", nlohmann::json::parse(dump())}});
+            return;
+        }
         if (type == "script.changed") {
             const std::string module = message.value("module", "");
 #ifdef MIDGARD_HAS_SCRIPTING
