@@ -39,6 +39,7 @@ from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_proj
 from .docks.assistant import AssistantPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
+from .docks.material_editor import MaterialDialog
 from .docks.objects_panel import ObjectsPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.project_page import ProjectPage
@@ -614,6 +615,7 @@ class MainWindow(QMainWindow):
         self.assistant.set_project(project)
         self.project_page.set_project(project)
         self.objects_panel.set_project(project)
+        MaterialDialog.close_all()
         self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action,
                        self.world_shape_action, self.physics_layers_action):

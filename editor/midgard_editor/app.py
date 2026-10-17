@@ -43,9 +43,22 @@ def run(project: Path | None = None, smoke_test: Path | None = None) -> int:
     window.show()
     if smoke_test is not None:
         return _smoke_test(app, window, smoke_test)
-    if project is not None:
-        window.open_project(project)
+    project = startup_project(settings, project)
+    if project is not None:  # once the window is up, so a problem shows over it
+        QTimer.singleShot(0, lambda: window.open_project(project))
     return app.exec()
+
+
+def startup_project(settings: Settings, asked_for: Path | None) -> Path | None:
+    """The project to open on starting: the one on the command line, or else the one worked on
+    last (Edit ▸ Preferences ▸ Open the last project), if it is still there."""
+    if asked_for is not None:
+        return asked_for
+    if settings.get("open_last_project"):
+        recent = settings.recent_projects()  # (only those still on disk)
+        if recent:
+            return recent[0]
+    return None
 
 
 def _smoke_test(app: QApplication, window, folder: Path) -> int:

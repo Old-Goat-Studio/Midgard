@@ -48,3 +48,26 @@ def test_missing_recent_projects_are_skipped(settings, tmp_path):
     settings.add_recent(gone)
     gone.unlink()
     assert settings.recent_projects() == []
+
+
+def test_the_last_project_opens_on_starting_unless_turned_off(qapp, settings, tmp_path):
+    from midgard_editor.app import startup_project
+    from midgard_editor.dialogs import PreferencesDialog
+
+    assert settings.get("open_last_project") is True  # the default
+    assert startup_project(settings, None) is None  # nothing worked on yet
+    older, newer = tmp_path / "Old.config", tmp_path / "New.config"
+    for config in (older, newer):
+        config.write_text("{}", "utf-8")
+        settings.add_recent(config)
+    assert startup_project(settings, None) == newer
+    assert startup_project(settings, older) == older  # the command line wins
+    newer.unlink()  # moved or deleted since: the one before it
+    assert startup_project(settings, None) == older
+
+    dialog = PreferencesDialog(settings)
+    assert dialog.open_last.isChecked()
+    dialog.open_last.setChecked(False)
+    dialog._save()
+    assert settings.get("open_last_project") is False
+    assert startup_project(settings, None) is None

@@ -83,6 +83,11 @@ class Project(QObject):
         return self.root / f"{self.name}.db"
 
     @property
+    def textures_dir(self) -> Path:
+        """Image files for materials (the Material editor copies chosen files here)."""
+        return self.root / "textures"
+
+    @property
     def objects_dir(self) -> Path:
         """Models (.glb) that entities can use as meshes."""
         return self.root / "objects"

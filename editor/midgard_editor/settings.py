@@ -20,6 +20,7 @@ DEFAULTS: dict[str, Any] = {
     "backup_minutes": 10,        # minutes between automatic backups while editing
     "use_x11": False,            # Linux: start under XWayland for full multi-monitor support
     "last_project_dir": "",
+    "open_last_project": True,   # start with the project worked on last (if it's still there)
     "export_dir": "",            # last Build ▸ Export output folder
     "snippets": [],              # the user's own Script editor snippets
     "new_project_git": True,     # New Project: keep the project in Git (when Git is installed)

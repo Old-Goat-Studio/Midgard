@@ -184,11 +184,20 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
     pak_ = std::filesystem::is_regular_file(pak_file) ? std::make_unique<Pak>(pak_file) : nullptr;
     failed_meshes_.erase(asset);
     outline_meshes_.erase(asset);
+    // A texture: the materials using it are made again from the new package.
+    materials_.forget(asset);
+    bool texture_used = false;
+    for (entt::entity e : scene_.registry.view<const Material>())
+        for (const std::string& t : scene_.registry.get<Material>(e).textures)
+            texture_used = texture_used || t == asset;
+    if (texture_used)
+        materials_.upload(scene_, renderer,
+                          [this](const std::string& t) { return read_texture(t); });
     bool used = false;
     for (entt::entity e : scene_.registry.view<const MeshRef>())
         for (const std::string& a : scene_.registry.get<MeshRef>(e).assets())
             used = used || a == asset;
-    if (!used) return false;
+    if (!used) return texture_used;
     render::MeshData mesh = load_mesh(asset);
     if (auto it = meshes_.find(asset); it != meshes_.end())
         renderer.replace_mesh(it->second, mesh);

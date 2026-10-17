@@ -47,6 +47,7 @@ from ..objects import (
     new_models,
     object_content,
     object_for_model,
+    shared_renderer,
 )
 from ..project import Project
 from ..undo import AddObjectCommand, DeleteObjectCommand, SetObjectCommand
@@ -68,7 +69,7 @@ class PreviewLabel(QLabel):
     """The preview: drag to turn the object, the wheel to zoom."""
     changed = Signal()
 
-    def __init__(self):
+    def __init__(self, height: int = PREVIEW_HEIGHT):
         super().__init__()
         self.yaw, self.pitch, self.zoom = 35.0, 22.0, 1.0
         self._last: QPoint | None = None
@@ -76,7 +77,7 @@ class PreviewLabel(QLabel):
         # Its picture never widens the form: it's drawn at whatever width the label has.
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.setMinimumWidth(160)
-        self.setFixedHeight(PREVIEW_HEIGHT)
+        self.setFixedHeight(height)
         self.setToolTip("Drag to turn the object, wheel to zoom")
 
         self._resized = QTimer(self)  # drawn again once the panel stops changing size
@@ -176,8 +177,11 @@ class ObjectsPanel(QWidget):
             lambda _i: self.set_setting("collider", self.collider.currentData()))
         self.materials = QListWidget()
         self.materials.setMaximumHeight(110)
-        self.materials.setToolTip("The model's materials, one part each (editing comes with the "
-                                  "Material editor)")
+        self.materials.setToolTip("The model's materials, one part each: double-click one to "
+                                  "change it in the Material editor")
+        self.materials.itemDoubleClicked.connect(lambda _i: self.edit_material())
+        self.edit_material_button = QPushButton("Edit Material…")
+        self.edit_material_button.clicked.connect(lambda: self.edit_material())
         self.lods = QTableWidget(0, 2)
         self.lods.setHorizontalHeaderLabels(["Model file", "From (m)"])
         self.lods.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -215,6 +219,7 @@ class ObjectsPanel(QWidget):
         form.addRow("Up axis", self.up_axis)
         form.addRow("Collider", self.collider)
         form.addRow("Materials", self.materials)
+        form.addRow("", self.edit_material_button)
         form.addRow("Levels of detail", lod_box)
         form.addRow(self.make_object)
         form.addRow(self.warnings)
@@ -277,11 +282,11 @@ class ObjectsPanel(QWidget):
                 item.setData(ID_ROLE, obj.id)
                 item.setToolTip(obj.source or "Made in the editor")
                 icon = self._cached_thumbnail(obj)
-                if icon is None:
+                if icon is not None:
+                    item.setIcon(icon)
+                elif obj.id not in self._thumbs_pending:  # asked for once while it waits
                     self._thumbs_pending.append(obj.id)
                     self._thumb_timer.start()
-                else:
-                    item.setIcon(icon)
                 self.list.addItem(item)
             for relative in new_models(self.project.objects_dir, objects):
                 item = QListWidgetItem(f"{relative} (not an object yet)")
@@ -312,12 +317,13 @@ class ObjectsPanel(QWidget):
     # ---- thumbnails -----------------------------------------------------------------------
     def _renderer(self) -> ObjectRenderer:
         if self.renderer is None:
-            self.renderer = ObjectRenderer()
+            self.renderer = shared_renderer()
         return self.renderer
 
     def _thumb_key(self, obj: ObjectDef) -> str:
-        key = (CACHE.key(self.project.objects_dir, obj) if obj.source else
-               json.dumps(obj.parts, sort_keys=True))
+        key = ((CACHE.key(self.project.objects_dir, obj),
+                json.dumps(obj.settings.get("materials", {}), sort_keys=True))
+               if obj.source else json.dumps(obj.parts, sort_keys=True))
         return hashlib.sha256(repr(key).encode()).hexdigest()
 
     def _thumb_file(self, obj: ObjectDef) -> Path:
@@ -385,6 +391,7 @@ class ObjectsPanel(QWidget):
         self.place_button.setEnabled(sel is not None)
         self.delete_button.setEnabled(obj is not None)
         self.editor.setEnabled(sel is not None)
+        self.edit_material_button.setEnabled(False)
         self.make_object.setVisible(is_file)
         self._loading = True
         try:
@@ -431,19 +438,39 @@ class ObjectsPanel(QWidget):
             self.preview.setText("No preview")
             return
         if obj.source:
-            for m in content.materials:
+            for index, m in enumerate(content.materials):
                 r, g, b, _a = (min(max(c, 0.0), 1.0) ** (1 / 2.2) for c in m["color"])
                 swatch = QPixmap(16, 16)
                 swatch.fill(QColor.fromRgbF(r, g, b))
                 label = m["name"] or "(unnamed)"
                 if m["textures"]:
                     label += "  —  textured: " + ", ".join(m["textures"]).replace("_", " ")
-                self.materials.addItem(QListWidgetItem(QIcon(swatch), label))
+                if str(index) in obj.settings.get("materials", {}):
+                    label += "  —  changed"
+                item = QListWidgetItem(QIcon(swatch), label)
+                item.setData(Qt.ItemDataRole.UserRole, index)
+                self.materials.addItem(item)
+            if self.materials.count():
+                self.materials.setCurrentRow(0)
         else:
             for part in obj.parts:
                 self.materials.addItem(part.get("name", "part"))
+        self.edit_material_button.setEnabled(bool(obj.source and content.materials))
         self.warnings.setText("\n".join(content.warnings))
         self.render_preview()
+
+    def edit_material(self, index: int | None = None):
+        """Opens the Material editor on one of the selected object's materials (the current
+        one in the list by default). Returns its window."""
+        from .material_editor import MaterialDialog, ObjectMaterial  # (it uses this module)
+        obj = self.selected_object()
+        if index is None:
+            item = self.materials.currentItem()
+            index = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if obj is None or not obj.source or index is None:
+            return None
+        return MaterialDialog.show_for(self.project, ObjectMaterial(self.project, obj.id, index),
+                                       self.window())
 
     def render_preview(self) -> None:
         obj = self.selected_object()

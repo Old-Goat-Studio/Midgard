@@ -11,7 +11,11 @@
 //   _midgard.import_model(path, settings_json)
 //                                 a glTF model cooked for a package: its parts as .glb bytes,
 //                                 its textures as KTX2 bytes, its materials (midgard/model.h)
+//   _midgard.encode_texture(path, srgb)
+//                                 an image file (PNG, JPEG) as KTX2 bytes with mipmaps
 #include <array>
+#include <fstream>
+#include <iterator>
 #include <span>
 
 #include <pybind11/pybind11.h>
@@ -24,6 +28,7 @@
 #include "midgard/gltf.h"
 #include "midgard/link.h"
 #include "midgard/model.h"
+#include "midgard/pak.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/validate.h"
@@ -57,6 +62,24 @@ PYBIND11_MODULE(_midgard, m) {
             return v;
         },
         "The engine's version and the package formats it reads.");
+
+    m.def(
+        "encode_texture",
+        [](const std::filesystem::path& path, bool srgb) {
+            std::vector<uint8_t> ktx2;
+            {
+                py::gil_scoped_release release;
+                std::ifstream in(path, std::ios::binary);
+                if (!in) throw midgard::AssetError("can't open " + path.filename().string());
+                const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                                 std::istreambuf_iterator<char>());
+                ktx2 = midgard::render::encode_ktx2(midgard::load_image(bytes, srgb));
+            }
+            return py::bytes(reinterpret_cast<const char*>(ktx2.data()), ktx2.size());
+        },
+        py::arg("path"), py::arg("srgb") = true,
+        "An image file (PNG or JPEG) as KTX2 bytes with mipmaps, sRGB for colours. Raises "
+        "RuntimeError for one that can't be read.");
 
     m.def(
         "import_model",

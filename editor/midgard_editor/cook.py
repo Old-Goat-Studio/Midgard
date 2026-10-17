@@ -5,7 +5,8 @@
     <out>/{name}.config      the runtime part of {project}.config
     <out>/{name}.db          a read-only copy of {project}.db
     <out>/game.pak           cooked assets (zip): meshes as .glb; imported objects' meshes
-                             and KTX2 textures under models/<object id>/
+                             and KTX2 textures under models/<object id>/; image files that
+                             materials use as KTX2 under images/
     <out>/scripts/           the project's scripts/ (*.py), for entity scripts
     <out>/icon.png           the game's icon (Project Page), for the game's window, if it has one
 
@@ -24,7 +25,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import contract, engine, meshes, objects
+from . import contract, engine, meshes, objects, textures
 from .project import Project
 from .scene_model import MAIN_SCENE
 from .version import BUILD, VERSION
@@ -110,10 +111,13 @@ def mesh_asset_data(project: Project, asset: str) -> bytes | None:
 
 
 def used_mesh_assets(project: Project) -> set[str]:
-    """Mesh asset ids the main scene uses that live in game.pak."""
+    """Mesh asset ids the main scene uses that live in game.pak, and the image files its
+    materials use (the live link cooks them in before sending an entity that uses them)."""
     return {a for e in project.entities(MAIN_SCENE)
             if (a := e.components.get("mesh", {}).get("asset")) and
-            not a.startswith(BUILTIN_PREFIX)}
+            not a.startswith(BUILTIN_PREFIX)} | {
+        t for e in project.entities(MAIN_SCENE) for t in textures.components_textures(e.components)
+        if textures.parse(t) is not None}
 
 
 @dataclass
@@ -141,7 +145,7 @@ def _cook_objects(project: Project, warnings: list[str]) -> CookedObjects:
         if not obj.source:
             continue
         try:
-            result = objects.CACHE.cooked(project.objects_dir, obj)
+            result = objects.object_content(project, obj)
         except objects.ObjectError as e:
             warnings.append(f"Object '{obj.name}' can't be imported: {e}")
             continue
@@ -199,6 +203,20 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
         files[asset] = (path, data)
     if cooked:
         files |= cooked.files
+    # Image files the scene's materials, and templates made in the editor, use.
+    texture_users = [(f"Entity '{e.name}'", e.components) for e in project.entities(MAIN_SCENE)]
+    texture_users += [(f"Object '{o.name}'", p.get("components", {})) for o in project.objects()
+                      if not o.source for p in o.parts]
+    for user, components in texture_users:
+        for texture in textures.components_textures(components):
+            if texture in files or textures.parse(texture) is None:
+                continue
+            data = textures.texture_data(project.root, texture)
+            if data is None:
+                warnings.append(f"{user} uses texture '{textures.describe(texture)}', which is "
+                                "not in the project (or can't be read); it is drawn without it.")
+            else:
+                files[texture] = (textures.pak_path(texture), data)
     content: list[dict[str, str]] = []
     tmp = out / "game.pak.tmp"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as pak:

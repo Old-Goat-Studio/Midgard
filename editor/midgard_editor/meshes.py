@@ -19,6 +19,7 @@ class Mesh:
     positions: list[tuple[float, float, float]] = field(default_factory=list)
     normals: list[tuple[float, float, float]] = field(default_factory=list)
     indices: list[int] = field(default_factory=list)
+    uvs: list[tuple[float, float]] = field(default_factory=list)  # texture coordinates
 
 
 def cube() -> Mesh:
@@ -48,6 +49,7 @@ def sphere(segments: int = 32, rings: int = 16) -> Mesh:
             n = (math.sin(theta) * math.cos(phi), math.cos(theta),
                  -math.sin(theta) * math.sin(phi))
             mesh.normals.append(n)
+            mesh.uvs.append((j / segments, i / rings))  # round the equator, top to bottom
             mesh.positions.append(tuple(0.5 * c for c in n))
     row = segments + 1
     for i in range(rings):
@@ -73,10 +75,11 @@ def cylinder(segments: int = 32) -> Mesh:
     # The rim as (x, z), anticlockwise seen from above; the last step repeats the first.
     steps = [2 * math.pi * j / segments for j in range(segments + 1)]
     ring = [(0.5 * math.cos(a), -0.5 * math.sin(a)) for a in steps]
-    for x, z in ring:  # the side: a bottom and a top vertex per step, facing outwards
+    for j, (x, z) in enumerate(ring):  # the side: a bottom and a top vertex per step, outwards
         n = (2.0 * x, 0.0, 2.0 * z)
         mesh.positions += [(x, -0.5, z), (x, 0.5, z)]
         mesh.normals += [n, n]
+        mesh.uvs += [(j / segments, 1.0), (j / segments, 0.0)]  # wrapped round once
     for j in range(segments):
         a, b = 2 * j, 2 * j + 2  # bottom vertices here and at the next step
         mesh.indices += [a, b, b + 1, a, b + 1, a + 1]
@@ -85,9 +88,11 @@ def cylinder(segments: int = 32) -> Mesh:
         n = (0.0, 1.0 if up else -1.0, 0.0)
         mesh.positions.append((0.0, y, 0.0))
         mesh.normals.append(n)
+        mesh.uvs.append((0.5, 0.5))
         for x, z in ring[:-1]:
             mesh.positions.append((x, y, z))
             mesh.normals.append(n)
+            mesh.uvs.append((x + 0.5, z + 0.5 if up else 0.5 - z))
         for j in range(segments):
             a, b = centre + 1 + j, centre + 1 + (j + 1) % segments
             mesh.indices += [centre, a, b] if up else [centre, b, a]
@@ -118,20 +123,37 @@ def wedge() -> Mesh:
     return mesh
 
 
+def box_uv(p: tuple[float, float, float], n: tuple[float, float, float]) -> tuple[float, float]:
+    """Texture coordinates for a flat face: the face's position seen along its main axis, so a
+    texture lies upright and unstretched on each face of the 1 m box."""
+    x, y, z = p
+    axis = max(range(3), key=lambda i: (abs(n[i]), i == 1))  # a 45° slope counts as a top
+    if axis == 0:
+        return (0.5 - z if n[0] > 0 else z + 0.5), 0.5 - y
+    if axis == 1:
+        return x + 0.5, (z + 0.5 if n[1] > 0 else 0.5 - z)
+    return (x + 0.5 if n[2] > 0 else 0.5 - x), 0.5 - y
+
+
 def primitive(asset_id: str) -> Mesh:
     makers = {"prim_cube": cube, "prim_sphere": sphere, "prim_plane": plane,
               "prim_cylinder": cylinder, "prim_wedge": wedge}
     if asset_id not in makers:
         raise KeyError(asset_id)
-    return makers[asset_id]()
+    mesh = makers[asset_id]()
+    if not mesh.uvs:  # the flat-faced ones
+        mesh.uvs = [box_uv(p, n) for p, n in zip(mesh.positions, mesh.normals, strict=True)]
+    return mesh
 
 
 def to_glb(mesh: Mesh) -> bytes:
-    """A glTF 2.0 binary with one mesh: POSITION and NORMAL (float VEC3) and uint32 indices."""
+    """A glTF 2.0 binary with one mesh: POSITION and NORMAL (float VEC3), TEXCOORD_0 when the
+    mesh has uvs, and uint32 indices."""
     positions = b"".join(struct.pack("<3f", *p) for p in mesh.positions)
     normals = b"".join(struct.pack("<3f", *n) for n in mesh.normals)
+    uvs = b"".join(struct.pack("<2f", *uv) for uv in mesh.uvs)
     indices = struct.pack(f"<{len(mesh.indices)}I", *mesh.indices)
-    binary = positions + normals + indices
+    binary = positions + normals + indices + uvs
     count = len(mesh.positions)
     lo = [min(p[i] for p in mesh.positions) for i in range(3)]
     hi = [max(p[i] for p in mesh.positions) for i in range(3)]
@@ -158,6 +180,12 @@ def to_glb(mesh: Mesh) -> bytes:
         "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1},
                                     "indices": 2}]}],
     }
+    if mesh.uvs:  # (after the indices, so the rest of the file is as it was without them)
+        doc["bufferViews"].append({"buffer": 0, "byteOffset": len(binary) - len(uvs),
+                                   "byteLength": len(uvs), "target": 34962})
+        doc["accessors"].append({"bufferView": 3, "componentType": 5126, "count": count,
+                                 "type": "VEC2"})
+        doc["meshes"][0]["primitives"][0]["attributes"]["TEXCOORD_0"] = 3
     text = json.dumps(doc, separators=(",", ":")).encode("utf-8")
     text += b" " * (-len(text) % 4)
     binary += b"\0" * (-len(binary) % 4)

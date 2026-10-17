@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -376,6 +377,20 @@ Model load_model(std::span<const uint8_t> bytes, const ImportSettings& settings)
         r != cgltf_result_success)
         throw AssetError(std::string("glTF: ") + explain(r));
     return finish(d, options, nullptr, std::nullopt, settings);
+}
+
+render::TextureData load_image(std::span<const uint8_t> bytes, bool srgb) {
+    if (bytes.empty() || bytes.size() > size_t(std::numeric_limits<int>::max()))
+        throw AssetError("the image is empty or too large");
+    int w = 0, h = 0, channels = 0;
+    stbi_uc* pixels = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &channels, 4);
+    if (!pixels)
+        throw AssetError(std::string("the image can't be read (") +
+                         (stbi_failure_reason() ? stbi_failure_reason() : "no data") +
+                         "; PNG and JPEG are supported)");
+    std::vector<uint8_t> rgba(pixels, pixels + size_t(w) * size_t(h) * 4);
+    stbi_image_free(pixels);
+    return render::make_texture(uint32_t(w), uint32_t(h), srgb, std::move(rgba));
 }
 
 }  // namespace midgard

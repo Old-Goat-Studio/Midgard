@@ -27,6 +27,7 @@ from .. import scripting, transforms
 from ..project import Project
 from ..scene_model import Entity, sky_component
 from ..undo import SetEntityCommand
+from .material_editor import EntityMaterial, MaterialDialog
 
 
 def style_color_button(button: QPushButton, rgb: list[float]) -> None:
@@ -144,7 +145,10 @@ class EntityForm(QWidget):
         if "material" in entity.components:
             self.color = QPushButton()
             self.color.clicked.connect(self._pick_color)
-            form.addRow("Colour", self.color)
+            edit = QPushButton("Edit…")
+            edit.setToolTip("Metal, roughness, emission and textures, in the Material editor")
+            edit.clicked.connect(self.edit_material)
+            form.addRow("Colour", _row(self.color, edit))
         if "camera" in entity.components:
             self.fov = _spin(10.0, 120.0, 1.0, 1)
             self.fov.setSuffix("°")
@@ -507,6 +511,11 @@ class EntityForm(QWidget):
         if entity.components["trigger"].get("size") != size:
             entity.components["trigger"] = {**entity.components["trigger"], "size": size}
             self._push(entity, "trigger size")
+
+    def edit_material(self):
+        """The entity's material in the Material editor (a window of its own)."""
+        return MaterialDialog.show_for(self.project, EntityMaterial(self.project, self.entity_id),
+                                       self.window())
 
     def set_object(self, object_id: str | None) -> None:
         entity = self._entity()

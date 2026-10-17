@@ -30,7 +30,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
-from .. import engine
+from .. import engine, textures
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
@@ -347,6 +347,14 @@ class ViewportPanel(QWidget):
         object_id = entity.components.get("object", {}).get("id")
         if object_id and object_id not in self._sent_objects:
             self._send_object(object_id)
+        for texture in textures.components_textures(entity.components):
+            data = textures.texture_data(self.project.root, texture)
+            if data is not None and self._sent_content.get(texture) != hash(data):
+                try:
+                    self.view.set_texture(texture, data)
+                except RuntimeError as e:
+                    log.warning("Viewport: texture %s: %s", texture, e)
+                self._sent_content[texture] = hash(data)
         asset = entity.components.get("mesh", {}).get("asset")
         if asset and not asset.startswith(BUILTIN_PREFIX) and asset not in self._sent_meshes:
             data = mesh_asset_data(self.project, asset)

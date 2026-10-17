@@ -63,8 +63,8 @@ public:
     // Hot reload (the editor rewrote part of the package on disk, then said which part).
     void reload_scene_settings();
     void reload_entity(const std::string& entity_id);
-    // Re-reads manifest.json and game.pak, then the mesh with this content id. Returns false if
-    // no mesh of the scene uses it (nothing to do). Throws on a broken package.
+    // Re-reads manifest.json and game.pak, then the mesh or texture with this content id.
+    // Returns false if nothing in the scene uses it. Throws on a broken package.
     bool reload_asset(const std::string& asset, render::Renderer& renderer);
 
     // One draw per entity with a mesh, in world space.

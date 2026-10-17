@@ -130,6 +130,18 @@ struct GpuTexture {
 struct Renderer::Impl {
     bool offscreen = false;
     VkInstance instance = VK_NULL_HANDLE;
+    // Instance extension functions, this renderer's own. volk's are shared by every renderer in
+    // the process and come from the last instance made, which may not have these extensions
+    // (an offscreen preview has no window surface).
+    struct {
+        PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT = nullptr;
+        PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT = nullptr;
+        PFN_vkGetPhysicalDeviceSurfaceSupportKHR vkGetPhysicalDeviceSurfaceSupportKHR = nullptr;
+        PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR = nullptr;
+        PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR =
+            nullptr;
+        PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR = nullptr;
+    } own;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     std::function<VkSurfaceKHR_T*(VkInstance_T*)> create_surface;
     VkPhysicalDevice gpu = VK_NULL_HANDLE;
@@ -258,6 +270,21 @@ struct Renderer::Impl {
         info.ppEnabledLayerNames = layers.data();
         check(vkCreateInstance(&info, nullptr, &instance), "Creating the Vulkan instance");
         volkLoadInstance(instance);
+        own.vkCreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
+        own.vkDestroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
+        own.vkGetPhysicalDeviceSurfaceSupportKHR =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>(
+                vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceSurfaceSupportKHR"));
+        own.vkGetPhysicalDeviceSurfaceFormatsKHR =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
+                vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"));
+        own.vkGetPhysicalDeviceSurfaceCapabilitiesKHR =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR>(
+                vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"));
+        own.vkDestroySurfaceKHR = reinterpret_cast<PFN_vkDestroySurfaceKHR>(
+            vkGetInstanceProcAddr(instance, "vkDestroySurfaceKHR"));
         if (desc.validation) {
             VkDebugUtilsMessengerCreateInfoEXT minfo{
                 VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
@@ -267,7 +294,7 @@ struct Renderer::Impl {
                                 VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
             minfo.pfnUserCallback = &Impl::on_validation_message;
             minfo.pUserData = this;
-            check(vkCreateDebugUtilsMessengerEXT(instance, &minfo, nullptr, &messenger),
+            check(own.vkCreateDebugUtilsMessengerEXT(instance, &minfo, nullptr, &messenger),
                   "Creating the validation messenger");
         }
     }
@@ -315,7 +342,7 @@ struct Renderer::Impl {
                 if (!(families[q].queueFlags & VK_QUEUE_GRAPHICS_BIT)) continue;
                 if (surface) {
                     VkBool32 present = VK_FALSE;
-                    vkGetPhysicalDeviceSurfaceSupportKHR(d, q, surface, &present);
+                    own.vkGetPhysicalDeviceSurfaceSupportKHR(d, q, surface, &present);
                     if (!present) continue;
                 }
                 const int score = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU     ? 3
@@ -380,7 +407,10 @@ struct Renderer::Impl {
         info.ppEnabledExtensionNames = extensions.data();
         info.pEnabledFeatures = &features;
         check(vkCreateDevice(gpu, &info, nullptr, &device), "Creating the Vulkan device");
-        volkLoadDevice(device);
+        // Device functions stay the Vulkan loader's (from volkLoadInstance), which pass each
+        // call to the device it names. volkLoadDevice would point them all at this device's
+        // driver, and an editor has several renderers (the viewport, the object and material
+        // previews) whose devices would then be called with each other's functions.
         vkGetDeviceQueue(device, queue_family, 0, &queue);
 
         VmaVulkanFunctions functions{};
@@ -467,9 +497,9 @@ struct Renderer::Impl {
 
     void choose_swapchain_format() {
         uint32_t count = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &count, nullptr);
+        own.vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &count, nullptr);
         std::vector<VkSurfaceFormatKHR> formats(count);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &count, formats.data());
+        own.vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &count, formats.data());
         color_format = formats.at(0).format;
         for (const auto& f : formats)
             if ((f.format == VK_FORMAT_B8G8R8A8_SRGB || f.format == VK_FORMAT_R8G8B8A8_SRGB) &&
@@ -563,7 +593,7 @@ struct Renderer::Impl {
             color_views.push_back(offscreen_color.view);
         } else {
             VkSurfaceCapabilitiesKHR caps;
-            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu, surface, &caps);
+            own.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu, surface, &caps);
             if (caps.currentExtent.width != UINT32_MAX) extent = caps.currentExtent;
             extent.width =
                 std::clamp(extent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
@@ -671,7 +701,7 @@ struct Renderer::Impl {
     void recreate_surface() {
         vkDeviceWaitIdle(device);
         destroy_target();
-        vkDestroySurfaceKHR(instance, surface, nullptr);
+        own.vkDestroySurfaceKHR(instance, surface, nullptr);
         surface = reinterpret_cast<VkSurfaceKHR>(
             create_surface(reinterpret_cast<VkInstance_T*>(instance)));
         if (!surface) throw RenderError("Recreating the window surface failed");
@@ -1741,8 +1771,8 @@ struct Renderer::Impl {
             if (allocator) vmaDestroyAllocator(allocator);
             vkDestroyDevice(device, nullptr);
         }
-        if (surface) vkDestroySurfaceKHR(instance, surface, nullptr);
-        if (messenger) vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
+        if (surface) own.vkDestroySurfaceKHR(instance, surface, nullptr);
+        if (messenger) own.vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
         if (instance) vkDestroyInstance(instance, nullptr);
     }
 };

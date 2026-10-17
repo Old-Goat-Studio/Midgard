@@ -10,7 +10,9 @@ An object made from a model file (its source, in the project's objects/ folder) 
 the engine: each of the model's materials becomes a part with a mesh (content "obj:<id>/<n>")
 and a material whose textures are KTX2 content ("obj:<id>/tex<n>"), and the object's collider
 setting adds the collision shape. Simpler versions of the model (levels of detail, "lods") are
-drawn from a distance on.
+drawn from a distance on. The Material editor's changes to a model's materials are kept in the
+object's settings ("materials": {"<material index>": a material component}) and replace the
+model's own when the object is shown or cooked.
 """
 import json
 import math
@@ -51,6 +53,7 @@ class CookedObject:
     warnings: list[str] = field(default_factory=list)
     materials: list[dict[str, Any]] = field(default_factory=list)  # as the model has them
     bounds: list[float] = field(default_factory=lambda: [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5])
+    part_materials: list[int] = field(default_factory=list)  # each part's model material
 
 
 def mesh_id(object_id: str, index: int, lod: int = 0) -> str:
@@ -135,7 +138,9 @@ def cook_object(objects_dir: Path, obj: ObjectDef) -> CookedObject:
             continue
         lods.append((float(lod.get("distance", 0.0)), lod_model["parts"]))
     parts: list[dict[str, Any]] = []
+    part_materials: list[int] = []
     for i, part in enumerate(model["parts"]):
+        part_materials.append(part["material"])
         files[mesh_id(obj.id, i)] = (f"models/{obj.id}/{i}.glb", part["glb"])
         mesh: dict[str, Any] = {"asset": mesh_id(obj.id, i)}
         for k, (distance, lod_parts) in enumerate(lods, start=1):
@@ -154,7 +159,20 @@ def cook_object(objects_dir: Path, obj: ObjectDef) -> CookedObject:
         parts.append({"name": "collider", "components": {
             "transform": {"position": [(a + b) / 2 for a, b in zip(lo, hi, strict=True)]},
             "collider": {"size": [max(b - a, MIN_BOX) for a, b in zip(lo, hi, strict=True)]}}})
-    return CookedObject(parts, files, warnings, list(model["materials"]), list(model["bounds"]))
+        part_materials.append(-1)
+    return CookedObject(parts, files, warnings, list(model["materials"]), list(model["bounds"]),
+                        part_materials)
+
+
+def model_material(obj: ObjectDef, cooked: CookedObject, index: int) -> dict[str, Any]:
+    """A model's material as a material component, before the Material editor's changes."""
+    return _material(obj.id, cooked.materials[index])
+
+
+def object_material(obj: ObjectDef, cooked: CookedObject, index: int) -> dict[str, Any]:
+    """A model's material as shown: the Material editor's version if it has one."""
+    override = obj.settings.get("materials", {}).get(str(index))
+    return dict(override) if override is not None else model_material(obj, cooked, index)
 
 
 # ---- a cache, so the editor imports each model once per change ----------------------------
@@ -177,7 +195,9 @@ class ObjectCache:
     def key(self, objects_dir: Path, obj: ObjectDef) -> tuple:
         sources = [obj.source or ""] + [lod.get("source", "") for lod in
                                         obj.settings.get("lods", [])]
-        return (str(objects_dir), obj.id, json.dumps(obj.settings, sort_keys=True),
+        # (Material changes don't need the model imported again: see object_content.)
+        settings = {k: v for k, v in obj.settings.items() if k != "materials"}
+        return (str(objects_dir), obj.id, json.dumps(settings, sort_keys=True),
                 tuple((s, _stamp(objects_dir / s)) for s in sources if s))
 
     def cooked(self, objects_dir: Path, obj: ObjectDef) -> CookedObject:
@@ -198,22 +218,43 @@ def object_content(project, obj: ObjectDef) -> CookedObject:
     id -> (path, data)) and its bounds. Imported objects come from the cache (raising
     ObjectError if the model can't be imported); those made in the editor are their template,
     with the meshes of the editor's primitives and of objects/."""
+    from . import textures
     if obj.source:
-        return CACHE.cooked(project.objects_dir, obj)
-    from .cook import BUILTIN_PREFIX, mesh_asset_data  # (cook uses this module)
-    files: dict[str, tuple[str, bytes]] = {}
-    warnings = []
-    for part in obj.parts:
-        mesh = part.get("components", {}).get("mesh", {})
-        for asset in [mesh.get("asset")] + [lod.get("asset") for lod in mesh.get("lods", [])]:
-            if not asset or asset.startswith(BUILTIN_PREFIX) or asset in files:
+        base = CACHE.cooked(project.objects_dir, obj)
+        overrides = obj.settings.get("materials", {})
+        parts = []
+        for part, index in zip(base.parts, base.part_materials, strict=True):
+            if index >= 0 and str(index) in overrides:
+                part = {**part, "components": {**part["components"],
+                                               "material": dict(overrides[str(index)])}}
+            parts.append(part)
+        content = CookedObject(parts, dict(base.files), list(base.warnings), base.materials,
+                               base.bounds, base.part_materials)
+    else:
+        from .cook import BUILTIN_PREFIX, mesh_asset_data  # (cook uses this module)
+        content = CookedObject(list(obj.parts), {}, [], [], template_bounds(obj.parts))
+        for part in obj.parts:
+            mesh = part.get("components", {}).get("mesh", {})
+            for asset in [mesh.get("asset")] + [lod.get("asset") for lod in mesh.get("lods", [])]:
+                if not asset or asset.startswith(BUILTIN_PREFIX) or asset in content.files:
+                    continue
+                data = mesh_asset_data(project, asset)
+                if data is None:
+                    content.warnings.append(f"mesh '{asset}' is not in the project")
+                else:
+                    content.files[asset] = (asset, data)
+    # Image files the materials use (the Material editor's choices).
+    for part in content.parts:
+        for texture in textures.components_textures(part.get("components", {})):
+            if texture in content.files or textures.parse(texture) is None:
                 continue
-            data = mesh_asset_data(project, asset)
+            data = textures.texture_data(project.root, texture)
             if data is None:
-                warnings.append(f"mesh '{asset}' is not in the project")
+                content.warnings.append(f"texture '{textures.describe(texture)}' is not in the "
+                                        "project (or can't be read)")
             else:
-                files[asset] = (asset, data)
-    return CookedObject(list(obj.parts), files, warnings, [], template_bounds(obj.parts))
+                content.files[texture] = (textures.pak_path(texture), data)
+    return content
 
 
 # ---- the object library -------------------------------------------------------------------
@@ -376,3 +417,15 @@ class ObjectRenderer:
             return None
         self.error = None
         return QImage(pixels, width, height, QImage.Format.Format_RGBA8888).copy()
+
+
+_shared: ObjectRenderer | None = None
+
+
+def shared_renderer() -> ObjectRenderer:
+    """The one offscreen renderer the Objects panel and the Material editor draw with (made
+    when first needed)."""
+    global _shared
+    if _shared is None:
+        _shared = ObjectRenderer()
+    return _shared

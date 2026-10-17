@@ -66,4 +66,8 @@ Model load_model(const std::filesystem::path& file, const ImportSettings& settin
 // A .glb (or a .gltf with everything embedded) from memory.
 Model load_model(std::span<const uint8_t> bytes, const ImportSettings& settings = {});
 
+// An image file (PNG or JPEG) as a texture with mipmaps: sRGB for colours (base colour,
+// emissive), linear for the rest. Throws AssetError for one that can't be read.
+render::TextureData load_image(std::span<const uint8_t> bytes, bool srgb);
+
 }  // namespace midgard

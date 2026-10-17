@@ -217,6 +217,9 @@ class PreferencesDialog(QDialog):
         self.setWindowTitle("Preferences")
         self.settings = settings
         form = QFormLayout(self)
+        self.open_last = QCheckBox("Open the last project when Midgard starts")
+        self.open_last.setChecked(bool(settings.get("open_last_project")))
+        form.addRow("Starting", self.open_last)
         self.keep = QSpinBox(minimum=1, maximum=100, value=int(settings.get("backup_keep")))
         self.minutes = QSpinBox(minimum=1, maximum=120, suffix=" min",
                                 value=int(settings.get("backup_minutes")))
@@ -252,6 +255,7 @@ class PreferencesDialog(QDialog):
         form.addRow(buttons)
 
     def _save(self) -> None:
+        self.settings.set("open_last_project", self.open_last.isChecked())
         self.settings.set("backup_keep", self.keep.value())
         self.settings.set("backup_minutes", self.minutes.value())
         self.settings.set("use_x11", self.x11.isChecked())

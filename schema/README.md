@@ -20,7 +20,11 @@ default, `convex`, `mesh` or `none`) and `lods` (`[{"source", "distance"}]`, sim
 with the same materials)) have
 their parts written by the cook step: a part per material, its mesh as content
 `obj:<id>/<n>` (`models/<id>/<n>.glb` in `game.pak`) and its textures as `obj:<id>/tex<n>`
-(`models/<id>/tex<n>.ktx2`); levels of detail are `obj:<id>/<n>/lod<k>`.
+(`models/<id>/tex<n>.ktx2`); levels of detail are `obj:<id>/<n>/lod<k>`. Changes made
+in the Material editor are kept in `settings.materials` (`{"<material index>": a material
+component}`) and replace the model's materials in the cooked parts. Image files that materials
+use (`tex:<path>`, the path relative to the project folder) are cooked to
+`images/<path>.ktx2` (`images/<path>.linear.ktx2` for `?linear`).
 
 ## Versioning
 
