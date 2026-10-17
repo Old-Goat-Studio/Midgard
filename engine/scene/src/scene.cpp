@@ -87,7 +87,16 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
                                           vec3(c, "rotation", glm::vec3(0.0f)),
                                           vec3(c, "scale", glm::vec3(1.0f)));
     } else if (name == "mesh") {
-        reg.emplace_or_replace<MeshRef>(e, c.at("asset").get<std::string>());
+        MeshRef ref{c.at("asset").get<std::string>(), {}};
+        if (const auto lods = c.find("lods"); lods != c.end() && lods->is_array()) {
+            for (const json& lod : *lods)
+                ref.lods.push_back({lod.at("asset").get<std::string>(),
+                                    std::max(lod.value("distance", 0.0f), 0.0f)});
+            std::stable_sort(
+                ref.lods.begin(), ref.lods.end(),
+                [](const MeshLod& a, const MeshLod& b) { return a.distance < b.distance; });
+        }
+        reg.emplace_or_replace<MeshRef>(e, std::move(ref));
     } else if (name == "material") {
         Material m;
         m.color = color4(c, "color");

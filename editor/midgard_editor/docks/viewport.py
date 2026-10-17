@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWi
 
 from .. import engine
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
+from ..objects import ObjectError, object_content
 from ..project import Project
 from ..scene_model import MAIN_SCENE, parents_first
 from .gizmos import GizmoPanel
@@ -131,6 +132,8 @@ class ViewportPanel(QWidget):
         self.camera = OrbitCamera()
         self.view = None  # the engine's _midgard.Viewport, when there is one
         self._sent_meshes: set[str] = set()
+        self._sent_content: dict[str, int] = {}  # object content id -> hash of what was sent
+        self._sent_objects: dict[str, str] = {}  # object id -> the parts JSON sent
         self._render_pending = False
         self.message = QLabel()
         self.message.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -215,11 +218,14 @@ class ViewportPanel(QWidget):
         if self.project is not None:
             self.project.entities_changed.disconnect(self._entities_changed)
             self.project.scene_settings_changed.disconnect(self._settings_changed)
+            self.project.objects_changed.disconnect(self._objects_changed)
         self.project = project
+        self._sent_objects.clear()
         self.set_selected(None)
         if project is not None:
             project.entities_changed.connect(self._entities_changed)
             project.scene_settings_changed.connect(self._settings_changed)
+            project.objects_changed.connect(self._objects_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
                 self.camera = OrbitCamera.looking(camera.transform()["position"],
@@ -290,7 +296,57 @@ class ViewportPanel(QWidget):
                 self._put(entity)
         self.camera_changed()
 
+    def _send_object(self, object_id: str) -> None:
+        """An object's template, with its meshes and textures, for the instances that place
+        it (an unknown object, or one that can't be imported, shows nothing)."""
+        obj = self.project.object(object_id)
+        parts: list = []
+        if obj is not None:
+            try:
+                content = object_content(self.project, obj)
+            except ObjectError as e:
+                log.warning("Viewport: object %s: %s", obj.name, e)
+            else:
+                parts = content.parts
+                for content_id, (_path, data) in content.files.items():
+                    if self._sent_content.get(content_id) == hash(data):
+                        continue
+                    try:
+                        if data[:4] == b"glTF":
+                            self.view.set_mesh(content_id, data)
+                        else:
+                            self.view.set_texture(content_id, data)
+                    except RuntimeError as e:
+                        log.warning("Viewport: %s: %s", content_id, e)
+                    self._sent_content[content_id] = hash(data)
+        parts_json = json.dumps(parts)
+        if self._sent_objects.get(object_id) != parts_json:
+            try:
+                self.view.set_object(object_id, parts_json)
+            except RuntimeError as e:
+                log.warning("Viewport: object %s: %s", object_id, e)
+            self._sent_objects[object_id] = parts_json
+
+    def _objects_changed(self, object_id: str) -> None:
+        """An object changed (or objects came or went): the instances in view follow."""
+        if self.project is None:
+            return
+        if object_id:
+            wanted = [object_id] if object_id in self._sent_objects else []
+        else:  # one may have been deleted, or come back with Undo
+            wanted = list(dict.fromkeys(
+                list(self._sent_objects) + [e.components["object"].get("id", "")
+                                            for e in self.project.entities()
+                                            if "object" in e.components]))
+        for i in wanted:
+            if i:
+                self._send_object(i)
+        self.request_render()
+
     def _put(self, entity) -> None:
+        object_id = entity.components.get("object", {}).get("id")
+        if object_id and object_id not in self._sent_objects:
+            self._send_object(object_id)
         asset = entity.components.get("mesh", {}).get("asset")
         if asset and not asset.startswith(BUILTIN_PREFIX) and asset not in self._sent_meshes:
             data = mesh_asset_data(self.project, asset)

@@ -141,7 +141,7 @@ def _cook_objects(project: Project, warnings: list[str]) -> CookedObjects:
         if not obj.source:
             continue
         try:
-            result = objects.cook_object(project.objects_dir, obj)
+            result = objects.CACHE.cooked(project.objects_dir, obj)
         except objects.ObjectError as e:
             warnings.append(f"Object '{obj.name}' can't be imported: {e}")
             continue

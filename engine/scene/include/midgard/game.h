@@ -12,6 +12,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "midgard/input.h"
+#include "midgard/materials.h"
 #include "midgard/package.h"
 #include "midgard/pak.h"
 #include "midgard/render/renderer.h"
@@ -103,13 +104,8 @@ private:
     std::unique_ptr<ScenePhysics> physics_;
     std::unordered_map<std::string, render::MeshId> meshes_;
     std::unordered_set<std::string> failed_meshes_;
-    // Textures by content id, and materials (the renderer's sets of textures) by their texture
-    // ids joined: made once each.
-    std::unordered_map<std::string, render::TextureId> textures_;
-    std::unordered_map<std::string, render::MaterialId> materials_;
-    std::unordered_set<std::string> failed_textures_;
-    std::vector<std::string> upload_materials(render::Renderer& renderer);
-    std::string material_key(const Material& m) const;
+    MaterialCache materials_;
+    std::vector<uint8_t> read_texture(const std::string& asset) const;
     // Meshes read for collider outlines (once each; nullptr: couldn't be read).
     mutable std::unordered_map<std::string, std::unique_ptr<render::MeshData>> outline_meshes_;
     std::unordered_set<entt::entity> inside_;  // triggers the player is in

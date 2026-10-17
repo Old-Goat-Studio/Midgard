@@ -23,12 +23,13 @@ from PySide6.QtWidgets import (
 
 from .. import transforms
 from ..meshes import PRIMITIVES
+from ..objects import new_models, object_for_model
 from ..project import Project
 from ..scene_model import Entity, descendants, parents_first, sky_component
-from ..undo import AddEntityCommand, DeleteEntityCommand, SetEntityCommand
+from ..undo import AddEntityCommand, AddObjectCommand, DeleteEntityCommand, SetEntityCommand
 
-ICONS = {"folder": "📁", "group": "🧩", "player": "🧍", "camera": "🎥", "light": "☀", "sky": "🌌",
-         "mesh": "■"}
+ICONS = {"folder": "📁", "group": "🧩", "object": "🧱", "player": "🧍", "camera": "🎥",
+         "light": "☀", "sky": "🌌", "mesh": "■"}
 # These place themselves in the world, so they stay out of groups.
 NOT_IN_GROUPS = ("player", "camera")
 ID_ROLE = Qt.ItemDataRole.UserRole
@@ -84,6 +85,7 @@ class _SceneTree(QTreeWidget):
 
 class ScenePanel(QWidget):
     entity_selected = Signal(object)  # entity id (str) or None
+    show_objects = Signal()  # Add ▸ Object ▸ Objects Panel…
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -104,6 +106,9 @@ class ScenePanel(QWidget):
         add_menu.aboutToShow.connect(self._update_add_menu)
         self.add.setMenu(add_menu)
         add_menu.insertAction(self.add_sky_action, add_menu.addAction("🧩  Group", self.add_group))
+        # Objects from the library, and model files in objects/ that aren't objects yet.
+        self.object_menu = QMenu("🧱  Object", add_menu)
+        add_menu.insertMenu(self.add_sky_action, self.object_menu)
         self.delete = QPushButton("Delete")
         self.delete.setToolTip("Delete the selected entity and what's inside it (Delete key)")
         self.delete.clicked.connect(self.delete_selected)
@@ -203,6 +208,27 @@ class ScenePanel(QWidget):
         has_sky = self.project is not None and any(
             "sky" in e.components for e in self.project.entities())
         self.add_sky_action.setEnabled(not has_sky)  # one sky per scene
+        self.fill_object_menu()
+
+    def fill_object_menu(self) -> None:
+        menu = self.object_menu
+        menu.clear()
+        if self.project is None:
+            return
+        objects = self.project.objects()
+        for obj in sorted(objects, key=lambda o: o.name.lower()):
+            menu.addAction(obj.name, lambda i=obj.id: self.add_object(i))
+        files = new_models(self.project.objects_dir, objects)
+        if files:
+            if objects:
+                menu.addSeparator()
+            for relative in files:
+                menu.addAction(f"{relative} (new)", lambda r=relative: self.add_model(r))
+        if not objects and not files:
+            menu.addAction("No objects yet: import a model in the Objects panel").setEnabled(
+                False)
+        menu.addSeparator()
+        menu.addAction("Objects Panel…", self.show_objects.emit)
 
     # ---- adding, moving and deleting -----------------------------------------------------
     def target_folder(self) -> str | None:
@@ -254,6 +280,32 @@ class ScenePanel(QWidget):
                                                      else 0.5, 0.0]},
                           "mesh": {"asset": asset},
                           "material": {"color": [0.8, 0.8, 0.8, 1.0]}}))
+
+    def add_object(self, object_id: str) -> str | None:
+        """Adds an instance of an object from the library (Add ▸ Object). Returns its id."""
+        obj = self.project.object(object_id) if self.project is not None else None
+        if obj is None:
+            return None
+        name, count = self._unique_name(obj.name)
+        entity = Entity(self.project.next_entity_id(), name, self.target_folder(),
+                        {"transform": {"position": [1.5 * count, 0.0, 0.0]},
+                         "object": {"id": obj.id}})
+        self._add(entity)
+        return entity.id
+
+    def add_model(self, relative: str) -> str | None:
+        """Makes an object of a model file in objects/ and adds an instance of it, as one
+        undoable step."""
+        if self.project is None:
+            return None
+        obj = object_for_model(self.project.objects(), relative)
+        stack = self.project.undo_stack
+        stack.beginMacro(f"Add {obj.name}")
+        try:
+            stack.push(AddObjectCommand(self.project, obj))
+            return self.add_object(obj.id)
+        finally:
+            stack.endMacro()
 
     def add_cube_entity(self) -> None:
         self.add_primitive("prim_cube")

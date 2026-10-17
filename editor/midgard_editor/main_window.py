@@ -39,6 +39,7 @@ from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_proj
 from .docks.assistant import AssistantPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
+from .docks.objects_panel import ObjectsPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.project_page import ProjectPage
 from .docks.scene_panel import ScenePanel
@@ -56,7 +57,7 @@ log = logging.getLogger(LOGGER_NAME)
 # objectName -> title. Object names are the keys in saved layouts, so never rename them.
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
-          "assistant": "Assistant", "project_page": "Project Page"}
+          "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -147,6 +148,9 @@ class MainWindow(QMainWindow):
         self.viewport = ViewportPanel()
         self.script_editor = ScriptEditorPanel(settings)
         self.project_page = ProjectPage()
+        self.objects_panel = ObjectsPanel()
+        self.objects_panel.place_requested.connect(self.place_object)
+        self.scene_panel.show_objects.connect(lambda: self.edit_object(""))
         self.assistant = AssistantPanel(settings)
         self.script_editor.ask_assistant.connect(self.ask_assistant)
         self.script_editor.commit_requested.connect(self.commit)
@@ -157,11 +161,12 @@ class MainWindow(QMainWindow):
         self.scene_panel.entity_selected.connect(self.viewport.set_selected)
         self.inspector.setMinimumWidth(340)
         self.inspector.open_script.connect(self.edit_script)
+        self.inspector.open_object.connect(self.edit_object)
         self.browser.setMinimumWidth(220)
         widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,
                    "log": self.log_panel, "history": self.history, "viewport": self.viewport,
                    "scripts": self.script_editor, "assistant": self.assistant,
-                   "project_page": self.project_page}
+                   "project_page": self.project_page, "objects": self.objects_panel}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -199,6 +204,7 @@ class MainWindow(QMainWindow):
         self._place_viewport()
         self._place_script_editor()
         self._tab_behind_viewport("project_page")
+        self._tab_behind_viewport("objects")
         self._place_assistant()
 
     def _place_assistant(self) -> None:
@@ -283,6 +289,8 @@ class MainWindow(QMainWindow):
                 self._place_assistant()
             if "project_page" not in saved:
                 self._tab_behind_viewport("project_page")
+            if "objects" not in saved:
+                self._tab_behind_viewport("objects")
 
     def reset_layout(self) -> None:
         self.dock_manager.restoreState(self._default_state)
@@ -549,6 +557,19 @@ class MainWindow(QMainWindow):
         if self.project is not None and put_project_under_git(self.project, self):
             self._refresh_git_views()
 
+    def edit_object(self, object_id: str) -> None:
+        """Shows the Objects panel, with an object selected (from the Inspector's Edit)."""
+        self.panels["objects"].toggleView(True)
+        self.panels["objects"].setAsCurrentTab()
+        if object_id:
+            self.objects_panel.select_object(object_id)
+
+    def place_object(self, object_id: str) -> None:
+        """Objects panel ▸ Place in Scene: an instance in the scene, selected, in view."""
+        if self.scene_panel.add_object(object_id) is not None:
+            self.panels["viewport"].toggleView(True)
+            self.panels["viewport"].setAsCurrentTab()
+
     def edit_script(self, module: str) -> None:
         """Shows a script in the Script editor (from the Inspector's Edit button)."""
         if not module:
@@ -592,6 +613,7 @@ class MainWindow(QMainWindow):
         self.script_editor.set_project(project)
         self.assistant.set_project(project)
         self.project_page.set_project(project)
+        self.objects_panel.set_project(project)
         self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action,
                        self.world_shape_action, self.physics_layers_action):

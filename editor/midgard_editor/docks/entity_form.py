@@ -89,6 +89,7 @@ def _remove_button(tooltip: str, slot) -> QToolButton:
 
 class EntityForm(QWidget):
     open_script = Signal(str)  # a module to open in the Script editor
+    open_object = Signal(str)  # an object to show in the Objects panel
     rebuild = Signal(str)  # the entity's set of components changed: build the form again
 
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
@@ -175,6 +176,20 @@ class EntityForm(QWidget):
                 box.valueChanged.connect(lambda _v: self._trigger_edited())
             form.addRow("Trigger size", _row(self.trigger, _remove_button(
                 "Remove the trigger", lambda: self.remove_component("trigger"))))
+        self.object = None
+        if "object" in entity.components:
+            self.object = QComboBox()
+            self.object.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            for obj in sorted(project.objects(), key=lambda o: o.name.lower()):
+                self.object.addItem(obj.name, obj.id)
+            self.object.currentIndexChanged.connect(
+                lambda _i: self.set_object(self.object.currentData()))
+            edit = QPushButton("Edit")
+            edit.setToolTip("Show the object in the Objects panel")
+            edit.clicked.connect(lambda: self.open_object.emit(
+                self._entity().components["object"].get("id", "")))
+            form.addRow("Object", _row(self.object, edit))
+            project.objects_changed.connect(self._objects_changed)
         self._build_physics_rows(entity)
         if "group" in entity.components:
             centre = QPushButton("Centre on contents")
@@ -379,6 +394,13 @@ class EntityForm(QWidget):
     def refresh(self) -> None:
         entity = self._entity()
         self.name.setText(entity.name)
+        if self.object is not None:
+            object_id = entity.components["object"].get("id", "")
+            self.object.blockSignals(True)
+            if self.object.findData(object_id) < 0:  # not in the library (deleted)
+                self.object.addItem(f"{object_id} (missing)", object_id)
+            self.object.setCurrentIndex(self.object.findData(object_id))
+            self.object.blockSignals(False)
         if self.position is not None:
             t = entity.transform()
             self.position.set_value(t["position"])
@@ -485,6 +507,24 @@ class EntityForm(QWidget):
         if entity.components["trigger"].get("size") != size:
             entity.components["trigger"] = {**entity.components["trigger"], "size": size}
             self._push(entity, "trigger size")
+
+    def set_object(self, object_id: str | None) -> None:
+        entity = self._entity()
+        if not object_id or entity.components["object"].get("id") == object_id:
+            return
+        entity.components["object"] = {**entity.components["object"], "id": object_id}
+        self._push(entity, "object")
+
+    def _objects_changed(self, _object_id: str) -> None:
+        """Objects renamed, added or removed: the list of them again."""
+        if self.object is None:
+            return
+        self.object.blockSignals(True)
+        self.object.clear()
+        for obj in sorted(self.project.objects(), key=lambda o: o.name.lower()):
+            self.object.addItem(obj.name, obj.id)
+        self.object.blockSignals(False)
+        self.refresh()
 
     def _mesh_chosen(self, _index: int) -> None:
         self.set_mesh(self.mesh.currentData())

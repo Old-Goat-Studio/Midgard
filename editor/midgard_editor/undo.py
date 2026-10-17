@@ -5,6 +5,7 @@ from typing import Any
 
 from PySide6.QtGui import QUndoCommand
 
+from .objects import ObjectDef
 from .project import Project
 from .scene_model import MAIN_SCENE, Entity, descendants
 
@@ -114,3 +115,49 @@ class SetEntityCommand(QUndoCommand):
 
     def undo(self) -> None:
         self.project.put_entity(self.old)
+
+
+class AddObjectCommand(QUndoCommand):
+    """A new object in the project's library (an imported model, or a template)."""
+
+    def __init__(self, project: Project, obj: ObjectDef, parent: QUndoCommand | None = None):
+        super().__init__(f"Add object {obj.name}", parent)
+        self.project, self.obj = project, obj
+
+    def redo(self) -> None:
+        self.project.put_object(self.obj)
+
+    def undo(self) -> None:
+        self.project.delete_object(self.obj.id)
+
+
+class SetObjectCommand(QUndoCommand):
+    """Replace an object's name, settings or parts (one Object editor edit)."""
+
+    def __init__(self, project: Project, new: ObjectDef, label: str):
+        super().__init__(f"Change object {new.name} {label}".strip())
+        old = project.object(new.id)
+        if old is None:
+            raise KeyError(new.id)
+        self.project, self.old, self.new = project, old, new
+
+    def redo(self) -> None:
+        self.project.put_object(self.new)
+
+    def undo(self) -> None:
+        self.project.put_object(self.old)
+
+
+class DeleteObjectCommand(QUndoCommand):
+    """Remove an object from the library (its files stay in objects/; its instances show
+    nothing until it comes back)."""
+
+    def __init__(self, project: Project, obj: ObjectDef):
+        super().__init__(f"Delete object {obj.name}")
+        self.project, self.obj = project, obj
+
+    def redo(self) -> None:
+        self.project.delete_object(self.obj.id)
+
+    def undo(self) -> None:
+        self.project.put_object(self.obj)

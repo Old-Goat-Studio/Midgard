@@ -15,10 +15,12 @@ read these files; neither side owns a private copy.
 The `object` table (migration 6) holds templates: `parts` is a JSON list of
 `{"name", "components"}`, each part's components as in `components.md`. An entity with an
 `object` component is an instance of one. Objects imported from a model file (`source`, under
-the project's `objects/` folder, with `settings` such as `scale`, `z_up` and `collider`) have
+the project's `objects/` folder, with `settings`: `scale`, `z_up`, `collider` (`box`, the
+default, `convex`, `mesh` or `none`) and `lods` (`[{"source", "distance"}]`, simpler model files
+with the same materials)) have
 their parts written by the cook step: a part per material, its mesh as content
 `obj:<id>/<n>` (`models/<id>/<n>.glb` in `game.pak`) and its textures as `obj:<id>/tex<n>`
-(`models/<id>/tex<n>.ktx2`).
+(`models/<id>/tex<n>.ktx2`); levels of detail are `obj:<id>/<n>/lod<k>`.
 
 ## Versioning
 

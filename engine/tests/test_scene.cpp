@@ -1029,3 +1029,19 @@ TEST_CASE("save_glb writes what load_glb reads back exactly") {
     CHECK(std::memcmp(back.vertices.data(), cube.vertices.data(),
                       cube.vertices.size() * sizeof(midgard::render::Vertex)) == 0);
 }
+
+TEST_CASE("meshes: levels of detail are chosen by distance") {
+    TestPackage pkg({{"e1_tree", R"(NULL, '{"mesh": {"asset": "mesh_cube", "lods": [
+                         {"asset": "mesh_far", "distance": 80},
+                         {"asset": "mesh_mid", "distance": 20}]}}')"}});
+    midgard::Game game(pkg.dir);
+    const auto& ref = game.scene().registry.get<midgard::MeshRef>(game.scene().find("e1_tree"));
+    CHECK(ref.at(5.0) == "mesh_cube");
+    CHECK(ref.at(20.0) == "mesh_mid");  // sorted nearest first
+    CHECK(ref.at(500.0) == "mesh_far");
+    CHECK(ref.assets() == std::vector<std::string>{"mesh_cube", "mesh_mid", "mesh_far"});
+    // Validation names the levels of detail that are missing.
+    std::string all;
+    for (const std::string& w : midgard::validate_package(pkg.dir).warnings) all += w + "\n";
+    CHECK(all.find("mesh_mid") != std::string::npos);
+}

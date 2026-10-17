@@ -72,66 +72,39 @@ render::MeshData Game::load_mesh(const std::string& asset) const {
 }
 
 void Game::upload_meshes(render::Renderer& renderer) {
-    for (entt::entity e : scene_.registry.view<const MeshRef>()) {
-        const std::string& asset = scene_.registry.get<MeshRef>(e).asset;
-        if (!meshes_.contains(asset))
-            meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
-    }
-    upload_materials(renderer);  // a missing texture is drawn without (the cook warned)
+    for (entt::entity e : scene_.registry.view<const MeshRef>())
+        for (const std::string& asset : scene_.registry.get<MeshRef>(e).assets())
+            if (!meshes_.contains(asset))
+                meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
+    // A missing texture is drawn without (the cook warned).
+    materials_.upload(scene_, renderer, [this](const std::string& t) { return read_texture(t); });
 }
 
-std::string Game::material_key(const Material& m) const {
-    std::string key;
-    for (const std::string& t : m.textures) key += t + '\n';
-    return key;
-}
-
-std::vector<std::string> Game::upload_materials(render::Renderer& renderer) {
-    std::vector<std::string> errors;
-    for (entt::entity e : scene_.registry.view<const Material>()) {
-        const Material& m = scene_.registry.get<Material>(e);
-        if (!m.textured() || materials_.contains(material_key(m))) continue;
-        render::MaterialTextures set;
-        render::TextureId* slots[5] = {&set.base_color, &set.metallic_roughness, &set.normal,
-                                       &set.occlusion, &set.emissive};
-        for (size_t i = 0; i < 5; ++i) {
-            const std::string& asset = m.textures[i];
-            if (asset.empty() || failed_textures_.contains(asset)) continue;
-            if (auto it = textures_.find(asset); it != textures_.end()) {
-                *slots[i] = it->second;
-                continue;
-            }
-            try {
-                const ContentEntry* entry = nullptr;
-                for (const ContentEntry& c : package_.manifest.content)
-                    if (c.id == asset) entry = &c;
-                if (!entry) throw AssetError("texture '" + asset + "' is not in the package");
-                if (!pak_) throw AssetError("texture '" + asset + "' needs game.pak");
-                const std::vector<uint8_t> bytes = pak_->read(entry->path);
-                *slots[i] = textures_.emplace(asset, renderer.upload_ktx2(bytes)).first->second;
-            } catch (const std::exception& ex) {
-                failed_textures_.insert(asset);
-                errors.emplace_back(ex.what());
-            }
-        }
-        materials_.emplace(material_key(m), renderer.create_material(set));
+std::vector<uint8_t> Game::read_texture(const std::string& asset) const {
+    for (const ContentEntry& c : package_.manifest.content) {
+        if (c.id != asset) continue;
+        if (!pak_) throw AssetError("it needs game.pak, which is missing");
+        return pak_->read(c.path);
     }
-    return errors;
+    throw AssetError("it is not in the package");
 }
 
 std::vector<std::string> Game::upload_new_meshes(render::Renderer& renderer) {
     std::vector<std::string> errors;
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
-        const std::string asset = scene_.registry.get<MeshRef>(e).asset;
-        if (meshes_.contains(asset) || failed_meshes_.contains(asset)) continue;
-        try {
-            meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
-        } catch (const std::exception& ex) {
-            failed_meshes_.insert(asset);
-            errors.emplace_back(ex.what());
+        for (const std::string& asset : scene_.registry.get<MeshRef>(e).assets()) {
+            if (meshes_.contains(asset) || failed_meshes_.contains(asset)) continue;
+            try {
+                meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
+            } catch (const std::exception& ex) {
+                failed_meshes_.insert(asset);
+                errors.emplace_back(ex.what());
+            }
         }
     }
-    for (std::string& error : upload_materials(renderer)) errors.push_back(std::move(error));
+    for (std::string& error : materials_.upload(
+             scene_, renderer, [this](const std::string& t) { return read_texture(t); }))
+        errors.push_back(std::move(error));
     return errors;
 }
 
@@ -213,7 +186,8 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
     outline_meshes_.erase(asset);
     bool used = false;
     for (entt::entity e : scene_.registry.view<const MeshRef>())
-        used = used || scene_.registry.get<MeshRef>(e).asset == asset;
+        for (const std::string& a : scene_.registry.get<MeshRef>(e).assets())
+            used = used || a == asset;
     if (!used) return false;
     render::MeshData mesh = load_mesh(asset);
     if (auto it = meshes_.find(asset); it != meshes_.end())
@@ -229,12 +203,13 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
 std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
     std::vector<render::DrawItem> out;
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
-        auto it = meshes_.find(scene_.registry.get<MeshRef>(e).asset);
+        const MeshRef& ref = scene_.registry.get<MeshRef>(e);
+        const double distance =
+            ref.lods.empty() ? 0.0 : glm::distance(scene_.world_position(e), origin);
+        auto it = meshes_.find(ref.at(distance));
         if (it == meshes_.end()) continue;  // not uploaded yet
         render::DrawItem d = scene_.draw_item(e, it->second, origin);
-        if (const Material* m = scene_.registry.try_get<Material>(e); m && m->textured())
-            if (const auto mat = materials_.find(material_key(*m)); mat != materials_.end())
-                d.material = mat->second;
+        if (const Material* m = scene_.registry.try_get<Material>(e)) materials_.apply(*m, d);
         out.push_back(d);
     }
     return out;

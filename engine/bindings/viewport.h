@@ -16,6 +16,7 @@
 
 #include <glm/glm.hpp>
 
+#include "midgard/materials.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
 
@@ -35,6 +36,10 @@ public:
     // {"sky": [...], "ambient": [...], "body": {...}}; a malformed body is left out.
     void set_settings(const std::string& settings_json);
     void set_mesh(const std::string& asset, std::span<const uint8_t> glb);
+    // A KTX2 texture for a texture content id (materials' "textures").
+    void set_texture(const std::string& texture, std::span<const uint8_t> ktx2);
+    // An object's template (a JSON list of parts): its instances are filled in again.
+    void set_object(const std::string& object_id, const std::string& parts_json);
     void set_camera(const glm::vec3& eye, const glm::vec3& target, float fov_degrees);
     // Outlines of colliders, triggers and the player over the scene (midgard/collider_outlines.h).
     void set_show_colliders(bool show) { show_colliders_ = show; }
@@ -62,6 +67,8 @@ private:
     Scene scene_;
     std::unordered_map<std::string, render::MeshData> mesh_data_;
     std::unordered_map<std::string, render::MeshId> meshes_;  // on the current renderer
+    std::unordered_map<std::string, std::vector<uint8_t>> texture_data_;
+    MaterialCache materials_;  // on the current renderer
     std::unique_ptr<render::Renderer> renderer_;
     glm::vec3 eye_{4.0f, 3.0f, 6.0f}, target_{0.0f, 0.5f, 0.0f};
     float fov_ = 55.0f;

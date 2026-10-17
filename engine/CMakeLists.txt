@@ -125,6 +125,7 @@ add_library(midgard_scene STATIC
     scene/src/collider_outlines.cpp
     scene/src/world_surface.cpp
     scene/src/model.cpp
+    scene/src/materials.cpp
     scene/src/stb_image_impl.cpp
 )
 target_include_directories(midgard_scene PUBLIC scene/include

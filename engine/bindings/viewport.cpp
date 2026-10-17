@@ -144,6 +144,17 @@ void Viewport::set_mesh(const std::string& asset, std::span<const uint8_t> glb) 
     mesh_data_[asset] = std::move(mesh);
 }
 
+void Viewport::set_texture(const std::string& texture, std::span<const uint8_t> ktx2) {
+    texture_data_[texture].assign(ktx2.begin(), ktx2.end());
+    materials_.forget(texture);
+    upload_meshes();
+}
+
+void Viewport::set_object(const std::string& object_id, const std::string& parts_json) {
+    scene_.set_object(object_id, parts_json);
+    upload_meshes();
+}
+
 void Viewport::set_camera(const glm::vec3& eye, const glm::vec3& target, float fov_degrees) {
     eye_ = eye;
     target_ = target;
@@ -208,6 +219,7 @@ void Viewport::attach_offscreen(uint32_t width, uint32_t height) {
 void Viewport::detach() {
     renderer_.reset();  // the renderer waits for the GPU before it lets go of the surface
     meshes_.clear();
+    materials_.clear();
 }
 
 void Viewport::resize(uint32_t width, uint32_t height) {
@@ -226,19 +238,27 @@ void Viewport::upload_meshes() {
         mesh_data_[kBuiltinSurface] = surface_mesh(scene_.settings.body);
     if (!renderer_) return;
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
-        const std::string& asset = scene_.registry.get<MeshRef>(e).asset;
-        if (meshes_.contains(asset)) continue;
-        if (asset == kBuiltinCube) {
-            meshes_.emplace(asset, renderer_->upload_mesh(render::make_cube()));
-        } else if (asset == kBuiltinSurface) {
-            if (!mesh_data_.contains(asset)) mesh_data_[asset] = surface_mesh(scene_.settings.body);
-            meshes_.emplace(asset, renderer_->upload_mesh(mesh_data_[asset]));
-        } else if (auto it = mesh_data_.find(asset); it != mesh_data_.end()) {
-            meshes_.emplace(asset, renderer_->upload_mesh(it->second));
+        for (const std::string& asset : scene_.registry.get<MeshRef>(e).assets()) {
+            if (meshes_.contains(asset)) continue;
+            if (asset == kBuiltinCube) {
+                meshes_.emplace(asset, renderer_->upload_mesh(render::make_cube()));
+            } else if (asset == kBuiltinSurface) {
+                if (!mesh_data_.contains(asset))
+                    mesh_data_[asset] = surface_mesh(scene_.settings.body);
+                meshes_.emplace(asset, renderer_->upload_mesh(mesh_data_[asset]));
+            } else if (auto it = mesh_data_.find(asset); it != mesh_data_.end()) {
+                meshes_.emplace(asset, renderer_->upload_mesh(it->second));
+            }
         }
     }
     for (const auto& [asset, mesh] : mesh_data_)
         if (!meshes_.contains(asset)) meshes_.emplace(asset, renderer_->upload_mesh(mesh));
+    // Textures the editor hasn't sent yet are left out until it does.
+    materials_.upload(scene_, *renderer_, [this](const std::string& texture) {
+        const auto it = texture_data_.find(texture);
+        if (it == texture_data_.end()) throw AssetError("not sent to the viewport");
+        return it->second;
+    });
 }
 
 bool Viewport::render() {
@@ -248,10 +268,16 @@ bool Viewport::render() {
     render::Camera camera;
     camera.origin = glm::dvec3(eye_);
     camera.view = glm::lookAt(glm::vec3(0.0f), target_ - eye_, glm::vec3(0, 1, 0));
+    upload_meshes();  // (cheap when nothing is new)
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
-        const auto it = meshes_.find(scene_.registry.get<MeshRef>(e).asset);
+        const MeshRef& ref = scene_.registry.get<MeshRef>(e);
+        const double distance =
+            ref.lods.empty() ? 0.0 : glm::distance(scene_.world_position(e), camera.origin);
+        const auto it = meshes_.find(ref.at(distance));
         if (it == meshes_.end()) continue;
-        draws.push_back(scene_.draw_item(e, it->second, camera.origin));
+        render::DrawItem d = scene_.draw_item(e, it->second, camera.origin);
+        if (const Material* m = scene_.registry.try_get<Material>(e)) materials_.apply(*m, d);
+        draws.push_back(d);
     }
     renderer_->set_debug_lines(
         show_colliders_

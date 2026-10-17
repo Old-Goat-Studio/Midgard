@@ -39,8 +39,29 @@ struct Transform {
     glm::vec3 scale{1.0f};
 };
 
+// A simpler version of a mesh, drawn from a distance on.
+struct MeshLod {
+    std::string asset;
+    float distance = 0.0f;  // metres from the camera
+};
+
 struct MeshRef {
-    std::string asset;  // content id in the manifest
+    std::string asset;          // content id in the manifest
+    std::vector<MeshLod> lods;  // simpler versions for far away, nearest first
+
+    // The mesh to draw at a distance from the camera.
+    const std::string& at(double distance) const {
+        const std::string* out = &asset;
+        for (const MeshLod& lod : lods)
+            if (distance >= lod.distance) out = &lod.asset;
+        return *out;
+    }
+    // The mesh and its levels of detail.
+    std::vector<std::string> assets() const {
+        std::vector<std::string> out{asset};
+        for (const MeshLod& lod : lods) out.push_back(lod.asset);
+        return out;
+    }
 };
 
 // glTF's metal/roughness material: factors, and textures (content ids of KTX2 textures in the

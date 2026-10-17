@@ -232,6 +232,16 @@ PYBIND11_MODULE(_midgard, m) {
             },
             py::arg("asset"), py::arg("glb"), "A mesh (glTF binary) for a mesh asset id.")
         .def(
+            "set_texture",
+            [](Viewport& v, const std::string& texture, const py::bytes& ktx2) {
+                const std::string_view data = ktx2;
+                v.set_texture(
+                    texture, std::span(reinterpret_cast<const uint8_t*>(data.data()), data.size()));
+            },
+            py::arg("texture"), py::arg("ktx2"), "A KTX2 texture for a texture content id.")
+        .def("set_object", &Viewport::set_object, py::arg("object_id"), py::arg("parts_json"),
+             "An object's template (JSON list of {name, components}); its instances follow.")
+        .def(
             "set_camera",
             [](Viewport& v, const std::array<float, 3>& eye, const std::array<float, 3>& target,
                float fov) { v.set_camera(vec3(eye), vec3(target), fov); },
