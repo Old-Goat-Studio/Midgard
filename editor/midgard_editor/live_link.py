@@ -21,6 +21,7 @@ Each message is a 4-byte big-endian length followed by UTF-8 JSON
 """
 import json
 import logging
+import sqlite3
 import struct
 from enum import Enum
 from pathlib import Path
@@ -29,6 +30,7 @@ from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
+from .objects import ObjectError, object_content
 from .project import Project
 from .scene_model import parents_first
 from .version import VERSION
@@ -113,12 +115,15 @@ class PlaySession(QObject):
         self.package: Path | None = None
         self._known: set[str] = set()   # entity ids the running game has
         self._cooked_assets: set[str] = set()  # content ids in the package's game.pak
+        self._game_objects: dict[str, str] = {}  # object id -> the parts JSON the game has
         self.watcher = QFileSystemWatcher(self)
         self.watcher.directoryChanged.connect(self._assets_touched)
         self.watcher.fileChanged.connect(self._assets_touched)
         self._asset_timer = QTimer(self, singleShot=True, interval=300)  # saves come in bursts
         self._asset_timer.timeout.connect(self._reload_assets)
         project.entities_changed.connect(self._entities_changed)
+        project.objects_changed.connect(self._objects_changed)
+        project.files_changed.connect(self._files_changed)
 
     # ---- control ------------------------------------------------------------------------
     def start(self, runtime: Path | list[str], package: Path) -> None:
@@ -130,6 +135,7 @@ class PlaySession(QObject):
         self._known = {e.id for e in self.project.entities()}
         self.package = package
         self._cooked_assets = self._package_assets()
+        self._game_objects = self._package_objects()
         self._watch_assets()
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -278,6 +284,8 @@ class PlaySession(QObject):
         # cooked into game.pak before the entity that uses it is sent.
         if used_mesh_assets(self.project) - self._cooked_assets:
             self._reload_assets()
+        else:
+            self._sync_objects()  # an object newly placed: the game gets it first
         if entity_id:
             self.send(entity_message(self.project, entity_id))
             self._known.add(entity_id)
@@ -309,6 +317,64 @@ class PlaySession(QObject):
         for item in sorted(c for c in changed if c.startswith(SCRIPT_PREFIX)):
             self.send({"type": "script.changed", "module": item[len(SCRIPT_PREFIX):]})
         self._watch_assets()
+        self._sync_objects(reload=False)
+
+    def _package_objects(self) -> dict[str, str]:
+        """The objects in the package's database (the game starts with them)."""
+        try:
+            con = sqlite3.connect(f"file:{self.package / f'{self.project.name}.db'}?mode=ro",
+                                  uri=True)
+            try:
+                rows = con.execute("SELECT id, parts FROM object").fetchall()
+            finally:
+                con.close()
+        except sqlite3.Error:
+            return {}
+        return {object_id: json.dumps(json.loads(parts)) for object_id, parts in rows}
+
+    def _wanted_objects(self) -> tuple[dict[str, str], set[str]]:
+        """The parts the game should have for the objects the scene places (and those it
+        has: "[]" once gone), and the content they use."""
+        used = {e.components["object"].get("id", "") for e in self.project.entities()
+                if "object" in e.components}
+        wanted, content = {}, set()
+        for object_id in sorted((used | self._game_objects.keys()) - {""}):
+            obj = self.project.object(object_id)
+            parts: list = []
+            if obj is not None:
+                try:
+                    shown = object_content(self.project, obj)
+                    parts = shown.parts
+                    content |= set(shown.files)
+                except ObjectError as e:
+                    log.warning("Object %s: %s", obj.name, e)
+            wanted[object_id] = json.dumps(parts)
+        return wanted, content
+
+    def _sync_objects(self, reload: bool = True) -> None:
+        """Sends the game objects whose templates changed (object.put), once their meshes and
+        textures are in its game.pak."""
+        if self.socket is None:
+            return
+        wanted, _content = self._wanted_objects()
+        changed = {i: p for i, p in wanted.items() if self._game_objects.get(i) != p}
+        if not changed:
+            return
+        if reload:  # a re-imported model keeps its content ids but not its data: cook first
+            self._reload_assets()  # (then comes back here to send them)
+            return
+        for object_id, parts in changed.items():
+            self.send({"type": "object.put", "object": object_id, "parts": json.loads(parts)})
+            self._game_objects[object_id] = parts
+
+    def _objects_changed(self, _object_id: str) -> None:
+        """An object edited, re-imported, added or removed: the running game follows."""
+        self._sync_objects()
+
+    def _files_changed(self, _paths: list) -> None:
+        """Model or image files saved on disk: cooked again for the running game."""
+        if self.socket is not None:
+            self._asset_timer.start()
 
     def _package_assets(self) -> set[str]:
         try:

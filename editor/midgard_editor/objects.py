@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import engine
+from . import content_cache, engine
 
 # How an imported object collides: one box round it all (the default, cheap and stable), each
 # part's convex hull, each part's exact triangles (static scenery only), or not at all.
@@ -185,29 +185,84 @@ def _stamp(file: Path) -> tuple[int, int]:
         return 0, 0
 
 
+def object_files(objects_dir: Path, obj: ObjectDef) -> list[Path]:
+    """Every file an imported object is made from: its model and levels of detail, and the
+    buffers and images a .gltf refers to."""
+    from urllib.parse import unquote
+    out: list[Path] = []
+    sources = [obj.source or ""] + [lod.get("source", "") for lod in
+                                    obj.settings.get("lods", [])]
+    for source in sources:
+        if not source:
+            continue
+        file = objects_dir / source
+        out.append(file)
+        out += [file.parent / unquote(uri) for uri in gltf_dependencies(file)]
+    return out
+
+
+def _import_settings(obj: ObjectDef) -> dict[str, Any]:
+    # (Material changes don't need the model imported again: see object_content.)
+    return {k: v for k, v in obj.settings.items() if k != "materials"}
+
+
 class ObjectCache:
-    """Imported objects, made again when the object's settings or its files change."""
+    """Imported objects, made again when the object's settings or its files change: kept in
+    memory while the files keep their times and sizes, and on disk (build/cache/objects/) by
+    the files' contents, so a model is imported once however often it is cooked or the
+    project opened."""
 
     def __init__(self, size: int = 32):
         self.size = size
         self._items: dict[tuple, CookedObject] = {}
+        self.imports = 0  # models actually imported (for tests)
 
     def key(self, objects_dir: Path, obj: ObjectDef) -> tuple:
-        sources = [obj.source or ""] + [lod.get("source", "") for lod in
-                                        obj.settings.get("lods", [])]
-        # (Material changes don't need the model imported again: see object_content.)
-        settings = {k: v for k, v in obj.settings.items() if k != "materials"}
-        return (str(objects_dir), obj.id, json.dumps(settings, sort_keys=True),
-                tuple((s, _stamp(objects_dir / s)) for s in sources if s))
+        return (str(objects_dir), obj.id, json.dumps(_import_settings(obj), sort_keys=True),
+                tuple((str(f), _stamp(f)) for f in object_files(objects_dir, obj)))
+
+    def content_key(self, objects_dir: Path, obj: ObjectDef) -> str:
+        return content_cache.key_of(
+            "object", obj.id, _import_settings(obj),
+            [(f.relative_to(objects_dir).as_posix() if f.is_relative_to(objects_dir) else
+              f.name, content_cache.file_hash(f)) for f in object_files(objects_dir, obj)])
 
     def cooked(self, objects_dir: Path, obj: ObjectDef) -> CookedObject:
         key = self.key(objects_dir, obj)
         if key not in self._items:
-            result = cook_object(objects_dir, obj)  # raises ObjectError
+            result = self._from_disk(objects_dir, obj)
+            if result is None:
+                result = cook_object(objects_dir, obj)  # raises ObjectError
+                self.imports += 1
+                self._to_disk(objects_dir, obj, result)
             if len(self._items) >= self.size:
                 self._items.pop(next(iter(self._items)))
             self._items[key] = result
         return self._items[key]
+
+    def _disk(self, objects_dir: Path) -> content_cache.DiskCache:
+        return content_cache.DiskCache(content_cache.cache_dir(objects_dir.parent, "objects"))
+
+    def _from_disk(self, objects_dir: Path, obj: ObjectDef) -> CookedObject | None:
+        found = self._disk(objects_dir).get(self.content_key(objects_dir, obj))
+        if found is None:
+            return None
+        data, blobs = found
+        try:
+            files = {cid: (path, blobs[blob]) for cid, (path, blob) in data["files"].items()}
+            return CookedObject(data["parts"], files, data["warnings"], data["materials"],
+                                data["bounds"], data["part_materials"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def _to_disk(self, objects_dir: Path, obj: ObjectDef, result: CookedObject) -> None:
+        names = {cid: f"{i}.bin" for i, cid in enumerate(sorted(result.files))}
+        data = {"parts": result.parts, "warnings": result.warnings,
+                "materials": result.materials, "bounds": result.bounds,
+                "part_materials": result.part_materials,
+                "files": {cid: [path, names[cid]] for cid, (path, _d) in result.files.items()}}
+        self._disk(objects_dir).put(self.content_key(objects_dir, obj), data,
+                                    {names[cid]: d for cid, (_p, d) in result.files.items()})
 
 
 CACHE = ObjectCache()

@@ -65,6 +65,7 @@ def build_editor() -> None:
             *data(ROOT / "Themes", "Themes"),
             *data(ROOT / "schema", "schema"),
             *data(ROOT / "midgard512.png", "."),
+            *data(ROOT / "icons", "icons"),
             *data(source_info, "."),
             ROOT / "tools" / "midgard_launcher.py")
 

@@ -12,7 +12,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from . import engine
+from . import content_cache, engine
 
 log = logging.getLogger(__name__)
 
@@ -82,11 +82,12 @@ def copy_texture(file: Path, project_root: Path) -> str:
 
 
 class TextureCache:
-    """KTX2 bytes for "tex:" ids, encoded once per change of the file."""
+    """KTX2 bytes for "tex:" ids, encoded once per change of the file's contents."""
 
     def __init__(self, size: int = 64):
         self.size = size
         self._items: dict[tuple, bytes] = {}
+        self.encodes = 0  # images actually encoded (for tests)
 
     def data(self, project_root: Path, texture: str) -> bytes | None:
         """The texture's KTX2 bytes, or None (not a "tex:" id, a missing or unreadable file,
@@ -103,11 +104,20 @@ class TextureCache:
             return None
         key = (str(file), srgb, stat.st_mtime_ns, stat.st_size)
         if key not in self._items:
-            try:
-                data = module.encode_texture(file, srgb)
-            except RuntimeError as e:
-                log.warning("Texture %s: %s", relative, e)
-                return None
+            # On disk by the file's contents (build/cache/textures/): encoded once.
+            disk = content_cache.DiskCache(content_cache.cache_dir(project_root, "textures"))
+            content_key = content_cache.key_of("texture", content_cache.file_hash(file), srgb)
+            found = disk.get(content_key)
+            if found is not None and "ktx2" in found[1]:
+                data = found[1]["ktx2"]
+            else:
+                try:
+                    data = module.encode_texture(file, srgb)
+                except RuntimeError as e:
+                    log.warning("Texture %s: %s", relative, e)
+                    return None
+                self.encodes += 1
+                disk.put(content_key, {}, {"ktx2": data})
             if len(self._items) >= self.size:
                 self._items.pop(next(iter(self._items)))
             self._items[key] = data

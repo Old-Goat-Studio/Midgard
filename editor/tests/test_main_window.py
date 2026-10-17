@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
+from PySide6.QtCore import Qt
+
 from midgard_editor.main_window import PANELS, MainWindow
 from midgard_editor.project import GAME_TITLE_KEY, Project
 from midgard_editor.settings import Settings
@@ -85,3 +87,21 @@ def test_reopening_a_closed_project_from_recent(window, project):
     window.start.show_welcome(window.settings.recent_projects())
     assert window.start.recent.count() == 1
     assert Project.open(project.config_path).name == "HelloCube"
+
+
+def test_play_pause_and_stop_are_pictures_named_in_tooltips(window):
+    from PySide6.QtWidgets import QToolBar, QToolButton
+
+    from midgard_editor import ICONS_DIR
+
+    bar = window.findChild(QToolBar, "play_toolbar")
+    assert bar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    for name in ("play", "pause", "stop"):
+        assert (ICONS_DIR / f"{name}.png").is_file()
+    tips = {}
+    for action in (window.play_action, window.pause_action, window.stop_action):
+        assert not action.icon().isNull()
+        button = bar.widgetForAction(action)
+        assert isinstance(button, QToolButton)
+        tips[action.toolTip()] = button.toolButtonStyle()
+    assert list(tips) == ["Play (F5)", "Pause / Resume (F6)", "Stop (Shift+F5)"]

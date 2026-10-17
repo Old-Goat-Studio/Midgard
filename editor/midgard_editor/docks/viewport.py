@@ -219,6 +219,7 @@ class ViewportPanel(QWidget):
             self.project.entities_changed.disconnect(self._entities_changed)
             self.project.scene_settings_changed.disconnect(self._settings_changed)
             self.project.objects_changed.disconnect(self._objects_changed)
+            self.project.files_changed.disconnect(self._files_changed)
         self.project = project
         self._sent_objects.clear()
         self.set_selected(None)
@@ -226,6 +227,7 @@ class ViewportPanel(QWidget):
             project.entities_changed.connect(self._entities_changed)
             project.scene_settings_changed.connect(self._settings_changed)
             project.objects_changed.connect(self._objects_changed)
+            project.files_changed.connect(self._files_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
                 self.camera = OrbitCamera.looking(camera.transform()["position"],
@@ -326,6 +328,13 @@ class ViewportPanel(QWidget):
             except RuntimeError as e:
                 log.warning("Viewport: object %s: %s", object_id, e)
             self._sent_objects[object_id] = parts_json
+
+    def _files_changed(self, paths: list) -> None:
+        """Mesh files saved again on disk: sent again when their entities are (the watcher
+        tells about those next)."""
+        for path in paths:
+            if path.startswith("objects/"):
+                self._sent_meshes.discard("asset:" + path[len("objects/"):])
 
     def _objects_changed(self, object_id: str) -> None:
         """An object changed (or objects came or went): the instances in view follow."""

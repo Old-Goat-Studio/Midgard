@@ -31,6 +31,7 @@ _SOURCE_DIR = _source_dir()
 SCHEMA_DIR = BUNDLE_DIR / "schema"
 THEMES_DIR = (_SOURCE_DIR or BUNDLE_DIR) / "Themes"
 ICON_PATH = BUNDLE_DIR / "midgard512.png"
+ICONS_DIR = BUNDLE_DIR / "icons"  # the editor's button pictures
 
-__all__ = ["APP_NAME", "BUNDLE_DIR", "DESCRIPTION", "ICON_PATH", "SCHEMA_DIR", "THEMES_DIR",
-           "__version__"]
+__all__ = ["APP_NAME", "BUNDLE_DIR", "DESCRIPTION", "ICONS_DIR", "ICON_PATH", "SCHEMA_DIR",
+           "THEMES_DIR", "__version__"]

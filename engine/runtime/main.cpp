@@ -371,6 +371,14 @@ public:
                     game_.reload_entity(key);
                 acknowledge("applied row.changed " + table + " " + key);
                 return;
+            } else if (type == "object.put") {
+                const std::string id = message.at("object").get<std::string>();
+                game_.set_object(id, message.at("parts").dump());
+                if (renderer)
+                    for (const std::string& error : game_.upload_new_meshes(*renderer))
+                        warn("%s\n", error.c_str());
+                acknowledge("applied object.put " + id);
+                return;
             } else if (type == "asset.changed") {
                 const std::string id = message.at("id").get<std::string>();
                 if (renderer) game_.reload_asset(id, *renderer);

@@ -65,6 +65,7 @@ class Project(QObject):
     scene_settings_changed = Signal(str)  # scene id
     physics_layers_changed = Signal()
     objects_changed = Signal(str)  # object id, or "" when objects were added or removed
+    files_changed = Signal(list)  # model and image files changed on disk (paths in the project)
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
         super().__init__()

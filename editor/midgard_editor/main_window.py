@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QRect, Qt, QTimer
+from PySide6.QtCore import QRect, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import APP_NAME, DESCRIPTION, ICON_PATH, vcs
+from . import APP_NAME, DESCRIPTION, ICON_PATH, ICONS_DIR, vcs
 from . import layouts as layout_store
 from .about import AboutDialog, engine_info, runtime_candidates
 from .backup import BackupScheduler
@@ -52,10 +52,12 @@ from .physics_dialogs import PhysicsLayersDialog, WorldShapeDialog
 from .project import Project, ProjectError
 from .settings import Settings
 from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
+from .watch import ContentWatcher
 
 log = logging.getLogger(LOGGER_NAME)
 
 # objectName -> title. Object names are the keys in saved layouts, so never rename them.
+PLAY_ICON_SIZE = 32  # the Play, Pause and Stop buttons
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects"}
@@ -144,6 +146,7 @@ class MainWindow(QMainWindow):
         self.browser = ProjectBrowser()
         self.scene_panel = ScenePanel()
         self.session: PlaySession | None = None
+        self.content_watcher: ContentWatcher | None = None
         self.inspector = Inspector()
         self.log_panel = LogPanel()
         self.viewport = ViewportPanel()
@@ -405,7 +408,17 @@ class MainWindow(QMainWindow):
         bar = self.addToolBar("Play")
         bar.setObjectName("play_toolbar")
         bar.setMovable(False)
-        for action in (self.play_action, self.pause_action, self.stop_action):
+        # Pictures only; the name and shortcut show when the pointer rests on a button.
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        bar.setIconSize(QSize(PLAY_ICON_SIZE, PLAY_ICON_SIZE))
+        for action, name, picture in ((self.play_action, "Play", "play.png"),
+                                      (self.pause_action, "Pause / Resume", "pause.png"),
+                                      (self.stop_action, "Stop", "stop.png")):
+            icon = QIcon(str(ICONS_DIR / picture))
+            if not icon.isNull():
+                action.setIcon(icon)
+            keys = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+            action.setToolTip(f"{name} ({keys})" if keys else name)
             bar.addAction(action)
         self.play_status = QLabel()
         self.statusBar().addPermanentWidget(self.play_status)
@@ -616,6 +629,13 @@ class MainWindow(QMainWindow):
         self.project_page.set_project(project)
         self.objects_panel.set_project(project)
         MaterialDialog.close_all()
+        if self.content_watcher is not None:
+            self.content_watcher.stop()
+            self.content_watcher.deleteLater()
+            self.content_watcher = None
+        if project is not None:  # models and images saved again are picked up
+            self.content_watcher = ContentWatcher(project, parent=self)
+            self.content_watcher.start()
         self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action,
                        self.world_shape_action, self.physics_layers_action):

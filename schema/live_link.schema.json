@@ -88,6 +88,15 @@
       "required": ["type", "module"]
     },
     {
+      "description": "Editor → runtime: an object's template changed (a re-imported model, its settings or materials); every instance of it is filled in again. Its meshes and textures are in game.pak first (asset.changed). parts is the object table's parts: [] for an object that is gone.",
+      "properties": {
+        "type": { "const": "object.put" },
+        "object": { "type": "string" },
+        "parts": { "type": "array" }
+      },
+      "required": ["type", "object", "parts"]
+    },
+    {
       "description": "Runtime → editor: a script raised an error and is paused until it is reloaded. file is relative to scripts/; file and line are empty and 0 when unknown.",
       "properties": {
         "type": { "const": "script.error" },

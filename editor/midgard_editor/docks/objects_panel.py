@@ -253,10 +253,12 @@ class ObjectsPanel(QWidget):
     def set_project(self, project: Project | None) -> None:
         if self.project is not None:
             self.project.objects_changed.disconnect(self.refresh)
+            self.project.files_changed.disconnect(self.refresh)
         self.project = project
         self.stack.setCurrentIndex(0 if project is None else 1)
         if project is not None:
             project.objects_changed.connect(self.refresh)
+            project.files_changed.connect(self.refresh)  # models added or removed
         self.refresh()
 
     def selected(self) -> tuple[str, str] | None:
