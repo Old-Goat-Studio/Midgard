@@ -4,9 +4,41 @@
 
 ## A game engine with an action-focused editor
 
-*Companion to [midgard_plan.md](midgard_plan.md) · 14 October 2026 · revision 3*
+*Companion to [midgard_plan.md](midgard_plan.md) · 16 October 2026 · revision 4*
 
-This document answers the two questions in the plan, sets out an architecture for the editor (Python + PySide6) and the engine (C++), and lays out a phased roadmap. It also adapts two existing guides to Midgard: the **Theme Scheme** (View ▸ Themes) and the **About Scheme** (version, build number and About box). **Revision 3** records the answers to every open question: worlds and space, ships, action RPG systems, survival, multiplayer and services, platforms and open-source licensing. Every decision is listed in §13.
+This document answers the two questions in the plan, sets out an architecture for the editor (Python + PySide6) and the engine (C++), and lays out a phased roadmap. It also adapts two existing guides to Midgard: the **Theme Scheme** (View ▸ Themes) and the **About Scheme** (version, build number and About box). **Revision 3** records the answers to every open question: worlds and space, ships, action RPG systems, survival, multiplayer and services, platforms and open-source licensing. Every decision is listed in §13. **Revision 4** (16 October 2026) brings the document up to date with what has been built: §0 says where the project stands, §2–§5 describe the code as it is (with what is still to come marked *planned*), §10 gives each phase's status, and §13 records the decisions made while building Phase 5.
+
+---
+
+## 0. Where things stand (16 October 2026)
+
+**Phases 0–4 are done, and Phase 5 is under way**, following [`Phase5_Roadmap.md`](Phase5_Roadmap.md). Every commit runs CI: the engine on Windows, Linux x86_64, Linux arm64 and Android; the editor's tests and packaged editor on Windows and Ubuntu; and the licence, format and lint checks.
+
+| Phase | Status |
+|---|---|
+| 0 Foundations | **Done** (14 October): monorepo, Apache-2.0 housekeeping, CI on every target, contract v0. |
+| 1 Editor shell | **Done** (14 October). |
+| 2 Engine core and the vertical slice | **Done** (14 October): a cube placed in the editor runs on Windows, Linux and Android, all exported from one editor host. |
+| 3 Live link and engine bindings | **Done** (14 October): Play, Pause and Stop, hot reload, the `_midgard` module, the embedded Vulkan viewport. |
+| 4 Scripting | **Done** (14 October): games embed CPython 3.14 (Android too), the `midgard` API v1, the Script editor, Assistant v1. |
+| 5 World building | **In progress:** milestones 5.0–5.4 are done and 5.5 is in its last step (below). |
+| 6–9 | Not started. |
+
+**Phase 5 milestones**
+
+| Milestone | Status | What it brought |
+|---|---|---|
+| 5.0 Test and tooling foundation | **Done** | Image tests on software Vulkan (lavapipe) in CI, `midgard_bench` with budgets, the debug text overlay, `--selftest` and the self-test APK (passing on the developer's phone), the job system, profiling markers, the CC0 asset register. |
+| 5.1 Deterministic maths and coordinates | **Done** | Double-precision world positions, camera-relative rendering, deterministic hashes, random streams and noise that match on every target. |
+| 5.2 Shape mapping layer | **Done** | Bounded area, flat-wrap and curved cylinders, sphere outside and inside: positions, "up", gravity and wrap rules, shared with the editor through `_midgard.Body`. |
+| 5.3 Renderer foundation | **Done** | HDR and tone mapping, glTF PBR materials, KTX2/Basis textures, point and spot lights, cascaded shadows in the local "up" frame, analytic sky and fog, desktop and phone quality tiers. |
+| 5.4 Physics (Jolt) | **Done** | Jolt in double precision with gravity from the shape, rigid bodies, colliders, physics materials, layers, triggers, the character controller, the script API (raycasts, overlaps, forces), collider outlines, the world's surface mesh. The player walks round a planet and inside a cylinder. |
+| 5.5 Object editor and asset pipeline | **Steps 1–5 of 6 done** | glTF import, objects as templates placed as instances, the Objects panel (Object editor), the Material editor, re-import on change, live objects in the running game, content-hashed cooking. **Next:** step 6, Save Group as Object and the exit check. |
+| 5.6–5.18 | Not started | Next are 5.6 Cameras and 5.7 Calendar (stage 2 in `Phase5_Roadmap.md` §5). |
+
+**Also built along the way** (asked for while using the editor): **groups** (complex objects made of primitives, moved as one, and one compound physics body when they move), **viewport gizmos** (move, rotate and scale in the view's corner, following the dock onto any monitor), a viewport toolbar (Colliders, Gizmos), **cylinder and wedge** primitives, layouts saved as they change (tab order included), delete by key and right-click, **Git from the editor** (put a project under Git, commit, change markers in the Script editor), the **Project Page** (tagline, description, logo and the game's icon), opening the last project on start, and picture buttons for Play, Pause and Stop.
+
+**What a game can do today:** a scene made in the editor (primitives, imported glTF objects with textured PBR materials, lights, sky and fog) runs as an exported game on Windows, Linux and Android. The player walks in third person with physics, on flat ground, all the way round a planet or inside a cylinder. Scripts react to triggers and change the world, and Play-in-editor shows edits in the running game within a second.
 
 ---
 
@@ -17,10 +49,10 @@ This document answers the two questions in the plan, sets out an architecture fo
 | Editor ↔ engine | The editor **cooks** a project into a versioned *Midgard package* (manifest + SQLite + assets). The engine only ever loads packages. A live TCP link adds play-in-editor and hot reload, and a pybind11 module lets the editor call engine code directly. |
 | The contract | One `schema/` folder owns the SQL migrations, the package manifest's JSON Schema and the live-link message definitions. Both sides check a `format_version`. |
 | Docking | [Qt Advanced Docking System](https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System) via `PySide6-QtAds`, with floating dock containers on any monitor, named layouts, and restore that checks the monitors still exist. |
-| Engine stack | C++20, CMake, vcpkg, SDL3 (windows, input, Android), Vulkan (volk + VMA), Jolt Physics, embedded CPython via pybind11, SQLite amalgamation, RmlUi for player menus. |
+| Engine stack | C++20, CMake presets, vcpkg. **In use:** SDL3 (windows, input, Android), Vulkan 1.1 (volk + VMA), EnTT, Jolt Physics (double precision), cgltf and MikkTSpace, stb_image, KTX-Software (Basis Universal), miniz, SQLite, nlohmann-json, glm, embedded CPython 3.14 via pybind11, and a built-in debug text overlay. **Planned:** ozz-animation, miniaudio, Recast & Detour (Phase 5), RmlUi for player menus (Phase 6). |
 | Platforms | The **editor** runs on Linux and Windows. **Games** target Linux, Windows and Android, and the **dedicated server** targets Linux x86_64, Linux arm64 and Windows. Every target is export-only. Midgard's CI prebuilds a runtime template per target, so any editor host exports to any target without compiling. **macOS is out of scope** for both the editor and games. |
 | Android | Never an editor host. Exporting puts the package into a prebuilt APK/AAB template and signs it. A full Gradle/NDK build is the advanced path. |
-| Python in games | The engine embeds CPython and exposes a `midgard` module. The editor's script editor gets `.pyi` stubs of that module for completion. Game scripts are pure Python, so the same package runs on every target. |
+| Python in games | The engine embeds CPython 3.14 (on Android too) and exposes a `midgard` module. The Script editor uses its stubs (`schema/midgard.pyi`) for completion. Game scripts are pure Python, so the same package runs on every target. |
 | Genre | **3D RPG-style action games.** First-person, third-person and top-down cameras are in every game, and **players switch between them freely** (§8). |
 | RPG systems | **Combat** (co-op only, no PvP), **AI behaviour**, **companions** (with approval: they react to the player's choices and can refuse orders or leave), character animation, audio, dialogue trees (recorded voice, text-to-speech for generated words, optional subtitles, group conversations where the starter chooses), input mapping (keyboard, gamepad and touch, rebindable by players), localisation (English original, translation tables for users) and save/load UI are all in 1.0, each with its own editor subsystem (§8). |
 | Bases | **Base building, crafting, resource gathering and base raids are all in 1.0**, in both world modes, each with its own editor (Base, Crafting and Resources editors). Bases hold storage, crafting stations, power, beds, teleport pads, landing pads and defences (§7, *Bases*; §8). |
@@ -45,15 +77,15 @@ Use **three channels**. Each one does a different job, and only the first is nee
 
 ```
             ┌──────────────────────── Midgard Editor (Python / PySide6) ───────────────────────┐
-            │  project/{project}.config (JSON)   project/{project}.db (SQLite)   assets/  scripts/ │
+            │  {project}.config (JSON)   {project}.db (SQLite)   objects/  textures/  scripts/      │
             └───────┬───────────────────────────────┬───────────────────────────────┬─────────┘
                     │ 1. Cook (Build ▸ Cook)        │ 2. Live link (TCP, JSON)      │ 3. In-process
                     ▼                               ▼                               ▼
           ┌────────────────────┐         ┌──────────────────────┐        ┌───────────────────────┐
           │  Midgard package   │ loads   │ midgard_runtime      │        │ _midgard (pybind11)   │
-          │  manifest.json     │────────▶│ (game executable,    │        │ procedural terrain,   │
-          │  {project}.db      │         │  C++)                │        │ texture gen, shader   │
-          │  game.pak (assets) │         │  play / server modes │        │ compile, validation,  │
+          │  manifest.json     │────────▶│ (game executable,    │        │ validation, world     │
+          │  {project}.db      │         │  C++)                │        │ shapes, model import, │
+          │  game.pak (assets) │         │  play / server modes │        │ texture encoding,     │
           └────────────────────┘         └──────────────────────┘        │ embedded viewport     │
                                                     ▲                    └───────────────────────┘
                                                     └──── same C++ library: libmidgard ─────┘
@@ -69,11 +101,17 @@ MyGame/                       (Windows example; Linux is the same without .exe)
   data/
     manifest.json             what the package is, what built it, where to start
     MyGame.config             runtime part of {project}.config
-    MyGame.db                 runtime copy of {project}.db (editor-only tables removed)
-    game.pak                  zip of cooked assets: textures (.ktx2), meshes (.glb),
-                              shaders (.spv), scripts (.py), UI (.rml/.rcss), audio
-  python/                     embedded CPython runtime + stdlib zip
+    MyGame.db                 read-only copy of {project}.db (editor-only tables removed)
+    game.pak                  zip of cooked content:
+                                meshes/      primitives and model files (.glb)
+                                models/<id>/ imported objects: parts (.glb), textures (.ktx2)
+                                images/      image files materials use (.ktx2)
+    scripts/                  the game's scripts (.py)
+    icon.png                  the game's icon (Project Page)
+  python/                     embedded CPython 3.14 runtime + stdlib zip
 ```
+
+The engine's own shaders are compiled to SPIR-V when the engine is built and live inside it. *Planned:* project shaders (5.17), audio (5.14) and player menus (`.rml`/`.rcss`, Phase 6) join `game.pak`.
 
 `manifest.json`:
 
@@ -82,13 +120,16 @@ MyGame/                       (Windows example; Linux is the same without .exe)
   "format": "midgard-package",
   "format_version": "1.0",
   "game": { "name": "MyGame", "version": "0.3.0" },
-  "built_with": { "editor": "0.4.0+17", "engine_abi": 3 },
-  "target": { "os": "windows", "arch": "x86_64" },
-  "entry": { "scene": "scn_main", "script": "scripts/main.py" },
+  "built_with": { "editor": "0.1.0+2", "engine_abi": 0 },
+  "target": { "os": "windows", "arch": "x86_64", "role": "game" },
+  "entry": { "scene": "scn_main" },
   "database": "MyGame.db",
-  "schema_version": 12,
+  "schema_version": 6,
+  "content_hash": "sha256:…",
   "content": [
-    { "id": "tex_grass", "path": "textures/grass.ktx2", "sha256": "…" }
+    { "id": "prim_cube", "path": "meshes/prim_cube.glb", "sha256": "…" },
+    { "id": "obj:obj_crate/0", "path": "models/obj_crate/0.glb", "sha256": "…" },
+    { "id": "tex:textures/bricks.png", "path": "images/textures/bricks.png.ktx2", "sha256": "…" }
   ]
 }
 ```
@@ -97,7 +138,7 @@ Rules that keep the contract stable:
 
 - **SQLite is the shared data model.** Inventory items, currencies, quests, skills, progression curves, menus and scenes live in tables. The engine reads them with the SQLite C library, so there is no second serialisation format to keep in sync. `PRAGMA user_version` holds the schema version.
 - **The schema has one owner.** `schema/migrations/NNNN_*.sql` are applied by the editor when a project opens. The cook step refuses to run if the engine's supported range (`engine_abi`) does not cover the project's `schema_version`.
-- **Assets are cooked into runtime formats** by the editor, through the pybind11 module where the work is C++: GLSL → SPIR-V (shaderc), images → KTX2, models → glTF binary.
+- **Assets are cooked into runtime formats** by the editor, through the `_midgard` module where the work is C++: models → glTF binary parts, one per material (`import_model`), and images → KTX2 with Basis Universal (`encode_texture`). Results are kept in the project's `build/cache/` under a hash of what they're made from, so cooking only redoes what changed. *Planned:* project shaders, GLSL → SPIR-V (5.17).
 - **Everything is referenced by stable ID**, never by display name, so renaming a quest in the editor never breaks a script.
 - **The shipped database is read-only.** Player saves go to a separate `saves/{profile}.db` in the user's data folder. This is required on Android, where APK contents can't be written to, and it keeps content and save data separate everywhere.
 - **Scripts ship as `.py`.** Ship `.pyc` only if it is compiled by the runtime's own interpreter (`midgard_runtime --compile-scripts`), because bytecode is tied to the Python version.
@@ -120,11 +161,27 @@ CREATE TABLE skill_modifier(skill TEXT REFERENCES skill(id), stat TEXT, op TEXT,
 **Play** launches `midgard_runtime --package <cook dir> --editor-link 127.0.0.1:<port>` as a **separate process**, so an engine crash never takes the editor down. Messages are length-prefixed JSON over TCP:
 
 ```json
-{"type": "asset.changed", "id": "tex_grass"}
-{"type": "entity.set", "entity": "e_0042", "component": "transform", "value": {"pos": [1, 0, 4]}}
-{"type": "log", "level": "warn", "text": "Quest q_wolves: goal 2 targets unknown NPC"}
-{"type": "stats", "fps": 144, "draw_calls": 812}
+{"type": "asset.changed", "id": "obj:obj_crate/0"}
+{"type": "entity.set", "entity": "e000042", "component": "transform", "value": {"position": [1, 0, 4]}}
+{"type": "log", "level": "warn", "text": "texture 'tex:textures/bricks.png': it is not in the package"}
+{"type": "stats", "fps": 144, "draw_calls": 812, "paused": false}
 ```
+
+The messages are defined in `schema/live_link.schema.json` (protocol 0):
+
+| Message | Direction | What it does |
+|---|---|---|
+| `hello` | both | Version and protocol check when the game connects. |
+| `play`, `pause`, `resume`, `stop` | editor → game | Play controls (F6 in the game window pauses too, reported back as `state`). |
+| `entity.put`, `entity.set`, `entity.delete` | editor → game | An entity added or replaced, one component changed, or an entity removed. |
+| `row.changed` | editor → game | A database row changed (scene settings, an entity's row). |
+| `asset.changed` | editor → game | A mesh or texture in `game.pak` changed; the editor has cooked it first. |
+| `object.put` | editor → game | An object's template changed (settings, materials, a re-imported model); every instance is filled in again. |
+| `script.changed` | editor → game | A script was edited; the game reloads it. |
+| `script.error` | game → editor | A script raised an error; the Script editor marks the line. |
+| `log`, `state`, `stats` | game → editor | Log lines, Play state, and frame figures about once a second. |
+
+Edits reach the running game in well under a second. New or changed content (a mesh, a model, an image) is cooked into `game.pak` before the message that uses it is sent.
 
 TCP is used instead of named pipes because it lets the same editor drive a game running on an **Android device** through `adb forward tcp:<port> tcp:<port>`.
 
@@ -132,12 +189,15 @@ TCP is used instead of named pipes because it lets the same editor drive a game 
 
 The engine is built as a library, `libmidgard`, with three front ends: the game runtime, a headless dedicated server, and a Python extension module `_midgard` that the editor imports. The editor uses it for anything that must match the game exactly:
 
-- deterministic procedural terrain and texture generation (one implementation, so editor previews equal in-game results);
-- shader compilation and validation;
-- package validation (`_midgard.validate(package_dir)`);
-- later, an **embedded viewport**. The editor creates a `QWindow`, passes its native handle (`winId()`) to C++, and the engine creates the Vulkan surface (`vkCreateWin32SurfaceKHR` on Windows, Xlib/XCB on Linux). The window is wrapped with `QWidget.createWindowContainer()` and put in a dock.
+- **`version()`**: the engine's version, shown in the About box;
+- **`validate(package_dir)`**: package validation, run at the end of every cook;
+- **`Body(settings)`** and `shape_fingerprint()`: the world shapes (positions, "up" and gravity), exactly as the game computes them;
+- **`import_model(path, settings)`**: a glTF model as parts (`.glb`), KTX2 textures and materials, for the cook and the editor's views;
+- **`encode_texture(path, srgb)`**: an image file as KTX2 with mipmaps;
+- **`Viewport`**: the engine's renderer drawing the scene being edited, into a native window or offscreen. The editor creates a `QWindow`, passes its native handle (`winId()`) to C++, and the engine creates the Vulkan surface (Win32 on Windows, XCB on Linux). The window is wrapped with `QWidget.createWindowContainer()` and put in a dock. Offscreen viewports draw the object and material previews and the thumbnails; each renderer in the editor's process keeps its own Vulkan functions.
+- *Planned:* deterministic terrain and texture generation (5.9 onwards, one implementation so previews equal the game), and shader compilation and validation (5.17).
 
-> Start with channels 1 and 2. The embedded viewport is the riskiest part of channel 3 (native windows inside dock widgets that move between monitors), so it comes after play-in-editor works.
+All three channels are built.
 
 ### Q2. How can I handle building for Android?
 
@@ -241,30 +301,40 @@ Rules:
 | `midgard.json` | `QStandardPaths.AppDataLocation`, which resolves to `~/.local/share/Midgard/` on Linux and `%APPDATA%\Midgard\` on Windows (application name "Midgard", organisation name left empty) | Editor settings: theme, recent projects, dock layouts, monitor geometry |
 | `{project_name}.config` | Project root | Project settings (JSON) |
 | `{project_name}.db` | Project root | All structured game data (SQLite) |
-| `assets/`, `scripts/`, `ui/` | Project root | Source assets, referenced from the DB by ID |
-| `.midgard/cache/`, `build/` | Project root | Cook cache and cooked output (not committed to version control) |
+| `objects/` | Project root | Models (`.gltf` with its files, or `.glb`) for objects and meshes. Projects from before it existed have their `assets/` folder moved here when they open. |
+| `textures/` | Project root | Image files (PNG, JPEG) that materials use |
+| `scripts/` | Project root | Game scripts (`.py`) |
+| `.midgard/` | Project root | Editor-only: automatic backups and Assistant history (not committed) |
+| `build/` | Project root | Cooked output, the content-hashed cook cache (`build/cache/`) and object thumbnails (not committed) |
 
 The main window title is `Midgard - {project_name}`.
 
 ### Package layout
 
+As built (`editor/midgard_editor/`):
+
 ```
-midgard_editor/
-  __init__.py          # THEMES_DIR, ICON_PATH (see Theme and About sections)
-  version.py           # generated by bump_build.py
-  app.py               # QApplication, high-DPI policy, settings, startup theme
-  main_window.py       # menus, dock manager, layouts, title bar, About box
-  settings.py          # midgard.json read/write (atomic)
-  project/             # open/create, {project}.config, sqlite + migrations, IDs
-  undo.py              # QUndoStack helpers; every edit is a QUndoCommand
-  docks/               # generic panels: Project browser, Inspector, Log, Console
-  editors/             # one sub-package per Main Function (see below)
-  widgets/             # shared: node-graph view, property grid, curve editor
-  cook/                # cook pipeline, manifest writer, per-platform exporters
-  link/                # live-link client (QTcpSocket)
+__init__.py          THEMES_DIR, ICON_PATH, ICONS_DIR, SCHEMA_DIR (see Theme and About sections)
+version.py           generated by bump_build.py
+app.py               QApplication, high-DPI policy, settings, startup (opens the last project)
+main_window.py       menus, dock manager, layouts, Play toolbar, title bar, About box
+settings.py          midgard.json read/write (atomic)
+project.py           open/create, {project}.config, {project}.db, migrations, change signals
+undo.py              every edit is a QUndoCommand
+scene_model.py       entities, folders, groups; transforms.py: placement maths for groups and gizmos
+cook.py              Build ▸ Cook; exporter.py, export_dialog.py, android_apk.py, winicon.py: Export
+live_link.py         Play-in-editor: the game process and the TCP link
+engine.py            finds and loads the _midgard module
+objects.py           objects: import, LODs, colliders, material changes, previews
+textures.py          image textures; content_cache.py: the cook cache; watch.py: re-import on change
+meshes.py            the editor's primitives as .glb
+scripting.py, assistant.py, vcs.py (Git), backup.py, layouts.py, themes.py, about.py, branding.py,
+physics_dialogs.py (World Shape, Physics Layers), dialogs.py
+docks/               Project browser, Scene panel, Inspector (entity_form.py), Log, Viewport (with
+                     gizmos.py), Script editor, Assistant, Project Page, Objects panel, Material editor
 ```
 
-**Each Main Function is a plugin** that registers its dock widgets, menu actions, schema migrations, cook step and runtime API docs. With 14 systems, that keeps every system the same shape:
+*Planned for Phase 6*, when the data editors arrive: **each Main Function becomes a plugin** that registers its dock widgets, menu actions, schema migrations, cook step and runtime API docs. With 14 systems, that keeps every system the same shape:
 
 ```python
 class EditorModule(Protocol):
@@ -275,12 +345,12 @@ class EditorModule(Protocol):
     def cook(self, ctx, out: CookOutput): ...   # validate + write runtime rows/assets
 ```
 
-Two shared widgets do much of the work:
+Two shared widgets will do much of the work (*planned*):
 
-- **Node-graph view** (`QGraphicsView`): quest prerequisites, skill trees, progression, and later the shader graph.
-- **Property grid**: the inspector used by every system.
+- **Node-graph view** (`QGraphicsView`, built for world types in 5.11): quest prerequisites, skill trees, progression, and later the shader graph.
+- **Property grid** (Phase 6): the inspector used by every system.
 
-Undo and redo use `QUndoStack` from the first commit. Adding them later means rewriting every editor.
+Undo and redo have used `QUndoStack` from the first commit, and every edit goes through it (the History panel lists them; a slider dragged in the Material editor is one step).
 
 ### Dockable windows across multiple monitors
 
@@ -308,7 +378,8 @@ class MainWindow(QMainWindow):
 
 Layout features:
 
-- **Window ▸ Layouts**: *Default*, *Scripting*, *World Building*, *Two Monitors*, *Save Current As…*, *Reset*. Each layout is `CDockManager.saveState()` (bytes, stored base64) plus the main window geometry, saved in `midgard.json` under `layouts`.
+- **Window ▸ Layouts**: *Default* and *Two Monitors*, plus the user's own (*Save Current Layout As…*) and *Reset Layout*. More built-in layouts (*Scripting*, *World Building*) come with the editors that need them. Each layout is `CDockManager.saveState()` (bytes, stored base64) plus the main window geometry, saved in `midgard.json` under `layouts`.
+- **The current layout is kept as it changes** (every few seconds, not only on a tidy exit): docked and floating panels, and the order of tabs dragged along a tab strip.
 - **Restore safely.** After restoring, check every floating container and move it to the primary screen if its monitor has gone (for example, a laptop taken away from its dock):
 
   ```python
@@ -319,7 +390,7 @@ Layout features:
   ```
 
 - **Mixed-DPI monitors.** Qt 6 scales per monitor by default. Set `QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)` before creating the app, so 150% screens aren't rounded to 200%.
-- **Viewport docks** (Vulkan, Phase 3+) must handle `QWindow.screenChanged` and resize events by recreating the swapchain, because moving a viewport to another monitor can change its DPI and refresh rate.
+- **The Viewport dock** handles `QWindow.screenChanged` and resize events by recreating the swapchain, because moving it to another monitor can change its DPI and refresh rate. Its gizmos float in a small see-through window of their own that follows the view onto any monitor.
 - **Linux/Wayland caveat.** Wayland doesn't let applications position their own windows, so floating panels can't be restored onto a chosen monitor, and native child windows (viewports) are harder to embed. Offer a setting that starts the editor with `QT_QPA_PLATFORM=xcb` (XWayland) for full multi-monitor behaviour. Windows and X11 work as expected.
 
 **Fallback:** if ADS is ever unavailable on a platform, `QMainWindow.setDockOptions(AllowTabbedDocks | AllowNestedDocks | GroupedDragging)` with `QDockWidget` gives basic multi-monitor floating with `saveState()` and `restoreState()`.
@@ -327,6 +398,31 @@ Layout features:
 ---
 
 ## 4. Engine architecture (C++)
+
+**As built:**
+
+```
+engine/
+  core/       version, double-precision world positions, deterministic maths and hashes, job system,
+              profiling markers, package manifest, world shapes and bodies (the shape mapping layer)
+  input/      action mapping on SDL3 input (keyboard, mouse, gamepad)
+  render/     Vulkan via volk + VMA: HDR, PBR materials, KTX2/Basis textures, cascaded shadows, sky
+              and fog, quality tiers, debug lines, the debug text overlay
+  physics/    Jolt Physics (double precision): bodies, shapes, materials, layers, triggers,
+              per-body gravity, the character controller
+  scene/      package and pak loading, the scene (EnTT) from the database, objects and groups,
+              glTF import, materials, the third-person camera, validation, the world's surface,
+              collider outlines, the game loop
+  script/     embedded CPython (pybind11/embed.h); the `midgard` Python API
+  link/       the live link (length-prefixed JSON over TCP)
+  runtime/    main(): the game executable (also --selftest, --screenshot, --dump-scene)
+  server/     main(): the headless dedicated server (checks a package; networking is Phase 7)
+  bindings/   the _midgard pybind11 module for the editor
+  bench/      midgard_bench: timings checked against schema/budgets.json
+  tests/      doctest unit tests
+```
+
+**The full plan** (what is still to come is added beside these as it is built):
 
 ```
 engine/
@@ -359,7 +455,7 @@ Notes:
 
 - **One codebase, three front ends.** The dedicated server is the same engine without rendering, which is how "self-hosted in the game" and "dedicated server" share one implementation.
 - **Server authority.** Wallet, banking, inventory and quest completion are decided on the server and replicated to clients, never trusted from the client, even when the server is a player's own game.
-- **Python API.** Scripts reach engine systems only through the `midgard` module (`midgard.quests.complete("q_wolves")`, `midgard.wallet.add(player, "gold", 50)`). The build generates `.pyi` stubs from the pybind11 bindings (`pybind11-stubgen`), and the editor uses them for completion.
+- **Python API.** Scripts reach engine systems only through the `midgard` module. Today it has entities (find, move, forces), raycasts and overlaps, gravity and "up", input actions, time, the sky, logging, and the `on_start`, `on_update`, `on_trigger_enter`/`exit` and `on_reload` callbacks. Later systems add their own (`midgard.quests.complete("q_wolves")`, `midgard.wallet.add(player, "gold", 50)`). The stubs in `schema/midgard.pyi` are checked against the engine (`midgard_runtime --dump-api`) and give the Script editor its completion.
 - **Version.** CMake reads the root `VERSION` file into `midgard/version.h`, so the engine and the editor report the same release (see the About Scheme section).
 
 ### Co-op networking (2–16 players per world)
@@ -455,13 +551,13 @@ Today, when a listen-server host quits, the session ends. **Host migration** mea
 
 | Function | Editor (Python) | Engine (C++) | Notes |
 |---|---|---|---|
-| Script editor + snippets | Code editor dock (QScintilla or `QPlainTextEdit` + highlighter), completion via `jedi` + `midgard` stubs. Snippets in a `snippet` table with tags; a project-level and a user-level library. | Embedded CPython, hot reload over the live link | Ship a starter snippet set: "give item", "start quest", "on trigger enter"… |
+| Script editor + snippets | **Built (Phase 4):** code editor dock (`QPlainTextEdit` + highlighter) with line numbers, completion from the `midgard` stubs, error markers from the running game and Git change markers. Snippets in a `snippet` table with tags; a project-level and a user-level library. | Embedded CPython, hot reload over the live link | Ship a starter snippet set: "give item", "start quest", "on trigger enter"… |
 | Menu editor | WYSIWYG canvas with the widgets from the plan (text entry, buttons, drop boxes, lists, trees, radio buttons, checkboxes, panels, tabs, progress bars) and window controls | RmlUi documents generated at cook time | Window move, resize, minimize and close are behaviours of a `MenuWindow` element; player-chosen sizes and positions go in the save DB. Trees need a custom RmlUi element. |
-| World environment | Skybox, sun/moon, lighting, fog, water panels with live preview | Sky, fog and water passes | Preview through the live link first, then the embedded viewport. |
-| Physics editor | Body/shape/material inspector, collision layers matrix | Jolt | |
-| Vulkan shaders + texture generation | GLSL editor first, node graph later; texture generator (noise, gradients, tiling) | shaderc → SPIR-V; generators in C++, called via `_midgard` | One generator implementation for editor preview and runtime. |
+| World environment | Skybox, sun/moon, lighting, fog, water panels with live preview | Sky, fog and water passes | **Sky and fog are built** (5.3); the Environment editor and water are 5.8. |
+| Physics editor | Body/shape/material inspector, collision layers matrix | Jolt | **Built (5.4):** collider, rigid body and physics material rows in the Inspector, *World ▸ Physics Layers* and *World ▸ World Shape*, collider outlines in the viewport and the game (F4). |
+| Vulkan shaders + texture generation | GLSL editor first, node graph later; texture generator (noise, gradients, tiling) | shaderc → SPIR-V; generators in C++, called via `_midgard` | One generator implementation for editor preview and runtime. Image textures (KTX2) are built (5.3, 5.5); shaders and generators are 5.17. |
 | Terrain | Procedural parameters (FastNoise2 graph) + sculpt/paint brushes | Chunked heightmaps, clipmap LOD, splat materials | Sculpting needs the embedded viewport, so it comes late. |
-| Object editor | Primitives (box, sphere, cylinder, plane, stairs), boolean-free simple editing, glTF import | glTF loader | |
+| Object editor | Primitives, groups, glTF import, the Objects panel and Material editor | glTF loader, objects as templates | **Built (5.5):** cube, sphere, plane, cylinder and wedge primitives; groups; imported glTF objects with scale, up axis, collider (box, convex, mesh or none), levels of detail and thumbnails; the Material editor; re-import on change. *Next:* Save Group as Object. |
 | Inventory | Item table, categories, stacking, containers | Server-authoritative inventory | |
 | Wallet + banking | Currencies, exchange rates, **Banking editor**: bank templates with interest, fees, insurance, withdrawal rules and risk profiles (see §7, *Banks*) | Host-authoritative ledger (append-only), monthly risk events from the Calendar | **In-game currency only.** The wallet travels with the character. Banks stay in each universe, with several banks of different risk and reward. |
 | Quests | Quest list + goal editor + prerequisite graph | Quest state machine, events from game systems | Validate at cook time: unknown targets, impossible prerequisites, cycles. |
@@ -487,7 +583,7 @@ Today, when a listen-server host quits, the session ends. **Host migration** mea
 | Input mapping | Input editor: actions, contexts, default bindings, touch layouts | SDL3 input, player rebinding, device-aware prompts | Bindings live in the player's profile. |
 | Localisation | Localisation editor: string table, status, pseudo-localisation, translation kit export | ICU MessageFormat, font fallback, in-game *Export strings*, user-installed language packs, English fallback | English original; players translate. No right-to-left languages. |
 | Save/load UI | Save editor: autosave triggers, slots, slot details | Save slots (single-player), autosave only on listen servers, named manual saves on dedicated servers, thumbnails, save migrations | |
-| AI console | LLM assistant dock (see §9) | None. It is editor-only. | Uses the Claude API with the user's own key. It is off until the user turns it on. |
+| AI console | LLM assistant dock (see §9) | None. It is editor-only. | Uses the Claude API with the user's own key. It is off until the user turns it on. **v1 built (Phase 4)**: read-only tools. |
 
 ---
 
@@ -1491,7 +1587,7 @@ The sketch shows the shape only. Check the tool-runner and fallback parameters a
 
 ## 10. Roadmap
 
-Each phase ends with something that **runs**. Phases 0–3 are in strict order because everything later depends on them. From Phase 4 on, work can overlap.
+Each phase ends with something that **runs**. Phases 0–3 are in strict order because everything later depends on them. From Phase 4 on, work can overlap. §0 has the current status of every phase and milestone.
 
 ### Phase 0: Foundations
 - Monorepo: `editor/`, `engine/`, `schema/`, `platforms/`, `Themes/`, `tools/`, root `VERSION`.
@@ -1502,6 +1598,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 - Write **contract v0**: `manifest.schema.json`, first migration, live-link message list.
 
 **Exit:** CI is green on Linux and Windows, and both halves build from a clean checkout.
+**Status: done** (14 October 2026).
 
 ### Phase 1: Editor shell
 - Main window `Midgard - {project}`, New/Open/Recent project, `{project}.config`, `{project}.db` with migrations.
@@ -1515,6 +1612,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 - PyInstaller packaging through `tools/package.py`.
 
 **Exit:** a packaged editor opens a project, arranges panels across two monitors, restarts with the same layout and theme, and shows the right build number in About.
+**Status: done** (14 October 2026).
 
 ### Phase 2: Engine core and the vertical slice
 - SDL3 window, Vulkan renderer (mesh, material, camera, directional light).
@@ -1526,6 +1624,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 - **Android spike:** the same cooked package runs on a phone.
 
 **Exit:** a cube placed in the editor appears in the game on Windows, Linux and Android, all three exported from a single editor host. **This is the most important milestone in the roadmap.**
+**Status: done** (14 October 2026).
 
 ### Phase 3: Live link and engine bindings
 - Play / Stop in the editor (subprocess + TCP link), log streaming, hot reload of assets and DB rows.
@@ -1533,6 +1632,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 - Embedded Vulkan viewport dock (move between monitors without crashing).
 
 **Exit:** editing a value in the inspector updates the running game in under a second.
+**Status: done** (14 October 2026); a test checks the one-second limit with the real engine.
 
 ### Phase 4: Scripting
 - Embedded CPython in the engine, `midgard` API v1, generated stubs.
@@ -1540,8 +1640,11 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 - **Assistant v1** (§9): the dock, API key in `keyring`, read-only tools (`get_schema`, `query_project`, `read_script`), and help with scripts and the `midgard` API.
 
 **Exit:** a script reacts to a trigger and changes the world, edited and reloaded without restarting.
+**Status: done** (14 October 2026).
 
 ### Phase 5: World building
+**Status: in progress.** 5.0–5.4 are done and 5.5 is in its last step (§0 lists what each milestone brought).
+
 **The detailed plan is in [`Phase5_Roadmap.md`](Phase5_Roadmap.md)** (approved 15 October 2026):
 19 milestones (5.0–5.18), foundation first (test tooling, deterministic maths and world
 coordinates, the shape mapping layer, the renderer, physics), each with its own tests and exit
@@ -1549,24 +1652,24 @@ check. The list below is the phase's scope; where they differ, `Phase5_Roadmap.m
 Survival status effects, clothing stats, the HUD gauge, weather's effect on AI and space weather
 moved to Phase 6 (see there); Phase 5 builds their foundations.
 
-- Object editor (primitives, glTF import).
+- ~~Object editor (primitives, glTF import).~~ Built in 5.5, with objects as templates, the Material editor and groups.
 - **Calendar core** (§6): calendar templates and the standard calendar, per-body calendars generated from the seed, `TimeService`, solar phase, **seasons** (daylight, temperature, visuals), time scale, save/restore of `game_time`.
 - **Weather** (§6): weather types and tables per season and biome, regional weather with fronts, forecasts (script API), controlled and scripted weather, visuals. (Effects on AI perception, forecast devices and space weather are in Phase 6.)
 - **Survival foundation** (§6): feels-like temperature, wetness, shelter checks and heat sources, readable from scripts. (Status effects, clothing stats, placeable campfires and heaters, the HUD gauge and `survival_scale` from the difficulty are in Phase 6.)
 - Environment editor (sky, lighting, fog, water), with lighting curves authored over **solar phase** and previewed with the Calendar's time scrubber.
-- Physics editor (Jolt).
+- ~~Physics editor (Jolt).~~ Built in 5.4.
 - **Cameras** (§8): first-person, third-person and top-down views, the Camera editor, collision and shape-aware "up".
 - **Character animation** (§8): glTF import, humanoid retargeting, the Animation editor (state machines, blend spaces, layers, events), foot IK on every world shape, first-person arms.
 - **Audio** (§8): the Audio editor, sound events, buses, 3D sound, reverb zones, music playlists, ambience by biome and solar phase.
-- Renderer foundation: textures (KTX2 / Basis Universal), glTF PBR materials, cascaded shadows in the local "up" frame, HDR, sky, fog, water, desktop and phone quality tiers.
+- Renderer foundation: textures (KTX2 / Basis Universal), glTF PBR materials, cascaded shadows in the local "up" frame, HDR, sky, fog, water, desktop and phone quality tiers. *Built in 5.3, except water (5.8).*
 - Shader system: GLSL editor → SPIR-V, material editor, texture generator.
-- **Shape mapping layer** (§7, *World shapes*) built before any terrain feature, so nothing assumes "y is up": per-body gravity, character "up" vector, double-precision simulation, camera-relative rendering.
+- **Shape mapping layer** (§7, *World shapes*) built before any terrain feature, so nothing assumes "y is up": per-body gravity, character "up" vector, double-precision simulation, camera-relative rendering. *Built in 5.1, 5.2 and 5.4.*
 - Terrain in two steps. First **rectangular grids**: bounded area, then cylinder (flat wrap, then curved), with edges and cylinder ends. Then **cube-sphere** for the outside and inside of spheres. Sculpt/paint in the viewport works on all shapes.
 - **World Type editor** v1 (§7): seed + node graph with shape-aware inputs, recipe versioning, run-time generation in the game, chunk streaming, and the cross-target check (identical chunk hashes on x86_64, arm64 and Android in CI), plus generation-time budgets measured on a phone and a Raspberry Pi.
 - **Rooms:** the room manager and room changes. A planet's atmosphere ceiling, habitat docks and hollow-world exit sites lead to a **system-space** room with a procedural sky.
 - **Light models per shape** (§6, *Day and night on each world shape*), plus the inside-world atmosphere preset.
 - Per-chunk navigation meshes linked across chunk edges, cylinder joins and cube-sphere faces; map projections per shape as images (the in-game map screen is in Phase 6).
-- Testing foundation: image tests on software Vulkan in CI, cross-target generation hashes, performance budgets, and a self-test APK for phone checks.
+- Testing foundation: image tests on software Vulkan in CI, cross-target generation hashes, performance budgets, and a self-test APK for phone checks. *Built in 5.0 and 5.1.*
 
 **Exit:** a game generates, on the player's device, one world type of each shape at fixed sizes. A player walks all the way around the cylinder and both spheres with correct gravity, sees no seams, and watches a full day/night cycle on each shape. They rise out of the planet's atmosphere into space and come back down. The game ships as a package. An animated character walks the planet in all three camera views, its feet planted on the slopes, with biome ambience and music.
 
@@ -1892,9 +1995,22 @@ Margins of 32/24/32/16 px, 10 px spacing, and width = max(content width, 1.6 × 
 - **Terrain sculpting and painting** are stored as **terrain stamps** in the project, placed by world types or used directly by bounded-area maps, and reused for player terrain edits.
 - **Phase 5 sample worlds** use the smallest allowed sizes; larger sizes are tested for precision.
 
+### Decided (16 October 2026): while building Phase 5
+- **Groups** make complex objects from primitives: a group has its own transform (its centre, scaled evenly), its parts keep their scripts and components, and a group with a moving rigid body is **one compound physics body** (its parts can't use mesh colliders). Moving a part into or out of a group keeps it where it is in the world.
+- **Objects are templates.** An object is a row in the `object` table (migration 6) with a list of parts; an entity with an `object` component is an instance, and the engine fills in the parts as its children, so a changed template changes every instance. An instance acts as a group.
+- **Imported models become a part per material**, with a box collider round the whole model by default (convex, exact mesh or none on request) and optional levels of detail drawn by distance.
+- **Material changes to an imported model** are kept in the object's settings, in place of the model's own materials, so the model file is never changed and can be re-imported.
+- **Image textures are content ids** `tex:<path>` (relative to the project), with `?linear` for slots that aren't colours; chosen images are copied into `textures/`.
+- **Cooking is content-hashed:** imported models and encoded images are kept in `build/cache/` under a hash of what they're made from.
+- **The editor watches `objects/` and `textures/`** while a project is open, re-importing what changed, and the running game follows (the `object.put` message).
+- **Triggers are sensor bodies of their own**, so an entity can be both solid and a trigger.
+- **The world's surface** (`builtin:surface`) is made by the engine from the body and casts no shadow.
+- **Several renderers share the editor's process** (the viewport and the previews), so the engine never binds Vulkan's functions to one device.
+- **The editor opens the last project on start**, unless turned off in Preferences.
+
 ### Still open
 
-None. Every question raised so far has been answered. New questions will be added here as the design develops.
+- **Telling Discord what's being worked on** (Rich Presence from the editor, or posting updates through a channel webhook): notes in `discord.md`, to come back to.
 
 ### Plan corrections
 - ~~"Vulcan" → **Vulkan**~~ (applied to `midgard_plan.md`).
@@ -1912,7 +2028,7 @@ The plan asks for a description of the application to pass to Windows or Android
 
 ## What Midgard is
 A game editor (Python 3.12+, PySide6 ≥ 6.8, PySide6-QtAds) and a C++20 engine
-(SDL3, Vulkan, Jolt, CPython embed, SQLite, RmlUi). The editor cooks projects
+(SDL3, Vulkan, Jolt, EnTT, KTX/Basis, embedded CPython 3.14, SQLite). The editor cooks projects
 into Midgard packages (manifest.json + {project}.db + game.pak) that the
 engine runtime loads. Package format: <format_version>. Engine ABI: <n>.
 
