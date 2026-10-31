@@ -268,7 +268,7 @@ TEST_CASE("live edits change the running scene") {
     midgard::Scene& scene = game.scene();
     const entt::entity cube = scene.find("e1_cube");
     REQUIRE(scene.registry.valid(cube));
-    const float distance = game.third_person().distance();
+    const float distance = game.camera_rig().distance();
 
     // Replace a whole entity: same handle, new components.
     game.put_entity({{"id", "e1_cube"},
@@ -283,7 +283,7 @@ TEST_CASE("live edits change the running scene") {
     CHECK(near(scene.registry.get<midgard::Transform>(cube).position, {2, 0.5f, 0}));
     CHECK(scene.registry.get<midgard::Material>(cube).color.r == 1.0f);
     CHECK(scene.registry.get<midgard::Player>(cube).speed == 6.0f);
-    CHECK(game.third_person().distance() == doctest::Approx(distance));  // the orbit is kept
+    CHECK(game.camera_rig().distance() == doctest::Approx(distance));  // the orbit is kept
 
     // One component, then removing it.
     game.set_component("e1_cube", "material", {{"color", {0, 1, 0}}});
@@ -305,7 +305,7 @@ TEST_CASE("live edits change the running scene") {
     game.remove_entity("e1_cube");
     CHECK_FALSE(scene.registry.valid(scene.find("e1_cube")));
     CHECK_FALSE(scene.registry.valid(scene.registry.get<midgard::EntityInfo>(added).parent));
-    CHECK_FALSE(game.third_person().active());  // no player any more
+    CHECK_FALSE(game.camera_rig().active());  // no player any more
 }
 
 TEST_CASE("scene settings and entity rows reload from the database") {
@@ -1044,4 +1044,303 @@ TEST_CASE("meshes: levels of detail are chosen by distance") {
     std::string all;
     for (const std::string& w : midgard::validate_package(pkg.dir).warnings) all += w + "\n";
     CHECK(all.find("mesh_mid") != std::string::npos);
+}
+
+namespace {
+
+// A ground, a player in the middle and a camera behind it.
+std::vector<std::pair<std::string, std::string>> camera_scene(const std::string& camera = "{}") {
+    return {
+        {"e1_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                        "collider": {"size": [60, 1, 60]}}')"},
+        {"e2_player", R"(NULL, '{"transform": {"position": [0, 0.5, 0]},
+                        "mesh": {"asset": "mesh_cube"}, "player": {}}')"},
+        {"e3_camera",
+         "NULL, '{\"transform\": {\"position\": [0, 3, 6]}, \"camera\": " + camera + "}'"},
+    };
+}
+
+// Presses an action's key for one frame.
+void press(midgard::Game& game, midgard::Actions& actions, const char* key) {
+    actions.begin_frame();
+    actions.set("keyboard", key, 1.0f);
+    game.update(actions, 1.0f / 60.0f);
+    actions.begin_frame();
+    actions.set("keyboard", key, 0.0f);
+}
+
+glm::vec3 camera_axis(const midgard::Scene& scene, const glm::vec3& local) {
+    const auto& t = scene.registry.get<midgard::Transform>(scene.find("e3_camera"));
+    return glm::vec3(midgard::rotation_matrix(t.rotation) * glm::vec4(local, 0.0f));
+}
+
+glm::dvec3 camera_at(const midgard::Scene& scene) {
+    return scene.registry.get<midgard::Transform>(scene.find("e3_camera")).position;
+}
+
+void play_with(midgard::Game& game, midgard::Actions& actions, double seconds) {
+    for (double t = 0.0; t < seconds - 1e-9; t += 1.0 / 60.0) game.update(actions, 1.0f / 60.0f);
+}
+
+}  // namespace
+
+TEST_CASE("cameras: the view action steps through the views, keeping the player's facing") {
+    TestPackage pkg(camera_scene());
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    CHECK(game.camera_rig().view() == midgard::CameraView::Third);
+    // Walk right (+X) for a moment: the player turns to face that way.
+    actions.set("keyboard", "D", 1.0f);
+    play_with(game, actions, 0.5);
+    actions.set("keyboard", "D", 0.0f);
+    const auto& player = scene.registry.get<midgard::Transform>(scene.find("e2_player"));
+    const glm::vec3 facing =
+        glm::vec3(midgard::rotation_matrix(player.rotation) * glm::vec4(0, 0, -1, 0));
+    CHECK(facing.x > 0.99f);
+
+    press(game, actions, "V");  // first person: looking the way the player faces
+    CHECK(game.camera_rig().view() == midgard::CameraView::First);
+    play_with(game, actions, 1.0);
+    CHECK(glm::dot(camera_axis(scene, {0, 0, -1}), facing) > 0.99f);
+    CHECK(glm::length(camera_at(scene) - (player.position + glm::dvec3(0, 0.35, 0))) < 0.01);
+
+    press(game, actions, "V");  // top-down: high above, behind, at its fixed angle
+    play_with(game, actions, 1.0);
+    CHECK(game.camera_rig().view() == midgard::CameraView::Top);
+    const glm::dvec3 above = camera_at(scene) - player.position;
+    CHECK(above.y == doctest::Approx(18.0 * std::sin(glm::radians(60.0))).epsilon(0.02));
+    CHECK(scene.registry.get<midgard::CameraLens>(scene.find("e3_camera")).fov ==
+          doctest::Approx(45.0f));
+
+    press(game, actions, "V");  // third person again: behind the player
+    play_with(game, actions, 1.0);
+    CHECK(game.camera_rig().view() == midgard::CameraView::Third);
+    const glm::dvec3 behind = camera_at(scene) - player.position;
+    CHECK(glm::dot(glm::normalize(glm::vec3(float(behind.x), 0.0f, float(behind.z))), facing) <
+          -0.99f);
+    CHECK(glm::dot(camera_axis(scene, {0, 0, -1}), facing) > 0.5f);  // still looking that way
+    // The player faced the same way all along.
+    const glm::vec3 still =
+        glm::vec3(midgard::rotation_matrix(player.rotation) * glm::vec4(0, 0, -1, 0));
+    CHECK(glm::dot(still, facing) > 0.999f);
+}
+
+TEST_CASE("cameras: blends between views are continuous, with no jumps") {
+    TestPackage pkg(camera_scene());
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    play_with(game, actions, 0.5);
+    for (const char* step : {"to first person", "to top-down", "to third person"}) {
+        CAPTURE(step);
+        glm::dvec3 last = camera_at(game.scene());
+        glm::vec3 last_forward = camera_axis(game.scene(), {0, 0, -1});
+        press(game, actions, "V");
+        double worst_step = 0.0;
+        float worst_turn = 0.0f;
+        for (int frame = 0; frame < 60; ++frame) {
+            if (frame) game.update(actions, 1.0f / 60.0f);
+            const glm::dvec3 at = camera_at(game.scene());
+            const glm::vec3 forward = camera_axis(game.scene(), {0, 0, -1});
+            worst_step = std::max(worst_step, glm::length(at - last));
+            worst_turn = std::max(
+                worst_turn,
+                glm::degrees(std::acos(std::clamp(glm::dot(forward, last_forward), -1.0f, 1.0f))));
+            last = at;
+            last_forward = forward;
+        }
+        CHECK_FALSE(game.camera_rig().blending());  // done within a second
+        CHECK(worst_step < 1.6);                    // metres a frame (up to 16 m in 0.35 s, eased)
+        CHECK(worst_turn < 12.0f);                  // degrees a frame
+    }
+}
+
+TEST_CASE("cameras: the camera never passes through walls") {
+    // A small room of four walls round the player, lower than the camera flies.
+    auto entities = camera_scene();
+    const std::tuple<const char*, const char*, const char*> walls[] = {
+        {"e4_north", "[0, 1.5, -3]", "[6.4, 3, 0.4]"},
+        {"e5_south", "[0, 1.5, 3]", "[6.4, 3, 0.4]"},
+        {"e6_east", "[3, 1.5, 0]", "[0.4, 3, 6.4]"},
+        {"e7_west", "[-3, 1.5, 0]", "[0.4, 3, 6.4]"}};
+    for (const auto& [id, at, size] : walls)
+        entities.push_back({id, std::string("NULL, '{\"transform\": {\"position\": ") + at +
+                                    "}, \"collider\": {\"size\": " + size + "}}'"});
+    TestPackage pkg(entities);
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    play_with(game, actions, 0.5);
+    const auto& world = game.physics().world();
+    const entt::entity player = scene.find("e2_player");
+    // All the way round, low and high, near and far.
+    for (int step = 0; step < 72; ++step) {
+        CAPTURE(step);
+        actions.begin_frame();
+        actions.add_delta("mouse", "delta_x", 33.3f);                           // 5 degrees
+        actions.add_delta("mouse", "delta_y", step % 12 < 6 ? 20.0f : -20.0f);  // down, up
+        actions.add_delta("mouse", "wheel", step % 24 < 12 ? -1.0f : 1.0f);     // out, in
+        game.update(actions, 1.0f / 60.0f);
+        const glm::dvec3 cam = camera_at(scene);
+        // Nothing solid round the camera (a sphere a little smaller than the one it sweeps).
+        midgard::physics::Collider probe;
+        probe.kind = midgard::physics::Collider::Kind::Sphere;
+        probe.radius = 0.2f;
+        CHECK(world
+                  .overlaps(probe, cam, glm::quat(1, 0, 0, 0), glm::vec3(1.0f),
+                            midgard::physics::Touching::Solid)
+                  .empty());
+        // And nothing between it and the player.
+        const glm::dvec3 target =
+            scene.registry.get<midgard::Transform>(player).position + glm::dvec3(0, 0.5, 0);
+        const glm::dvec3 d = cam - target;
+        if (glm::length(d) > 0.05) {
+            const auto hit =
+                world.raycast(target, glm::vec3(d), glm::length(d),
+                              midgard::physics::Touching::Solid, game.physics().body(player));
+            CHECK_FALSE(hit.has_value());
+        }
+    }
+    // The walls pulled it in: it's inside the room, not out where it would be in the open.
+    CHECK(glm::length(glm::dvec2(camera_at(scene).x, camera_at(scene).z)) < 3.0);
+}
+
+TEST_CASE("cameras: on a planet every view stays level with the ground under the player") {
+    TestPackage pkg(
+        {
+            {"e1_planet", R"(NULL, '{"collider": {"shape": "sphere", "radius": 1000}}')"},
+            {"e2_player", R"(NULL, '{"transform": {"position": [0, 1000.5, 0]}, "player": {}}')"},
+            {"e3_camera", R"(NULL, '{"transform": {"position": [0, 1003, 6]}, "camera": {}}')"},
+        },
+        R"({"body": {"shape": "sphere_outside", "radius": 1000}})");
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    actions.set("keyboard", "W", 1.0f);
+    for (const midgard::CameraView view :
+         {midgard::CameraView::Third, midgard::CameraView::First, midgard::CameraView::Top}) {
+        CAPTURE(midgard::view_name(view));
+        game.camera_rig().set_view(scene, view, false);
+        for (int i = 0; i < 240; ++i) {  // 16 m round the planet in each view
+            game.update(actions, 1.0f / 60.0f);
+            if (i % 40) continue;
+            const glm::dvec3 cam = camera_at(scene);
+            const glm::vec3 up(glm::normalize(cam));
+            // Upright: no roll against the planet's up there, and never upside down.
+            CHECK(std::abs(glm::dot(camera_axis(scene, {1, 0, 0}), up)) < 0.01f);
+            CHECK(glm::dot(camera_axis(scene, {0, 1, 0}), up) > 0.0f);
+            CHECK(glm::length(cam) > 1000.2);  // above the ground
+        }
+    }
+}
+
+TEST_CASE("cameras: first person hides the player, and the zoom passes between views") {
+    TestPackage pkg(camera_scene());
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    play_with(game, actions, 0.5);
+    for (int i = 0; i < 40 && game.camera_rig().view() == midgard::CameraView::Third; ++i) {
+        actions.begin_frame();
+        actions.add_delta("mouse", "wheel", 2.0f);  // zooming in
+        game.update(actions, 1.0f / 60.0f);
+    }
+    CHECK(game.camera_rig().view() == midgard::CameraView::First);
+    actions.begin_frame();
+    play_with(game, actions, 1.0);               // the blend done
+    CHECK(game.camera_rig().hides_player());     // the player's model isn't drawn
+    actions.add_delta("mouse", "wheel", -1.0f);  // zooming out again
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(game.camera_rig().view() == midgard::CameraView::Third);
+    CHECK(game.camera_rig().distance() == doctest::Approx(1.5f));
+    CHECK_FALSE(game.camera_rig().hides_player());
+}
+
+TEST_CASE("cameras: scripted looks give the view back, and shakes fade out") {
+    TestPackage pkg(camera_scene());
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    play_with(game, actions, 0.5);
+    const glm::dvec3 home = camera_at(scene);
+    game.camera_rig().look({5, 2, 0}, {0, 1, 0}, 1.0f);
+    play_with(game, actions, 0.6);  // blended there, holding
+    CHECK(glm::length(camera_at(scene) - glm::dvec3(5, 2, 0)) < 1e-3);
+    CHECK(glm::dot(camera_axis(scene, {0, 0, -1}), glm::normalize(glm::vec3(-5, -1, 0))) > 0.999f);
+    play_with(game, actions, 1.5);  // the hold over, and the blend back
+    CHECK_FALSE(game.camera_rig().scripted());
+    CHECK(glm::length(camera_at(scene) - home) < 1e-3);
+
+    game.camera_rig().shake(0.3f, 0.5f);
+    play_with(game, actions, 0.1);
+    CHECK(glm::length(camera_at(scene) - home) > 1e-3);
+    CHECK(glm::length(camera_at(scene) - home) < 0.43);  // (up to 0.3 m on two axes)
+    play_with(game, actions, 0.5);
+    CHECK(glm::length(camera_at(scene) - home) < 1e-6);
+}
+
+TEST_CASE("cameras: settings come from the camera component, and edits keep the view") {
+    TestPackage pkg(camera_scene(R"({"fov": 50, "view": "top", "blend": 0.2,
+        "views": {"third": {"distance": 9, "shoulder": 0.7, "max_distance": 12},
+                  "top": {"min_pitch": 70, "max_pitch": 70, "distance": 20}}})"));
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto& lens = scene.registry.get<midgard::CameraLens>(scene.find("e3_camera"));
+    CHECK(lens.rig.third.fov == 50.0f);
+    CHECK(lens.rig.blend == doctest::Approx(0.2f));
+    CHECK(lens.rig.third.shoulder == doctest::Approx(0.7f));
+    CHECK(game.camera_rig().view() == midgard::CameraView::Top);  // starts top-down
+    CHECK(game.camera_rig().distance() == doctest::Approx(9.0f));
+    play_with(game, actions, 0.1);
+    const glm::dvec3 above = camera_at(scene) - glm::dvec3(0, 0.5, 0);
+    CHECK(above.y == doctest::Approx(20.0 * std::sin(glm::radians(70.0))).epsilon(0.01));
+
+    // The Camera editor changes a setting while playing: the view stays top-down.
+    game.set_component("e3_camera", "camera",
+                       json::parse(R"({"views": {"top": {"min_pitch": 50, "max_pitch": 50}}})"));
+    CHECK(game.camera_rig().view() == midgard::CameraView::Top);
+    play_with(game, actions, 0.1);
+    const glm::dvec3 lower = camera_at(scene) - glm::dvec3(0, 0.5, 0);
+    CHECK(lower.y == doctest::Approx(18.0 * std::sin(glm::radians(50.0))).epsilon(0.01));
+    // Over the shoulder: the third-person camera sits to the player's right.
+    game.set_component("e3_camera", "camera",
+                       json::parse(R"({"view": "third", "views": {"third": {"shoulder": 0.8}}})"));
+    game.camera_rig().set_view(scene, midgard::CameraView::Third, false);
+    play_with(game, actions, 0.1);
+    CHECK(camera_at(scene).x == doctest::Approx(0.8).epsilon(0.01));
+}
+
+TEST_CASE("input: actions added later get their default controls in older projects") {
+    TestPackage pkg(camera_scene());
+    // This project's own bindings (made before "view" existed) don't mention it.
+    const midgard::InputMap map = midgard::InputMap::load(pkg.dir / "Game.db");
+    bool view_on_v = false;
+    for (const auto& b : map.bindings())
+        view_on_v = view_on_v || (b.action == "view" && b.control == "V");
+    CHECK(view_on_v);
+}
+
+TEST_CASE("cameras: in top-down the mouse turns the view, and the keys walk relative to it") {
+    TestPackage pkg(camera_scene(R"({"view": "top"})"));
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    play_with(game, actions, 0.2);
+    const float pitch_before = camera_axis(scene, {0, 0, -1}).y;
+    actions.begin_frame();
+    actions.add_delta("mouse", "delta_x", -600.0f);  // 90 degrees: the view turns left round
+    actions.add_delta("mouse", "delta_y", 500.0f);   // ignored: the angle stays fixed
+    game.update(actions, 1.0f / 60.0f);
+    actions.begin_frame();
+    CHECK(game.camera_rig().yaw() == doctest::Approx(90.0f));
+    CHECK(camera_axis(scene, {0, 0, -1}).y == doctest::Approx(pitch_before).epsilon(1e-3));
+    // W walks "up the screen": now along -X, and the player turns to face that way.
+    const glm::dvec3 start =
+        scene.registry.get<midgard::Transform>(scene.find("e2_player")).position;
+    actions.set("keyboard", "W", 1.0f);
+    play_with(game, actions, 0.5);
+    const glm::dvec3 moved =
+        scene.registry.get<midgard::Transform>(scene.find("e2_player")).position - start;
+    CHECK(moved.x < -1.5);
+    CHECK(std::abs(moved.z) < 0.1);
 }

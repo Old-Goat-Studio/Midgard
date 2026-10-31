@@ -335,7 +335,7 @@ public:
         const glm::vec3 sky = game_.scene().settings.sky;
         return nlohmann::json{{"entities", entities}, {"sky", {sky.x, sky.y, sky.z}}}.dump();
     }
-    bool wants_mouse_look() const override { return game_.third_person().active(); }
+    bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
     std::optional<std::filesystem::path> icon() const override {
         const auto file = game_.package().root / "icon.png";

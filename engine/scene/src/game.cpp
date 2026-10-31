@@ -15,9 +15,10 @@ Game::Game(const std::filesystem::path& package_dir)
       scene_(Scene::load(package_dir / package_.manifest.database, package_.manifest.entry_scene)) {
     const auto pak_file = package_dir / "game.pak";
     if (std::filesystem::is_regular_file(pak_file)) pak_ = std::make_unique<Pak>(pak_file);
-    third_person_ = std::make_unique<ThirdPersonCamera>(scene_);
     layers_ = PhysicsLayers::load(package_dir / package_.manifest.database);
     rebuild_physics();
+    camera_ = std::make_unique<CameraRig>(scene_);
+    camera_->follow(scene_, 0.0f, camera_sweep());
 }
 
 void Game::rebuild_physics() {
@@ -29,11 +30,21 @@ InputMap Game::input_map() const {
     return InputMap::load(package_.root / package_.manifest.database);
 }
 
+CameraSweep Game::camera_sweep() const {
+    // (Not stopped by the player's own capsule.)
+    const physics::BodyId player = camera_ ? physics_->body(camera_->player()) : physics::kNoBody;
+    return [this, player](const glm::dvec3& from, const glm::vec3& direction, double distance,
+                          float radius) {
+        return physics_->world().sweep_sphere(from, direction, distance, radius,
+                                              physics::Touching::Solid, player);
+    };
+}
+
 void Game::update(const Actions& actions, float dt) {
-    const PlayerIntent intent = third_person_->steer(scene_, actions, dt);
+    const PlayerIntent intent = camera_->steer(scene_, actions, dt);
     physics_->set_player_intent(intent.walk, intent.jump);
     physics_->update(scene_, dt);  // the player walks
-    third_person_->follow(scene_);
+    camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
 }
 
@@ -119,19 +130,25 @@ void Game::put_entity(const nlohmann::json& entity) {
     const entt::entity e =
         scene_.put_entity(id, text("name"), text("parent"),
                           components != entity.end() ? *components : nlohmann::json::object());
-    refresh_third_person(e);
     physics_->rebuild(scene_, e);
+    refresh_camera(e);
 }
 
-// After an edit the player or camera may be different entities. The orbit is kept unless the
-// camera itself was edited.
-void Game::refresh_third_person(entt::entity edited) {
-    const ThirdPersonCamera old = *third_person_;
-    third_person_ = std::make_unique<ThirdPersonCamera>(scene_);
+// After an edit the player or camera may be different entities, or the camera's settings
+// changed. The player's view is kept; when the camera itself was edited, only which view it is
+// (the rest starts again from the new settings, so the edit shows).
+void Game::refresh_camera(entt::entity edited) {
+    const CameraRig::State old = camera_->state();
+    const bool was_active = camera_->active();
+    camera_ = std::make_unique<CameraRig>(scene_);
     const bool camera_edited = edited != entt::null && scene_.registry.valid(edited) &&
                                scene_.registry.all_of<CameraLens>(edited);
-    if (old.active() && !camera_edited)
-        third_person_->set_view(scene_, old.yaw(), old.elevation(), old.distance());
+    if (was_active && !camera_edited) {
+        camera_->restore(scene_, old);
+    } else if (was_active) {
+        camera_->set_view(scene_, old.view, false);
+    }
+    camera_->follow(scene_, 0.0f, camera_sweep());
 }
 
 void Game::set_object(const std::string& object_id, const std::string& parts_json) {
@@ -143,15 +160,15 @@ void Game::set_component(const std::string& entity_id, const std::string& compon
     const entt::entity e = scene_.find(entity_id);
     if (e == entt::null) throw SceneError("entity '" + entity_id + "' is not in the scene");
     scene_.set_component(e, component, value);
-    refresh_third_person(e);
     physics_->rebuild(scene_, e);
+    refresh_camera(e);
 }
 
 void Game::remove_entity(const std::string& entity_id) {
     physics_->remove(scene_.find(entity_id));
     scene_.remove_entity(entity_id);
     physics_->prune(scene_);  // an instance's parts went with it
-    refresh_third_person(entt::null);
+    refresh_camera(entt::null);
 }
 
 void Game::reload_scene_settings() {
@@ -211,7 +228,9 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
 
 std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
     std::vector<render::DrawItem> out;
+    const entt::entity hidden = camera_->hides_player() ? camera_->player() : entt::null;
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
+        if (e == hidden) continue;  // first person: the player's own model isn't drawn
         const MeshRef& ref = scene_.registry.get<MeshRef>(e);
         const double distance =
             ref.lods.empty() ? 0.0 : glm::distance(scene_.world_position(e), origin);

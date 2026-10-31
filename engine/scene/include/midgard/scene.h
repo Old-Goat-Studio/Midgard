@@ -83,10 +83,38 @@ struct Material {
     }
 };
 
+// The player's camera views (midgard/camera_rig.h).
+enum class CameraView { First, Third, Top };
+const char* view_name(CameraView view);  // "first", "third", "top"
+std::optional<CameraView> view_from_name(const std::string& name);
+
+// One view's settings. Heights are above the player's centre; distances, the shoulder offset
+// and the radius are in metres; angles in degrees.
+struct ViewSettings {
+    float fov = 55.0f;      // vertical
+    float distance = 6.0f;  // starting distance from the player (third, top)
+    float min_distance = 1.5f, max_distance = 30.0f;  // the zoom range
+    float height = 0.5f;    // what the camera looks at (the eyes, first person)
+    float shoulder = 0.0f;  // third person: to the right (left if negative)
+    float min_pitch = -10.0f, max_pitch = 80.0f;  // up and down limits
+    float radius = 0.25f;                         // the sphere kept out of walls
+    float smoothing = 0.0f;                       // seconds of lag following the player
+};
+
+struct CameraRigSettings {
+    ViewSettings first{70.0f, 0.0f, 0.0f, 0.0f, 0.35f, 0.0f, -80.0f, 80.0f, 0.1f, 0.0f};
+    ViewSettings third{};  // its fov is the lens's; its distance where the camera was placed
+    ViewSettings top{45.0f, 18.0f, 8.0f, 40.0f, 0.0f, 0.0f, 60.0f, 60.0f, 0.25f, 0.0f};
+    float blend = 0.35f;  // seconds to blend between views
+    CameraView start = CameraView::Third;
+    bool third_distance_set = false;  // false: from where the camera was placed
+};
+
 struct CameraLens {
-    float fov = 55.0f;  // vertical, degrees
+    float fov = 55.0f;  // vertical, degrees (the third-person view's)
     float near_plane = 0.05f;
     float far_plane = 500.0f;
+    CameraRigSettings rig;
 };
 
 struct DirectionalLight {

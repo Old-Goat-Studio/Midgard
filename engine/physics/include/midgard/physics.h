@@ -147,6 +147,13 @@ public:
                                   double distance, Touching which = Touching::Solid,
                                   BodyId ignore = kNoBody) const;
 
+    // How far a sphere can travel from `origin` along `direction` (normalised here) before it
+    // touches something, up to `distance` (which it returns when nothing is in the way).
+    // Cameras use it to stay out of walls.
+    double sweep_sphere(const glm::dvec3& origin, const glm::vec3& direction, double distance,
+                        float radius, Touching which = Touching::Solid,
+                        BodyId ignore = kNoBody) const;
+
     // The bodies a shape overlaps where it is placed (their user values, smallest first).
     std::vector<std::uint64_t> overlaps(const Collider& shape, const glm::dvec3& position,
                                         const glm::quat& rotation,

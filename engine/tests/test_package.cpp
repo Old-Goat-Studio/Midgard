@@ -9,6 +9,7 @@
 #include <sqlite3.h>
 
 #include "midgard/package.h"
+#include "midgard/version.h"
 
 namespace fs = std::filesystem;
 
@@ -57,7 +58,7 @@ TEST_CASE("schema mismatch between manifest and database is refused") {
 }
 
 TEST_CASE("unsupported schema version is refused") {
-    TempPackage pkg(7, 7);
+    TempPackage pkg(midgard::kSchemaMax + 1, midgard::kSchemaMax + 1);
     CHECK_THROWS_WITH_AS(midgard::open_package(pkg.dir),
                          doctest::Contains("outside the supported range"), midgard::PackageError);
 }

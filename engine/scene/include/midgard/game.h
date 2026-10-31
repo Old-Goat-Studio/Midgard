@@ -11,6 +11,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "midgard/camera_rig.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
 #include "midgard/package.h"
@@ -18,7 +19,6 @@
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
 #include "midgard/scene_physics.h"
-#include "midgard/third_person.h"
 
 namespace midgard {
 
@@ -86,20 +86,22 @@ public:
     // or left them (trigger_events, until the next update).
     void update(const Actions& actions, float dt);
     const std::vector<TriggerEvent>& trigger_events() const { return trigger_events_; }
-    const ThirdPersonCamera& third_person() const { return *third_person_; }
+    const CameraRig& camera_rig() const { return *camera_; }
+    CameraRig& camera_rig() { return *camera_; }
     ScenePhysics& physics() { return *physics_; }
     const PhysicsLayers& physics_layers() const { return layers_; }
 
 private:
     render::MeshData load_mesh(const std::string& asset) const;
-    void refresh_third_person(entt::entity edited);
+    void refresh_camera(entt::entity edited);
+    CameraSweep camera_sweep() const;
     void rebuild_physics();
     void update_triggers();
 
     PackageInfo package_;
     std::unique_ptr<Pak> pak_;
     Scene scene_;
-    std::unique_ptr<ThirdPersonCamera> third_person_;
+    std::unique_ptr<CameraRig> camera_;
     PhysicsLayers layers_;
     std::unique_ptr<ScenePhysics> physics_;
     std::unordered_map<std::string, render::MeshId> meshes_;

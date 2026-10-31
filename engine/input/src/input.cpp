@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <set>
 #include <stdexcept>
 
 #include <sqlite3.h>
@@ -18,7 +19,8 @@ std::string key(const std::string& device, const std::string& control) {
 }  // namespace
 
 InputMap InputMap::defaults() {
-    // The same defaults as schema/migrations/0003_input.sql, for packages older than schema 3.
+    // The same defaults as schema/migrations/0003_input.sql and 0007_camera_view.sql, for older
+    // packages.
     // (A plain array: MSVC 19.40 crashes on a range-for over a braced initializer list here.)
     static const Binding kDefaults[] = {
         {"move_x", "keyboard", "D", 1.0f},      {"move_x", "keyboard", "A", -1.0f},
@@ -27,7 +29,8 @@ InputMap InputMap::defaults() {
         {"look_x", "mouse", "delta_x", 0.15f},  {"look_x", "gamepad", "rightx", 120.0f},
         {"look_y", "mouse", "delta_y", -0.15f}, {"look_y", "gamepad", "righty", -90.0f},
         {"zoom", "mouse", "wheel", -1.0f},      {"jump", "keyboard", "Space", 1.0f},
-        {"jump", "gamepad", "a", 1.0f},         {"menu", "keyboard", "Escape", 1.0f},
+        {"jump", "gamepad", "a", 1.0f},         {"view", "keyboard", "V", 1.0f},
+        {"view", "gamepad", "y", 1.0f},         {"menu", "keyboard", "Escape", 1.0f},
         {"menu", "gamepad", "start", 1.0f},
     };
     InputMap m;
@@ -52,9 +55,16 @@ InputMap InputMap::load(const std::filesystem::path& database) {
         const auto* t = sqlite3_column_text(stmt, col);
         return std::string(t ? reinterpret_cast<const char*>(t) : "");
     };
-    while (sqlite3_step(stmt) == SQLITE_ROW)
+    std::set<std::string> bound;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
         m.add({text(0), text(1), text(2), static_cast<float>(sqlite3_column_double(stmt, 3))});
+        bound.insert(text(0));
+    }
     sqlite3_finalize(stmt);
+    // Actions added to Midgard after the project was made get their default controls.
+    const InputMap fallback = defaults();  // (kept: its bindings are a reference into it)
+    for (const Binding& b : fallback.bindings())
+        if (!bound.contains(b.action)) m.add(b);
     return m;
 }
 

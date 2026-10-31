@@ -28,9 +28,11 @@ def test_new_projects_have_physics_layers_and_ground_to_stand_on(project):
 def test_older_projects_gain_the_layers_when_they_open(tmp_path):
     db = tmp_path / "old.db"
     con = sqlite3.connect(db)
+    for number, path in contract.migrations():
+        if number <= 4:
+            con.executescript(path.read_text("utf-8"))
     con.execute("PRAGMA user_version = 4")
     con.close()
-    # Migration 5 on its own (1-4 would fail on this empty file, which claims to be at 4).
     assert contract.migrate(db) == len(contract.migrations())
     con = sqlite3.connect(db)
     assert con.execute("SELECT name FROM physics_layer WHERE id = 0").fetchone() == ("default",)

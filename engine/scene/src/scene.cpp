@@ -113,8 +113,34 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         }
         reg.emplace_or_replace<Material>(e, m);
     } else if (name == "camera") {
-        reg.emplace_or_replace<CameraLens>(e, c.value("fov", 55.0f), c.value("near", 0.05f),
-                                           c.value("far", 500.0f));
+        CameraLens lens{c.value("fov", 55.0f), c.value("near", 0.05f), c.value("far", 500.0f)};
+        CameraRigSettings& rig = lens.rig;
+        rig.third.fov = lens.fov;
+        rig.blend = std::clamp(c.value("blend", rig.blend), 0.0f, 10.0f);
+        if (const auto v = view_from_name(c.value("view", std::string("third")))) rig.start = *v;
+        if (const auto views = c.find("views"); views != c.end() && views->is_object()) {
+            for (auto [key, settings] :
+                 {std::pair{"first", &rig.first}, std::pair{"third", &rig.third},
+                  std::pair{"top", &rig.top}}) {
+                const auto it = views->find(key);
+                if (it == views->end() || !it->is_object()) continue;
+                const json& v = *it;
+                ViewSettings& s = *settings;
+                s.fov = std::clamp(v.value("fov", s.fov), 10.0f, 150.0f);
+                if (v.contains("distance") && settings == &rig.third) rig.third_distance_set = true;
+                s.distance = std::max(v.value("distance", s.distance), 0.0f);
+                s.min_distance = std::max(v.value("min_distance", s.min_distance), 0.0f);
+                s.max_distance = std::max(v.value("max_distance", s.max_distance), s.min_distance);
+                s.height = v.value("height", s.height);
+                s.shoulder = v.value("shoulder", s.shoulder);
+                s.min_pitch = std::clamp(v.value("min_pitch", s.min_pitch), -89.0f, 89.0f);
+                s.max_pitch = std::clamp(v.value("max_pitch", s.max_pitch), s.min_pitch, 89.0f);
+                s.radius = std::clamp(v.value("radius", s.radius), 0.0f, 5.0f);
+                s.smoothing = std::clamp(v.value("smoothing", s.smoothing), 0.0f, 5.0f);
+            }
+        }
+        lens.fov = rig.third.fov;  // (views.third.fov, if given, wins over "fov")
+        reg.emplace_or_replace<CameraLens>(e, lens);
     } else if (name == "player") {
         Player p;
         p.speed = std::max(c.value("speed", p.speed), 0.0f);
@@ -491,6 +517,24 @@ render::DrawItem Scene::draw_item(entt::entity e, render::MeshId mesh,
     if (const MeshRef* r = registry.try_get<MeshRef>(e); r && r->asset == kBuiltinSurface)
         d.casts_shadow = false;
     return d;
+}
+
+const char* view_name(CameraView view) {
+    switch (view) {
+        case CameraView::First:
+            return "first";
+        case CameraView::Top:
+            return "top";
+        default:
+            return "third";
+    }
+}
+
+std::optional<CameraView> view_from_name(const std::string& name) {
+    if (name == "first") return CameraView::First;
+    if (name == "third") return CameraView::Third;
+    if (name == "top") return CameraView::Top;
+    return std::nullopt;
 }
 
 std::optional<render::Camera> Scene::camera(float aspect) const {

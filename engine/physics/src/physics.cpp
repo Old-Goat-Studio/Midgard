@@ -21,6 +21,7 @@
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/PhysicsStepListener.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
@@ -463,6 +464,30 @@ std::optional<RayHit> World::raycast(const glm::dvec3& origin, const glm::vec3& 
         out.normal = n;
     }
     return out;
+}
+
+double World::sweep_sphere(const glm::dvec3& origin, const glm::vec3& direction, double distance,
+                           float radius, Touching which, BodyId ignore) const {
+    if (!(distance > 0.0) || glm::dot(direction, direction) < 1e-12f) return 0.0;
+    if (radius <= 0.0f) {
+        const auto hit = raycast(origin, direction, distance, which, ignore);
+        return hit ? hit->distance : distance;
+    }
+    const glm::vec3 d = glm::normalize(direction);
+    const JPH::ShapeRefC sphere = new JPH::SphereShape(radius);
+    const JPH::RShapeCast cast(sphere, JPH::Vec3::sReplicate(1.0f),
+                               JPH::RMat44::sTranslation(to_jolt(origin)),
+                               to_jolt(d * float(distance)));
+    JPH::ShapeCastSettings settings;
+    settings.mBackFaceModeTriangles = JPH::EBackFaceMode::CollideWithBackFaces;
+    settings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;
+    JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> hit;
+    const TouchingFilter filter(which, ignore == kNoBody ? JPH::BodyID() : JPH::BodyID(ignore));
+    impl_->system.GetNarrowPhaseQuery().CastShape(cast, settings, to_jolt(origin), hit, {}, {},
+                                                  filter);
+    if (!hit.HadHit()) return distance;
+    // A little short of the contact, so the sphere ends clear of it.
+    return std::max(double(hit.mHit.mFraction) * distance - 0.01, 0.0);
 }
 
 std::vector<std::uint64_t> World::overlaps(const Collider& c, const glm::dvec3& position,

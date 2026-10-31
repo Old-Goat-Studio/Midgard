@@ -9,8 +9,8 @@
 
 #include <sqlite3.h>
 
+#include "midgard/camera_rig.h"
 #include "midgard/input.h"
-#include "midgard/third_person.h"
 
 namespace fs = std::filesystem;
 using midgard::Actions;
@@ -113,7 +113,7 @@ glm::vec3 position_of(const midgard::Scene& scene, const char* id) {
 
 TEST_CASE("the third-person camera starts where the designer placed it") {
     midgard::Scene scene = player_scene();
-    midgard::ThirdPersonCamera tp(scene);
+    midgard::CameraRig tp(scene);
     REQUIRE(tp.active());
     CHECK(tp.distance() == doctest::Approx(6.0f));
     CHECK(tp.yaw() == doctest::Approx(0.0f));
@@ -122,7 +122,7 @@ TEST_CASE("the third-person camera starts where the designer placed it") {
 
 TEST_CASE("forward moves the player away from the camera, and the camera follows") {
     midgard::Scene scene = player_scene();
-    midgard::ThirdPersonCamera tp(scene);
+    midgard::CameraRig tp(scene);
     Actions a(InputMap::defaults());
     a.set("keyboard", "W", 1.0f);
     tp.update(scene, a, 0.5f);
@@ -134,7 +134,7 @@ TEST_CASE("forward moves the player away from the camera, and the camera follows
 
 TEST_CASE("look orbits, zoom changes distance, and both are limited") {
     midgard::Scene scene = player_scene();
-    midgard::ThirdPersonCamera tp(scene);
+    midgard::CameraRig tp(scene);
     Actions a(InputMap::defaults());
     a.add_delta("mouse", "delta_x", 100.0f);  // 15 degrees
     tp.update(scene, a, 0.016f);
@@ -143,18 +143,18 @@ TEST_CASE("look orbits, zoom changes distance, and both are limited") {
     a.begin_frame();
     a.add_delta("mouse", "delta_y", -10000.0f);
     tp.update(scene, a, 0.016f);
-    CHECK(tp.elevation() == doctest::Approx(midgard::ThirdPersonCamera::kMinElevation));
+    CHECK(tp.elevation() == doctest::Approx(midgard::ViewSettings{}.min_pitch));
     a.begin_frame();
     a.add_delta("mouse", "delta_y", 10000.0f);  // mouse down = look down, camera rises
     tp.update(scene, a, 0.016f);
-    CHECK(tp.elevation() == doctest::Approx(midgard::ThirdPersonCamera::kMaxElevation));
+    CHECK(tp.elevation() == doctest::Approx(midgard::ViewSettings{}.max_pitch));
     a.begin_frame();
     a.add_delta("mouse", "wheel", 100.0f);  // zoom right in
     tp.update(scene, a, 0.016f);
-    CHECK(tp.distance() == doctest::Approx(midgard::ThirdPersonCamera::kMinDistance));
+    CHECK(tp.distance() == doctest::Approx(midgard::ViewSettings{}.min_distance));
 }
 
 TEST_CASE("scenes without a player have no third-person camera") {
     midgard::Scene scene;
-    CHECK_FALSE(midgard::ThirdPersonCamera(scene).active());
+    CHECK_FALSE(midgard::CameraRig(scene).active());
 }

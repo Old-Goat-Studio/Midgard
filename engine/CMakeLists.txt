@@ -119,7 +119,7 @@ add_library(midgard_scene STATIC
     scene/src/gltf.cpp
     scene/src/scene.cpp
     scene/src/game.cpp
-    scene/src/third_person.cpp
+    scene/src/camera_rig.cpp
     scene/src/validate.cpp
     scene/src/scene_physics.cpp
     scene/src/collider_outlines.cpp
