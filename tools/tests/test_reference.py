@@ -162,3 +162,13 @@ def test_a_20_hour_day_with_70_percent_daylight():
     assert cal.solar_phase_at(twenty, 3 * 3600) == 0.0  # sunrise
     assert cal.solar_phase_at(twenty, 10 * 3600) == 0.25  # solar noon
     assert cal.solar_phase_at(twenty, 17 * 3600) == 0.5  # sunset
+
+
+def test_body_calendars_match_their_table():
+    from reference import calendar as cal
+    data = json.loads((TABLES / "calendar_bodies.json").read_text("utf-8"))
+    for c in data["cases"]:
+        body = cal.roll_body(data["templates"][c["template"]], int(c["seed"]))
+        assert body["hours_per_day"] == c["hours_per_day"], c
+        assert [m["days"] for m in body["months"]] == c["months"], c
+        assert _bits(body["tilt"]) == c["tilt"], c

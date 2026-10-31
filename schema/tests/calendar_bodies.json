@@ -1,0 +1,1451 @@
+{
+ "_about": "Body calendars (midgard/calendar.h roll_body_calendar, tools/reference/calendar.py roll_body): the calendar a template gives a body with this seed (a decimal uint64): hours per day, month lengths and the axial tilt (hex bits of the double). Must match exactly on every target.",
+ "templates": {
+  "standard": {
+   "day_hours_min": 18.0,
+   "day_hours_max": 36.0,
+   "year_days_min": 200,
+   "year_days_max": 500,
+   "tilt_min": 0.0,
+   "tilt_max": 35.0,
+   "months": [
+    {
+     "days": 31
+    },
+    {
+     "days": 28
+    },
+    {
+     "days": 31
+    },
+    {
+     "days": 30
+    },
+    {
+     "days": 31
+    },
+    {
+     "days": 30
+    },
+    {
+     "days": 31
+    },
+    {
+     "days": 31
+    },
+    {
+     "days": 30
+    },
+    {
+     "days": 31
+    },
+    {
+     "days": 30
+    },
+    {
+     "days": 31
+    }
+   ]
+  },
+  "small": {
+   "day_hours_min": 19.5,
+   "day_hours_max": 20.2,
+   "year_days_min": 0,
+   "year_days_max": 9,
+   "tilt_min": 12.5,
+   "tilt_max": 12.5,
+   "months": [
+    {
+     "days": 1
+    },
+    {
+     "days": 45
+    },
+    {
+     "days": 19
+    },
+    {
+     "days": 2
+    }
+   ]
+  }
+ },
+ "cases": [
+  {
+   "template": "standard",
+   "seed": "0",
+   "hours_per_day": 21,
+   "months": [
+    21,
+    19,
+    21,
+    20,
+    21,
+    20,
+    22,
+    21,
+    20,
+    21,
+    20,
+    22
+   ],
+   "tilt": "40324db473ea2f6c"
+  },
+  {
+   "template": "standard",
+   "seed": "1",
+   "hours_per_day": 21,
+   "months": [
+    36,
+    34,
+    37,
+    35,
+    37,
+    36,
+    37,
+    36,
+    36,
+    37,
+    36,
+    37
+   ],
+   "tilt": "403780c41ac5dc76"
+  },
+  {
+   "template": "standard",
+   "seed": "18446744073709551615",
+   "hours_per_day": 23,
+   "months": [
+    30,
+    28,
+    30,
+    30,
+    30,
+    30,
+    31,
+    30,
+    30,
+    30,
+    30,
+    31
+   ],
+   "tilt": "40248fcf084891aa"
+  },
+  {
+   "template": "standard",
+   "seed": "14638279772898528922",
+   "hours_per_day": 36,
+   "months": [
+    36,
+    33,
+    36,
+    35,
+    37,
+    35,
+    36,
+    36,
+    36,
+    36,
+    35,
+    37
+   ],
+   "tilt": "4021273d1f9f10da"
+  },
+  {
+   "template": "standard",
+   "seed": "11925525690729829949",
+   "hours_per_day": 22,
+   "months": [
+    24,
+    23,
+    25,
+    24,
+    24,
+    24,
+    25,
+    25,
+    24,
+    25,
+    24,
+    25
+   ],
+   "tilt": "402c2cf79bddff25"
+  },
+  {
+   "template": "standard",
+   "seed": "301751922689922322",
+   "hours_per_day": 18,
+   "months": [
+    31,
+    29,
+    32,
+    31,
+    32,
+    30,
+    32,
+    32,
+    31,
+    32,
+    31,
+    32
+   ],
+   "tilt": "4036ae1f369bdc83"
+  },
+  {
+   "template": "standard",
+   "seed": "12437545692036694765",
+   "hours_per_day": 20,
+   "months": [
+    19,
+    17,
+    19,
+    18,
+    20,
+    18,
+    19,
+    19,
+    19,
+    19,
+    18,
+    20
+   ],
+   "tilt": "402799c62d709044"
+  },
+  {
+   "template": "standard",
+   "seed": "1327173426952978905",
+   "hours_per_day": 33,
+   "months": [
+    26,
+    24,
+    27,
+    25,
+    27,
+    26,
+    26,
+    27,
+    26,
+    26,
+    26,
+    27
+   ],
+   "tilt": "403e3c0d80d89a11"
+  },
+  {
+   "template": "standard",
+   "seed": "13754586513739475317",
+   "hours_per_day": 30,
+   "months": [
+    34,
+    32,
+    35,
+    33,
+    35,
+    34,
+    35,
+    34,
+    34,
+    35,
+    34,
+    35
+   ],
+   "tilt": "403041d865531419"
+  },
+  {
+   "template": "standard",
+   "seed": "12340564462079398973",
+   "hours_per_day": 31,
+   "months": [
+    17,
+    16,
+    18,
+    17,
+    18,
+    17,
+    17,
+    18,
+    17,
+    18,
+    17,
+    18
+   ],
+   "tilt": "40266235f1bb691c"
+  },
+  {
+   "template": "standard",
+   "seed": "7725153382205431320",
+   "hours_per_day": 18,
+   "months": [
+    39,
+    36,
+    39,
+    39,
+    39,
+    39,
+    39,
+    40,
+    38,
+    40,
+    38,
+    40
+   ],
+   "tilt": "4036f7126ce0f194"
+  },
+  {
+   "template": "standard",
+   "seed": "4845490980947845153",
+   "hours_per_day": 35,
+   "months": [
+    38,
+    34,
+    38,
+    37,
+    38,
+    37,
+    38,
+    38,
+    37,
+    38,
+    37,
+    39
+   ],
+   "tilt": "40341f830fdeea9b"
+  },
+  {
+   "template": "standard",
+   "seed": "10772766545433908962",
+   "hours_per_day": 30,
+   "months": [
+    38,
+    36,
+    39,
+    37,
+    39,
+    38,
+    39,
+    39,
+    38,
+    39,
+    38,
+    39
+   ],
+   "tilt": "403cf83b7e0c3ca6"
+  },
+  {
+   "template": "standard",
+   "seed": "2148280833379188190",
+   "hours_per_day": 18,
+   "months": [
+    37,
+    35,
+    38,
+    36,
+    38,
+    37,
+    38,
+    38,
+    37,
+    38,
+    37,
+    38
+   ],
+   "tilt": "4019d7577bd2eaa1"
+  },
+  {
+   "template": "standard",
+   "seed": "16216662749421992613",
+   "hours_per_day": 29,
+   "months": [
+    17,
+    15,
+    17,
+    17,
+    17,
+    16,
+    17,
+    17,
+    17,
+    17,
+    16,
+    18
+   ],
+   "tilt": "40313c388688438e"
+  },
+  {
+   "template": "standard",
+   "seed": "2827763824442438168",
+   "hours_per_day": 25,
+   "months": [
+    34,
+    31,
+    34,
+    34,
+    34,
+    33,
+    35,
+    34,
+    33,
+    35,
+    33,
+    35
+   ],
+   "tilt": "403d49887b9571a0"
+  },
+  {
+   "template": "standard",
+   "seed": "15892567603630846228",
+   "hours_per_day": 29,
+   "months": [
+    30,
+    28,
+    31,
+    30,
+    30,
+    30,
+    31,
+    31,
+    29,
+    31,
+    30,
+    31
+   ],
+   "tilt": "402890f27df3876e"
+  },
+  {
+   "template": "standard",
+   "seed": "7938325027009452821",
+   "hours_per_day": 25,
+   "months": [
+    32,
+    29,
+    32,
+    31,
+    33,
+    31,
+    32,
+    32,
+    32,
+    32,
+    31,
+    33
+   ],
+   "tilt": "4007e69d8a80eeb2"
+  },
+  {
+   "template": "standard",
+   "seed": "15998903619689738126",
+   "hours_per_day": 19,
+   "months": [
+    40,
+    37,
+    41,
+    40,
+    41,
+    40,
+    40,
+    41,
+    40,
+    41,
+    40,
+    41
+   ],
+   "tilt": "4040f3c5a02b5b84"
+  },
+  {
+   "template": "standard",
+   "seed": "4146580197670531844",
+   "hours_per_day": 19,
+   "months": [
+    40,
+    36,
+    41,
+    39,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    39,
+    41
+   ],
+   "tilt": "403741a904db69d5"
+  },
+  {
+   "template": "standard",
+   "seed": "12919440419109004113",
+   "hours_per_day": 29,
+   "months": [
+    39,
+    35,
+    40,
+    38,
+    39,
+    38,
+    39,
+    40,
+    38,
+    39,
+    38,
+    40
+   ],
+   "tilt": "4031b37212573645"
+  },
+  {
+   "template": "standard",
+   "seed": "2588874817805234349",
+   "hours_per_day": 24,
+   "months": [
+    30,
+    28,
+    30,
+    30,
+    30,
+    30,
+    30,
+    31,
+    29,
+    31,
+    29,
+    31
+   ],
+   "tilt": "40279b075b6525e6"
+  },
+  {
+   "template": "standard",
+   "seed": "4105038025181532033",
+   "hours_per_day": 24,
+   "months": [
+    33,
+    30,
+    33,
+    33,
+    33,
+    32,
+    34,
+    33,
+    32,
+    34,
+    32,
+    34
+   ],
+   "tilt": "401a7404ced74fa5"
+  },
+  {
+   "template": "standard",
+   "seed": "10561401715893960266",
+   "hours_per_day": 20,
+   "months": [
+    19,
+    18,
+    20,
+    19,
+    20,
+    19,
+    20,
+    20,
+    19,
+    20,
+    19,
+    20
+   ],
+   "tilt": "403daf4fc8da68ea"
+  },
+  {
+   "template": "standard",
+   "seed": "9530950270498583696",
+   "hours_per_day": 34,
+   "months": [
+    41,
+    37,
+    41,
+    40,
+    41,
+    40,
+    41,
+    41,
+    40,
+    41,
+    39,
+    42
+   ],
+   "tilt": "40269d7465a58571"
+  },
+  {
+   "template": "standard",
+   "seed": "999495037985190711",
+   "hours_per_day": 32,
+   "months": [
+    41,
+    37,
+    41,
+    40,
+    41,
+    40,
+    41,
+    41,
+    40,
+    41,
+    39,
+    42
+   ],
+   "tilt": "404112ab01c981ea"
+  },
+  {
+   "template": "standard",
+   "seed": "6557899646758884808",
+   "hours_per_day": 21,
+   "months": [
+    35,
+    32,
+    36,
+    34,
+    36,
+    34,
+    36,
+    35,
+    35,
+    35,
+    35,
+    36
+   ],
+   "tilt": "3ffc0657a409a3d5"
+  },
+  {
+   "template": "standard",
+   "seed": "6940849655760798493",
+   "hours_per_day": 21,
+   "months": [
+    27,
+    24,
+    28,
+    26,
+    27,
+    27,
+    27,
+    27,
+    27,
+    27,
+    26,
+    28
+   ],
+   "tilt": "403d56028dcb0fb0"
+  },
+  {
+   "template": "standard",
+   "seed": "16602006136071479263",
+   "hours_per_day": 27,
+   "months": [
+    30,
+    28,
+    31,
+    30,
+    30,
+    30,
+    31,
+    31,
+    29,
+    31,
+    30,
+    31
+   ],
+   "tilt": "40417fae209a4727"
+  },
+  {
+   "template": "standard",
+   "seed": "4318596271352204811",
+   "hours_per_day": 29,
+   "months": [
+    25,
+    23,
+    25,
+    24,
+    26,
+    24,
+    26,
+    25,
+    24,
+    26,
+    24,
+    26
+   ],
+   "tilt": "4037cd51c7eae01e"
+  },
+  {
+   "template": "standard",
+   "seed": "7824804477115365693",
+   "hours_per_day": 34,
+   "months": [
+    17,
+    15,
+    18,
+    16,
+    17,
+    17,
+    17,
+    18,
+    16,
+    18,
+    16,
+    18
+   ],
+   "tilt": "3ffc1ffbd7dbf939"
+  },
+  {
+   "template": "standard",
+   "seed": "1262134827564729463",
+   "hours_per_day": 36,
+   "months": [
+    20,
+    18,
+    20,
+    20,
+    20,
+    20,
+    20,
+    21,
+    19,
+    21,
+    19,
+    21
+   ],
+   "tilt": "4040fe58aa3ecc0c"
+  },
+  {
+   "template": "standard",
+   "seed": "4364376097701354990",
+   "hours_per_day": 34,
+   "months": [
+    29,
+    27,
+    30,
+    28,
+    30,
+    29,
+    29,
+    30,
+    29,
+    29,
+    29,
+    30
+   ],
+   "tilt": "400bac44ef63cb75"
+  },
+  {
+   "template": "standard",
+   "seed": "8537587510568625737",
+   "hours_per_day": 28,
+   "months": [
+    21,
+    19,
+    22,
+    21,
+    21,
+    21,
+    21,
+    22,
+    21,
+    21,
+    21,
+    22
+   ],
+   "tilt": "4024d8c003f202e1"
+  },
+  {
+   "template": "standard",
+   "seed": "13312517894347080439",
+   "hours_per_day": 22,
+   "months": [
+    29,
+    26,
+    29,
+    29,
+    29,
+    28,
+    29,
+    30,
+    28,
+    29,
+    28,
+    30
+   ],
+   "tilt": "400c3d1c7dcd4378"
+  },
+  {
+   "template": "standard",
+   "seed": "1403724750519102805",
+   "hours_per_day": 34,
+   "months": [
+    38,
+    35,
+    38,
+    37,
+    39,
+    37,
+    39,
+    38,
+    37,
+    39,
+    37,
+    39
+   ],
+   "tilt": "3ffeae38bd4991e9"
+  },
+  {
+   "template": "standard",
+   "seed": "11815312616183658437",
+   "hours_per_day": 26,
+   "months": [
+    29,
+    26,
+    29,
+    28,
+    29,
+    29,
+    29,
+    29,
+    28,
+    29,
+    28,
+    30
+   ],
+   "tilt": "4034e7b428546217"
+  },
+  {
+   "template": "standard",
+   "seed": "5130068377753904593",
+   "hours_per_day": 24,
+   "months": [
+    32,
+    29,
+    33,
+    31,
+    33,
+    31,
+    33,
+    32,
+    32,
+    32,
+    32,
+    33
+   ],
+   "tilt": "4037346845d1d1a2"
+  },
+  {
+   "template": "standard",
+   "seed": "8653279382787578241",
+   "hours_per_day": 20,
+   "months": [
+    34,
+    31,
+    34,
+    34,
+    34,
+    33,
+    35,
+    34,
+    33,
+    35,
+    33,
+    35
+   ],
+   "tilt": "403c649836d90655"
+  },
+  {
+   "template": "standard",
+   "seed": "1313934607370983199",
+   "hours_per_day": 36,
+   "months": [
+    34,
+    32,
+    35,
+    34,
+    35,
+    34,
+    35,
+    35,
+    34,
+    35,
+    34,
+    35
+   ],
+   "tilt": "403af3373706c2fc"
+  },
+  {
+   "template": "standard",
+   "seed": "779830437422543114",
+   "hours_per_day": 29,
+   "months": [
+    33,
+    30,
+    33,
+    32,
+    34,
+    32,
+    33,
+    33,
+    33,
+    33,
+    32,
+    34
+   ],
+   "tilt": "4030cce72a1f1399"
+  },
+  {
+   "template": "standard",
+   "seed": "17652017563237871783",
+   "hours_per_day": 18,
+   "months": [
+    27,
+    25,
+    27,
+    26,
+    28,
+    26,
+    28,
+    27,
+    26,
+    28,
+    26,
+    28
+   ],
+   "tilt": "40344ac7d80fce7f"
+  },
+  {
+   "template": "standard",
+   "seed": "10608213024952901625",
+   "hours_per_day": 18,
+   "months": [
+    24,
+    21,
+    25,
+    23,
+    24,
+    23,
+    24,
+    25,
+    23,
+    24,
+    23,
+    25
+   ],
+   "tilt": "403d88792d6725d0"
+  },
+  {
+   "template": "small",
+   "seed": "0",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "1",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    3,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "18446744073709551615",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    5,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "14052259288364311885",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "7578155884091400384",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    3,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "2732578318984410951",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "5728651094615423874",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    3,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "18027936077080601891",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "7600005950634104843",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    5,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "14487754170407218706",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "14520992029172675777",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    3,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "5398846020868333381",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    4,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "17160885634961004834",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "11802419099900456618",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "6803983149746919604",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "3340921505709931013",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "2278608895907876384",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "14539584925440831714",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "1006883512183042397",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    3,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "9188466989106914105",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "765045291248866033",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "1100458851902607052",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "541782614336957837",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "15978019118875888311",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    5,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "695452259936685716",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "14635106645025074722",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "9326197676487075234",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "3606095723258801453",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "266179514088273674",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "17664783034455040958",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "15529380281975016517",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    3,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "1852226890447246659",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "6475328240382124166",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "3513599865606798642",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "13557349757128988110",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "7569820255940716218",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "7599875603137210800",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    5,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "17328336321289677166",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "913500443338146609",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "10195284325941758109",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "15808635011511609806",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "7691635791716638143",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    2,
+    1,
+    1
+   ],
+   "tilt": "4029000000000000"
+  },
+  {
+   "template": "small",
+   "seed": "12803627061251871149",
+   "hours_per_day": 20,
+   "months": [
+    1,
+    5,
+    2,
+    1
+   ],
+   "tilt": "4029000000000000"
+  }
+ ]
+}

@@ -156,3 +156,44 @@ def moon_phase(c: dict, moon: int, time: int) -> float:
     m = c["moons"][moon]
     return ((d["day_number"] + d["seconds_into_day"] / seconds_per_day(c)) / m["period"]
             + m.get("offset", 0.0)) % 1.0
+
+
+def roll_body(c: dict, seed: int) -> dict:
+    """A body's calendar from a template and the body's seed: day length (whole hours), year
+    length (the months scaled to it, each keeping at least a day) and axial tilt, each drawn from
+    its own stream within the template's ranges."""
+    rng = det.Rng(seed).split(det.tag("calendar"))
+    out = {**c, "months": [dict(m) for m in c["months"]], "standard": 0}
+
+    lo = math.ceil(get(c, "day_hours_min", 24.0))
+    hi = math.floor(get(c, "day_hours_max", 24.0))
+    if hi < lo:
+        hours = max(1, int(get(c, "day_hours_min", 24.0) + 0.5))
+    else:
+        hours = lo + rng.split(det.tag("day")).below(hi - lo + 1)
+    out["hours_per_day"] = hours
+    out["day_hours_min"] = out["day_hours_max"] = float(hours)
+
+    ymin, ymax = get(c, "year_days_min", 0), get(c, "year_days_max", 0)
+    if ymax > 0:
+        target = ymin + rng.split(det.tag("year")).below(ymax - ymin + 1)
+        target = max(target, len(c["months"]))
+        base = sum(m["days"] for m in c["months"])
+        cumulative, previous = 0, 0
+        for m in out["months"]:
+            cumulative += m["days"]
+            boundary = cumulative * target // base
+            m["days"] = boundary - previous
+            previous = boundary
+        for m in out["months"]:  # every month keeps a day, taken from the longest
+            if m["days"] < 1:
+                longest = max(out["months"], key=lambda x: x["days"])
+                longest["days"] -= 1 - m["days"]
+                m["days"] = 1
+        out["year_days_min"] = out["year_days_max"] = target
+
+    tmin, tmax = get(c, "tilt_min", 0.0), get(c, "tilt_max", 0.0)
+    tilt = tmin + (tmax - tmin) * rng.split(det.tag("tilt")).uniform()
+    out["tilt"] = tilt
+    out["tilt_min"] = out["tilt_max"] = tilt
+    return out

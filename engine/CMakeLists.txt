@@ -31,6 +31,7 @@ add_library(midgard_core STATIC
     core/src/shape.cpp
     core/src/body.cpp
     core/src/calendar.cpp
+    core/src/time_service.cpp
 )
 target_include_directories(midgard_core PUBLIC
     core/include
@@ -322,6 +323,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_reference_tables.cpp
         tests/test_det.cpp
         tests/test_calendar.cpp
+        tests/test_time_service.cpp
         tests/test_shape.cpp
         tests/test_ktx.cpp
         tests/test_shadows.cpp

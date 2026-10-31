@@ -235,6 +235,55 @@ double moon_phase(const Calendar& c, size_t moon, std::int64_t time) {
                 m.offset);
 }
 
+Calendar roll_body_calendar(const Calendar& tmpl, std::uint64_t seed) {
+    const det::Rng rng = det::Rng(seed).split(det::tag("calendar"));
+    Calendar out = tmpl;
+    out.standard = false;
+
+    const int lo = int(std::ceil(tmpl.day_hours_min));
+    const int hi = int(std::floor(tmpl.day_hours_max));
+    int hours = 0;
+    if (hi < lo) {
+        hours = std::max(1, int(tmpl.day_hours_min + 0.5));
+    } else {
+        det::Rng day = rng.split(det::tag("day"));
+        hours = lo + int(day.below(std::uint64_t(hi - lo + 1)));
+    }
+    out.hours_per_day = hours;
+    out.day_hours_min = out.day_hours_max = double(hours);
+
+    if (tmpl.year_days_max > 0) {
+        det::Rng year = rng.split(det::tag("year"));
+        std::int64_t target =
+            tmpl.year_days_min +
+            std::int64_t(year.below(std::uint64_t(tmpl.year_days_max - tmpl.year_days_min + 1)));
+        target = std::max<std::int64_t>(target, std::int64_t(tmpl.months.size()));
+        const std::int64_t base = base_days(tmpl);
+        std::int64_t cumulative = 0, previous = 0;
+        for (Calendar::Month& m : out.months) {
+            cumulative += m.days;
+            const std::int64_t boundary = cumulative * target / base;
+            m.days = int(boundary - previous);
+            previous = boundary;
+        }
+        for (Calendar::Month& m : out.months) {  // every month keeps a day, from the longest
+            if (m.days < 1) {
+                Calendar::Month* longest = &out.months[0];
+                for (Calendar::Month& x : out.months)
+                    if (x.days > longest->days) longest = &x;
+                longest->days -= 1 - m.days;
+                m.days = 1;
+            }
+        }
+        out.year_days_min = out.year_days_max = int(target);
+    }
+
+    det::Rng tilt = rng.split(det::tag("tilt"));
+    out.tilt = tmpl.tilt_min + (tmpl.tilt_max - tmpl.tilt_min) * tilt.uniform();
+    out.tilt_min = out.tilt_max = out.tilt;
+    return out;
+}
+
 Calendar calendar_from_json(const nlohmann::json& j) {
     Calendar c;
     c.id = j.value("id", c.id);
@@ -259,6 +308,7 @@ Calendar calendar_from_json(const nlohmann::json& j) {
     c.year_days_max = j.value("year_days_max", c.year_days_max);
     c.tilt_min = j.value("tilt_min", c.tilt_min);
     c.tilt_max = j.value("tilt_max", c.tilt_max);
+    c.tilt = j.value("tilt", c.tilt);
     for (const auto& m : j.value("months", nlohmann::json::array()))
         c.months.push_back({m.value("name_key", ""), m.value("days", 30)});
     for (const auto& w : j.value("weekdays", nlohmann::json::array()))

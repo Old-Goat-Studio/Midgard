@@ -57,6 +57,7 @@ struct Calendar {
     double day_hours_min = 24.0, day_hours_max = 24.0;  // ranges for body calendars
     int year_days_min = 0, year_days_max = 0;           // 0: the months as they are
     double tilt_min = 0.0, tilt_max = 0.0;              // degrees
+    double tilt = 0.0;  // a body's axial tilt, in degrees (rolled from the range)
     std::vector<Month> months;
     std::vector<std::string> weekdays;  // name keys; day 1 of year 1 is weekday 0
     std::vector<Season> seasons;
@@ -119,6 +120,12 @@ SunTimes sun_times(const Calendar& c, std::int64_t time);
 
 // A moon's phase at a moment: 0 new, 0.5 full, back to 1.
 double moon_phase(const Calendar& c, size_t moon, std::int64_t time);
+
+// A body's calendar from a template and the body's seed (tools/reference/calendar.py roll_body):
+// its day length in whole hours, its year length (the months scaled to it, each keeping at least
+// a day) and its axial tilt, each drawn from its own stream within the template's ranges, which
+// then hold just the values drawn. The same seed gives the same calendar on every target.
+Calendar roll_body_calendar(const Calendar& tmpl, std::uint64_t seed);
 
 // A calendar from JSON with the calendar table's columns as keys, and "months" ([{"name_key",
 // "days"}]), "weekdays" (name keys), "seasons" ([{"name_key", "share", "daylight", "temp_min",
