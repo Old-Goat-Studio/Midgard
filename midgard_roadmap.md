@@ -4,9 +4,9 @@
 
 ## A game engine with an action-focused editor
 
-*Companion to [midgard_plan.md](midgard_plan.md) · 16 October 2026 · revision 4*
+*Companion to [midgard_plan.md](midgard_plan.md) · 31 October 2026 · revision 5*
 
-This document answers the two questions in the plan, sets out an architecture for the editor (Python + PySide6) and the engine (C++), and lays out a phased roadmap. It also adapts two existing guides to Midgard: the **Theme Scheme** (View ▸ Themes) and the **About Scheme** (version, build number and About box). **Revision 3** records the answers to every open question: worlds and space, ships, action RPG systems, survival, multiplayer and services, platforms and open-source licensing. Every decision is listed in §13. **Revision 4** (16 October 2026) brings the document up to date with what has been built: §0 says where the project stands, §2–§5 describe the code as it is (with what is still to come marked *planned*), §10 gives each phase's status, and §13 records the decisions made while building Phase 5.
+This document answers the two questions in the plan, sets out an architecture for the editor (Python + PySide6) and the engine (C++), and lays out a phased roadmap. It also adapts two existing guides to Midgard: the **Theme Scheme** (View ▸ Themes) and the **About Scheme** (version, build number and About box). **Revision 3** records the answers to every open question: worlds and space, ships, action RPG systems, survival, multiplayer and services, platforms and open-source licensing. Every decision is listed in §13. **Revision 4** (16 October 2026) brings the document up to date with what has been built: §0 says where the project stands, §2–§5 describe the code as it is (with what is still to come marked *planned*), §10 gives each phase's status, and §13 records the decisions made while building Phase 5. **Revision 5** (31 October 2026) adds the menus, HUD and player stats (§8, *Menus, HUD and player stats*) as the first milestone of Phase 6.
 
 ---
 
@@ -67,6 +67,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 | Space and travel | **9 star systems per universe.** A planet's sky is its boundary: leaving the atmosphere is a **room change** to space. Habitats and hollow worlds have docks and exit sites. **Players fly spacecraft** within a system, and use **aircraft, airships, sailing ships, small craft, land vehicles and mounts** on bodies with air, water and ground. Travel between bodies and systems is **instant teleportation** (like Star Trek's transporter) through a teleporter attached to a game object: a machine, a ship module or an artifact. Players can be on different bodies at the same time. |
 | Quests | **Hand-written** quests (placed through generator anchors) and **templates** filled from each generated world. |
 | Characters | **Characters move between worlds.** They live in the player's profile, and the host checks them against the game rules when they join. |
+| Menus and HUD | **One UI system for everything on screen** (RmlUi, made in the Menu editor): a HUD with stat bars, scores and counters, prompts and notifications, and a compass or minimap; **designer-defined player stats**; and ready-made screens (title and main menu, pause and settings, game over and respawn, inventory, character sheet, quest log). Built first in Phase 6 (§8, *Menus, HUD and player stats*). |
 | Multiplayer | **Small co-op, 2–16 players per world.** One authoritative host, either a player's game (listen server) or a headless dedicated server, over ENet (UDP). No MMO infrastructure. |
 
 ---
@@ -440,7 +441,8 @@ engine/
   mounts/     riding, rider IK and animation, taming, draft harnesses, mount stamina and needs
   water/      sea-level water on every world shape, wind-driven waves (identical on all clients), buoyancy queries
   script/     embedded CPython (pybind11/embed.h); the `midgard` Python API
-  ui/         RmlUi: runtime player menus (generated from Menu Editor data), localised strings (ICU)
+  ui/         RmlUi: menus, screens and the HUD (from Menu Editor data), data binding to stats,
+              counters and the clock, notifications, localised strings (ICU)
   camera/     first-person, third-person and top-down cameras, collision, lock-on
   anim/       ozz-animation: graphs, blend spaces, layers, IK, animation events, GPU skinning
   audio/      miniaudio: sound events, buses, 3D positioning, music, ambience, reverb zones; on-device TTS (Piper) for slot words
@@ -555,7 +557,8 @@ Today, when a listen-server host quits, the session ends. **Host migration** mea
 | Function | Editor (Python) | Engine (C++) | Notes |
 |---|---|---|---|
 | Script editor + snippets | **Built (Phase 4):** code editor dock (`QPlainTextEdit` + highlighter) with line numbers, completion from the `midgard` stubs, error markers from the running game and Git change markers. Snippets in a `snippet` table with tags; a project-level and a user-level library. | Embedded CPython, hot reload over the live link | Ship a starter snippet set: "give item", "start quest", "on trigger enter"… |
-| Menu editor | WYSIWYG canvas with the widgets from the plan (text entry, buttons, drop boxes, lists, trees, radio buttons, checkboxes, panels, tabs, progress bars) and window controls | RmlUi documents generated at cook time | Window move, resize, minimize and close are behaviours of a `MenuWindow` element; player-chosen sizes and positions go in the save DB. Trees need a custom RmlUi element. |
+| Menu editor | WYSIWYG canvas with the widgets from the plan (text entry, buttons, drop boxes, lists, trees, radio buttons, checkboxes, panels, tabs, progress bars) and window controls; the HUD layout; screen templates; previews at desktop and phone sizes, live in the running game (see §8, *Menus, HUD and player stats*) | RmlUi documents generated at cook time; data binding; `midgard.ui` | Window move, resize, minimize and close are behaviours of a `MenuWindow` element; player-chosen sizes and positions go in the save DB. Trees need a custom RmlUi element. **Phase 6.0.** |
+| Player stats and HUD | Stats editor (health, stamina and the designer's own), counters, HUD widgets in the Menu editor (see §8) | Stats per character with regeneration, counters, the HUD's bars, numbers, prompts, notifications, crosshair, compass and minimap; `midgard.stats` | One set of stats for combat, survival, food, progression and scripts. Host-decided in co-op. **Phase 6.0.** |
 | World environment | Skybox, sun/moon, lighting, fog, water panels with live preview | Sky, fog and water passes | **Sky and fog are built** (5.3); the Environment editor and water are 5.8. |
 | Physics editor | Body/shape/material inspector, collision layers matrix | Jolt | **Built (5.4):** collider, rigid body and physics material rows in the Inspector, *World ▸ Physics Layers* and *World ▸ World Shape*, collider outlines in the viewport and the game (F4). |
 | Vulkan shaders + texture generation | GLSL editor first, node graph later; texture generator (noise, gradients, tiling) | shaderc → SPIR-V; generators in C++, called via `_midgard` | One generator implementation for editor preview and runtime. Image textures (KTX2) are built (5.3, 5.5); shaders and generators are 5.17. |
@@ -1501,6 +1504,29 @@ Each companion has an **approval** of the player who recruited them, from −100
 - **The AI assistant** can draft translations, which are marked *needs review*.
 - **Players** choose their language in settings, from English plus any installed or bundled language packs.
 
+### Menus, HUD and player stats (Menu editor, Stats editor)
+Everything the player sees on screen besides the world itself: menus, game screens and the HUD. It is the first thing built in Phase 6 (milestone 6.0), because inventory, quests, dialogue, combat, saves and survival all need screens and HUD elements.
+
+- **One UI system.** Menus, screens and the HUD are RmlUi documents (HTML/CSS-like) cooked from the Menu editor, styled by the project's own styles (never the editor's theme). Text uses string keys, so it is translated like everything else. The UI scales with the screen (a *UI scale* setting) and keeps clear of phones' notches and rounded corners (safe areas). It works with the mouse, with a gamepad (every control reachable by focus navigation) and by touch.
+- **Player stats, defined by the designer.** A **Stats** table in the project: each stat has an id, a name, a range, a starting value, regeneration (per second, after a delay since it last went down), whether it travels with the character, and how the HUD shows it (bar, number, both, or hidden). New projects start with **health** and **stamina**. Combat (damage), survival (cold, heat, wetness), hunger and thirst, progression (XP and level) and scripts all read and change the **same** stats, so no system invents its own. Stats belong to the character and travel between worlds with it; in co-op the host decides them.
+- **Scores and counters.** Named numbers kept by scripts or game systems, per player or per world: score, kills, items collected, timers and countdowns, gold shown from the wallet. They are saved with the world or the character, as the designer chooses.
+- **The HUD.** Each game has a HUD layout made in the Menu editor, its widgets anchored to the screen's edges and corners:
+  - **stat bars and numbers** (health, stamina, mana, XP and level, and so on), with low-value warnings;
+  - **scores, counters and timers**;
+  - **prompts** ("Press E to open", showing the right key, button or touch control for the player's device) and a **notification feed** (pick-ups, quest updates, achievements, warnings) whose messages queue, stay a few seconds and fade;
+  - a **crosshair** for the views that need one (first person by default);
+  - a **compass** strip or a **minimap**, with markers for quests, companions, home, ships and the designer's own. Both are shape-aware: "north" and the map follow the world's shape on planets and inside cylinders, using the map projections from 5.12.
+  - The HUD hides itself in conversations and scripted camera moves, and the player can turn it off (screenshots).
+- **Data binding.** HUD widgets and screens show live values without scripts: stats, counters, the wallet, the clock (the local date, time and season, §6), the player (speed, the current body), and values a script sets. They redraw only when a value changes.
+- **Ready-made screens** (Menu editor templates the designer can restyle, change or replace), besides those in §7 (*Player-facing screens*):
+  - **title and main menu:** *New*, *Continue*, *Load*, *Settings*, *Credits*, *Quit*;
+  - **pause menu** in the game (it pauses single-player games only; in co-op the world keeps running);
+  - **settings:** graphics (quality tier, resolution and window mode), sound volumes, controls (opening the rebinding screen, §8 *Input mapping*), language, UI scale and subtitles;
+  - **game over and respawn:** respawn at a bed, a teleport pad or the start; load the last save; or quit to the menu (there is no permadeath);
+  - **inventory**, **character sheet** (stats, skills, equipment) and **quest log**, each arriving with its system later in Phase 6.
+- **Script API:** `midgard.ui` (show and hide screens, set bound values, `notify(text)`, `prompt(text, action)`, handle buttons with `on(...)`) and `midgard.stats` (read, change and watch stats).
+- **Editors:** the **Menu editor** (a canvas with the plan's widgets, anchors and layouts, styles, previews at desktop and phone sizes, and changes shown live in the running game over the live link) and the **Stats editor** (the Stats table, with a preview of each HUD bar).
+
 ### Save and load UI (Save editor)
 - **What is saved** is already defined: the universe folder (`world.json`, `world.db`, per-body files) and the character profile. The Save system adds the player-facing part.
 - **Save slots:** in single-player, each universe has an **autosave** chain and **manual save slots** (snapshots of the universe folder).
@@ -1677,9 +1703,10 @@ moved to Phase 6 (see there); Phase 5 builds their foundations.
 **Exit:** a game generates, on the player's device, one world type of each shape at fixed sizes. A player walks all the way around the cylinder and both spheres with correct gravity, sees no seams, and watches a full day/night cycle on each shape. They rise out of the planet's atmosphere into space and come back down. The game ships as a package. An animated character walks the planet in all three camera views, its feet planted on the slopes, with biome ambience and music.
 
 ### Phase 6: Gameplay data systems
+- **6.0 UI foundation, first** (§8, *Menus, HUD and player stats*), because the systems after it all need screens and HUD elements: the RmlUi runtime on desktop and Android (mouse, gamepad focus and touch, UI scale, safe areas); the **Menu editor** with player-sizable, movable windows and live previews; designer-defined **player stats** (the Stats editor, regeneration, `midgard.stats`) and **scores and counters**; the **HUD** with data binding (stat bars, numbers, counters and timers, prompts, the notification feed, the crosshair, the compass and minimap); `midgard.ui`; and the screen templates for the title and main menu, pause and settings, and game over and respawn (the inventory, character and quest-log templates come with their systems).
+  **Exit:** a game opens at its title screen and starts from *New*. The player sees health and stamina bars, a score that a script raises, a pick-up notification and a compass that stays true walking round a planet. They pause, change the volume and a key binding, die and respawn. All of this works on Windows, Linux and the phone (touch and the on-screen UI scale).
 - Property-grid widget (the shared node-graph widget is built in Phase 5, for world types).
 - **Moved from Phase 5** (they need this phase's systems): cold, heat and soaked **status effects** and the rested bonus; **clothing survival stats**; craftable, placeable **campfires and heaters**; the **HUD temperature gauge** and screen-edge frost and sweat; `survival_scale` from the difficulty; weather reducing **AI perception**; **space weather**; **forecast devices** (weather stations, ship sensors, scanners); camera **lock-on**; the in-game **map screen**.
-- Menu editor + RmlUi runtime (with player-sizable, movable windows).
 - **Combat** (§8): the Combat editor, weapons and abilities, hit boxes on bones, damage types and status effects, dodge, block and parry, the combat sandbox.
 - **AI behaviour** (§8): the AI Behaviour editor, perception, navigation links, groups and factions, Calendar schedules, spawn tables, live behaviour-tree debugging.
 - **Companions** (§8): recruiting by dialogue, quest and hire, commands, companion skill trees, downed and revive, following through teleports and onto ships. **Approval**: traits, approval tags in the Dialogue and Quest editors, approval levels, refusals, leaving and winning back, personal quests, the approval simulator.
@@ -2010,6 +2037,12 @@ Margins of 32/24/32/16 px, 10 px spacing, and width = max(content width, 1.6 × 
 - **The world's surface** (`builtin:surface`) is made by the engine from the body and casts no shadow.
 - **Several renderers share the editor's process** (the viewport and the previews), so the engine never binds Vulkan's functions to one device.
 - **The editor opens the last project on start**, unless turned off in Preferences.
+
+### Decided (31 October 2026): menus, HUD and player stats
+- **The UI foundation is the first milestone of Phase 6** (6.0): the runtime UI, the Menu editor, player stats, the HUD and the basic screens, before the systems that need them (§8, *Menus, HUD and player stats*).
+- **The HUD has all four kinds of element:** stat bars and numbers; scores, counters and timers; prompts and notifications; and a compass or minimap.
+- **Every game gets ready-made screens:** title and main menu, pause and settings, game over and respawn, and the inventory, character sheet and quest log.
+- **Player stats are designer-defined** in a Stats table (new projects start with health and stamina), shared by combat, survival, food, progression and scripts.
 
 ### Still open
 
