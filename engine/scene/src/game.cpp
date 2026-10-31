@@ -44,6 +44,7 @@ Game::Game(const std::filesystem::path& package_dir)
     }
     time_.set_time(standard_calendar().start_time());
     time_.set_scale(standard_calendar().time_scale());
+    update_sun();
 
     sqlite3* db = nullptr;
     const std::u8string u8 = database.u8string();
@@ -72,6 +73,21 @@ std::string Game::text(const std::string& key) const {
 void Game::advance_time(std::int64_t game_seconds, SkipPolicy policy) {
     const std::vector<TimeEvent>& passed = time_.advance(game_seconds, policy);
     skipped_.insert(skipped_.end(), passed.begin(), passed.end());
+    update_sun();
+}
+
+void Game::set_time(std::int64_t time) {
+    time_.set_time(time);
+    update_sun();
+}
+
+void Game::update_sun() {
+    const Calendar& c = local_calendar();
+    const Date d = date_at(c, time_.now());
+    // With the part of a second not yet on the clock, so the sun moves smoothly.
+    const double seconds = double(d.seconds_into_day) + (time_.precise() - double(time_.now()));
+    scene_.solar_phase = solar_phase(seconds, double(c.seconds_per_day()),
+                                     daylight_on(c, d.year, d.day_of_year), c.solar_noon);
 }
 
 void Game::use_world(const std::filesystem::path& folder) {
@@ -79,6 +95,7 @@ void Game::use_world(const std::filesystem::path& folder) {
     if (const auto saved = world_->clock()) {
         time_.set_time(saved->game_time);
         time_.set_scale(saved->scale);
+        update_sun();
     }
 }
 
@@ -110,6 +127,7 @@ void Game::update(const Actions& actions, float dt) {
     skipped_.clear();
     const std::vector<TimeEvent>& passed = time_.update(dt);
     time_events_.insert(time_events_.end(), passed.begin(), passed.end());
+    update_sun();
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
     physics_->set_player_intent(intent.walk, intent.jump);
     physics_->update(scene_, dt);  // the player walks

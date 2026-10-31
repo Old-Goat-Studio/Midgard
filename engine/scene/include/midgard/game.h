@@ -116,6 +116,8 @@ public:
     const std::vector<TimeEvent>& time_events() const { return time_events_; }
     // Moves the clock on at once (sleeping, waiting). Its signals come with the next update.
     void advance_time(std::int64_t game_seconds, SkipPolicy policy = SkipPolicy::All);
+    // Puts the clock at a moment, reporting nothing (the editor's scrubber, over the live link).
+    void set_time(std::int64_t time);
     // Player-facing text in English: a key of the package's string table (the key itself if
     // it has none).
     std::string text(const std::string& key) const;
@@ -133,6 +135,7 @@ private:
     CameraSweep camera_sweep() const;
     void rebuild_physics();
     void update_triggers();
+    void update_sun();  // suns that follow the clock: the solar phase now
 
     PackageInfo package_;
     std::unique_ptr<Pak> pak_;

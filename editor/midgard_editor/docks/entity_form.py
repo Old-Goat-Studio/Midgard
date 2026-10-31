@@ -10,6 +10,7 @@ from typing import Any
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QDoubleSpinBox,
@@ -138,6 +139,7 @@ class EntityForm(QWidget):
                 form.addRow(label, button)
                 self.sky[key] = button
         self.color = self.fov = self.intensity = self.mesh = None
+        self.follows_clock = None
         if "mesh" in entity.components:
             self.mesh = QComboBox()
             for asset, label in project.mesh_assets().items():
@@ -165,6 +167,14 @@ class EntityForm(QWidget):
             self.intensity.valueChanged.connect(
                 lambda _v: self._component_value("light", "intensity", self.intensity.value()))
             form.addRow("Intensity", self.intensity)
+            if entity.components["light"].get("type", "directional") == "directional":
+                self.follows_clock = QCheckBox("Follows the clock")
+                self.follows_clock.setToolTip(
+                    "The sun rises and sets with the game's clock (and the Calendar dock's "
+                    "scrubber). Where it is placed is where it stands at solar noon.")
+                self.follows_clock.toggled.connect(lambda on: self._set_value(
+                    "light", "follows_clock", on, "follows the clock"))
+                form.addRow("", self.follows_clock)
         self.script = self.trigger = None
         if "script" in entity.components:
             self.script = QComboBox()
@@ -447,6 +457,10 @@ class EntityForm(QWidget):
         if self.trigger is not None:
             self.trigger.set_value(entity.components["trigger"].get("size", [1.0, 1.0, 1.0]))
         self._refresh_physics(entity)
+        if self.follows_clock is not None:
+            self.follows_clock.blockSignals(True)
+            self.follows_clock.setChecked(bool(entity.components["light"].get("follows_clock")))
+            self.follows_clock.blockSignals(False)
         for box, component, key, default in ((self.fov, "camera", "fov", 55.0),
                                              (self.intensity, "light", "intensity", 1.0)):
             if box is not None:

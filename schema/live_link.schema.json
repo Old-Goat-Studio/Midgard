@@ -80,6 +80,14 @@
       "required": ["type", "level", "text"]
     },
     {
+      "description": "Editor → runtime: the Calendar dock's scrubber put the clock at a moment (game seconds since year 1, month 1, day 1, 00:00); no time signals fire.",
+      "properties": {
+        "type": { "const": "time.set" },
+        "time": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["type", "time"]
+    },
+    {
       "description": "Editor → runtime: a script module's file changed in the package's scripts/ folder; the runtime re-imports it.",
       "properties": {
         "type": { "const": "script.changed" },

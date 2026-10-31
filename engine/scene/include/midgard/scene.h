@@ -120,6 +120,9 @@ struct CameraLens {
 struct DirectionalLight {
     glm::vec3 color{1.0f};
     float intensity = 1.0f;
+    // The clock moves it (Scene::solar_phase): its placed direction is where it is at solar
+    // noon, and it rises and sets on the great circle through there, dimming through twilight.
+    bool follows_clock = false;
 };
 
 // A point or spot light (a spot shines along the entity's local -Z).
@@ -266,6 +269,10 @@ public:
     // How to draw the entity with this mesh: its matrix relative to `origin` and its material
     // (a plain light grey without one). The game and the editor's viewport share it.
     render::DrawItem draw_item(entt::entity e, render::MeshId mesh, const glm::dvec3& origin) const;
+
+    // The time of day for suns that follow the clock (0 sunrise, 0.25 noon, 0.5 sunset), set by
+    // the game's clock or the editor's scrubber. None: every sun stays where it was placed.
+    std::optional<double> solar_phase;
 
     // The first camera (by entity id order), for the given aspect ratio: its origin is its world
     // position and its view only turns (camera-relative rendering, see render::Camera).

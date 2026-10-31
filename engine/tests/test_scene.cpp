@@ -1689,3 +1689,56 @@ TEST_CASE("time: a package from before calendars gets a plain one") {
     game.update(actions, 1.0f);
     CHECK(game.time().now() > 0);
 }
+
+TEST_CASE("time: a sun that follows the clock rises, peaks where it was placed, and sets") {
+    // Placed shining down at 60 degrees towards -Z: its noon.
+    auto entities = camera_scene();
+    entities.push_back({"e4_sun", R"(NULL, '{"transform": {"rotation": [-60, 0, 0]},
+                        "light": {"type": "directional", "intensity": 2, "follows_clock": true}}')"});
+    entities.push_back({"e5_lamp", R"(NULL, '{"transform": {"rotation": [-60, 0, 0]},
+                        "light": {"type": "directional"}}')"});  // (the second: not the sun)
+    TestPackage pkg(entities);
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const glm::vec3 up(0, 1, 0);
+
+    scene.solar_phase.reset();  // as placed
+    const midgard::render::Light placed = scene.light({0, 0, 0});
+    CHECK(placed.intensity == doctest::Approx(2.0f));
+
+    scene.solar_phase = 0.25;  // noon: where it was placed, at full strength
+    midgard::render::Light l = scene.light({0, 0, 0});
+    CHECK(glm::length(l.direction - placed.direction) < 1e-5f);
+    CHECK(l.intensity == doctest::Approx(2.0f));
+    CHECK(l.ambient.x == doctest::Approx(placed.ambient.x));
+
+    scene.solar_phase = 0.0;  // sunrise: level with the horizon, half way through twilight
+    l = scene.light({0, 0, 0});
+    CHECK(std::abs(glm::dot(l.direction, up)) < 1e-5f);
+    CHECK(l.intensity == doctest::Approx(1.0f));
+    const glm::vec3 rising = -l.direction;
+
+    scene.solar_phase = 0.5;  // sunset: on the other side
+    l = scene.light({0, 0, 0});
+    CHECK(glm::dot(-l.direction, rising) == doctest::Approx(-1.0f));
+
+    scene.solar_phase = 0.75;  // midnight: no sun, dim ambient light
+    l = scene.light({0, 0, 0});
+    CHECK(l.intensity == 0.0f);
+    CHECK(l.ambient.x == doctest::Approx(placed.ambient.x * 0.25f));
+
+    scene.solar_phase = 0.1;  // morning: up, and climbing from the side it rose on
+    l = scene.light({0, 0, 0});
+    CHECK(glm::dot(-l.direction, up) > 0.2f);
+    CHECK(glm::dot(-l.direction, rising) > 0.5f);
+
+    // The game's clock moves it: the standard calendar starts at 06:00, before sunrise.
+    game.set_time(game.time().now());
+    REQUIRE(scene.solar_phase.has_value());
+    CHECK(*scene.solar_phase > 0.9);
+    CHECK(scene.light({0, 0, 0}).intensity < 0.5f);
+    const midgard::Calendar& c = game.standard_calendar();
+    game.set_time(midgard::time_of(c, 1, 4, 1, 12 * 3600));  // noon
+    CHECK(*scene.solar_phase == doctest::Approx(0.25));
+    CHECK(scene.light({0, 0, 0}).intensity == doctest::Approx(2.0f));
+}

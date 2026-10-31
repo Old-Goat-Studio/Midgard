@@ -37,6 +37,7 @@ from .backup import BackupScheduler
 from .cook import CookError, cook
 from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_project_under_git
 from .docks.assistant import AssistantPanel
+from .docks.calendar_panel import CalendarPanel
 from .docks.camera_editor import CameraDialog
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
@@ -61,7 +62,8 @@ log = logging.getLogger(LOGGER_NAME)
 PLAY_ICON_SIZE = 32  # the Play, Pause and Stop buttons
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
-          "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects"}
+          "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
+          "calendar": "Calendar"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -154,6 +156,8 @@ class MainWindow(QMainWindow):
         self.script_editor = ScriptEditorPanel(settings)
         self.project_page = ProjectPage()
         self.objects_panel = ObjectsPanel()
+        self.calendar_panel = CalendarPanel()
+        self.calendar_panel.time_scrubbed.connect(self._time_scrubbed)
         self.objects_panel.place_requested.connect(self.place_object)
         self.scene_panel.show_objects.connect(lambda: self.edit_object(""))
         self.assistant = AssistantPanel(settings)
@@ -171,7 +175,8 @@ class MainWindow(QMainWindow):
         widgets = {"project": self.browser, "scene": self.scene_panel, "inspector": self.inspector,
                    "log": self.log_panel, "history": self.history, "viewport": self.viewport,
                    "scripts": self.script_editor, "assistant": self.assistant,
-                   "project_page": self.project_page, "objects": self.objects_panel}
+                   "project_page": self.project_page, "objects": self.objects_panel,
+                   "calendar": self.calendar_panel}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -211,16 +216,28 @@ class MainWindow(QMainWindow):
         self._tab_behind_viewport("project_page")
         self._tab_behind_viewport("objects")
         self._place_assistant()
+        self._tab_behind_inspector("calendar")
 
     def _place_assistant(self) -> None:
         """The Assistant is a tab behind the Inspector."""
+        self._tab_behind_inspector("assistant")
+
+    def _tab_behind_inspector(self, key: str) -> None:
+        """A tab in the Inspector's area (beside the Viewport, so both show at once)."""
         area = self.panels["inspector"].dockAreaWidget()
         if area is not None:
-            self.dock_manager.addDockWidgetTabToArea(self.panels["assistant"], area)
+            self.dock_manager.addDockWidgetTabToArea(self.panels[key], area)
             self.panels["inspector"].setAsCurrentTab()
         else:
             self.dock_manager.addDockWidget(QtAds.DockWidgetArea.RightDockWidgetArea,
-                                            self.panels["assistant"])
+                                            self.panels[key])
+
+    def _time_scrubbed(self, time: int, solar_phase: float) -> None:
+        """The Calendar dock's scrubber: the viewport's sun follows, and the running game's
+        clock."""
+        self.viewport.set_solar_phase(solar_phase)
+        if self.session is not None and self.session.running:
+            self.session.set_time(time)
 
     def ask_assistant(self, code: str, file: str) -> None:
         self.panels["assistant"].toggleView(True)
@@ -296,6 +313,8 @@ class MainWindow(QMainWindow):
                 self._tab_behind_viewport("project_page")
             if "objects" not in saved:
                 self._tab_behind_viewport("objects")
+            if "calendar" not in saved:
+                self._tab_behind_inspector("calendar")
 
     def reset_layout(self) -> None:
         self.dock_manager.restoreState(self._default_state)
@@ -629,6 +648,7 @@ class MainWindow(QMainWindow):
         self.assistant.set_project(project)
         self.project_page.set_project(project)
         self.objects_panel.set_project(project)
+        self.calendar_panel.set_project(project)
         MaterialDialog.close_all()
         CameraDialog.close_all()
         if self.content_watcher is not None:

@@ -5,9 +5,9 @@ and a world keeps it between runs."""
 import sqlite3
 
 import pytest
-from test_scripting import needs_scripting, simulate, write_script
+from test_scripting import needs_scripting, scripting_runtime, simulate, write_script
 
-from midgard_editor import contract, engine
+from midgard_editor import calendars, contract, engine
 from midgard_editor.cook import CookError, cook
 
 
@@ -115,3 +115,179 @@ def test_a_world_keeps_its_clock_between_runs(project, tmp_path):
     assert scene["time"] == START + 31  # carried on from where it was saved
     scene, _run = simulate(package, 2)  # no world: a new game
     assert scene["time"] == START + 1
+
+
+# ---- the Calendar dock -------------------------------------------------------------------------
+needs_engine = pytest.mark.skipif(engine.module() is None, reason="engine module not built")
+
+
+@pytest.fixture
+def dock(qtbot, project):
+    from midgard_editor.docks.calendar_panel import CalendarPanel
+
+    panel = CalendarPanel()
+    qtbot.addWidget(panel)
+    panel.set_project(project)
+    return panel
+
+
+def standard(project) -> dict:
+    return calendars.load(project, "cal_standard")
+
+
+@needs_engine
+def test_the_dock_shows_the_standard_calendar_from_its_start(dock):
+    assert dock.chooser.currentText() == "Standard (standard)"
+    assert dock.standard.isChecked() and not dock.standard.isEnabled()  # (there is one)
+    assert dock.hours_per_day.value() == 24 and dock.real_minutes.value() == 48
+    assert "30 times as fast" in dock.scale_label.text()
+    assert dock.months.rowCount() == 12 and dock.months.item(1, 0).text() == "February"
+    assert dock.seasons.rowCount() == 4 and dock.moons.rowCount() == 1
+    # The preview starts where a new game does: April 1st, year 1, 06:00, before sunrise.
+    assert dock.date_label.text().startswith("Laugardagr, April 1, Year 1 · Winter")
+    assert "sunrise 07:17, sunset 16:42" in dock.date_label.text()
+    assert dock.time_label.text().startswith("06:00") and "(night)" in dock.time_label.text()
+    assert len(dock.year_strip.daylight) == 365
+    assert min(dock.year_strip.daylight) == pytest.approx(0.35, abs=0.002)
+    assert max(dock.year_strip.daylight) == pytest.approx(0.65, abs=0.002)
+    assert "-hour day" in dock.rolled.text()
+    assert dock.problems.text() == ""
+
+
+@needs_engine
+def test_every_calendar_change_is_undoable(dock, project):
+    stack = project.undo_stack
+    before = standard(project)
+    dock.hours_per_day.setValue(20)
+    dock.hours_per_day.setValue(21)  # a number being dragged: one step
+    assert standard(project)["hours_per_day"] == 21 and stack.count() == 1
+    dock.months.item(0, 0).setText("Þorri")  # a table edit
+    dock.months.item(0, 1).setText("29")
+    assert standard(project)["months"][0] == {"name": "Þorri", "days": 29}
+    assert project.string("cal_standard.month.0") == "Þorri"  # a translatable string
+    dock._add_row("seasons")
+    assert len(standard(project)["seasons"]) == 5
+    assert "season 5 has no share" in dock.problems.text()
+    dock.seasons.setCurrentCell(4, 0)
+    dock._remove_row("seasons", dock.seasons)
+    assert len(standard(project)["seasons"]) == 4
+    dock.name.setText("Northern")
+    dock.name.editingFinished.emit()
+    assert dock.chooser.currentText() == "Northern (standard)"
+    dock.leap_every.setValue(0)
+    assert standard(project)["leap_every"] == 0
+
+    while stack.canUndo():
+        stack.undo()
+    assert standard(project) == before
+    assert dock.hours_per_day.value() == 24 and dock.months.item(0, 0).text() == "January"
+    while stack.canRedo():
+        stack.redo()
+    assert standard(project)["name"] == "Northern"
+
+
+@needs_engine
+def test_the_dock_reports_calendars_that_cant_work(dock, project):
+    dock.seasons.item(0, 1).setText("40")  # winter 40%: the shares add up to 115%
+    assert "shares add up to" in dock.problems.text()
+    assert "No preview" in dock.date_label.text()
+    project.undo_stack.undo()
+    assert dock.problems.text() == "" and "April 1" in dock.date_label.text()
+
+
+@needs_engine
+def test_new_duplicate_delete_and_the_standard_calendar(dock, project, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    stack = project.undo_stack
+    martian = dock.new_calendar("Mars Base")
+    assert martian == "cal_mars_base"
+    assert dock.chooser.currentData() == martian and not dock.standard.isChecked()
+    copy_id = dock.duplicate()
+    assert copy_id == "cal_mars_base_copy"
+    assert len(calendars.load_all(project)) == 3
+
+    dock.select(martian)
+    dock.standard.setChecked(True)  # one undo step for both calendars
+    found = {c["id"]: c["standard"] for c in calendars.load_all(project)}
+    assert found == {"cal_standard": False, martian: True, copy_id: False}
+    assert stack.undoText() == "Make Mars Base the standard calendar"
+    stack.undo()
+    assert calendars.load(project, "cal_standard")["standard"]
+
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a))
+    dock.select("cal_standard")
+    dock.delete_calendar(confirm=False)  # the standard calendar stays
+    assert shown and calendars.load(project, "cal_standard") is not None
+    dock.select(copy_id)
+    dock.delete_calendar(confirm=False)
+    assert calendars.load(project, copy_id) is None
+    assert project.string(f"{copy_id}.month.0") is None  # its names went with it
+    stack.undo()
+    assert calendars.load(project, copy_id)["months"][3]["name"] == "April"
+
+
+@needs_engine
+def test_the_scrubber_gives_the_time_and_solar_phase(dock):
+    scrubbed = []
+    dock.time_scrubbed.connect(lambda t, phase: scrubbed.append((t, phase)))
+    noon = 12 * 3600
+    dock.scrub(noon)
+    t, phase = scrubbed[-1]
+    assert t == START - 6 * 3600 + noon  # April 1st, 12:00
+    assert phase == pytest.approx(0.25)  # solar noon
+    assert dock.time_label.text().startswith("12:00") and "(day)" in dock.time_label.text()
+    assert dock.day_bar.time == noon
+    dock.day_bar.time_picked.emit(20 * 3600)  # clicked on the day bar: evening, night
+    assert scrubbed[-1][1] > 0.5
+    dock.year_strip.day_picked.emit(200)  # another day of the year, the same time
+    assert "July 20" in dock.date_label.text() and "Summer" in dock.date_label.text()
+    assert scrubbed[-1][0] == START - 6 * 3600 + (200 - 90) * 86400 + 20 * 3600
+
+
+def test_a_sun_can_follow_the_clock(qtbot, project):
+    from midgard_editor.docks.entity_form import EntityForm
+
+    form = EntityForm(project, "e000002")  # the new scene's Sun
+    qtbot.addWidget(form)
+    assert form.follows_clock is not None and not form.follows_clock.isChecked()
+    form.follows_clock.setChecked(True)
+    assert project.entity("e000002").components["light"]["follows_clock"] is True
+    project.undo_stack.undo()
+    assert "follows_clock" not in project.entity("e000002").components["light"]
+    assert not form.follows_clock.isChecked()
+
+
+@needs_scripting
+def test_the_scrubber_moves_the_running_games_clock(project, qtbot, tmp_path):
+    from midgard_editor.live_link import PlaySession, State
+
+    received = []
+    session = PlaySession(project)
+    session.message_received.connect(received.append)
+
+    def game_time() -> int:
+        count = len(received)
+        session.send({"type": "scene.dump"})
+        qtbot.waitUntil(lambda: any(m.get("type") == "scene" for m in received[count:]),
+                        timeout=5000)
+        return next(m for m in received[count:] if m.get("type") == "scene")["scene"]["time"]
+
+    try:
+        session.start([str(scripting_runtime()), "--headless"],
+                      cook(project, tmp_path / "pkg").out_dir)
+        qtbot.waitUntil(lambda: session.state == State.PLAYING, timeout=20000)
+        assert START <= game_time() < START + 3600
+        midnight = START - 6 * 3600 + 86400 * 100  # a hundred days on, at midnight
+        assert session.set_time(midnight)
+        assert midnight <= game_time() < midnight + 60  # (it keeps running at 30x)
+    finally:
+        session.stop()
+
+
+def test_the_main_window_has_the_calendar_dock(window, project):
+    assert "calendar" in window._layout_record()["panels"]
+    window.set_project(project)
+    assert window.calendar_panel.chooser.currentData() == "cal_standard"
+    window._time_scrubbed(START, 0.9)  # (no 3D view offscreen, and no game running: no harm)

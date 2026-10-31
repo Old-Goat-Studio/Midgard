@@ -43,6 +43,9 @@ public:
     // An object's template (a JSON list of parts): its instances are filled in again.
     void set_object(const std::string& object_id, const std::string& parts_json);
     void set_camera(const glm::vec3& eye, const glm::vec3& target, float fov_degrees);
+    // The time of day for suns that follow the clock (the Calendar dock's scrubber), or none.
+    void set_solar_phase(std::optional<double> phase) { scene_.solar_phase = phase; }
+    std::optional<double> solar_phase() const { return scene_.solar_phase; }
     // Where the game's camera would be in one of its views, from the scene as edited (the
     // Camera editor's preview): the game's own camera rig works it out, so the two agree. Walls
     // don't stop it here (the viewport has no physics). None without a player and a camera.

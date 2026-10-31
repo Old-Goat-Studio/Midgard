@@ -25,6 +25,7 @@
 #include <nlohmann/json.hpp>
 
 #include "midgard/body.h"
+#include "midgard/calendar.h"
 #include "midgard/gltf.h"
 #include "midgard/link.h"
 #include "midgard/model.h"
@@ -236,6 +237,108 @@ PYBIND11_MODULE(_midgard, m) {
     m.def("shape_fingerprint", &midgard::shape_fingerprint,
           "The shapes' fingerprint (equal to schema/tests/shape_fingerprint.json everywhere).");
 
+    // Calendars (midgard/calendar.h), for the Calendar dock: the engine's own maths.
+    py::class_<midgard::Calendar>(m, "Calendar",
+                                  "A calendar, from JSON with the calendar table's columns and "
+                                  "months, weekdays, seasons and moons.")
+        .def(py::init([](const std::string& json_text) {
+                 const nlohmann::json j = nlohmann::json::parse(json_text, nullptr, false);
+                 if (!j.is_object()) throw py::value_error("a calendar is a JSON object");
+                 return midgard::calendar_from_json(j);
+             }),
+             py::arg("json"))
+        .def_property_readonly("seconds_per_day", &midgard::Calendar::seconds_per_day)
+        .def_property_readonly("seconds_per_hour", &midgard::Calendar::seconds_per_hour)
+        .def_property_readonly("hours_per_day",
+                               [](const midgard::Calendar& c) { return c.hours_per_day; })
+        .def_property_readonly("months",
+                               [](const midgard::Calendar& c) {
+                                   std::vector<int> days;
+                                   for (const auto& month : c.months) days.push_back(month.days);
+                                   return days;
+                               })
+        .def_property_readonly("tilt", [](const midgard::Calendar& c) { return c.tilt; })
+        .def_property_readonly("time_scale", &midgard::Calendar::time_scale)
+        .def("year_days", &midgard::Calendar::year_days, py::arg("year"))
+        .def("problems", &midgard::Calendar::problems, "The cook checks' complaints.")
+        .def("start_time",
+             [](const midgard::Calendar& c) {
+                 try {
+                     return c.start_time();
+                 } catch (const midgard::CalendarError& e) {
+                     throw py::value_error(e.what());
+                 }
+             })
+        .def(
+            "date",
+            [](const midgard::Calendar& c, std::int64_t time) {
+                try {
+                    const midgard::Date d = midgard::date_at(c, time);
+                    py::dict out;
+                    out["year"] = d.year;
+                    out["month"] = d.month;
+                    out["day"] = d.day;
+                    out["hour"] = d.hour;
+                    out["minute"] = d.minute;
+                    out["second"] = d.second;
+                    out["weekday"] = d.weekday;
+                    out["day_of_year"] = d.day_of_year;
+                    out["season"] = d.season;
+                    out["seconds_into_day"] = d.seconds_into_day;
+                    return out;
+                } catch (const midgard::CalendarError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("time"), "The date at a moment: a dict of year, month, day, hour, ...")
+        .def(
+            "time_of",
+            [](const midgard::Calendar& c, std::int64_t year, int month, int day,
+               std::int64_t seconds) {
+                try {
+                    return midgard::time_of(c, year, month, day, seconds);
+                } catch (const midgard::CalendarError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("year"), py::arg("month"), py::arg("day"), py::arg("seconds_into_day") = 0)
+        .def("season_on", &midgard::season_on, py::arg("year"), py::arg("day_of_year"))
+        .def("daylight", &midgard::daylight_on, py::arg("year"), py::arg("day_of_year"),
+             "The day's share of daylight (0.01 to 0.99).")
+        .def(
+            "solar_phase",
+            [](const midgard::Calendar& c, std::int64_t year, int day_of_year, double seconds) {
+                return midgard::solar_phase(seconds, double(c.seconds_per_day()),
+                                            midgard::daylight_on(c, year, day_of_year),
+                                            c.solar_noon);
+            },
+            py::arg("year"), py::arg("day_of_year"), py::arg("seconds_into_day"),
+            "0 sunrise, 0.25 noon, 0.5 sunset, back to 1.")
+        .def(
+            "sun_times",
+            [](const midgard::Calendar& c, std::int64_t time) {
+                const midgard::SunTimes s = midgard::sun_times(c, time);
+                return py::make_tuple(s.sunrise, s.sunset);
+            },
+            py::arg("time"), "(sunrise, sunset) in seconds into the day of the moment.")
+        .def(
+            "roll",
+            [](const midgard::Calendar& c, std::uint64_t seed) {
+                return midgard::roll_body_calendar(c, seed);
+            },
+            py::arg("seed"), "A body's calendar rolled from this one's ranges and a seed.");
+    m.def(
+        "calendar_problems",
+        [](const std::vector<std::string>& calendars) {
+            std::vector<midgard::Calendar> all;
+            for (const std::string& j : calendars)
+                all.push_back(midgard::calendar_from_json(nlohmann::json::parse(j)));
+            return midgard::calendar_problems(all);
+        },
+        py::arg("calendars"),
+        "The cook checks of a project's calendars together (JSON each): each calendar's, and "
+        "that exactly one is the standard calendar.");
+
     py::class_<Viewport>(m, "Viewport", "The editor's 3D view of the scene being edited.")
         .def(py::init<>())
         .def("put_entity", &Viewport::put_entity, py::arg("entity_json"),
@@ -269,6 +372,10 @@ PYBIND11_MODULE(_midgard, m) {
             [](Viewport& v, const std::array<float, 3>& eye, const std::array<float, 3>& target,
                float fov) { v.set_camera(vec3(eye), vec3(target), fov); },
             py::arg("eye"), py::arg("target"), py::arg("fov") = 55.0f)
+        .def_property(
+            "solar_phase", &Viewport::solar_phase, &Viewport::set_solar_phase,
+            "The time of day for suns that follow the clock (0 sunrise, 0.25 noon, 0.5 sunset), "
+            "or None: suns stay where they were placed.")
         .def(
             "preview_camera",
             [](Viewport& v, const std::string& view) -> std::optional<py::tuple> {

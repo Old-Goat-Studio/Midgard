@@ -172,6 +172,10 @@ class PlaySession(QObject):
             self.send({"type": "resume"})
             self._set_state(State.PLAYING)
 
+    def set_time(self, time: int) -> bool:
+        """Puts the running game's clock at a moment (the Calendar dock's scrubber)."""
+        return self.send({"type": "time.set", "time": int(time)})
+
     def send(self, message: dict) -> bool:
         if self.socket is None or self.socket.state() != QTcpSocket.SocketState.ConnectedState:
             return False

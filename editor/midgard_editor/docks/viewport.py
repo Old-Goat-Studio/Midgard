@@ -434,6 +434,14 @@ class ViewportPanel(QWidget):
                 self.view.set_camera(self.camera.eye(), self.camera.target, self.camera.fov)
             self.request_render()
 
+    # ---- the Calendar dock's time of day -------------------------------------------------
+    def set_solar_phase(self, phase: float | None) -> None:
+        """Suns that follow the clock show this time of day (0 sunrise, 0.25 noon, 0.5
+        sunset); None puts them back where they were placed."""
+        if self.view is not None:
+            self.view.solar_phase = phase
+            self.request_render()
+
     # ---- the Camera editor's preview ----------------------------------------------------
     def set_preview(self, view: str | None) -> bool:
         """Shows the game camera's view ("first", "third" or "top") from where the game would

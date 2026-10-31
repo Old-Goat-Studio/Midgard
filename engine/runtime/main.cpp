@@ -395,6 +395,10 @@ public:
             if (g_link) g_link->send({{"type", "scene"}, {"scene", nlohmann::json::parse(dump())}});
             return;
         }
+        if (type == "time.set") {  // the Calendar dock's scrubber
+            game_.set_time(message.value("time", std::int64_t(0)));
+            return;
+        }
         if (type == "script.changed") {
             const std::string module = message.value("module", "");
 #ifdef MIDGARD_HAS_SCRIPTING

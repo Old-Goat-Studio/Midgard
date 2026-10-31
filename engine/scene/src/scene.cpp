@@ -215,7 +215,8 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.remove<DirectionalLight, LocalLightSource>(e);
         if (type == "directional") {
             reg.emplace<DirectionalLight>(e, vec3(c, "color", glm::vec3(1.0f)),
-                                          c.value("intensity", 1.0f));
+                                          c.value("intensity", 1.0f),
+                                          c.value("follows_clock", false));
         } else if (type == "point" || type == "spot") {
             LocalLightSource l;
             l.spot = type == "spot";
@@ -563,6 +564,28 @@ render::Light Scene::light(const glm::dvec3& origin) const {
         light.direction = glm::vec3(world_matrix(e) * glm::dvec4(0, 0, -1, 0));
         light.color = l.color;
         light.intensity = l.intensity;
+        if (l.follows_clock && solar_phase) {
+            // The sun's path: the great circle through where it was placed (its noon) and the
+            // horizon at right angles to it, so it rises at 0, peaks at 0.25 and sets at 0.5.
+            const glm::vec3 up = glm::normalize(light.up);
+            glm::vec3 noon = -glm::normalize(light.direction);
+            if (glm::dot(noon, up) < 0.01f) noon = up;  // placed below the horizon: overhead
+            glm::vec3 rising = glm::cross(up, noon);
+            if (glm::dot(rising, rising) < 1e-8f)  // straight overhead: any level direction
+                rising =
+                    glm::cross(up, std::abs(up.x) < 0.9f ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1));
+            rising = glm::normalize(rising);
+            const float a = float(2.0 * 3.141592653589793 * *solar_phase);
+            const glm::vec3 sun = rising * std::cos(a) + noon * std::sin(a);
+            light.direction = -sun;
+            // Twilight: full light a little above the horizon, none a little below it.
+            const float height = glm::dot(sun, up);
+            const float t = std::clamp((height + 0.1f) / 0.2f, 0.0f, 1.0f);
+            const float day = t * t * (3.0f - 2.0f * t);
+            light.intensity *= day;
+            light.ambient *= 0.25f + 0.75f * day;
+            light.ambient_ground *= 0.25f + 0.75f * day;
+        }
     }
     // The local lights nearest the camera, positioned relative to it.
     struct Near {

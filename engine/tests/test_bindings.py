@@ -70,6 +70,7 @@ def main() -> int:
         bad = make_package(tmp / "bad_entity", {"e1": {"transform": {"position": [1, 2]}}}, [])
         report = _midgard.validate(bad)
         assert not report["ok"] and "e1" in report["errors"][0], report
+    check_calendar()
     check_camera_preview()
     check_viewport()
     check_bodies()
@@ -129,6 +130,41 @@ def check_bodies() -> None:
 def pixel(rgba: bytes, width: int, x: int, y: int) -> tuple[int, int, int]:
     i = (y * width + x) * 4
     return rgba[i], rgba[i + 1], rgba[i + 2]
+
+
+def check_calendar() -> None:
+    """The engine's calendar maths for the Calendar dock (_midgard.Calendar)."""
+    standard = {"id": "cal", "standard": 1, "leap_every": 4, "leap_month": 2, "start_month": 4,
+                "day_hours_min": 18, "day_hours_max": 36, "year_days_min": 200,
+                "year_days_max": 500, "tilt_max": 35,
+                "months": [{"days": d} for d in (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)],
+                "weekdays": [""] * 7,
+                "seasons": [{"share": 0.25, "daylight": d} for d in (0.35, 0.5, 0.65, 0.5)]}
+    cal = _midgard.Calendar(json.dumps(standard))
+    assert cal.seconds_per_day == 86400 and cal.time_scale == 30.0 and not cal.problems()
+    start = cal.start_time()
+    d = cal.date(start)
+    assert (d["year"], d["month"], d["day"], d["hour"], d["season"]) == (1, 4, 1, 6, 0), d
+    assert cal.time_of(1, 4, 1, 6 * 3600) == start
+    assert cal.year_days(4) == 366 and cal.daylight(1, 225) > 0.6
+    assert abs(cal.solar_phase(1, 0, 43200) - 0.25) < 1e-12
+    sunrise, sunset = cal.sun_times(start)
+    assert 7 * 3600 < sunrise < 8 * 3600 < 16 * 3600 < sunset < 17 * 3600
+    body = cal.roll(1234)
+    assert 18 <= body.hours_per_day <= 36 and 200 <= sum(body.months) <= 500
+    assert 0 <= body.tilt <= 35
+    assert cal.roll(1234).hours_per_day == body.hours_per_day  # the same seed, the same body
+    for bad in (lambda: cal.time_of(1, 2, 29), lambda: _midgard.Calendar("[]"),
+                lambda: _midgard.Calendar("{}").date(0)):
+        try:
+            bad()
+            raise AssertionError("must be refused")
+        except ValueError:
+            pass
+    broken = dict(standard, seasons=[{"share": 0.5, "daylight": 0.5}])
+    problems = _midgard.calendar_problems([json.dumps(standard), json.dumps(broken)])
+    assert any("shares add up to" in p for p in problems), problems
+    assert any("exactly one" in p for p in problems), problems  # two standard calendars
 
 
 def check_camera_preview() -> None:
