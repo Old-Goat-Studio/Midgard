@@ -110,7 +110,7 @@
       "required": ["type"]
     },
     {
-      "description": "Runtime → editor: the game's entities as it has them (id, name, position, rotation, scale, material colour) and its sky, answering scene.dump.",
+      "description": "Runtime → editor: the game's entities as it has them (id, name, position, rotation, scale, material colour), its sky, its clock (time, and solar_phase: 0 sunrise, 0.25 noon, 0.5 sunset, or null), and its sun (direction towards it, height along up from -1 to 1, intensity), answering scene.dump.",
       "properties": {
         "type": { "const": "scene" },
         "scene": { "type": "object" }

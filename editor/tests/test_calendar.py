@@ -291,3 +291,131 @@ def test_the_main_window_has_the_calendar_dock(window, project):
     window.set_project(project)
     assert window.calendar_panel.chooser.currentData() == "cal_standard"
     window._time_scrubbed(START, 0.9)  # (no 3D view offscreen, and no game running: no harm)
+
+
+# ---- the exit check (milestone 5.7) -------------------------------------------------------------
+HOUR = 3600
+# Times of the 20-hour day to look at: around sunrise (03:00), noon (10:00) and sunset (17:00),
+# and the night.
+NIGHT = (0 * HOUR, 1 * HOUR + 1800, 2 * HOUR + 2700, 17 * HOUR + 900, 18 * HOUR, 19 * HOUR + 1800)
+DAY = (3 * HOUR + 900, 5 * HOUR, 10 * HOUR, 14 * HOUR, 16 * HOUR + 2700)
+
+
+def twenty_hour_day(dock, project) -> None:
+    """The standard calendar made a 20-hour day with 70% daylight all year (no seasons), in the
+    dock, and the scene's sun set to follow the clock."""
+    dock._set("hours_per_day", 20, "hours a day")
+    dock._set("daylight", 0.7, "daylight")
+    dock._set("seasons", [], "seasons")
+    sun = project.entity("e000002")
+    sun.components["light"]["follows_clock"] = True
+    project.put_entity(sun)
+
+
+def offscreen_view(project):
+    """The project's scene in an offscreen engine view, from its camera (as the Viewport dock
+    shows it), or None without a GPU."""
+    import json
+
+    from midgard_editor import meshes
+    from midgard_editor.scene_model import parents_first
+
+    view = engine.module().Viewport()
+    try:
+        view.attach_offscreen(96, 64)
+    except RuntimeError:
+        return None
+    view.set_settings(json.dumps(project.scene_settings()))
+    for entity in parents_first(project.entities()):
+        asset = entity.components.get("mesh", {}).get("asset", "")
+        if asset in meshes.PRIMITIVES:
+            view.set_mesh(asset, meshes.to_glb(meshes.primitive(asset)))
+        view.put_entity(json.dumps({"id": entity.id, "name": entity.name, "parent": entity.parent,
+                                    "components": entity.components}))
+    camera = project.entity("e000001").components["transform"]["position"]
+    view.set_camera(camera, [0.0, 0.5, 0.0], 55.0)
+    return view
+
+
+def brightness(view) -> float:
+    view.render()
+    pixels = view.read_pixels()
+    return sum(pixels[i] + pixels[i + 1] + pixels[i + 2] for i in range(0, len(pixels), 4)) / (
+        3 * 255 * len(pixels) / 4)
+
+
+@needs_engine
+def test_exit_check_the_scrubber_sweeps_a_20_hour_day_in_the_editor(dock, project):
+    """Milestone 5.7's exit, in the editor: a 20-hour day with 70% daylight rises at 03:00 and
+    sets at 17:00, and the scrubber takes the viewport's sun through it."""
+    twenty_hour_day(dock, project)
+    assert dock.day_bar.day_length == 20 * HOUR
+    assert dock.day_bar.sunrise == pytest.approx(3 * HOUR, abs=1)
+    assert dock.day_bar.sunset == pytest.approx(17 * HOUR, abs=1)
+    scrubbed = []
+    dock.time_scrubbed.connect(lambda t, phase: scrubbed.append(phase))
+    for at, phase in ((3 * HOUR, 0.0), (10 * HOUR, 0.25), (17 * HOUR, 0.5)):
+        dock.scrub(at)
+        assert scrubbed[-1] == pytest.approx(phase, abs=1e-6)
+        assert dock.time_label.text().startswith(f"{at // HOUR:02d}:00")
+
+    view = offscreen_view(project)
+    if view is None:
+        pytest.skip("no offscreen rendering here")
+
+    def seen(at: int) -> float:
+        dock.scrub(at)
+        view.solar_phase = scrubbed[-1]  # as the main window passes it to the Viewport dock
+        return brightness(view)
+
+    night = [seen(at) for at in NIGHT]
+    day = [seen(at) for at in DAY]
+    noon = seen(10 * HOUR)
+    assert min(day) > max(night) + 0.02, (night, day)  # light from sunrise to sunset only
+    assert noon >= max(day) - 1e-6  # brightest at noon
+    view.solar_phase = None  # the scrubber let go: the sun back where it was placed
+
+
+@needs_engine
+@needs_scripting
+def test_exit_check_the_scrubber_sweeps_a_20_hour_day_in_the_running_game(dock, project, qtbot,
+                                                                          tmp_path):
+    """Milestone 5.7's exit, in the running game: the scrubber's times move the game's clock,
+    and its sun rises at 03:00 and sets at 17:00 on the 20-hour day."""
+    from midgard_editor.live_link import PlaySession, State
+
+    twenty_hour_day(dock, project)
+    received = []
+    session = PlaySession(project)
+    session.message_received.connect(received.append)
+    scrubbed = []
+    dock.time_scrubbed.connect(lambda t, phase: scrubbed.append(t))
+
+    def sun_at(at: int) -> dict:
+        dock.scrub(at)  # the dock gives the moment; the main window sends it on while playing
+        assert session.set_time(scrubbed[-1])
+        count = len(received)
+        session.send({"type": "scene.dump"})
+        qtbot.waitUntil(lambda: any(m.get("type") == "scene" for m in received[count:]),
+                        timeout=5000)
+        scene = next(m for m in received[count:] if m.get("type") == "scene")["scene"]
+        assert scrubbed[-1] <= scene["time"] < scrubbed[-1] + 120  # (it runs on at 25x)
+        return scene
+
+    try:
+        session.start([str(scripting_runtime()), "--headless"],
+                      cook(project, tmp_path / "pkg").out_dir)
+        qtbot.waitUntil(lambda: session.state == State.PLAYING, timeout=20000)
+        for at in NIGHT:
+            sun = sun_at(at)["sun"]
+            assert sun["height"] < 0.0 and sun["intensity"] < 0.5, (at, sun)
+        heights = {}
+        for at in DAY:
+            scene = sun_at(at)
+            assert scene["sun"]["height"] > 0.0 and scene["solar_phase"] < 0.5, (at, scene["sun"])
+            heights[at] = scene["sun"]["height"]
+        assert max(heights, key=heights.get) == 10 * HOUR  # highest at noon
+        assert sun_at(10 * HOUR)["solar_phase"] == pytest.approx(0.25, abs=0.01)
+        assert not [m for m in received if m.get("level") in ("warn", "error")], received
+    finally:
+        session.stop()

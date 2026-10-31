@@ -377,8 +377,20 @@ public:
                              : nlohmann::json(nullptr)}});
         }
         const glm::vec3 sky = game_.scene().settings.sky;
-        return nlohmann::json{
-            {"entities", entities}, {"sky", {sky.x, sky.y, sky.z}}, {"time", game_.time().now()}}
+        // The sun as the clock has it: where the light comes from, how high it is (-1 to 1,
+        // along "up" at the camera) and how bright.
+        const glm::dvec3 at = game_.camera(1.0f).origin;
+        const midgard::render::Light light = game_.scene().light(at);
+        const glm::vec3 to_sun = -glm::normalize(light.direction);
+        const nlohmann::json sun{{"direction", {to_sun.x, to_sun.y, to_sun.z}},
+                                 {"height", glm::dot(to_sun, glm::normalize(light.up))},
+                                 {"intensity", light.intensity}};
+        const auto phase = game_.scene().solar_phase;
+        return nlohmann::json{{"entities", entities},
+                              {"sky", {sky.x, sky.y, sky.z}},
+                              {"time", game_.time().now()},
+                              {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},
+                              {"sun", sun}}
             .dump();
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }

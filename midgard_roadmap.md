@@ -21,7 +21,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 2 Engine core and the vertical slice | **Done** (14 October): a cube placed in the editor runs on Windows, Linux and Android, all exported from one editor host. |
 | 3 Live link and engine bindings | **Done** (14 October): Play, Pause and Stop, hot reload, the `_midgard` module, the embedded Vulkan viewport. |
 | 4 Scripting | **Done** (14 October): games embed CPython 3.14 (Android too), the `midgard` API v1, the Script editor, Assistant v1. |
-| 5 World building | **In progress:** milestones 5.0–5.6 are done (below). |
+| 5 World building | **In progress:** milestones 5.0–5.7 are done (below). |
 | 6–9 | Not started. |
 
 **Phase 5 milestones**
@@ -35,7 +35,8 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 5.4 Physics (Jolt) | **Done** | Jolt in double precision with gravity from the shape, rigid bodies, colliders, physics materials, layers, triggers, the character controller, the script API (raycasts, overlaps, forces), collider outlines, the world's surface mesh. The player walks round a planet and inside a cylinder. |
 | 5.5 Object editor and asset pipeline | **Done** | glTF import, objects as templates placed as instances, the Objects panel (Object editor), the Material editor, re-import on change, live objects in the running game, content-hashed cooking, Save Group as Object, and the first CC0 model (Avocado) with an import corpus test. The exit check runs as a test with the real game. |
 | 5.6 Cameras | **Done** | One camera with first-person, third-person (orbit or over the shoulder) and top-down views, switched with V and blended; a sphere swept through physics keeps it out of walls; "up" from the world's shape; shakes and scripted looks (`midgard.camera`); the player's last view in their profile; the Camera editor with a live preview in the viewport. The exit check walks a planet in every view past walls, as a test with the real game. |
-| 5.7–5.18 | Not started | Next is 5.7 Calendar (stage 2 in `Phase5_Roadmap.md` §5). |
+| 5.7 Calendar and time | **Done** | Calendar templates (migration 9) with the standard calendar, checked by the cook; `TimeService`: the universal clock with no drift, time scale, solar phase, and signals fired exactly once (big skips too); body calendars rolled from the seed, identical on every target; the clock saved with the world (`world.json`, `world.db`); `midgard.time`; the Calendar dock with the year strip, day bar and time-of-day scrubber, which moves the viewport's sun and the running game's clock; suns that follow the clock (`follows_clock`). The exit check sweeps a 20-hour day with 70% daylight (sunrise 03:00, sunset 17:00) in the editor and the running game, as tests. |
+| 5.8–5.18 | Not started | Next is 5.8 Environment and light per shape (stage 3 in `Phase5_Roadmap.md` §5). |
 
 **Also built along the way** (asked for while using the editor): **groups** (complex objects made of primitives, moved as one, and one compound physics body when they move), **viewport gizmos** (move, rotate and scale in the view's corner, following the dock onto any monitor), a viewport toolbar (Colliders, Gizmos), **cylinder and wedge** primitives, layouts saved as they change (tab order included), delete by key and right-click, **Git from the editor** (put a project under Git, commit, change markers in the Script editor), the **Project Page** (tagline, description, logo and the game's icon), opening the last project on start, picture buttons for Play, Pause and Stop, and **running** (the player's Running speed, a multiplier held on Left Shift, a rebindable `run` action).
 
@@ -565,7 +566,7 @@ Today, when a listen-server host quits, the session ends. **Host migration** mea
 | Quests | Quest list + goal editor + prerequisite graph | Quest state machine, events from game systems | Validate at cook time: unknown targets, impossible prerequisites, cycles. |
 | Skill trees | Tree graph, ranks, modifiers, prerequisites | Stat modifier pipeline | Reuses the node-graph widget. |
 | Progression | XP curves (curve editor), levels, unlocks | Progression service | |
-| Calendar | Calendar templates (months, weekdays, seasons, moons, events, day and year ranges), standard calendar, year strip (see §6) | `TimeService`: universal clock, per-body local dates and seasons, solar phase, event dispatch per body | Drives lighting, seasons, weather, shops, NPC schedules, banks, raids and regrowth on each body. |
+| Calendar | Calendar templates (months, weekdays, seasons, moons, events, day and year ranges), standard calendar, year strip (see §6) | `TimeService`: universal clock, per-body local dates and seasons, solar phase, event dispatch per body | Drives lighting, seasons, weather, shops, NPC schedules, banks, raids and regrowth on each body. **Built (5.7)**, except events (Phase 6). |
 | Weather | Weather tab: weather types, tables per season and biome, transitions, previews (see §6) | Weather per region with drifting fronts, forecasts, gameplay effects, space weather, scripted weather | Tied to the calendar's seasons. |
 | Survival | Survival settings: temperature model, status thresholds, clothing and suit stats, heat sources, hunger and thirst rates, food and drink effects, atmosphere kinds, preview (see §6) | Feels-like temperature, wetness, shelter checks, hunger and thirst meters, food relief, suits, air supply, life support, depressurisation, spacewalks | All effects scale with the world's difficulty. |
 | Worlds & characters | World Type editor (graph with shape-aware inputs), Star Field editor, Difficulty editor, anchors and quest templates, world/character screen templates (see §7) | Run-time generation of star fields and bodies, shape mappings and gravity, chunk streaming from the seed, quest instancing, character validation and transfer | Generation must give identical results on every target. |
@@ -1645,7 +1646,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 **Status: done** (14 October 2026).
 
 ### Phase 5: World building
-**Status: in progress.** 5.0–5.6 are done (§0 lists what each milestone brought).
+**Status: in progress.** 5.0–5.7 are done (§0 lists what each milestone brought).
 
 **The detailed plan is in [`Phase5_Roadmap.md`](Phase5_Roadmap.md)** (approved 15 October 2026):
 19 milestones (5.0–5.18), foundation first (test tooling, deterministic maths and world
@@ -1655,7 +1656,7 @@ Survival status effects, clothing stats, the HUD gauge, weather's effect on AI a
 moved to Phase 6 (see there); Phase 5 builds their foundations.
 
 - ~~Object editor (primitives, glTF import).~~ Built in 5.5, with objects as templates, the Material editor and groups.
-- **Calendar core** (§6): calendar templates and the standard calendar, per-body calendars generated from the seed, `TimeService`, solar phase, **seasons** (daylight, temperature, visuals), time scale, save/restore of `game_time`.
+- ~~**Calendar core** (§6): calendar templates and the standard calendar, per-body calendars generated from the seed, `TimeService`, solar phase, **seasons** (daylight, temperature, visuals), time scale, save/restore of `game_time`.~~ Built in 5.7 (seasonal visuals come with 5.8).
 - **Weather** (§6): weather types and tables per season and biome, regional weather with fronts, forecasts (script API), controlled and scripted weather, visuals. (Effects on AI perception, forecast devices and space weather are in Phase 6.)
 - **Survival foundation** (§6): feels-like temperature, wetness, shelter checks and heat sources, readable from scripts. (Status effects, clothing stats, placeable campfires and heaters, the HUD gauge and `survival_scale` from the difficulty are in Phase 6.)
 - Environment editor (sky, lighting, fog, water), with lighting curves authored over **solar phase** and previewed with the Calendar's time scrubber.
