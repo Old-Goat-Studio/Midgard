@@ -88,6 +88,19 @@ in-process (for example to check every cooked package). It is built for the proj
 when there is one, and needs pybind11 there (included in `editor[dev]`); without it the build
 skips the module and the editor works without it.
 
+## Playing and saved games
+
+In the editor, **Play** (F5) cooks the project and runs it from the scene as designed: the
+player where the scene puts them, the clock at the calendar's start. **Continue** (Ctrl+F5) picks
+up where the last Play ended: the player's place and facing, the clock, and the camera view. Play
+keeps these in the project's `.midgard/play/` (a world and a player profile, not committed).
+
+An exported game keeps them in the player's data folder (`%APPDATA%\Midgard\<Game>\` on Windows,
+`~/.local/share/Midgard/<Game>/` on Linux): the player's profile (their last camera view) in
+`profiles/default/`, and the world (its clock and where the player was) in `worlds/default/`,
+until Phase 6's world list lets players keep several. `--world <dir>` and `--player-profile <dir>`
+choose others.
+
 ## Licence
 
 Midgard is created by Richard E Rogers and published by **Old Goat Studio**, open source under

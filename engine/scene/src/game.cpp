@@ -97,10 +97,28 @@ void Game::use_world(const std::filesystem::path& folder) {
         time_.set_scale(saved->scale);
         update_sun();
     }
+    // The player is put back where they were (the character follows on the next step); the
+    // camera keeps its view, now round the player's new place.
+    const entt::entity player = camera_->player();
+    if (const auto place = world_->place(); place && player != entt::null) {
+        Transform& t = scene_.registry.get<Transform>(player);
+        t.position = place->position;
+        t.rotation = place->rotation;
+        const CameraRig::State view = camera_->state();
+        camera_ = std::make_unique<CameraRig>(scene_);
+        camera_->restore(scene_, view);
+        camera_->follow(scene_, 0.0f, camera_sweep());
+    }
 }
 
 void Game::save_world() {
-    if (world_) world_->save_clock({time_.now(), time_.scale()});
+    if (!world_) return;
+    world_->save_clock({time_.now(), time_.scale()});
+    const entt::entity player = camera_->player();
+    if (player != entt::null && scene_.registry.valid(player)) {
+        const Transform& t = scene_.registry.get<Transform>(player);
+        world_->save_place({t.position, t.rotation});
+    }
 }
 
 void Game::rebuild_physics() {

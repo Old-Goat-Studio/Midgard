@@ -1073,8 +1073,8 @@ std::filesystem::path executable_dir() {
 std::optional<std::filesystem::path> user_data_dir(const std::string& game);
 
 // Where the player's profile lives: --player-profile, or for an exported game in a window,
-// profiles/default/ in the user's data folder. Under the editor and in tests there is none, so
-// play starts the way the designer set it up.
+// profiles/default/ in the user's data folder. Under the editor it's the one Play passes (for
+// Continue); in tests there is none, so play starts the way the designer set it up.
 std::optional<std::filesystem::path> player_profile_dir(const Options& opt, bool windowed,
                                                         const std::string& game) {
     if (opt.player_profile) return std::filesystem::path(*opt.player_profile);
@@ -1084,8 +1084,8 @@ std::optional<std::filesystem::path> player_profile_dir(const Options& opt, bool
 }
 
 // Where the world is kept: --world, or for an exported game in a window, worlds/default in the
-// user's data folder (until Phase 6's world list chooses one). Under the editor and in tests
-// there is none, so play starts at the calendar's start date.
+// user's data folder (until Phase 6's world list chooses one). Under the editor it's the one
+// Play passes (for Continue); in tests there is none, so play starts at the calendar's start.
 std::optional<std::filesystem::path> world_dir(const Options& opt, bool windowed,
                                                const std::string& game) {
     if (opt.world) return std::filesystem::path(*opt.world);

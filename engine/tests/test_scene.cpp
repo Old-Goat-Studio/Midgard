@@ -1742,3 +1742,67 @@ TEST_CASE("time: a sun that follows the clock rises, peaks where it was placed, 
     CHECK(*scene.solar_phase == doctest::Approx(0.25));
     CHECK(scene.light({0, 0, 0}).intensity == doctest::Approx(2.0f));
 }
+
+TEST_CASE("a sun that follows the clock is one distant sun: dark on a planet's far side") {
+    TestPackage pkg(
+        {
+            {"e1_sun", R"(NULL, '{"transform": {"rotation": [-50, 35, 0]},
+                          "light": {"type": "directional", "follows_clock": true}}')"},
+        },
+        R"({"body": {"shape": "sphere_outside", "radius": 1000, "origin": [0, -1000, 0]}})");
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    scene.solar_phase = 0.25;  // noon at the scene's start, the top of the planet
+    const glm::dvec3 centre(0, -1000, 0);
+    float last = -1.0f, worst_jump = 0.0f;
+    // Walking over to the far side, about 9 m (half a degree) at a time.
+    for (int step = 0; step <= 360; ++step) {
+        const double degrees = step * 0.5;
+        const double a = glm::radians(degrees);
+        const glm::dvec3 at = centre + glm::dvec3(std::sin(a), std::cos(a), 0.0) * 1001.0;
+        const midgard::render::Light light = scene.light(at);
+        CAPTURE(degrees);
+        if (last >= 0.0f) worst_jump = std::max(worst_jump, std::abs(light.intensity - last));
+        last = light.intensity;
+        if (step == 0) CHECK(light.intensity == doctest::Approx(1.0f));  // noon here
+        if (degrees >= 140) {  // night: no sun, and the ambient light down to a quarter
+            CHECK(light.intensity == 0.0f);
+            CHECK(light.ambient.r == doctest::Approx(scene.settings.ambient.r * 0.25f));
+        }
+    }
+    CHECK(worst_jump < 0.1f);  // it gets darker smoothly: never a sudden change
+}
+
+TEST_CASE("a world keeps where the player was, and loading puts them back there") {
+    TestPackage pkg(camera_scene());
+    const fs::path world = pkg.dir / "worlds" / "w1";
+    glm::dvec3 left_at;
+    glm::vec3 facing;
+    {
+        midgard::Game game(pkg.dir);
+        game.use_world(world);
+        CHECK_FALSE(game.world()->place());  // a new world: the scene's start
+        midgard::Actions actions(midgard::InputMap::defaults());
+        actions.set("keyboard", "D", 1.0f);  // walk right for a second
+        play_with(game, actions, 1.0);
+        const auto& t =
+            game.scene().registry.get<midgard::Transform>(game.scene().find("e2_player"));
+        left_at = t.position;
+        facing = t.rotation;
+        CHECK(left_at.x > 2.0);
+        game.save_world();
+    }
+    midgard::Game again(pkg.dir);
+    again.use_world(world);
+    midgard::Scene& scene = again.scene();
+    const entt::entity player = scene.find("e2_player");
+    CHECK(glm::length(scene.registry.get<midgard::Transform>(player).position - left_at) < 1e-9);
+    CHECK(glm::length(scene.registry.get<midgard::Transform>(player).rotation - facing) < 1e-4f);
+    // The character is there too once the game runs, standing (not falling from the start).
+    midgard::Actions idle(midgard::InputMap::defaults());
+    play_with(again, idle, 0.5);
+    CHECK(glm::length(again.physics().character()->position() - left_at) < 0.05);
+    // And the camera looks at the player there, not at the scene's start.
+    CHECK(glm::length(camera_at(scene) - left_at) < 10.0);
+    CHECK(camera_at(scene).x > 2.0);
+}

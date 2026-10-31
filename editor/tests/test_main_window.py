@@ -96,12 +96,14 @@ def test_play_pause_and_stop_are_pictures_named_in_tooltips(window):
 
     bar = window.findChild(QToolBar, "play_toolbar")
     assert bar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
-    for name in ("play", "pause", "stop"):
+    for name in ("play", "continue", "pause", "stop"):
         assert (ICONS_DIR / f"{name}.png").is_file()
     tips = {}
-    for action in (window.play_action, window.pause_action, window.stop_action):
+    for action in (window.play_action, window.continue_action, window.pause_action,
+                   window.stop_action):
         assert not action.icon().isNull()
         button = bar.widgetForAction(action)
         assert isinstance(button, QToolButton)
         tips[action.toolTip()] = button.toolButtonStyle()
-    assert list(tips) == ["Play (F5)", "Pause / Resume (F6)", "Stop (Shift+F5)"]
+    assert list(tips) == ["Play from the start (F5)", "Continue where you left off (Ctrl+F5)",
+                          "Pause / Resume (F6)", "Stop (Shift+F5)"]

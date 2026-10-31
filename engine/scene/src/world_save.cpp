@@ -21,7 +21,12 @@ CREATE TABLE IF NOT EXISTS clock (
     game_time INTEGER NOT NULL,   -- game seconds since year 1, month 1, day 1 (midgard/calendar.h)
     scale     REAL NOT NULL       -- game seconds per real second
 );
-PRAGMA user_version = 1;
+CREATE TABLE IF NOT EXISTS place (  -- where the player was (version 2)
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,  -- metres, double precision
+    rx REAL NOT NULL, ry REAL NOT NULL, rz REAL NOT NULL  -- Euler degrees
+);
+PRAGMA user_version = 2;
 )";
 
 struct Db {
@@ -135,6 +140,43 @@ void WorldSave::save_clock(const WorldClock& clock) const {
     const int rc = sqlite3_step(st);
     sqlite3_finalize(st);
     if (rc != SQLITE_DONE) throw WorldError("can't save the clock in world.db");
+}
+
+std::optional<WorldPlace> WorldSave::place() const {
+    Db db(folder_ / "world.db");
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db.db, "SELECT x, y, z, rx, ry, rz FROM place WHERE id = 1", -1, &st,
+                           nullptr) != SQLITE_OK)
+        throw WorldError("world.db has no place");
+    std::optional<WorldPlace> out;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        out = WorldPlace{};
+        for (int i = 0; i < 3; ++i) {
+            out->position[i] = sqlite3_column_double(st, i);
+            out->rotation[i] = float(sqlite3_column_double(st, 3 + i));
+        }
+    }
+    sqlite3_finalize(st);
+    return out;
+}
+
+void WorldSave::save_place(const WorldPlace& place) const {
+    Db db(folder_ / "world.db");
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(
+            db.db,
+            "INSERT INTO place (id, x, y, z, rx, ry, rz) VALUES (1, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET x = excluded.x, y = excluded.y, "
+            "z = excluded.z, rx = excluded.rx, ry = excluded.ry, rz = excluded.rz",
+            -1, &st, nullptr) != SQLITE_OK)
+        throw WorldError("world.db has no place");
+    for (int i = 0; i < 3; ++i) {
+        sqlite3_bind_double(st, 1 + i, place.position[i]);
+        sqlite3_bind_double(st, 4 + i, double(place.rotation[i]));
+    }
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) throw WorldError("can't save the player's place in world.db");
 }
 
 }  // namespace midgard

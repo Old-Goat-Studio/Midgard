@@ -4,9 +4,9 @@
 //
 //   world.json   who the world is: id, name, description, seed, the game it belongs to. Read by
 //                the world list without opening a database.
-//   world.db     its state (SQLite). For now the clock: game_time and the time scale, so loading
-//                restores the date to the second. Discovered bodies, quests, banks and the rest
-//                join it in later phases.
+//   world.db     its state (SQLite). For now the clock (game_time and the time scale, so loading
+//                restores the date to the second) and where the player was. Discovered bodies,
+//                quests, banks and the rest join it in later phases.
 //
 // Phase 6's world list and New World screen create worlds; until then the runtime keeps one.
 #pragma once
@@ -16,6 +16,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+
+#include <glm/glm.hpp>
 
 namespace midgard {
 
@@ -38,6 +40,12 @@ struct WorldClock {
     double scale = 1.0;
 };
 
+// Where the player was when the world was last saved.
+struct WorldPlace {
+    glm::dvec3 position{0.0};
+    glm::vec3 rotation{0.0f};  // Euler degrees, as in the transform component
+};
+
 class WorldSave {
 public:
     // Opens the world in `folder`, making it (world.json with a new id and seed, and world.db)
@@ -50,6 +58,9 @@ public:
     std::optional<WorldClock> clock() const;
     // Saves the clock (in one transaction). Throws WorldError.
     void save_clock(const WorldClock& clock) const;
+    // Where the player was as last saved; none in a new world (or one saved before places were).
+    std::optional<WorldPlace> place() const;
+    void save_place(const WorldPlace& place) const;
 
 private:
     std::filesystem::path folder_;

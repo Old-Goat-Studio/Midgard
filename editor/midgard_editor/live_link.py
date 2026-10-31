@@ -126,9 +126,11 @@ class PlaySession(QObject):
         project.files_changed.connect(self._files_changed)
 
     # ---- control ------------------------------------------------------------------------
-    def start(self, runtime: Path | list[str], package: Path) -> None:
+    def start(self, runtime: Path | list[str], package: Path,
+              extra: list[str] | None = None) -> None:
         """Starts the game on a cooked package and waits for it to connect. `runtime` is the
-        executable, or a command line to put before the runtime's arguments."""
+        executable, or a command line to put before the runtime's arguments; `extra` are more
+        runtime arguments (the world and profile Play keeps, for Continue)."""
         self.stop()
         if not self.server.listen(QHostAddress.SpecialAddress.LocalHost, 0):
             raise LinkError(f"cannot open the live link: {self.server.errorString()}")
@@ -146,13 +148,17 @@ class PlaySession(QObject):
         self._set_state(State.STARTING)
         command = [str(runtime)] if isinstance(runtime, Path) else list(runtime)
         process.start(command[0], [*command[1:], "--package", str(package), "--editor-link",
-                                   f"127.0.0.1:{self.server.serverPort()}"])
+                                   f"127.0.0.1:{self.server.serverPort()}", *(extra or [])])
 
     def stop(self) -> None:
         """Asks the game to quit, and makes sure it does."""
         if self.process is not None:
             process, self.process = self.process, None
             self.send({"type": "stop"})
+            # Waiting below blocks the event loop, which would keep "stop" from going out: the
+            # game would only end by being killed, without saving its world and profile.
+            if self.socket is not None:
+                self.socket.waitForBytesWritten(1000)
             if not process.waitForFinished(3000):
                 process.kill()
                 process.waitForFinished(1000)

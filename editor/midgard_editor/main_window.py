@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """The Midgard main window: "Midgard - {project}", dockable panels across monitors, menus."""
 import logging
+import shutil
 from pathlib import Path
 
 import PySide6QtAds as QtAds
@@ -389,6 +390,7 @@ class MainWindow(QMainWindow):
         self.cook_action = add_action(build, "&Cook", self.cook_project, "Ctrl+B")
         build.addSeparator()
         self.play_action = add_action(build, "&Play", self.play, "F5")
+        self.continue_action = add_action(build, "&Continue", self.continue_play, "Ctrl+F5")
         self.pause_action = add_action(build, "P&ause", self.toggle_pause, "F6")
         self.pause_action.setCheckable(True)
         self.stop_action = add_action(build, "&Stop", self.stop_game, "Shift+F5")
@@ -431,7 +433,9 @@ class MainWindow(QMainWindow):
         # Pictures only; the name and shortcut show when the pointer rests on a button.
         bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         bar.setIconSize(QSize(PLAY_ICON_SIZE, PLAY_ICON_SIZE))
-        for action, name, picture in ((self.play_action, "Play", "play.png"),
+        for action, name, picture in ((self.play_action, "Play from the start", "play.png"),
+                                      (self.continue_action, "Continue where you left off",
+                                       "continue.png"),
                                       (self.pause_action, "Pause / Resume", "pause.png"),
                                       (self.stop_action, "Stop", "stop.png")):
             icon = QIcon(str(ICONS_DIR / picture))
@@ -705,8 +709,24 @@ class MainWindow(QMainWindow):
             ExportDialog(self.project, self.settings, self).exec()
 
     # ---- play-in-editor ----------------------------------------------------------------
-    def play(self) -> None:
-        """Cooks the project and runs it, linked to the editor: edits reach the running game."""
+    def play_folder(self) -> Path | None:
+        """Where Play keeps the game's world (clock, the player's place) and the player's
+        profile (camera view) between runs, for Continue: .midgard/play/ in the project."""
+        return self.project.work_dir / "play" if self.project is not None else None
+
+    def can_continue(self) -> bool:
+        folder = self.play_folder()
+        return folder is not None and (folder / "world" / "world.db").is_file()
+
+    def continue_play(self) -> None:
+        """Like Play, but picking up where the last Play ended: the player's place and facing,
+        the clock and the camera view."""
+        self.play(fresh=False)
+
+    def play(self, fresh: bool = True) -> None:
+        """Cooks the project and runs it, linked to the editor: edits reach the running game.
+        Play starts from the scene as designed; Continue (fresh=False) where the last one
+        ended. Either way the game keeps where it got to, for the next Continue."""
         if self.session is None or self.session.running:
             return
         self.script_editor.save_all()  # the game runs what is in the editor
@@ -719,12 +739,18 @@ class MainWindow(QMainWindow):
         package = self.cook_project()
         if package is None:
             return
+        folder = self.play_folder()
+        if fresh or not self.can_continue():
+            shutil.rmtree(folder, ignore_errors=True)  # the scene's start, the calendar's start
+        folder.mkdir(parents=True, exist_ok=True)
         try:
-            self.session.start(runtimes[0], package)
+            self.session.start(runtimes[0], package,
+                               ["--world", str(folder / "world"),
+                                "--player-profile", str(folder / "profile")])
         except LinkError as e:
             QMessageBox.warning(self, "Play", str(e))
             return
-        log.info("Playing %s", package)
+        log.info("%s %s", "Playing" if fresh else "Continuing", package)
 
     def toggle_pause(self) -> None:
         if self.session is None:
@@ -741,6 +767,8 @@ class MainWindow(QMainWindow):
     def _play_state_changed(self, state: State) -> None:
         has_project = self.session is not None
         self.play_action.setEnabled(has_project and state == State.STOPPED)
+        self.continue_action.setEnabled(has_project and state == State.STOPPED and
+                                        self.can_continue())
         self.pause_action.setEnabled(state in (State.PLAYING, State.PAUSED))
         self.pause_action.setChecked(state == State.PAUSED)
         self.stop_action.setEnabled(state != State.STOPPED)

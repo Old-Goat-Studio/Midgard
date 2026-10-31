@@ -567,7 +567,14 @@ render::Light Scene::light(const glm::dvec3& origin) const {
         if (l.follows_clock && solar_phase) {
             // The sun's path: the great circle through where it was placed (its noon) and the
             // horizon at right angles to it, so it rises at 0, peaks at 0.25 and sets at 0.5.
-            const glm::vec3 up = glm::normalize(light.up);
+            // The path is the scene's, as seen from its start (the world's origin), so the sun is
+            // one distant light for the whole world: on a planet it's noon at the start while
+            // it's midnight on the far side, and walking round there gets darker smoothly.
+            glm::vec3 up = glm::normalize(light.up);
+            if (settings.body) {
+                const glm::vec3 start(settings.body->up(glm::dvec3(0.0)));
+                if (glm::dot(start, start) > 0.5f) up = glm::normalize(start);
+            }
             glm::vec3 noon = -glm::normalize(light.direction);
             if (glm::dot(noon, up) < 0.01f) noon = up;  // placed below the horizon: overhead
             glm::vec3 rising = glm::cross(up, noon);
@@ -578,8 +585,9 @@ render::Light Scene::light(const glm::dvec3& origin) const {
             const float a = float(2.0 * 3.141592653589793 * *solar_phase);
             const glm::vec3 sun = rising * std::cos(a) + noon * std::sin(a);
             light.direction = -sun;
-            // Twilight: full light a little above the horizon, none a little below it.
-            const float height = glm::dot(sun, up);
+            // Twilight where the camera is: full light a little above the horizon there, none a
+            // little below it.
+            const float height = glm::dot(sun, glm::normalize(light.up));
             const float t = std::clamp((height + 0.1f) / 0.2f, 0.0f, 1.0f);
             const float day = t * t * (3.0f - 2.0f * t);
             light.intensity *= day;

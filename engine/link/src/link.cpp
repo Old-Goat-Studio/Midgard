@@ -112,12 +112,17 @@ Client::Client(const std::string& host, uint16_t port) {
 Client::~Client() {
     const auto s = socket_t(socket_);
 #ifdef _WIN32
+    // On Windows a recv waiting on the reader thread only returns once the socket is closed (or
+    // the editor closes its end), so it's closed before the thread is joined. Otherwise the game
+    // hangs here while the editor waits for it to end, and is killed before it saves.
     shutdown(s, SD_BOTH);
+    close_socket(s);
+    if (reader_.joinable()) reader_.join();
 #else
-    shutdown(s, SHUT_RDWR);
-#endif
+    shutdown(s, SHUT_RDWR);  // (this wakes a waiting recv on Linux)
     if (reader_.joinable()) reader_.join();
     close_socket(s);
+#endif
 #ifdef _WIN32
     WSACleanup();
 #endif
