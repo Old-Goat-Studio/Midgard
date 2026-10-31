@@ -135,6 +135,7 @@ struct LocalLightSource {
 // on the entity) that walks on the ground. The first camera follows it in third person.
 struct Player {
     float speed = 4.0f;        // metres per second
+    float run = 2.0f;          // the speed times this while the run action is held (1 to 5)
     float radius = 0.3f;       // the capsule
     float height = 1.0f;       // end to end, along "up"
     float max_slope = 50.0f;   // degrees: steeper ground is a wall

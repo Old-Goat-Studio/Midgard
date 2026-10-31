@@ -1321,12 +1321,17 @@ TEST_CASE("cameras: settings come from the camera component, and edits keep the 
 
 TEST_CASE("input: actions added later get their default controls in older projects") {
     TestPackage pkg(camera_scene());
-    // This project's own bindings (made before "view" existed) don't mention it.
-    const midgard::InputMap map = midgard::InputMap::load(pkg.dir / "Game.db");
-    bool view_on_v = false;
-    for (const auto& b : map.bindings())
-        view_on_v = view_on_v || (b.action == "view" && b.control == "V");
-    CHECK(view_on_v);
+    // A project made before "view" (migration 7) and "run" (migration 8) existed.
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, "DELETE FROM input_action WHERE id IN ('view', 'run')");
+    exec(db, "DELETE FROM input_binding WHERE action IN ('view', 'run')");
+    sqlite3_close(db);
+    midgard::Actions actions(midgard::InputMap::load(pkg.dir / "Game.db"));
+    actions.set("keyboard", "V", 1.0f);
+    actions.set("keyboard", "Left Shift", 1.0f);
+    CHECK(actions.pressed("view"));
+    CHECK(actions.down("run"));
 }
 
 TEST_CASE("cameras: in top-down the mouse turns the view, and the keys walk relative to it") {
@@ -1561,4 +1566,42 @@ TEST_CASE("cameras, the exit: round the planet in every view, never through the 
     CHECK(closest < 2.5);  // the walls did pull the camera in (from 6 m)
     CHECK(glm::length(scene.world_position(player) - glm::dvec3(0, 0.5, 0)) < 50.0);
     MESSAGE("round the planet in ", frames, " frames");
+}
+
+TEST_CASE("the player runs at its speed times run_multiplier while the run action is held") {
+    struct Case {
+        const char* player;
+        double walk, run;  // metres in one second, holding W, then W and Left Shift
+    };
+    for (const Case& c : {Case{"{}", 4.0, 8.0},  // twice as fast running, by default
+                          Case{R"({"speed": 3, "run_multiplier": 3.5})", 3.0, 10.5},
+                          Case{R"({"run_multiplier": 9})", 4.0, 20.0},      // at most 5 times
+                          Case{R"({"run_multiplier": 0.5})", 4.0, 4.0}}) {  // at least 1
+        CAPTURE(std::string(c.player));
+        TestPackage pkg({
+            {"e1_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                            "collider": {"size": [200, 1, 200]}}')"},
+            {"e2_player", std::string(R"(NULL, '{"transform": {"position": [0, 0.5, 0]},
+                            "player": )") +
+                              c.player + "}'"},
+            {"e3_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]}, "camera": {}}')"},
+        });
+        midgard::Game game(pkg.dir);
+        midgard::Scene& scene = game.scene();
+        const entt::entity player = scene.find("e2_player");
+        midgard::Actions actions(midgard::InputMap::defaults());
+        play_with(game, actions, 0.5);  // settled on the ground
+        actions.set("keyboard", "W", 1.0f);
+        play_with(game, actions, 0.5);  // up to walking speed
+        glm::dvec3 start = scene.world_position(player);
+        play_with(game, actions, 1.0);
+        const double walked = glm::length(scene.world_position(player) - start);
+        CHECK(walked == doctest::Approx(c.walk).epsilon(0.03));
+        actions.set("keyboard", "Left Shift", 1.0f);
+        play_with(game, actions, 0.5);
+        start = scene.world_position(player);
+        play_with(game, actions, 1.0);
+        CHECK(glm::length(scene.world_position(player) - start) ==
+              doctest::Approx(c.run).epsilon(0.03));
+    }
 }

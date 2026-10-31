@@ -151,6 +151,19 @@ def test_the_players_walking_settings(qtbot, project):
         "speed": 4.0, "jump": 6.0, "height": 1.8}
 
 
+def test_the_players_running_speed(qtbot, project):
+    form = form_for(qtbot, project, "e000004")
+    box = form.player_rows["run_multiplier"]
+    assert box.value() == 2.0  # the engine's default when unset
+    assert (box.minimum(), box.maximum()) == (1.0, 5.0)
+    box.setValue(3.5)
+    assert project.entity("e000004").components["player"]["run_multiplier"] == 3.5
+    assert "running speed" in project.undo_stack.undoText()
+    project.undo_stack.undo()
+    assert "run_multiplier" not in project.entity("e000004").components["player"]
+    assert box.value() == 2.0
+
+
 @pytest.mark.parametrize("asset", ["prim_cylinder", "prim_wedge"])
 def test_cylinders_and_wedges_get_a_convex_collider_that_cooks(qtbot, project, tmp_path, asset):
     project.put_entity(Entity("e000070", "Shape", None, {

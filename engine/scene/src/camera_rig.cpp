@@ -228,7 +228,8 @@ PlayerIntent CameraRig::steer(Scene& scene, const Actions& actions, float dt) {
         facing_ = glm::normalize(move);  // face where it goes, upright on the ground under it
         scene.registry.get<Transform>(player_).rotation = upright_rotation(facing_, l.up);
     }
-    intent.walk = move * scene.registry.get<Player>(player_).speed;
+    const Player& p = scene.registry.get<Player>(player_);
+    intent.walk = move * (p.speed * (actions.down("run") ? p.run : 1.0f));
     intent.jump = actions.pressed("jump");
     return intent;
 }

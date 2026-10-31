@@ -144,6 +144,7 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
     } else if (name == "player") {
         Player p;
         p.speed = std::max(c.value("speed", p.speed), 0.0f);
+        p.run = std::clamp(c.value("run_multiplier", p.run), 1.0f, 5.0f);
         p.radius = std::max(c.value("radius", p.radius), 0.01f);
         p.height = std::max(c.value("height", p.height), 2.0f * p.radius);
         p.max_slope = std::clamp(c.value("max_slope", p.max_slope), 0.0f, 89.0f);

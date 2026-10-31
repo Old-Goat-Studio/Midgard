@@ -280,6 +280,7 @@ class EntityForm(QWidget):
         if "player" in entity.components:
             for key, label, low, high, step, suffix in (
                     ("speed", "Walk speed", 0.0, 100.0, 0.5, " m/s"),
+                    ("run_multiplier", "Running speed", 1.0, 5.0, 0.1, " ×"),
                     ("jump", "Jump speed", 0.0, 50.0, 0.5, " m/s"),
                     ("height", "Height", 0.02, 20.0, 0.1, " m"),
                     ("radius", "Radius", 0.01, 10.0, 0.05, " m")):
@@ -287,6 +288,9 @@ class EntityForm(QWidget):
                 box.setSuffix(suffix)
                 box.valueChanged.connect(lambda _v, b=box, k=key, lab=label: self._set_value(
                     "player", k, round(b.value(), 4), lab.lower()))
+                if key == "run_multiplier":
+                    box.setToolTip("The walk speed times this while the run action is held "
+                                   "(Left Shift; 1: no running)")
                 form.addRow(label, box)
                 self.player_rows[key] = box
         self.friction = self.bounciness = None
@@ -327,7 +331,8 @@ class EntityForm(QWidget):
                                 ("height", self.collider_height),
                                 ("offset", self.collider_offset)):
                 self.form.setRowVisible(widget, key in rows)
-        player_defaults = {"speed": 4.0, "jump": 4.5, "height": 1.0, "radius": 0.3}
+        player_defaults = {"speed": 4.0, "run_multiplier": 2.0, "jump": 4.5, "height": 1.0,
+                           "radius": 0.3}
         for key, box in self.player_rows.items():
             number(box, entity.components["player"].get(key, player_defaults[key]))
         if self.motion is not None:

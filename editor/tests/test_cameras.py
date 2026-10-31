@@ -41,6 +41,25 @@ def test_older_projects_gain_the_view_action_when_they_open(tmp_path):
     con.close()
 
 
+
+def test_older_projects_gain_the_run_action_when_they_open(tmp_path):
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    for number, path in contract.migrations():
+        if number < 8:
+            con.executescript(path.read_text("utf-8"))
+    con.execute("PRAGMA user_version = 7")
+    con.commit()
+    con.close()
+
+    assert contract.migrate(db) == len(contract.migrations())
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT kind FROM input_action WHERE id = 'run'").fetchone() == ("button",)
+    assert sorted(con.execute("SELECT device, control FROM input_binding WHERE action = 'run'")) \
+        == [("gamepad", "leftstick"), ("keyboard", "Left Shift")]
+    con.close()
+
+
 DIRECTOR = """
 import midgard
 
