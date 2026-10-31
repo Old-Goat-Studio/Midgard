@@ -10,7 +10,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 
 ---
 
-## 0. Where things stand (16 October 2026)
+## 0. Where things stand (31 October 2026)
 
 **Phases 0–4 are done, and Phase 5 is under way**, following [`Phase5_Roadmap.md`](Phase5_Roadmap.md). Every commit runs CI: the engine on Windows, Linux x86_64, Linux arm64 and Android; the editor's tests and packaged editor on Windows and Ubuntu; and the licence, format and lint checks.
 
@@ -21,7 +21,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 2 Engine core and the vertical slice | **Done** (14 October): a cube placed in the editor runs on Windows, Linux and Android, all exported from one editor host. |
 | 3 Live link and engine bindings | **Done** (14 October): Play, Pause and Stop, hot reload, the `_midgard` module, the embedded Vulkan viewport. |
 | 4 Scripting | **Done** (14 October): games embed CPython 3.14 (Android too), the `midgard` API v1, the Script editor, Assistant v1. |
-| 5 World building | **In progress:** milestones 5.0–5.5 are done (below). |
+| 5 World building | **In progress:** milestones 5.0–5.6 are done (below). |
 | 6–9 | Not started. |
 
 **Phase 5 milestones**
@@ -34,7 +34,8 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 5.3 Renderer foundation | **Done** | HDR and tone mapping, glTF PBR materials, KTX2/Basis textures, point and spot lights, cascaded shadows in the local "up" frame, analytic sky and fog, desktop and phone quality tiers. |
 | 5.4 Physics (Jolt) | **Done** | Jolt in double precision with gravity from the shape, rigid bodies, colliders, physics materials, layers, triggers, the character controller, the script API (raycasts, overlaps, forces), collider outlines, the world's surface mesh. The player walks round a planet and inside a cylinder. |
 | 5.5 Object editor and asset pipeline | **Done** | glTF import, objects as templates placed as instances, the Objects panel (Object editor), the Material editor, re-import on change, live objects in the running game, content-hashed cooking, Save Group as Object, and the first CC0 model (Avocado) with an import corpus test. The exit check runs as a test with the real game. |
-| 5.6–5.18 | Not started | Next are 5.6 Cameras and 5.7 Calendar (stage 2 in `Phase5_Roadmap.md` §5). |
+| 5.6 Cameras | **Done** | One camera with first-person, third-person (orbit or over the shoulder) and top-down views, switched with V and blended; a sphere swept through physics keeps it out of walls; "up" from the world's shape; shakes and scripted looks (`midgard.camera`); the player's last view in their profile; the Camera editor with a live preview in the viewport. The exit check walks a planet in every view past walls, as a test with the real game. |
+| 5.7–5.18 | Not started | Next is 5.7 Calendar (stage 2 in `Phase5_Roadmap.md` §5). |
 
 **Also built along the way** (asked for while using the editor): **groups** (complex objects made of primitives, moved as one, and one compound physics body when they move), **viewport gizmos** (move, rotate and scale in the view's corner, following the dock onto any monitor), a viewport toolbar (Colliders, Gizmos), **cylinder and wedge** primitives, layouts saved as they change (tab order included), delete by key and right-click, **Git from the editor** (put a project under Git, commit, change markers in the Script editor), the **Project Page** (tagline, description, logo and the game's icon), opening the last project on start, and picture buttons for Play, Pause and Stop.
 
@@ -571,7 +572,7 @@ Today, when a listen-server host quits, the session ends. **Host migration** mea
 | Space & teleport | Teleport editor (range, targets, capacity, cost, cooldown, effects), star map, destination menu and loading screen templates (see §7) | Room manager, flyable system-space rooms, procedural skies, teleporter component and teleport events, interference zones | Teleporting is instant and always comes from a game object. |
 | Ships and other craft | Ship editor for every class (hull frames with class and slots, modules as items, ship designs, movement tuning) (see §7) | Spacecraft flight, aerodynamics, buoyancy (air and water), waves and wind, sail physics, wheeled and tracked vehicles, crewed decks and turrets, combat and **boarding**, landing, mooring and docking, prediction, shipyard checks per class, salvage | Spacecraft, aircraft, airships, sailing ships, small craft and land vehicles. Bought, earned from quests, or built at the matching shipyard (small craft also at base boatyards). |
 | Mounts | Mounts dock (AI Behaviour editor): species, stats and stat limits, inheritance, taming rules, equipment, mounted and aerial combat animations, draft harnesses | Riding and flying, stamina, saddlebags, mounted combat, taming, **breeding**, survival needs, calling, stables | Up to 21 per character. All are available in the player's own universes; one can be brought to someone else's. |
-| Cameras | Camera editor: per-view settings, previews (see §8) | First-person, third-person and top-down cameras, switchable by the player, collision, lock-on, shape-aware "up" | |
+| Cameras | Camera editor: per-view settings, previews (see §8) | First-person, third-person and top-down cameras, switchable by the player, collision, lock-on, shape-aware "up" | **Built (5.6)**, except lock-on (Phase 6). |
 | Combat | Combat editor: weapons, abilities, damage types, status effects, hit boxes on bones, combat sandbox | Hit detection from animation windows, projectiles, host-checked hits with lag compensation | Co-op only: players never damage each other. |
 | AI behaviour | AI Behaviour editor: behaviour trees, utility scoring, perception, factions, schedules, spawn tables | Behaviour runtime, perception, navigation, live debugging | Runs on the host only. |
 | Companions | Companions dock: recruit rules, hire wages, commands, traits, approval tags and levels, approval simulator, companion skill trees, comments | Following, commands weighed against approval and safety, refusals, leaving, downed/revive, travel through teleports, ships and between universes | Up to 2 per player. They belong to the character. They don't follow orders blindly. |
@@ -1644,7 +1645,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 **Status: done** (14 October 2026).
 
 ### Phase 5: World building
-**Status: in progress.** 5.0–5.5 are done (§0 lists what each milestone brought).
+**Status: in progress.** 5.0–5.6 are done (§0 lists what each milestone brought).
 
 **The detailed plan is in [`Phase5_Roadmap.md`](Phase5_Roadmap.md)** (approved 15 October 2026):
 19 milestones (5.0–5.18), foundation first (test tooling, deterministic maths and world
@@ -1659,7 +1660,7 @@ moved to Phase 6 (see there); Phase 5 builds their foundations.
 - **Survival foundation** (§6): feels-like temperature, wetness, shelter checks and heat sources, readable from scripts. (Status effects, clothing stats, placeable campfires and heaters, the HUD gauge and `survival_scale` from the difficulty are in Phase 6.)
 - Environment editor (sky, lighting, fog, water), with lighting curves authored over **solar phase** and previewed with the Calendar's time scrubber.
 - ~~Physics editor (Jolt).~~ Built in 5.4.
-- **Cameras** (§8): first-person, third-person and top-down views, the Camera editor, collision and shape-aware "up".
+- ~~Cameras (§8): first-person, third-person and top-down views, the Camera editor, collision and shape-aware "up".~~ Built in 5.6.
 - **Character animation** (§8): glTF import, humanoid retargeting, the Animation editor (state machines, blend spaces, layers, events), foot IK on every world shape, first-person arms.
 - **Audio** (§8): the Audio editor, sound events, buses, 3D sound, reverb zones, music playlists, ambience by biome and solar phase.
 - Renderer foundation: textures (KTX2 / Basis Universal), glTF PBR materials, cascaded shadows in the local "up" frame, HDR, sky, fog, water, desktop and phone quality tiers. *Built in 5.3, except water (5.8).*

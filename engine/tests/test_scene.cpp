@@ -1417,3 +1417,148 @@ TEST_CASE("cameras: the game starts in the player's last view, and saves it") {
     press(fresh, actions, "V");
     CHECK(midgard::PlayerProfile::load(file).view == midgard::CameraView::First);
 }
+
+namespace {
+
+// A wall beside the exit check's route: a box turned to stand upright on the planet.
+struct Wall {
+    glm::dvec3 centre;
+    glm::mat3 axes;  // columns: across, up, along (the box's local X, Y, Z)
+    glm::vec3 half;
+};
+
+glm::vec3 local_to(const Wall& w, const glm::dvec3& p) {
+    return glm::transpose(w.axes) * glm::vec3(p - w.centre);
+}
+
+bool inside(const Wall& w, const glm::dvec3& p, float margin) {
+    const glm::vec3 l = glm::abs(local_to(w, p));
+    return l.x < w.half.x + margin && l.y < w.half.y + margin && l.z < w.half.z + margin;
+}
+
+// Whether the segment from a to b passes through the wall (slabs in the wall's frame).
+bool crosses(const Wall& w, const glm::dvec3& a, const glm::dvec3& b) {
+    const glm::vec3 p = local_to(w, a), d = local_to(w, b) - p;
+    float enter = 0.0f, leave = 1.0f;
+    for (int i = 0; i < 3; ++i) {
+        if (std::abs(d[i]) < 1e-9f) {
+            if (std::abs(p[i]) > w.half[i]) return false;
+            continue;
+        }
+        float t0 = (-w.half[i] - p[i]) / d[i], t1 = (w.half[i] - p[i]) / d[i];
+        if (t0 > t1) std::swap(t0, t1);
+        enter = std::max(enter, t0);
+        leave = std::min(leave, t1);
+        if (enter > leave) return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+TEST_CASE("cameras, the exit: round the planet in every view, never through the walls") {
+    // A planet of the smallest size, its top at the origin; the player walks round it along -Z
+    // (W), past eight walls 2 m to its right (+X), each 8 m long and 4 m tall.
+    constexpr double kRadius = 1000.0, kPi = 3.14159265358979;
+    const glm::dvec3 centre(0.0, -kRadius, 0.0);
+    std::vector<std::pair<std::string, std::string>> entities = {
+        {"e1_ground", R"(NULL, '{"mesh": {"asset": "builtin:surface"},
+                        "collider": {"shape": "mesh"}}')"},
+        {"e2_player", R"(NULL, '{"transform": {"position": [0, 0.5, 0]},
+                        "player": {"speed": 20}}')"},
+        {"e3_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]}, "camera": {}}')"},
+    };
+    std::vector<Wall> walls;
+    std::vector<double> stops;  // how far round (radians) each wall is
+    for (int k = 0; k < 8; ++k) {
+        const double angle = (k + 0.5) * 2.0 * kPi / 8.0;
+        const glm::vec3 up(0.0f, float(std::cos(angle)), float(-std::sin(angle)));
+        const glm::vec3 along(0.0f, float(-std::sin(angle)), float(-std::cos(angle)));
+        const glm::vec3 across = glm::cross(along, up);  // +X
+        Wall w{centre + glm::dvec3(up) * kRadius + glm::dvec3(across) * 2.0 + glm::dvec3(up) * 1.5,
+               glm::mat3(across, up, -along), glm::vec3(0.2f, 2.0f, 4.0f)};
+        const glm::vec3 turn = midgard::upright_rotation(along, up);
+        const json components = {{"transform",
+                                  {{"position", {w.centre.x, w.centre.y, w.centre.z}},
+                                   {"rotation", {turn.x, turn.y, turn.z}}}},
+                                 {"collider", {{"size", {0.4, 4.0, 8.0}}}}};
+        entities.push_back({"w" + std::to_string(k), "NULL, '" + components.dump() + "'"});
+        walls.push_back(w);
+        stops.push_back(angle);
+    }
+    TestPackage pkg(entities,
+                    R"({"body": {"shape": "sphere_outside", "radius": 1000,
+                        "origin": [0, -1000, 0]}})");
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const midgard::Body& body = *scene.settings.body;
+    const entt::entity player = scene.find("e2_player");
+    midgard::CameraRig& rig = game.camera_rig();
+    midgard::Actions actions(midgard::InputMap::defaults());
+
+    std::set<midgard::CameraView> seen;
+    int frames = 0, blocked = 0;
+    double closest = 1e9;  // the third-person camera's nearest to what it looks at
+    // One frame, then the checks: the camera is never in a wall, nothing solid comes between
+    // it and what it looks at, it stays above the ground, and level with it.
+    const auto step = [&] {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+        ++frames;
+        seen.insert(rig.view());
+        const glm::dvec3 cam = camera_at(scene);
+        const glm::dvec3 at = scene.world_position(player);
+        const glm::vec3 up(glm::normalize(at - centre));
+        CHECK(body.surface(cam).height > 0.1);
+        for (const Wall& w : walls) {
+            CHECK_FALSE(inside(w, cam, 0.1f));  // (the camera keeps 0.25 m from walls)
+            if (rig.blending() || rig.view() == midgard::CameraView::First) continue;
+            const float height = rig.view() == midgard::CameraView::Third ? 0.5f : 0.0f;
+            const glm::dvec3 target = at + glm::dvec3(up * height);
+            if (crosses(w, target, cam)) ++blocked;
+            if (rig.view() == midgard::CameraView::Third)
+                closest = std::min(closest, glm::length(cam - target));
+        }
+        if (!rig.blending()) {
+            const glm::vec3 cam_up(glm::normalize(cam - centre));
+            CHECK(std::abs(glm::dot(camera_axis(scene, {1, 0, 0}), cam_up)) < 0.02f);
+            CHECK(glm::dot(camera_axis(scene, {0, 1, 0}), cam_up) > 0.0f);
+        }
+    };
+    const auto relative = [&] { return glm::normalize(scene.world_position(player) - centre); };
+
+    glm::dvec3 last = relative();
+    double turned = 0.0;
+    size_t next = 0;
+    int swept = 0;
+    while (turned < 2.0 * kPi && frames < 40000) {
+        if (next < stops.size() && turned >= stops[next]) {
+            // Beside a wall: stop, and in each view (V steps through them) swing the camera
+            // all the way round the player, through where the wall is.
+            ++next;
+            actions.set("keyboard", "W", 0.0f);
+            for (int v = 0; v < 3; ++v) {
+                for (int i = 0; i < 30; ++i) step();  // the blend into the view
+                for (int i = 0; i < 120; ++i) {       // 360 degrees in 2 s
+                    actions.add_delta("mouse", "delta_x", 20.0f);
+                    step();
+                }
+                actions.set("keyboard", "V", 1.0f);
+                step();
+                actions.set("keyboard", "V", 0.0f);
+                ++swept;
+            }
+        }
+        actions.set("keyboard", "W", 1.0f);
+        step();
+        const glm::dvec3 now = relative();
+        turned += std::acos(std::clamp(glm::dot(last, now), -1.0, 1.0));
+        last = now;
+    }
+    CHECK(swept == 24);  // every wall, in every view
+    CHECK(seen.size() == 3);
+    CHECK(blocked == 0);
+    CHECK(closest < 2.5);  // the walls did pull the camera in (from 6 m)
+    CHECK(glm::length(scene.world_position(player) - glm::dvec3(0, 0.5, 0)) < 50.0);
+    MESSAGE("round the planet in ", frames, " frames");
+}
