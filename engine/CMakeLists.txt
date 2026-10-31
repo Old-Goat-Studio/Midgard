@@ -123,6 +123,7 @@ add_library(midgard_scene STATIC
     scene/src/game.cpp
     scene/src/camera_rig.cpp
     scene/src/player_profile.cpp
+    scene/src/world_save.cpp
     scene/src/validate.cpp
     scene/src/scene_physics.cpp
     scene/src/collider_outlines.cpp

@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdio>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -26,6 +28,8 @@ struct Context {
     float time = 0.0f;  // seconds since the scripts started
     float dt = 0.0f;
     std::function<void(const Report&)> report;
+    // midgard.time.on(signal, callback), in the order they were made.
+    std::vector<std::pair<TimeSignal, pybind11::object>> time_callbacks;
 };
 Context* g_context = nullptr;
 
@@ -149,6 +153,38 @@ CameraRig& rig() {
 CameraView view_named(const std::string& name) {
     if (const auto v = view_from_name(name)) return *v;
     throw py::value_error("no camera view '" + name + "' (first, third or top)");
+}
+
+// ---- time ---------------------------------------------------------------------------------
+// midgard.time: the game's clock (midgard/time_service.h), and called, the seconds since the
+// scripts started (API v1).
+struct TimeHandle {};
+
+// midgard.GameTime: a moment as a calendar shows it, with its names in English.
+struct GameTime {
+    std::int64_t year = 1;
+    int month = 1, day = 1, hour = 0, minute = 0, second = 0, day_of_year = 0;
+    std::string weekday, month_name, season;
+    std::int64_t time = 0;  // the clock, game seconds
+};
+
+GameTime game_time(const Calendar& c, std::int64_t time) {
+    const Game& game = current_game();
+    const Date d = date_at(c, time);
+    GameTime g{d.year, d.month, d.day, d.hour, d.minute, d.second, d.day_of_year, "", "", "", time};
+    if (size_t(d.weekday) < c.weekdays.size()) g.weekday = game.text(c.weekdays[size_t(d.weekday)]);
+    if (d.month >= 1 && size_t(d.month) <= c.months.size())
+        g.month_name = game.text(c.months[size_t(d.month - 1)].name_key);
+    if (d.season >= 0) g.season = game.text(c.seasons[size_t(d.season)].name_key);
+    return g;
+}
+
+TimeSignal signal_named(const std::string& name) {
+    for (TimeSignal s : {TimeSignal::Hour, TimeSignal::Day, TimeSignal::Month, TimeSignal::Season,
+                         TimeSignal::Year, TimeSignal::Dawn, TimeSignal::Dusk})
+        if (name == signal_name(s)) return s;
+    throw py::value_error("no time signal '" + name +
+                          "' (hour, day, month, season, year, dawn or dusk)");
 }
 
 template <typename Component>
@@ -396,9 +432,94 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         "Every entity in the scene.");
     m.def(
         "player", [] { return first_with<Player>(); }, "The entity the player controls, or None.");
-    m.def(
-        "time", [] { return g_context ? g_context->time : 0.0f; },
-        "Seconds since the game's scripts started.");
+    py::class_<GameTime>(m, "GameTime", "A moment as a calendar shows it.")
+        .def_readonly("year", &GameTime::year)
+        .def_readonly("month", &GameTime::month)
+        .def_readonly("day", &GameTime::day)
+        .def_readonly("hour", &GameTime::hour)
+        .def_readonly("minute", &GameTime::minute)
+        .def_readonly("second", &GameTime::second)
+        .def_readonly("day_of_year", &GameTime::day_of_year)
+        .def_readonly("weekday", &GameTime::weekday)
+        .def_readonly("month_name", &GameTime::month_name)
+        .def_readonly("season", &GameTime::season)
+        .def_readonly("time", &GameTime::time)
+        .def("__repr__", [](const GameTime& g) {
+            char clock[16];
+            std::snprintf(clock, sizeof(clock), "%02d:%02d:%02d", g.hour, g.minute, g.second);
+            return "GameTime(year=" + std::to_string(g.year) +
+                   ", month=" + std::to_string(g.month) + ", day=" + std::to_string(g.day) + ", " +
+                   clock + ", weekday=" + py::repr(py::str(g.weekday)).cast<std::string>() +
+                   ", season=" + py::repr(py::str(g.season)).cast<std::string>() + ")";
+        });
+
+    py::class_<TimeHandle>(m, "Time", "The game's clock (midgard.time).")
+        .def("__call__", [](const TimeHandle&) { return g_context ? g_context->time : 0.0f; })
+        .def("now",
+             [](const TimeHandle&) {
+                 const Game& g = current_game();
+                 return game_time(g.local_calendar(), g.time().now());
+             })
+        .def("standard",
+             [](const TimeHandle&) {
+                 const Game& g = current_game();
+                 return game_time(g.standard_calendar(), g.time().now());
+             })
+        .def("season",
+             [](const TimeHandle&) {
+                 const Game& g = current_game();
+                 return game_time(g.local_calendar(), g.time().now()).season;
+             })
+        .def("solar_phase",
+             [](const TimeHandle&) {
+                 const Game& g = current_game();
+                 return solar_phase_at(g.local_calendar(), g.time().now());
+             })
+        .def("is_day",
+             [](const TimeHandle&) {
+                 const Game& g = current_game();
+                 return solar_phase_at(g.local_calendar(), g.time().now()) < 0.5;
+             })
+        .def_property_readonly("seconds",
+                               [](const TimeHandle&) { return current_game().time().now(); })
+        .def_property_readonly("scale",
+                               [](const TimeHandle&) { return current_game().time().scale(); })
+        .def(
+            "set_scale",
+            [](const TimeHandle&, double scale) {
+                if (!(scale >= 0.0)) throw py::value_error("time can't run backwards");
+                current_game().time().set_scale(scale);
+            },
+            py::arg("scale"))
+        .def(
+            "advance",
+            [](const TimeHandle&, double days, double hours, double minutes, double seconds,
+               const std::string& skip) {
+                const Calendar& c = current_game().local_calendar();
+                const double total = days * double(c.seconds_per_day()) +
+                                     hours * double(c.seconds_per_hour()) + minutes * 60.0 +
+                                     seconds;
+                if (!(total >= 0.0)) throw py::value_error("time can only be advanced forwards");
+                const SkipPolicy policy =
+                    skip == "all"      ? SkipPolicy::All
+                    : skip == "latest" ? SkipPolicy::Latest
+                    : skip == "none"   ? SkipPolicy::None
+                                       : throw py::value_error("skip is all, latest or none");
+                current_game().advance_time(std::int64_t(std::llround(total)), policy);
+            },
+            py::kw_only(), py::arg("days") = 0.0, py::arg("hours") = 0.0, py::arg("minutes") = 0.0,
+            py::arg("seconds") = 0.0, py::arg("skip") = "all")
+        .def(
+            "on",
+            [](const TimeHandle&, const std::string& signal, const py::object& callback) {
+                if (!PyCallable_Check(callback.ptr()))
+                    throw py::type_error("midgard.time.on needs a function to call");
+                if (!g_context) throw std::runtime_error("midgard: no game is running");
+                g_context->time_callbacks.emplace_back(signal_named(signal), callback);
+            },
+            py::arg("signal"), py::arg("callback"))
+        .def("__repr__", [](const TimeHandle&) { return std::string("<midgard.time>"); });
+    m.attr("time") = TimeHandle{};
     m.def(
         "action",
         [](const std::string& name) {
@@ -570,6 +691,21 @@ void ScriptSystem::update(const Actions& actions, float dt) {
         }
     }
 
+    // The clock's signals on the player's calendar (midgard.time.on).
+    for (const TimeEvent& ev : s.context.game->time_events()) {
+        if (ev.calendar != 0) continue;
+        for (const auto& [signal, callback] : std::vector(s.context.time_callbacks)) {
+            if (signal != ev.signal) continue;
+            const std::string module = py::str(py::getattr(callback, "__module__", py::str("")));
+            if (s.paused.contains(module)) continue;
+            try {
+                callback();
+            } catch (py::error_already_set& e) {
+                s.fail(module, e, std::string("midgard.time.on '") + signal_name(signal) + "'");
+            }
+        }
+    }
+
     for (const auto& [e, module] : std::vector(s.started.begin(), s.started.end()))
         if (reg.valid(e)) s.call(module, "on_update", handle(e), dt);
 }
@@ -589,6 +725,16 @@ void ScriptSystem::reload(const std::string& module) {
     } else if (s.load(module).is_none()) {
         return;  // still broken; reported
     }
+    if (const auto it = s.modules.find(module); it != s.modules.end()) {
+        for (auto& [signal, callback] : s.context.time_callbacks) {
+            if (py::str(py::getattr(callback, "__module__", py::str(""))).cast<std::string>() !=
+                module)
+                continue;
+            const py::object renewed =
+                py::getattr(it->second, py::getattr(callback, "__name__", py::str("")), py::none());
+            if (!renewed.is_none()) callback = renewed;  // the edited function from now on
+        }
+    }
     if (s.context.report)
         s.context.report({"info", "Reloaded script '" + module + "'", module, "", 0});
     entt::registry& reg = s.context.game->scene().registry;
@@ -604,6 +750,8 @@ result = json.dumps({
     "module": sorted(n for n in dir(midgard) if not n.startswith("_")),
     "Entity": sorted(n for n in dir(midgard.Entity) if not n.startswith("_")),
     "Camera": sorted(n for n in dir(midgard.Camera) if not n.startswith("_")),
+    "Time": sorted(n for n in dir(midgard.Time) if not n.startswith("_")),
+    "GameTime": sorted(n for n in dir(midgard.GameTime) if not n.startswith("_")),
 })
 )",
              scope);

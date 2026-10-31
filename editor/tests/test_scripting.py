@@ -143,6 +143,8 @@ def test_the_stub_matches_the_engine():
     assert names(tree.body) == api["module"]
     assert members("Entity") == api["Entity"]
     assert members("Camera") == api["Camera"]
+    assert members("Time") == api["Time"]
+    assert members("GameTime") == api["GameTime"]
 
 
 @needs_scripting

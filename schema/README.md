@@ -43,6 +43,17 @@ cook refuses calendars with a month without days, no weekdays, seasons whose sha
 to 1, daylight outside 1-99%, ranges the wrong way round, or a start date the calendar doesn't
 have.
 
+## World folder
+
+A world being played is a folder (`engine/scene/include/midgard/world_save.h`): `world.json`
+says who it is (`format`, `id` (32 hex digits), `name`, `description`, `seed` (a decimal
+string: JSON numbers lose precision past 2^53), `game`, `created`), and `world.db` (SQLite,
+`user_version` 1) holds its state: for now the `clock` table's one row, `game_time` (game
+seconds) and `scale`. Loading restores the date to the second. An exported game in a window
+plays `worlds/default` in the user's data folder; `midgard_runtime --world <dir>` plays
+another. Play in the editor and tests use none unless given, so they start at the standard
+calendar's start date. Phase 6's world list makes and chooses worlds.
+
 ## Player profile
 
 The runtime keeps a player's own settings in `profile.json`

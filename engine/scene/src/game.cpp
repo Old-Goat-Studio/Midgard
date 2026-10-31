@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/game.h"
 
+#include <algorithm>
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
+
+#include <sqlite3.h>
 
 #include "midgard/collider_outlines.h"
 #include "midgard/gltf.h"
@@ -19,6 +23,67 @@ Game::Game(const std::filesystem::path& package_dir)
     rebuild_physics();
     camera_ = std::make_unique<CameraRig>(scene_);
     camera_->follow(scene_, 0.0f, camera_sweep());
+
+    // The clock, on the standard calendar (validation refused unusable calendars at the cook).
+    const std::filesystem::path database = package_dir / package_.manifest.database;
+    std::vector<Calendar> calendars;
+    try {
+        calendars = load_calendars(database);
+    } catch (const CalendarError&) {
+    }
+    const auto standard = std::find_if(calendars.begin(), calendars.end(),
+                                       [](const Calendar& c) { return c.standard; });
+    if (standard != calendars.end() && standard->problems().empty()) {
+        time_.follow(*standard);
+    } else {  // a package from before calendars: plain days and months, no seasons
+        Calendar plain;
+        plain.id = "builtin";
+        plain.months.assign(12, {"", 30});
+        plain.weekdays.assign(7, "");
+        time_.follow(plain);
+    }
+    time_.set_time(standard_calendar().start_time());
+    time_.set_scale(standard_calendar().time_scale());
+
+    sqlite3* db = nullptr;
+    const std::u8string u8 = database.u8string();
+    if (sqlite3_open_v2(std::string(u8.begin(), u8.end()).c_str(), &db, SQLITE_OPEN_READONLY,
+                        nullptr) == SQLITE_OK) {
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT key, english FROM string", -1, &st, nullptr) ==
+            SQLITE_OK) {
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const auto* k = sqlite3_column_text(st, 0);
+                const auto* e = sqlite3_column_text(st, 1);
+                if (k && e)
+                    strings_[reinterpret_cast<const char*>(k)] = reinterpret_cast<const char*>(e);
+            }
+        }
+        sqlite3_finalize(st);
+    }
+    sqlite3_close(db);
+}
+
+std::string Game::text(const std::string& key) const {
+    const auto it = strings_.find(key);
+    return it != strings_.end() ? it->second : key;
+}
+
+void Game::advance_time(std::int64_t game_seconds, SkipPolicy policy) {
+    const std::vector<TimeEvent>& passed = time_.advance(game_seconds, policy);
+    skipped_.insert(skipped_.end(), passed.begin(), passed.end());
+}
+
+void Game::use_world(const std::filesystem::path& folder) {
+    world_ = WorldSave::open(folder, package_.manifest.game_name);
+    if (const auto saved = world_->clock()) {
+        time_.set_time(saved->game_time);
+        time_.set_scale(saved->scale);
+    }
+}
+
+void Game::save_world() {
+    if (world_) world_->save_clock({time_.now(), time_.scale()});
 }
 
 void Game::rebuild_physics() {
@@ -41,6 +106,10 @@ CameraSweep Game::camera_sweep() const {
 }
 
 void Game::update(const Actions& actions, float dt) {
+    time_events_ = std::move(skipped_);
+    skipped_.clear();
+    const std::vector<TimeEvent>& passed = time_.update(dt);
+    time_events_.insert(time_events_.end(), passed.begin(), passed.end());
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
     physics_->set_player_intent(intent.walk, intent.jump);
     physics_->update(scene_, dt);  // the player walks

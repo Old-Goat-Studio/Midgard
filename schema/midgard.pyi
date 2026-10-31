@@ -20,6 +20,8 @@ Game scripts are pure Python: the standard library is available, compiled extens
 not (they would need building for every platform).
 """
 
+from collections.abc import Callable as _Callable
+
 Vector = tuple[float, float, float]
 Color = tuple[float, float, float, float]
 
@@ -171,8 +173,78 @@ def player() -> Entity | None:
     """The entity the player controls, or None."""
 
 
-def time() -> float:
-    """Seconds since the game's scripts started."""
+class GameTime:
+    """A moment as a calendar shows it (read-only). Names are in English."""
+
+    year: int
+    month: int
+    """1-based."""
+    day: int
+    """1-based, in the month."""
+    hour: int
+    minute: int
+    second: int
+    day_of_year: int
+    """0-based."""
+    weekday: str
+    """The weekday's name, such as "Óðinsdagr"."""
+    month_name: str
+    season: str
+    """The season's name, or "" for a calendar without seasons."""
+    time: int
+    """The clock: game seconds since year 1, month 1, day 1, 00:00."""
+
+
+class Time:
+    """The game's clock: use midgard.time. One clock runs for the whole world, in game seconds;
+    each calendar shows it its own way (the standard calendar, and the calendar of the body the
+    player is on, which is the standard one until bodies have their own). Called, it gives the
+    seconds since the game's scripts started (real time), as in API v1."""
+
+    seconds: int
+    """The clock, in game seconds (read-only)."""
+    scale: float
+    """Game seconds per real second (read-only; see set_scale)."""
+
+    def __call__(self) -> float:
+        """Seconds since the game's scripts started (real time)."""
+
+    def now(self) -> GameTime:
+        """The date and time on the player's body."""
+
+    def standard(self) -> GameTime:
+        """The date and time on the standard calendar."""
+
+    def season(self) -> str:
+        """The season on the player's body ("" without seasons)."""
+
+    def solar_phase(self) -> float:
+        """Where the day is: 0 sunrise, 0.25 noon, 0.5 sunset, 0.75 midnight, whatever the day's
+        length or its share of daylight."""
+
+    def is_day(self) -> bool:
+        """True between sunrise and sunset."""
+
+    def set_scale(self, scale: float) -> None:
+        """Game seconds per real second: 0 stops time (a cutscene), the calendar's own makes a
+        day last its real minutes. ValueError if negative."""
+
+    def advance(self, *, days: float = 0, hours: float = 0, minutes: float = 0,
+                seconds: float = 0, skip: str = "all") -> None:
+        """Moves the clock on at once (sleeping, waiting), in the player's calendar's days and
+        hours. skip says which of the signals passed are delivered (on the next frame): "all",
+        "latest" (the last of each kind) or "none". ValueError for going backwards."""
+
+    def on(self, signal: str, callback: _Callable[[], None]) -> None:
+        """Calls callback() each time the clock passes a signal on the player's body: "hour",
+        "day", "month", "season", "year", "dawn" (sunrise) or "dusk" (sunset). Once for each,
+        however much time passes in a frame. A callback that raises pauses its script, like its
+        other functions; when its script is edited, the new version of the function is called.
+        ValueError for an unknown signal."""
+
+
+time: Time
+"""The game's clock."""
 
 
 def action(name: str) -> float:

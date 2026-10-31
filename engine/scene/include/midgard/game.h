@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -11,6 +12,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "midgard/calendar.h"
 #include "midgard/camera_rig.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
@@ -20,6 +22,8 @@
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
 #include "midgard/scene_physics.h"
+#include "midgard/time_service.h"
+#include "midgard/world_save.h"
 
 namespace midgard {
 
@@ -100,6 +104,29 @@ public:
     const std::filesystem::path& profile_file() const { return profile_file_; }
     const PhysicsLayers& physics_layers() const { return layers_; }
 
+    // ---- time (milestone 5.7) ----
+    // The clock: it follows the standard calendar (a built-in one for packages from before
+    // calendars), starts at its start date and runs at its time scale. Game::update moves it on.
+    TimeService& time() { return time_; }
+    const TimeService& time() const { return time_; }
+    const Calendar& standard_calendar() const { return time_.calendar(0); }
+    // The calendar of the body the player is on: the standard one, until bodies have their own.
+    const Calendar& local_calendar() const { return time_.calendar(0); }
+    // The clock's signals of the last update, and of advance_time() calls made before it.
+    const std::vector<TimeEvent>& time_events() const { return time_events_; }
+    // Moves the clock on at once (sleeping, waiting). Its signals come with the next update.
+    void advance_time(std::int64_t game_seconds, SkipPolicy policy = SkipPolicy::All);
+    // Player-facing text in English: a key of the package's string table (the key itself if
+    // it has none).
+    std::string text(const std::string& key) const;
+
+    // The world being played (midgard/world_save.h): its saved clock is restored now (to the
+    // second), and save_world() keeps it (call it when the game ends). Without one, nothing is
+    // kept. Throws WorldError.
+    void use_world(const std::filesystem::path& folder);
+    void save_world();
+    const WorldSave* world() const { return world_ ? &*world_ : nullptr; }
+
 private:
     render::MeshData load_mesh(const std::string& asset) const;
     void refresh_camera(entt::entity edited);
@@ -124,6 +151,10 @@ private:
     mutable std::unordered_map<std::string, std::unique_ptr<render::MeshData>> outline_meshes_;
     std::unordered_set<entt::entity> inside_;  // triggers the player is in
     std::vector<TriggerEvent> trigger_events_;
+    TimeService time_;
+    std::vector<TimeEvent> time_events_, skipped_;          // this frame's; from advances since
+    std::unordered_map<std::string, std::string> strings_;  // key -> English
+    std::optional<WorldSave> world_;
 };
 
 }  // namespace midgard

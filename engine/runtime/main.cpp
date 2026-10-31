@@ -28,6 +28,11 @@
 //                                       <dir>/profile.json. An exported game in a window keeps
 //                                       it in the user's data folder without this; under the
 //                                       editor and in tests there is none unless it is given.
+//   --world <dir>                       play the world in <dir> (world.json, world.db: its clock
+//                                       is restored, and saved when the game ends). An exported
+//                                       game in a window keeps worlds/default in the user's data
+//                                       folder without this; under the editor and in tests there
+//                                       is none unless it is given.
 //
 // In a window, F3 (or --debug-overlay) shows the frame rate and timings over the game, and F4
 // (or --debug-physics, which also works with --screenshot) outlines the physics shapes.
@@ -110,6 +115,7 @@ struct Options {
     std::optional<std::string> overlay_text;    // fixed overlay lines, separated by '|'
     std::optional<std::string> profile;         // where to write the profiling trace
     std::optional<std::string> player_profile;  // the player's profile folder
+    std::optional<std::string> world;           // the world's folder
     bool selftest = false;
     bool show = false;              // the self-test's results in a window
     glm::dvec3 origin_offset{0.0};  // where the demo scene is placed (precision tests)
@@ -125,7 +131,7 @@ int usage() {
         "usage: midgard_runtime [--version] [--package <dir>] [--frames N] [--size WxH]\n"
         "                       [--screenshot out.png [--overlay-text \"a|b\"]]\n"
         "                       [--editor-link host:port] [--debug-overlay] [--debug-physics]\n"
-        "                       [--profile out.json] [--player-profile <dir>]\n"
+        "                       [--profile out.json] [--player-profile <dir>] [--world <dir>]\n"
         "                       [--quality desktop|phone]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
@@ -228,6 +234,8 @@ public:
     virtual std::string dump() const { return "{}"; }
     // The player's profile file: used from now on, and saved when the game ends.
     virtual void use_profile(const std::filesystem::path&) {}
+    // The world's folder: its clock is restored now and saved when the game ends.
+    virtual void use_world(const std::filesystem::path&) {}
     // A message from the editor's live link (entity edits and the like).
     virtual void apply(const nlohmann::json& message, render::Renderer*) {
         warn("live link: '%s' needs a game package\n", message.value("type", "").c_str());
@@ -310,6 +318,19 @@ public:
         } catch (const midgard::ProfileError& e) {
             warn("%s\n", e.what());
         }
+        try {
+            game_.save_world();
+        } catch (const midgard::WorldError& e) {
+            warn("%s\n", e.what());
+        }
+    }
+    void use_world(const std::filesystem::path& folder) override {
+        try {
+            game_.use_world(folder);
+            say("World: %s\n", folder.string().c_str());
+        } catch (const midgard::WorldError& e) {
+            warn("%s; playing without saving\n", e.what());
+        }
     }
     void use_profile(const std::filesystem::path& file) override {
         try {
@@ -356,7 +377,9 @@ public:
                              : nlohmann::json(nullptr)}});
         }
         const glm::vec3 sky = game_.scene().settings.sky;
-        return nlohmann::json{{"entities", entities}, {"sky", {sky.x, sky.y, sky.z}}}.dump();
+        return nlohmann::json{
+            {"entities", entities}, {"sky", {sky.x, sky.y, sky.z}}, {"time", game_.time().now()}}
+            .dump();
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
@@ -1029,14 +1052,33 @@ std::filesystem::path executable_dir() {
     return base ? std::filesystem::path(base) : std::filesystem::current_path();
 }
 
+// The game's folder in the user's data folder (SDL_GetPrefPath): %APPDATA%\Midgard\<game> on
+// Windows, ~/.local/share/Midgard/<game> on Linux, the app's internal storage on Android.
+std::optional<std::filesystem::path> user_data_dir(const std::string& game);
+
 // Where the player's profile lives: --player-profile, or for an exported game in a window,
-// profiles/default/ in the user's data folder for this game (%APPDATA%\Midgard\<game> on
-// Windows, ~/.local/share/Midgard/<game> on Linux, the app's internal storage on Android). Under
-// the editor and in tests there is none, so play starts the way the designer set it up.
+// profiles/default/ in the user's data folder. Under the editor and in tests there is none, so
+// play starts the way the designer set it up.
 std::optional<std::filesystem::path> player_profile_dir(const Options& opt, bool windowed,
                                                         const std::string& game) {
     if (opt.player_profile) return std::filesystem::path(*opt.player_profile);
     if (!windowed || opt.editor_link || opt.frames >= 0) return std::nullopt;
+    if (const auto dir = user_data_dir(game)) return *dir / "profiles" / "default";
+    return std::nullopt;
+}
+
+// Where the world is kept: --world, or for an exported game in a window, worlds/default in the
+// user's data folder (until Phase 6's world list chooses one). Under the editor and in tests
+// there is none, so play starts at the calendar's start date.
+std::optional<std::filesystem::path> world_dir(const Options& opt, bool windowed,
+                                               const std::string& game) {
+    if (opt.world) return std::filesystem::path(*opt.world);
+    if (!windowed || opt.editor_link || opt.frames >= 0) return std::nullopt;
+    if (const auto dir = user_data_dir(game)) return *dir / "worlds" / "default";
+    return std::nullopt;
+}
+
+std::optional<std::filesystem::path> user_data_dir(const std::string& game) {
     std::string folder;  // the game's name, made safe for a folder name
     for (const char c : game)
         folder += (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '-' || c == '_')
@@ -1047,7 +1089,7 @@ std::optional<std::filesystem::path> player_profile_dir(const Options& opt, bool
     if (!base) return std::nullopt;
     const std::filesystem::path dir(reinterpret_cast<const char8_t*>(base));
     SDL_free(base);
-    return dir / "profiles" / "default";
+    return dir;
 }
 
 int dump_api() {
@@ -1189,6 +1231,8 @@ int main(int argc, char** argv) {
             opt.profile = argv[++i];
         } else if (arg == "--player-profile" && has_value) {
             opt.player_profile = argv[++i];
+        } else if (arg == "--world" && has_value) {
+            opt.world = argv[++i];
         } else if (arg == "--scene" && has_value) {
             opt.scene = argv[++i];
         } else if (arg == "--quality" && has_value) {
@@ -1243,6 +1287,8 @@ int main(int argc, char** argv) {
             source = std::make_unique<GameSource>(*opt.package_dir);
             if (const auto folder = player_profile_dir(opt, windowed, source->title()))
                 source->use_profile(*folder / "profile.json");
+            if (const auto folder = world_dir(opt, windowed, source->title()))
+                source->use_world(*folder);
         } else {
             source = std::make_unique<DemoSource>(opt.origin_offset);
         }

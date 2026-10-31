@@ -1605,3 +1605,87 @@ TEST_CASE("the player runs at its speed times run_multiplier while the run actio
               doctest::Approx(c.run).epsilon(0.03));
     }
 }
+
+TEST_CASE("time: the game's clock starts at the standard calendar's start, at its pace") {
+    TestPackage pkg(camera_scene());
+    midgard::Game game(pkg.dir);
+    const midgard::Calendar& c = game.standard_calendar();
+    CHECK(c.id == "cal_standard");
+    const midgard::Date start = midgard::date_at(c, game.time().now());
+    CHECK(start.year == 1);
+    CHECK(start.month == 4);
+    CHECK(start.day == 1);
+    CHECK(start.hour == 6);
+    CHECK(game.time().scale() == doctest::Approx(30.0));  // a day in 48 real minutes
+    CHECK(game.text("cal_standard.month.3") == "April");
+    CHECK(game.text("no.such.key") == "no.such.key");
+
+    midgard::Actions actions(midgard::InputMap::defaults());
+    int hours = 0;
+    for (int i = 0; i < 60 * 121; ++i) {  // 121 real seconds: an hour and a minute of game time
+        game.update(actions, 1.0f / 60.0f);
+        for (const midgard::TimeEvent& e : game.time_events())
+            hours += e.signal == midgard::TimeSignal::Hour ? 1 : 0;
+    }
+    CHECK(hours == 1);  // 07:00
+    CHECK(midgard::date_at(c, game.time().now()).minute == 0);
+    CHECK(midgard::date_at(c, game.time().now()).hour == 7);
+
+    // A skip's signals come with the next frame.
+    game.advance_time(c.seconds_per_day(), midgard::SkipPolicy::All);
+    CHECK(midgard::date_at(c, game.time().now()).day == 2);
+    game.update(actions, 1.0f / 60.0f);
+    int days = 0;
+    for (const midgard::TimeEvent& e : game.time_events())
+        days += e.signal == midgard::TimeSignal::Day ? 1 : 0;
+    CHECK(days == 1);
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(game.time_events().empty());  // delivered once
+}
+
+TEST_CASE("time: a world keeps its clock, and loading restores it to the second") {
+    TestPackage pkg(camera_scene());
+    const fs::path world = pkg.dir / "worlds" / "w1";
+    std::int64_t saved = 0;
+    std::string id;
+    {
+        midgard::Game game(pkg.dir);
+        game.use_world(world);  // new: the calendar's start
+        REQUIRE(game.world() != nullptr);
+        id = game.world()->info().id;
+        CHECK(id.size() == 32);
+        CHECK(game.world()->info().game == "Game");
+        CHECK_FALSE(game.world()->clock());
+        CHECK(midgard::date_at(game.standard_calendar(), game.time().now()).hour == 6);
+        game.advance_time(1'234'567, midgard::SkipPolicy::None);
+        game.time().set_scale(0.0);  // a script froze time
+        saved = game.time().now();
+        game.save_world();
+    }
+    CHECK(fs::exists(world / "world.json"));
+    CHECK(fs::exists(world / "world.db"));
+    midgard::Game again(pkg.dir);
+    again.use_world(world);
+    CHECK(again.world()->info().id == id);  // the same world
+    CHECK(again.time().now() == saved);
+    CHECK(again.time().scale() == 0.0);
+
+    std::ofstream(world / "world.json") << "{not json";
+    midgard::Game damaged(pkg.dir);
+    CHECK_THROWS_AS(damaged.use_world(world), midgard::WorldError);
+    CHECK(damaged.world() == nullptr);
+}
+
+TEST_CASE("time: a package from before calendars gets a plain one") {
+    TestPackage pkg(camera_scene());
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, "DELETE FROM calendar");
+    sqlite3_close(db);
+    midgard::Game game(pkg.dir);
+    CHECK(game.standard_calendar().id == "builtin");
+    CHECK(game.standard_calendar().problems().empty());
+    midgard::Actions actions(midgard::InputMap::defaults());
+    game.update(actions, 1.0f);
+    CHECK(game.time().now() > 0);
+}
