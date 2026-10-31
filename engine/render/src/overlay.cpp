@@ -52,7 +52,8 @@ float overlay_scale(uint32_t screen_height) {
 }
 
 std::vector<OverlayVertex> layout_overlay(const std::vector<OverlayLine>& lines,
-                                          uint32_t screen_width, uint32_t screen_height) {
+                                          uint32_t screen_width, uint32_t screen_height,
+                                          OverlayCorner corner) {
     std::vector<OverlayVertex> out;
     if (lines.empty() || screen_width == 0 || screen_height == 0) return out;
     const float scale = overlay_scale(screen_height);
@@ -63,6 +64,7 @@ std::vector<OverlayVertex> layout_overlay(const std::vector<OverlayLine>& lines,
         glm::vec4 color;
         float size;
         float y;
+        float width;
     };
     std::vector<Placed> placed;
     float y = kMargin * scale;
@@ -71,19 +73,24 @@ std::vector<OverlayVertex> layout_overlay(const std::vector<OverlayLine>& lines,
         const float size = std::max(line.size, 0.25f) * scale;
         if (y + kLineUnits * size > float(screen_height)) break;  // off the bottom
         std::string text = printable(line.text);
-        right = std::max(right, float(stb_easy_font_width(text.data())) * size);
-        placed.push_back({std::move(text), line.color, size, y});
+        const float width = float(stb_easy_font_width(text.data())) * size;
+        right = std::max(right, width);
+        placed.push_back({std::move(text), line.color, size, y, width});
         y += kLineUnits * size;
     }
     if (placed.empty()) return out;
-    const float left = kMargin * scale;
-    quad(out, {0.0f, 0.0f},
-         {std::min(left + right + kMargin * scale, float(screen_width)),
-          std::min(y + kMargin * scale, float(screen_height))},
-         kPanel);
+    const float margin = kMargin * scale;
+    const float panel_width = std::min(right + 2.0f * margin, float(screen_width));
+    const float bottom = std::min(y + margin, float(screen_height));
+    const bool at_right = corner == OverlayCorner::TopRight;
+    const float panel_left = at_right ? float(screen_width) - panel_width : 0.0f;
+    quad(out, {panel_left, 0.0f}, {panel_left + panel_width, bottom}, kPanel);
 
     std::vector<Packed> buffer;
     for (const Placed& p : placed) {
+        // Text wider than the screen runs off its right edge, as on the left.
+        const float left =
+            at_right ? std::max(margin, float(screen_width) - margin - p.width) : margin;
         // About 270 bytes (17 vertices) per character, per stb_easy_font's notes; with room.
         buffer.resize(p.text.size() * 32 + 32);
         const int quads =

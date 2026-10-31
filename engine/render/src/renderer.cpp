@@ -191,7 +191,7 @@ struct Renderer::Impl {
     Environment environment;
     VkPipelineLayout overlay_layout = VK_NULL_HANDLE;
     VkPipeline overlay_pipeline = VK_NULL_HANDLE;
-    std::vector<OverlayLine> overlay_lines;
+    std::vector<OverlayLine> overlay_lines[2];  // by OverlayCorner
     VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
     VkCommandPool command_pool = VK_NULL_HANDLE;
 
@@ -1339,9 +1339,14 @@ struct Renderer::Impl {
 
     void prepare_overlay(Frame& f) {
         f.overlay_vertices = 0;
-        if (overlay_lines.empty()) return;
-        const std::vector<OverlayVertex> vertices =
-            layout_overlay(overlay_lines, extent.width, extent.height);
+        std::vector<OverlayVertex> vertices;
+        for (const OverlayCorner corner : {OverlayCorner::TopLeft, OverlayCorner::TopRight}) {
+            const auto& lines = overlay_lines[size_t(corner)];
+            if (lines.empty()) continue;
+            const std::vector<OverlayVertex> panel =
+                layout_overlay(lines, extent.width, extent.height, corner);
+            vertices.insert(vertices.end(), panel.begin(), panel.end());
+        }
         const VkDeviceSize bytes = vertices.size() * sizeof(OverlayVertex);
         if (bytes == 0) return;
         if (bytes > f.overlay_capacity) {  // the fence has passed, so the old one is unused
@@ -2016,8 +2021,8 @@ void Renderer::set_debug_lines(std::vector<DebugLine> lines) {
     impl_->debug_lines = std::move(lines);
 }
 
-void Renderer::set_overlay(std::vector<OverlayLine> lines) {
-    impl_->overlay_lines = std::move(lines);
+void Renderer::set_overlay(std::vector<OverlayLine> lines, OverlayCorner corner) {
+    impl_->overlay_lines[size_t(corner)] = std::move(lines);
 }
 
 void Renderer::resize(uint32_t width, uint32_t height) {

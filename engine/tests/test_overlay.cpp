@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -59,4 +60,23 @@ TEST_CASE("lines past the bottom of the screen are cut off") {
     CHECK(inside(vs, 640, 360));
     const auto few = layout_overlay(std::vector<OverlayLine>(10, OverlayLine{"line"}), 640, 360);
     CHECK(vs.size() > few.size());
+}
+
+TEST_CASE("a top-right panel sits against the right edge, its lines right-aligned") {
+    using midgard::render::OverlayCorner;
+    const std::vector<OverlayLine> lines{{"Time   06:00"}, {"Year   1"}};
+    const auto left = layout_overlay(lines, 1280, 720);
+    const auto right = layout_overlay(lines, 1280, 720, OverlayCorner::TopRight);
+    REQUIRE(right.size() == left.size());  // the same text, just moved
+    CHECK(inside(right, 1280, 720));
+    CHECK(right[0].position.y == 0.0f);
+    CHECK(right[2].position.x == 1280.0f);  // the panel's far corner is the screen's edge
+    const float panel_width = left[2].position.x;
+    CHECK(right[0].position.x == doctest::Approx(1280.0f - panel_width));
+    float widest = 0.0f, rightmost = 0.0f;  // the glyphs end one margin short of the edge
+    for (size_t i = 6; i < right.size(); ++i) {
+        widest = std::max(widest, left[i].position.x);
+        rightmost = std::max(rightmost, right[i].position.x);
+    }
+    CHECK(1280.0f - rightmost == doctest::Approx(panel_width - widest));
 }

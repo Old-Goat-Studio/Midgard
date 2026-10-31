@@ -35,7 +35,8 @@
 //                                       is none unless it is given.
 //
 // In a window, F3 (or --debug-overlay) shows the frame rate and timings over the game, and F4
-// (or --debug-physics, which also works with --screenshot) outlines the physics shapes.
+// (or --debug-physics, which also works with --screenshot) outlines the physics shapes. ~ (the key
+// below Escape) shows the game clock's time, day, month and year in the top-right corner.
 //
 // --editor-link connects to the editor's live link (play-in-editor): the editor's edits reach the
 // running game, and the game's log and frame rate reach the editor. The game quits when the
@@ -232,6 +233,8 @@ public:
     virtual std::vector<render::DebugLine> debug_lines(const glm::dvec3&) const { return {}; }
     // The scene as JSON (entities and their transforms and colours), for tests.
     virtual std::string dump() const { return "{}"; }
+    // The game clock's debug panel (the ~ key): time, day, month and year. Empty: no clock.
+    virtual std::vector<render::OverlayLine> clock_lines() const { return {}; }
     // The player's profile file: used from now on, and saved when the game ends.
     virtual void use_profile(const std::filesystem::path&) {}
     // The world's folder: its clock is restored now and saved when the game ends.
@@ -380,6 +383,30 @@ public:
         return nlohmann::json{
             {"entities", entities}, {"sky", {sky.x, sky.y, sky.z}}, {"time", game_.time().now()}}
             .dump();
+    }
+    std::vector<render::OverlayLine> clock_lines() const override {
+        const midgard::Calendar& c = game_.local_calendar();
+        try {
+            const midgard::Date d = midgard::date_at(c, game_.time().now());
+            const auto named = [&](const std::string& number, const std::string& key) {
+                return key.empty() ? number : number + "  " + game_.text(key);
+            };
+            const std::string weekday =
+                size_t(d.weekday) < c.weekdays.size() ? c.weekdays[size_t(d.weekday)] : "";
+            const std::string month = d.month >= 1 && size_t(d.month) <= c.months.size()
+                                          ? c.months[size_t(d.month - 1)].name_key
+                                          : "";
+            char time[16];
+            std::snprintf(time, sizeof(time), "%02d:%02d", d.hour, d.minute);
+            const glm::vec4 hint{0.7f, 0.7f, 0.7f, 1.0f};
+            return {{std::string("Time   ") + time, {1.0f, 1.0f, 0.6f, 1.0f}},
+                    {named("Day    " + std::to_string(d.day), weekday)},
+                    {named("Month  " + std::to_string(d.month), month)},
+                    {named("Year   " + std::to_string(d.year), c.era_key)},
+                    {"~ hides this", hint}};
+        } catch (const midgard::CalendarError& e) {
+            return {{std::string("No clock: ") + e.what(), {1.0f, 0.5f, 0.5f, 1.0f}}};
+        }
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
@@ -877,6 +904,7 @@ int run_window(const Options& opt, Source& source) {
         bool paused = false;      // the editor's Pause: drawn, but no gameplay
         bool show_stats = opt.debug_overlay && opt.fixed_overlay.empty();
         bool show_physics = opt.debug_physics;
+        bool show_clock = false;  // the game clock's panel, top right (~)
         if (!opt.fixed_overlay.empty()) renderer.set_overlay(opt.fixed_overlay);
         long frame = 0;
         long frames_this_second = 0;
@@ -932,6 +960,14 @@ int run_window(const Options& opt, Source& source) {
                         if (e.key.scancode == SDL_SCANCODE_F4 && !e.key.repeat &&
                             opt.fixed_overlay.empty()) {
                             show_physics = !show_physics;
+                            consumed = true;
+                        }
+                        // ~ (the key below Escape, with or without Shift): the clock's panel.
+                        if (e.key.scancode == SDL_SCANCODE_GRAVE && !e.key.repeat &&
+                            opt.fixed_overlay.empty()) {
+                            show_clock = !show_clock;
+                            if (!show_clock)
+                                renderer.set_overlay({}, render::OverlayCorner::TopRight);
                             consumed = true;
                         }
                         // Under the editor, its Pause (F6) and Stop (Shift+F5) keys also work
@@ -997,6 +1033,8 @@ int run_window(const Options& opt, Source& source) {
             {
                 MIDGARD_PROFILE_SCOPE("render");
                 renderer.set_environment(source.environment());
+                if (show_clock)  // every frame, so it keeps up with the game's clock
+                    renderer.set_overlay(source.clock_lines(), render::OverlayCorner::TopRight);
                 renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
                                                       : std::vector<render::DebugLine>{});
                 drawn =
@@ -1021,12 +1059,12 @@ int run_window(const Options& opt, Source& source) {
                     char timing[96];
                     std::snprintf(timing, sizeof(timing), "%ld fps  %.1f ms  (worst %.1f ms)",
                                   frames_this_second, average * 1000.0, worst_frame * 1000.0);
-                    renderer.set_overlay(
-                        {{std::string("Midgard ") + midgard::kVersion},
-                         {timing, {1.0f, 1.0f, 0.6f, 1.0f}},
-                         {std::to_string(draw_count) + " draws"},
-                         {renderer.device_name()},
-                         {"F3 hides this, F4 outlines physics", {0.7f, 0.7f, 0.7f, 1.0f}}});
+                    renderer.set_overlay({{std::string("Midgard ") + midgard::kVersion},
+                                          {timing, {1.0f, 1.0f, 0.6f, 1.0f}},
+                                          {std::to_string(draw_count) + " draws"},
+                                          {renderer.device_name()},
+                                          {"F3 hides this, F4 outlines physics, ~ shows the clock",
+                                           {0.7f, 0.7f, 0.7f, 1.0f}}});
                 }
                 frames_this_second = 0;
                 frame_seconds = worst_frame = 0.0;

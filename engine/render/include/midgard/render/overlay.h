@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// The debug text overlay: lines of text in the top-left corner of the screen, over a dark panel,
-// for frame times, positions and self-test results. It needs no font files (the glyphs are
-// built from rectangles by stb_easy_font), so it works long before the in-game menus exist.
+// The debug text overlay: lines of text in a top corner of the screen, over a dark panel, for
+// frame times, positions, the game clock and self-test results. It needs no font files (the glyphs
+// are built from rectangles by stb_easy_font), so it works long before the in-game menus exist.
 #pragma once
 
 #include <cstdint>
@@ -18,6 +18,9 @@ struct OverlayLine {
     float size = 1.0f;      // relative text size (2 = twice as tall)
 };
 
+// Which top corner of the screen a panel sits in.
+enum class OverlayCorner { TopLeft, TopRight };
+
 // One corner of a triangle, in pixels from the top-left of the screen.
 struct OverlayVertex {
     glm::vec2 position;
@@ -29,8 +32,10 @@ struct OverlayVertex {
 float overlay_scale(uint32_t screen_height);
 
 // Triangles for the lines: first the panel behind them, then the glyphs. Empty when there are
-// no lines. Lines that don't fit the screen are cut off.
+// no lines. Lines that don't fit the screen are cut off. In the top-right corner the panel and
+// its lines are right-aligned.
 std::vector<OverlayVertex> layout_overlay(const std::vector<OverlayLine>& lines,
-                                          uint32_t screen_width, uint32_t screen_height);
+                                          uint32_t screen_width, uint32_t screen_height,
+                                          OverlayCorner corner = OverlayCorner::TopLeft);
 
 }  // namespace midgard::render

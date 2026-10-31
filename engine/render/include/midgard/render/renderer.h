@@ -156,8 +156,9 @@ public:
     // Brightness before tone mapping (1 = as lit); the environment will drive it later.
     void set_exposure(float exposure);
 
-    // The debug text overlay drawn over every frame from now on (empty: none).
-    void set_overlay(std::vector<OverlayLine> lines);
+    // The debug text overlay in a corner, drawn over every frame from now on (empty: none). Each
+    // corner keeps its own lines.
+    void set_overlay(std::vector<OverlayLine> lines, OverlayCorner corner = OverlayCorner::TopLeft);
 
     // Debug lines drawn into every frame from now on (empty: none). Their ends are relative to
     // the camera's origin, so a moving camera needs them again each frame.
