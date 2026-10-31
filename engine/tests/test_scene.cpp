@@ -1270,6 +1270,15 @@ TEST_CASE("cameras: scripted looks give the view back, and shakes fade out") {
     CHECK_FALSE(game.camera_rig().scripted());
     CHECK(glm::length(camera_at(scene) - home) < 1e-3);
 
+    // Released early, part-way through blending there: back without waiting out the hold.
+    game.camera_rig().look({5, 2, 0}, {0, 1, 0}, 30.0f);
+    play_with(game, actions, 0.2);
+    game.camera_rig().release();
+    CHECK(game.camera_rig().scripted());  // still blending back
+    play_with(game, actions, 0.5);
+    CHECK_FALSE(game.camera_rig().scripted());
+    CHECK(glm::length(camera_at(scene) - home) < 1e-3);
+
     game.camera_rig().shake(0.3f, 0.5f);
     play_with(game, actions, 0.1);
     CHECK(glm::length(camera_at(scene) - home) > 1e-3);

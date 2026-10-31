@@ -76,6 +76,51 @@ class Hit:
     """Metres from the ray's origin."""
 
 
+class Camera:
+    """The player's camera: use midgard.camera. It has three views, "first" (person), "third"
+    (person) and "top" (down), which the player switches between with the view action; scripts
+    can change the view too, shake the camera and take it briefly for a scripted look (a
+    conversation's close-up), after which the player's own view comes back. In a scene without
+    a player, or without a camera, it does nothing (active is False)."""
+
+    active: bool
+    """True when the scene has a player and a camera to follow it (read-only)."""
+    view: str
+    """The view, "first", "third" or "top". Assigning one blends to it (ValueError for any other
+    name); the player keeps facing the same way."""
+    position: Vector
+    """Where the camera is, in metres, after blends but without its shake (read-only)."""
+    forward: Vector
+    """Which way it looks (read-only)."""
+    up: Vector
+    """Its up direction, from the world's shape (read-only)."""
+    fov: float
+    """Its vertical field of view in degrees (read-only)."""
+    blending: bool
+    """True while it blends from one view, or a scripted look, to another (read-only)."""
+    scripted: bool
+    """True from look() until the player's view is fully back (read-only)."""
+
+    def set_view(self, view: str, blend: bool = True) -> None:
+        """Changes the view ("first", "third" or "top"), blended, or at once with blend=False."""
+
+    def shake(self, strength: float = 0.2, seconds: float = 0.5) -> None:
+        """Shakes the camera by up to strength metres, fading out over the seconds. A new shake
+        replaces one still going."""
+
+    def look(self, position: Vector, target: Vector, seconds: float = 3.0) -> None:
+        """Blends the camera to look from position at target and keeps it there until the
+        seconds (counted from now, the blend included) have passed, then blends back to the
+        player's view. The player can still move meanwhile."""
+
+    def release(self) -> None:
+        """Ends a scripted look early: the player's view comes back, blended."""
+
+
+camera: Camera
+"""The player's camera."""
+
+
 def raycast(origin: Vector, direction: Vector, distance: float = 1000.0, *,
             ignore: Entity | None = None, triggers: bool = False) -> Hit | None:
     """The first collider a ray from origin along direction meets within distance metres, or

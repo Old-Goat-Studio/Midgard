@@ -57,8 +57,9 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// The names the midgard module defines and the attributes of midgard.Entity, sorted, as JSON:
-// {"module": [...], "Entity": [...]} (for checking the editor's midgard.pyi stub).
+// The names the midgard module defines and the attributes of midgard.Entity and midgard.Camera,
+// sorted, as JSON: {"module": [...], "Entity": [...], "Camera": [...]} (for checking the
+// editor's midgard.pyi stub).
 std::string api_names();
 
 }  // namespace midgard::script

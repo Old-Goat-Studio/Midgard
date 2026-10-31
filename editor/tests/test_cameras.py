@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Cameras in the editor (milestone 5.6): the view action and the camera component."""
+"""Cameras in the editor (milestone 5.6): the view action, the camera component and
+midgard.camera in game scripts."""
 import sqlite3
 
+from test_scripting import needs_scripting, simulate, write_script
+
 from midgard_editor import contract
+from midgard_editor.cook import cook
 
 
 def test_older_projects_gain_the_view_action_when_they_open(tmp_path):
@@ -26,3 +30,58 @@ def test_older_projects_gain_the_view_action_when_they_open(tmp_path):
     assert con.execute("SELECT control FROM input_binding WHERE action = 'jump' "
                        "AND device = 'keyboard'").fetchone() == ("V",)
     con.close()
+
+
+DIRECTOR = """
+import midgard
+
+frames = 0
+
+def on_start(entity):
+    cam = midgard.camera
+    print("start", cam.active, cam.view)
+    cam.set_view("top", blend=False)
+    for bad in (lambda: setattr(cam, "view", "sideways"), lambda: cam.shake(-1),
+                lambda: cam.look((0, 1, 0), (0, 1, 0))):
+        try:
+            bad()
+        except ValueError:
+            print("refused")
+
+def on_update(entity, dt):
+    global frames
+    frames += 1
+    cam = midgard.camera
+    if frames == 2:
+        print("top", cam.view, round(cam.position[1], 1), cam.blending)
+        cam.view = "first"
+        cam.shake(0.1, 0.2)
+        print("blending", cam.blending)
+    if frames == 40:
+        print("first", cam.view, cam.blending, round(cam.fov))
+        cam.look((10, 2, 0), (0, 0.5, 0), 10.0)
+    if frames == 80:
+        print("look", cam.scripted, [round(v, 2) for v in cam.position])
+        cam.release()
+    if frames == 140:
+        print("back", cam.scripted, cam.view)
+"""
+
+
+@needs_scripting
+def test_scripts_drive_the_camera(project, tmp_path):
+    player = project.entity("e000004")
+    player.components["script"] = {"module": "director"}
+    project.put_entity(player)
+    write_script(project, "director", DIRECTOR)
+    _scene, run = simulate(cook(project, tmp_path / "pkg").out_dir, 150)
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.splitlines()
+    assert "start True third" in lines
+    assert lines.count("refused") == 3
+    top = next(line.split() for line in lines if line.startswith("top "))
+    assert top[1] == "top" and float(top[2]) > 10.0 and top[3] == "False"  # high above, at once
+    assert "blending True" in lines
+    assert "first first False 70" in lines
+    assert "look True [10.0, 2.0, 0.0]" in lines
+    assert "back False first" in lines  # released: the player's own view came back

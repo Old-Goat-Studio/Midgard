@@ -178,6 +178,12 @@ void CameraRig::look(const glm::dvec3& position, const glm::dvec3& target, float
     start_blend();
 }
 
+void CameraRig::release() {
+    if (!scripted_.active || scripted_.returning) return;
+    scripted_.returning = true;
+    start_blend();  // from wherever the camera is now
+}
+
 PlayerIntent CameraRig::steer(Scene& scene, const Actions& actions, float dt) {
     PlayerIntent intent;
     if (!active()) return intent;

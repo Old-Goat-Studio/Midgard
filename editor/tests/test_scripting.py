@@ -130,14 +130,19 @@ def test_the_stub_matches_the_engine():
     api = json.loads(subprocess.run([str(scripting_runtime()), "--dump-api"], capture_output=True,
                                     text=True, timeout=60, check=True).stdout)
     tree = ast.parse((SCHEMA_DIR / "midgard.pyi").read_text("utf-8"))
-    module = sorted(n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))
-                    and not n.name.startswith("_"))
-    entity = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Entity")
-    members = sorted({n.name if isinstance(n, ast.FunctionDef) else n.target.id
-                      for n in entity.body if isinstance(n, (ast.FunctionDef, ast.AnnAssign))}
-                     - {"__eq__", "__hash__", "__repr__"})
-    assert module == api["module"]
-    assert members == api["Entity"]
+
+    def names(body) -> list[str]:  # functions, classes and annotated attributes
+        found = {n.name if isinstance(n, (ast.FunctionDef, ast.ClassDef)) else n.target.id
+                 for n in body if isinstance(n, (ast.FunctionDef, ast.ClassDef, ast.AnnAssign))}
+        return sorted(n for n in found if not n.startswith("_"))
+
+    def members(name: str) -> list[str]:
+        return names(next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == name)
+                     .body)
+
+    assert names(tree.body) == api["module"]
+    assert members("Entity") == api["Entity"]
+    assert members("Camera") == api["Camera"]
 
 
 @needs_scripting

@@ -456,7 +456,7 @@ Notes:
 
 - **One codebase, three front ends.** The dedicated server is the same engine without rendering, which is how "self-hosted in the game" and "dedicated server" share one implementation.
 - **Server authority.** Wallet, banking, inventory and quest completion are decided on the server and replicated to clients, never trusted from the client, even when the server is a player's own game.
-- **Python API.** Scripts reach engine systems only through the `midgard` module. Today it has entities (find, move, forces), raycasts and overlaps, gravity and "up", input actions, time, the sky, logging, and the `on_start`, `on_update`, `on_trigger_enter`/`exit` and `on_reload` callbacks. Later systems add their own (`midgard.quests.complete("q_wolves")`, `midgard.wallet.add(player, "gold", 50)`). The stubs in `schema/midgard.pyi` are checked against the engine (`midgard_runtime --dump-api`) and give the Script editor its completion.
+- **Python API.** Scripts reach engine systems only through the `midgard` module. Today it has entities (find, move, forces), raycasts and overlaps, gravity and "up", input actions, time, the sky, the player's camera (`midgard.camera`: its view, shakes and scripted looks), logging, and the `on_start`, `on_update`, `on_trigger_enter`/`exit` and `on_reload` callbacks. Later systems add their own (`midgard.quests.complete("q_wolves")`, `midgard.wallet.add(player, "gold", 50)`). The stubs in `schema/midgard.pyi` are checked against the engine (`midgard_runtime --dump-api`) and give the Script editor its completion.
 - **Version.** CMake reads the root `VERSION` file into `midgard/version.h`, so the engine and the editor report the same release (see the About Scheme section).
 
 ### Co-op networking (2–16 players per world)

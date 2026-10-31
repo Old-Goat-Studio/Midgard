@@ -137,6 +137,20 @@ physics::Touching touching(bool triggers) {
     return triggers ? physics::Touching::All : physics::Touching::Solid;
 }
 
+// ---- the camera ---------------------------------------------------------------------------
+// midgard.camera: the player's camera (midgard/camera_rig.h). It holds nothing itself, so it
+// always reaches the rig the game has now (an edit while playing makes a new one).
+struct CameraHandle {};
+
+CameraRig& rig() {
+    return current_game().camera_rig();
+}
+
+CameraView view_named(const std::string& name) {
+    if (const auto v = view_from_name(name)) return *v;
+    throw py::value_error("no camera view '" + name + "' (first, third or top)");
+}
+
 template <typename Component>
 std::optional<EntityHandle> first_with() {
     entt::entity found = entt::null;
@@ -242,6 +256,56 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             return "<midgard.Hit " + (h.entity ? h.entity->id : std::string("?")) + " at " +
                    std::to_string(h.distance) + " m>";
         });
+
+    py::class_<CameraHandle>(m, "Camera", "The player's camera (midgard.camera).")
+        .def_property_readonly("active", [](const CameraHandle&) { return rig().active(); })
+        .def_property(
+            "view", [](const CameraHandle&) { return std::string(view_name(rig().view())); },
+            [](const CameraHandle&, const std::string& name) {
+                rig().set_view(current_game().scene(), view_named(name));
+            })
+        .def(
+            "set_view",
+            [](const CameraHandle&, const std::string& name, bool blend) {
+                rig().set_view(current_game().scene(), view_named(name), blend);
+            },
+            py::arg("view"), py::arg("blend") = true,
+            "Changes to a view (first, third or top), blended or at once.")
+        .def_property_readonly("position",
+                               [](const CameraHandle&) { return tuple3(rig().pose().position); })
+        .def_property_readonly("forward",
+                               [](const CameraHandle&) { return tuple3(rig().pose().forward); })
+        .def_property_readonly("up", [](const CameraHandle&) { return tuple3(rig().pose().up); })
+        .def_property_readonly("fov", [](const CameraHandle&) { return rig().pose().fov; })
+        .def_property_readonly("blending", [](const CameraHandle&) { return rig().blending(); })
+        .def_property_readonly("scripted", [](const CameraHandle&) { return rig().scripted(); })
+        .def(
+            "shake",
+            [](const CameraHandle&, float strength, float seconds) {
+                if (!(strength >= 0.0f) || !(seconds >= 0.0f))
+                    throw py::value_error("shake needs a strength and seconds of 0 or more");
+                rig().shake(strength, seconds);
+            },
+            py::arg("strength") = 0.2f, py::arg("seconds") = 0.5f,
+            "Shakes the camera, fading out over the seconds (strength in metres).")
+        .def(
+            "look",
+            [](const CameraHandle&, const std::array<double, 3>& position,
+               const std::array<double, 3>& target, float seconds) {
+                if (dvec3(position) == dvec3(target))
+                    throw py::value_error("the camera can't look at the point it is at");
+                if (!(seconds >= 0.0f)) throw py::value_error("seconds must be 0 or more");
+                rig().look(dvec3(position), dvec3(target), seconds);
+            },
+            py::arg("position"), py::arg("target"), py::arg("seconds") = 3.0f,
+            "Takes the camera to look from position at target, then gives the view back.")
+        .def(
+            "release", [](const CameraHandle&) { rig().release(); },
+            "Ends a scripted look early; the player's view comes back.")
+        .def("__repr__", [](const CameraHandle&) {
+            return "<midgard.camera " + std::string(view_name(rig().view())) + ">";
+        });
+    m.attr("camera") = CameraHandle{};
 
     m.def(
         "raycast",
@@ -539,6 +603,7 @@ import json, midgard
 result = json.dumps({
     "module": sorted(n for n in dir(midgard) if not n.startswith("_")),
     "Entity": sorted(n for n in dir(midgard.Entity) if not n.startswith("_")),
+    "Camera": sorted(n for n in dir(midgard.Camera) if not n.startswith("_")),
 })
 )",
              scope);

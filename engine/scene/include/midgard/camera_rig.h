@@ -80,6 +80,8 @@ public:
     // Takes the camera to look from `position` at `target` for `seconds`, then gives the
     // player's view back (both blended).
     void look(const glm::dvec3& position, const glm::dvec3& target, float seconds);
+    // Ends a scripted look early: the player's view comes back (blended).
+    void release();
     bool scripted() const { return scripted_.active; }
 
     // Where the camera is now, after blends and shakes.
