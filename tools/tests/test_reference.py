@@ -172,3 +172,14 @@ def test_body_calendars_match_their_table():
         assert body["hours_per_day"] == c["hours_per_day"], c
         assert [m["days"] for m in body["months"]] == c["months"], c
         assert _bits(body["tilt"]) == c["tilt"], c
+
+
+# ---- environments (midgard/environment.h) -------------------------------------------------------
+def test_environment_curves_match_their_table():
+    from reference import environment as env
+    data = json.loads((TABLES / "environment_curves.json").read_text("utf-8"))
+    assert len(data["cases"]) == 225
+    for c in data["cases"]:
+        assert env.evaluate(data["curves"][c["curve"]], c["phase"]) == c["value"], c
+    assert env.evaluate([], 0.3) is None  # not set
+    assert env.evaluate([[0.6, 4.0]], 0.1) == 4.0  # one key: all day

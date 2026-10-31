@@ -367,6 +367,9 @@ PYBIND11_MODULE(_midgard, m) {
             py::arg("texture"), py::arg("ktx2"), "A KTX2 texture for a texture content id.")
         .def("set_object", &Viewport::set_object, py::arg("object_id"), py::arg("parts_json"),
              "An object's template (JSON list of {name, components}); its instances follow.")
+        .def("set_environment", &Viewport::set_environment, py::arg("id"), py::arg("name"),
+             py::arg("curves_json"), py::arg("settings_json"),
+             "An environment (a row of the environment table) for the Sky to link to.")
         .def(
             "set_camera",
             [](Viewport& v, const std::array<float, 3>& eye, const std::array<float, 3>& target,

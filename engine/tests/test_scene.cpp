@@ -1806,3 +1806,54 @@ TEST_CASE("a world keeps where the player was, and loading puts them back there"
     CHECK(glm::length(camera_at(scene) - left_at) < 10.0);
     CHECK(camera_at(scene).x > 2.0);
 }
+
+TEST_CASE("environments: the Sky links to one, and the sky, sunlight and fog follow the clock") {
+    TestPackage pkg({
+        {"e1_sun", R"(NULL, '{"transform": {"rotation": [-60, 30, 0]},
+                      "light": {"type": "directional"}}')"},
+        {"e2_sky", R"(NULL, '{"sky": {"environment": "env_earth"}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    // Every project has the Earth-like environment (migration 10), and an empty one is a full day.
+    REQUIRE(scene.environments.contains("env_earth"));
+    REQUIRE(scene.active_environment() != nullptr);
+    const glm::dvec3 at(0.0);
+    const auto glow = [](const midgard::render::Environment& e) {
+        return (e.sky_colors.zenith.r + e.sky_colors.zenith.g + e.sky_colors.zenith.b) *
+               e.sky_colors.brightness;
+    };
+    scene.solar_phase = 0.25;  // noon: the sun (following the clock with an environment) is up
+    const midgard::render::Environment noon = scene.environment(at);
+    CHECK(noon.sky);
+    CHECK(scene.light(at).intensity > 0.5f);
+    scene.solar_phase = 0.75;  // midnight: no sunlight, a dark sky
+    const midgard::render::Environment midnight = scene.environment(at);
+    CHECK(midnight.sky);
+    CHECK(scene.light(at).intensity < 0.01f);
+    CHECK(glow(midnight) < glow(noon) * 0.2f);
+
+    // Without a clock, or without a link, the sky is flat as before.
+    scene.solar_phase.reset();
+    CHECK_FALSE(scene.environment(at).sky);
+    scene.solar_phase = 0.25;
+    game.set_component("e2_sky", "sky", json::parse(R"({"color": [0.1, 0.2, 0.3]})"));
+    CHECK_FALSE(scene.environment(at).sky);
+    CHECK(scene.settings.sky == glm::vec3(0.1f, 0.2f, 0.3f));
+}
+
+TEST_CASE("environments: validation names a missing link and refuses a broken curve") {
+    TestPackage missing({{"e1_sky", R"(NULL, '{"sky": {"environment": "env_moon"}}')"}});
+    std::string all;
+    for (const std::string& w : midgard::validate_package(missing.dir).warnings) all += w + "\n";
+    CHECK(all.find("env_moon") != std::string::npos);
+
+    TestPackage broken({{"e1_sky", R"(NULL, '{"sky": {"environment": "env_earth"}}')"}});
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(broken.dir / "Game.db").c_str(), &db);
+    exec(db, R"(UPDATE environment SET curves = '{"fog_density": [[0.7, 0.01], [0.2, 0.02]]}')");
+    sqlite3_close(db);
+    const midgard::ValidationReport report = midgard::validate_package(broken.dir);
+    CHECK_FALSE(report.errors.empty());
+    CHECK(report.errors.front().find("out of order") != std::string::npos);
+}

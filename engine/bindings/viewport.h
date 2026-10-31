@@ -42,6 +42,9 @@ public:
     void set_texture(const std::string& texture, std::span<const uint8_t> ktx2);
     // An object's template (a JSON list of parts): its instances are filled in again.
     void set_object(const std::string& object_id, const std::string& parts_json);
+    // An environment (a row of the environment table) for the Sky to link to.
+    void set_environment(const std::string& id, const std::string& name,
+                         const std::string& curves_json, const std::string& settings_json);
     void set_camera(const glm::vec3& eye, const glm::vec3& target, float fov_degrees);
     // The time of day for suns that follow the clock (the Calendar dock's scrubber), or none.
     void set_solar_phase(std::optional<double> phase) { scene_.solar_phase = phase; }

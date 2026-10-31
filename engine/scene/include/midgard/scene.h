@@ -16,6 +16,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "midgard/body.h"
+#include "midgard/environment.h"
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
 
@@ -217,6 +218,9 @@ struct SceneSettings {
 struct Sky {
     glm::vec3 color = SceneSettings{}.sky;
     glm::vec3 ambient = SceneSettings{}.ambient;
+    // An environment (midgard/environment.h) by id: the sky, sunlight, ambient light and fog
+    // through the day, and the scene's sun follows the clock. Empty: the colours above, flat.
+    std::string environment;
 };
 
 // One row of the entity table.
@@ -245,6 +249,13 @@ public:
     std::string id;
     // The object templates by id: each a JSON array of parts ({"name", "components"}).
     std::unordered_map<std::string, std::string> objects;
+    // The environments by id (the environment table, migration 10).
+    std::unordered_map<std::string, EnvironmentDef> environments;
+    // The environment the scene's Sky links to, if it's there.
+    const EnvironmentDef* active_environment() const;
+    // The sky and fog for the renderer, seen from `origin` (the camera): the active environment
+    // at the solar phase, or a flat sky without one (or without a clock).
+    render::Environment environment(const glm::dvec3& origin) const;
 
     // A template changed (or arrived): every instance of it is filled in again. Returns them.
     std::vector<entt::entity> set_object(const std::string& object_id,

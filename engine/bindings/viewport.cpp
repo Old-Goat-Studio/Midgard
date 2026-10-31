@@ -150,6 +150,11 @@ void Viewport::set_texture(const std::string& texture, std::span<const uint8_t> 
     upload_meshes();
 }
 
+void Viewport::set_environment(const std::string& id, const std::string& name,
+                               const std::string& curves_json, const std::string& settings_json) {
+    scene_.environments[id] = environment_from_json(id, name, curves_json, settings_json);
+}
+
 void Viewport::set_object(const std::string& object_id, const std::string& parts_json) {
     scene_.set_object(object_id, parts_json);
     upload_meshes();
@@ -309,6 +314,7 @@ bool Viewport::render() {
             : std::vector<render::DebugLine>{});
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
     camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, 2000.0f);
+    renderer_->set_environment(scene_.environment(camera.origin));
     return renderer_->render_frame(camera, scene_.light(camera.origin), draws,
                                    glm::vec4(scene_.settings.sky, 1.0f));
 }

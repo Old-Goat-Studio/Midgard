@@ -30,7 +30,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
-from .. import engine, textures
+from .. import engine, environments, textures
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
@@ -300,9 +300,22 @@ class ViewportPanel(QWidget):
         if self.project is not None:
             # The fallback for a scene without a Sky entity, as in the game.
             self.view.set_settings(json.dumps(self.project.scene_settings(MAIN_SCENE)))
+            self.send_environments()
             for entity in parents_first(self.project.entities()):
                 self._put(entity)
         self.camera_changed()
+
+    def send_environments(self) -> None:
+        """The project's environments, for the Sky to link to."""
+        if self.view is None or self.project is None or \
+                not hasattr(self.view, "set_environment"):
+            return
+        for env in environments.load_all(self.project):
+            try:
+                self.view.set_environment(env["id"], env["name"], json.dumps(env["curves"]),
+                                          json.dumps(env["settings"]))
+            except RuntimeError as e:
+                log.warning("Viewport: environment %s: %s", env["name"], e)
 
     def _send_object(self, object_id: str) -> None:
         """An object's template, with its meshes and textures, for the instances that place

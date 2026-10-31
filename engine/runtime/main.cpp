@@ -221,7 +221,7 @@ public:
     virtual render::Light light(const glm::dvec3& origin) const = 0;
     virtual glm::vec4 sky() const = 0;
     // The sky and fog (by default: a flat sky in sky()'s colour, no fog).
-    virtual render::Environment environment() const { return {}; }
+    virtual render::Environment environment(const glm::dvec3&) const { return {}; }
     virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
     virtual void update(const midgard::Actions&, float) {}
     virtual bool wants_mouse_look() const { return false; }
@@ -291,7 +291,9 @@ public:
     render::Camera camera(float aspect) const override { return scene_->camera(aspect); }
     render::Light light(const glm::dvec3& origin) const override { return scene_->light(origin); }
     glm::vec4 sky() const override { return scene_->sky(); }
-    render::Environment environment() const override { return scene_->environment(); }
+    render::Environment environment(const glm::dvec3&) const override {
+        return scene_->environment();
+    }
     std::vector<render::DebugLine> debug_lines(const glm::dvec3& origin) const override {
         return scene_->debug_lines(origin);
     }
@@ -345,6 +347,9 @@ public:
         return game_.draws(origin);
     }
     render::Camera camera(float aspect) const override { return game_.camera(aspect); }
+    render::Environment environment(const glm::dvec3& origin) const override {
+        return game_.scene().environment(origin);
+    }
     render::Light light(const glm::dvec3& origin) const override {
         return game_.scene().light(origin);
     }
@@ -719,8 +724,8 @@ int run_screenshot(const Options& opt, Source& source) {
     source.upload(renderer);
     if (opt.overlay_text) renderer.set_overlay(overlay_lines(*opt.overlay_text));
     renderer.set_exposure(opt.exposure);
-    renderer.set_environment(source.environment());
     const render::Camera camera = source.camera(float(opt.width) / float(opt.height));
+    renderer.set_environment(source.environment(camera.origin));
     const auto draws = source.draws(0.6f, camera.origin);
     if (opt.debug_physics) renderer.set_debug_lines(source.debug_lines(camera.origin));
     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
@@ -1012,7 +1017,7 @@ int run_window(const Options& opt, Source& source) {
             bool drawn = false;
             {
                 MIDGARD_PROFILE_SCOPE("render");
-                renderer.set_environment(source.environment());
+                renderer.set_environment(source.environment(camera.origin));
                 renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
                                                       : std::vector<render::DebugLine>{});
                 drawn =

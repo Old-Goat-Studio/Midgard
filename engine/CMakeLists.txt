@@ -122,6 +122,7 @@ add_library(midgard_scene STATIC
     scene/src/scene.cpp
     scene/src/game.cpp
     scene/src/camera_rig.cpp
+    scene/src/environment.cpp
     scene/src/player_profile.cpp
     scene/src/world_save.cpp
     scene/src/validate.cpp
@@ -324,6 +325,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_reference_tables.cpp
         tests/test_det.cpp
         tests/test_calendar.cpp
+        tests/test_environment.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp
         tests/test_ktx.cpp

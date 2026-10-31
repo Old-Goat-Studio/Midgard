@@ -90,6 +90,16 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                         "entity '" + scene.registry.get<EntityInfo>(e).id + "' uses mesh '" +
                         asset + "', which is not in the package; it will not be drawn");
         }
+        for (const auto& [id, env] : scene.environments)
+            for (std::string& problem : environment_problems(env))
+                report.errors.push_back(std::move(problem));
+        for (entt::entity e : scene.registry.view<const Sky>()) {
+            const std::string& env = scene.registry.get<Sky>(e).environment;
+            if (!env.empty() && !scene.environments.contains(env))
+                report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
+                                          "' links to environment '" + env +
+                                          "', which is not in the package; its sky is flat");
+        }
         for (entt::entity e : scene.registry.view<const ObjectRef>()) {
             const std::string& object = scene.registry.get<ObjectRef>(e).id;
             if (!scene.objects.contains(object))

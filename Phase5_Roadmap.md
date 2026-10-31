@@ -290,9 +290,10 @@ the scrubber moves time in the running game (live link test).
 and a 20-hour day with 70% daylight gives the right sunrise and sunset times.
 
 ### 5.8 Environment and light per shape · L
-- **Environment editor:** sky colours, sun colour and intensity, ambient light, fog and water
-  look, all authored as **curves over solar phase** and previewed with the Calendar scrubber.
-  The scene's Sky entity links to an environment.
+- **Environment editor:** sky colours, sun colour and intensity, ambient light and fog, all
+  authored as **curves over solar phase** and previewed with the Calendar scrubber. The scene's
+  Sky entity links to an environment. (Water and its look are built with terrain in 5.9, where
+  there are coastlines and depth: decided 31 October 2026.)
 - **Light models per shape** (§6 of the roadmap): a moving sun on bounded areas and flat-wrap
   cylinders; on spheres, phase shifted by **longitude**, with *Uniform* and *Latitude* (axial
   tilt) modes; on inside spheres and curved cylinders, the **central sun or sun-line with
@@ -315,7 +316,9 @@ places, previewed with the scrubber.
 - In order: **bounded area**, then **flat-wrap cylinder**, then **curved cylinder**, with the
   cylinder **end walls** (cliff, fortification or energy barrier) and the bounded area's ocean
   border.
-- **Water** as a shell at sea level, using the renderer's water material.
+- **Water** as a shell at sea level on every shape, with the renderer's **water material**
+  (colour and clarity by depth, gentle waves, the shore) and its look authored as curves in the
+  Environment editor (moved here from 5.8).
 - **Terrain materials:** splatting by slope, height and biome, with season changes (snow cover,
   foliage colour, dry grass).
 - **Collision:** Jolt heightfields on flat shapes, mesh shapes built per chunk on curved ones.

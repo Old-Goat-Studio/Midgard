@@ -157,7 +157,8 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<Trigger>(e, vec3(c, "size", glm::vec3(1.0f)));
     } else if (name == "sky") {
         reg.emplace_or_replace<Sky>(e, vec3(c, "color", SceneSettings{}.sky),
-                                    vec3(c, "ambient", SceneSettings{}.ambient));
+                                    vec3(c, "ambient", SceneSettings{}.ambient),
+                                    c.value("environment", std::string()));
     } else if (name == "rigidbody") {
         RigidBody b;
         const std::string motion = c.value("motion", "dynamic");
@@ -335,6 +336,20 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
         auto it = by_id.find(parent_id);
         if (it == by_id.end()) throw SceneError("entity parent '" + parent_id + "' not found");
         scene.registry.get<EntityInfo>(e).parent = it->second;
+    }
+    // Environments (migration 10).
+    if (has_column(db.get(), "environment", "curves")) {
+        Stmt v = prepare(db.get(), "SELECT id, name, curves, settings FROM environment");
+        while (sqlite3_step(v.get()) == SQLITE_ROW) {
+            const std::string id = column_text(v.get(), 0);
+            try {
+                scene.environments.emplace(
+                    id, environment_from_json(id, column_text(v.get(), 1), column_text(v.get(), 2),
+                                              column_text(v.get(), 3)));
+            } catch (const std::exception& ex) {
+                throw SceneError(ex.what());
+            }
+        }
     }
     // Object templates (migration 6), then every instance filled in.
     if (has_column(db.get(), "object", "parts")) {
@@ -539,6 +554,38 @@ std::optional<CameraView> view_from_name(const std::string& name) {
     return std::nullopt;
 }
 
+const EnvironmentDef* Scene::active_environment() const {
+    const entt::entity e = first_with<Sky>(registry);
+    if (e == entt::null) return nullptr;
+    const std::string& link = registry.get<Sky>(e).environment;
+    if (link.empty()) return nullptr;
+    const auto it = environments.find(link);
+    return it == environments.end() ? nullptr : &it->second;
+}
+
+render::Environment Scene::environment(const glm::dvec3& origin) const {
+    render::Environment out;
+    const EnvironmentDef* env = active_environment();
+    if (!env || !solar_phase) return out;  // a flat sky
+    const render::Light sunlight = light(origin);
+    const glm::vec3 up = glm::normalize(sunlight.up);
+    const float height = std::clamp(glm::dot(-glm::normalize(sunlight.direction), up), -1.0f, 1.0f);
+    const EnvironmentLook look = evaluate(*env, *solar_phase, std::asin(height));
+    out.sky = true;
+    out.sky_colors = look.sky;
+    out.fog.density = look.fog_density;
+    out.fog.height_falloff = env->fog_height_falloff;
+    out.fog.sun_scatter = env->fog_sun_scatter;
+    if (look.fog_color) {
+        out.fog.color = *look.fog_color;
+        out.fog.color_from_sky = false;
+    }
+    // Fog lies on the ground: the camera's height above it, along "up".
+    out.fog.camera_height =
+        settings.body ? float(settings.body->surface(origin).height) : float(origin.y);
+    return out;
+}
+
 std::optional<render::Camera> Scene::camera(float aspect) const {
     const entt::entity e = first_with<CameraLens>(registry);
     if (e == entt::null) return std::nullopt;
@@ -564,7 +611,8 @@ render::Light Scene::light(const glm::dvec3& origin) const {
         light.direction = glm::vec3(world_matrix(e) * glm::dvec4(0, 0, -1, 0));
         light.color = l.color;
         light.intensity = l.intensity;
-        if (l.follows_clock && solar_phase) {
+        const EnvironmentDef* env = active_environment();
+        if ((l.follows_clock || env) && solar_phase) {
             // The sun's path: the great circle through where it was placed (its noon) and the
             // horizon at right angles to it, so it rises at 0, peaks at 0.25 and sets at 0.5.
             // The path is the scene's, as seen from its start (the world's origin), so the sun is
@@ -590,9 +638,18 @@ render::Light Scene::light(const glm::dvec3& origin) const {
             const float height = glm::dot(sun, glm::normalize(light.up));
             const float t = std::clamp((height + 0.1f) / 0.2f, 0.0f, 1.0f);
             const float day = t * t * (3.0f - 2.0f * t);
-            light.intensity *= day;
             light.ambient *= 0.25f + 0.75f * day;
             light.ambient_ground *= 0.25f + 0.75f * day;
+            if (env) {  // the environment's sunlight and ambient light at this time of day
+                const EnvironmentLook look =
+                    evaluate(*env, *solar_phase, std::asin(std::clamp(height, -1.0f, 1.0f)));
+                light.color = l.color * look.sunlight;
+                light.intensity = l.intensity * look.sunlight_intensity;
+                if (look.ambient) light.ambient = *look.ambient;
+                if (look.ambient_ground) light.ambient_ground = *look.ambient_ground;
+            } else {
+                light.intensity *= day;
+            }
         }
     }
     // The local lights nearest the camera, positioned relative to it.

@@ -1,0 +1,1390 @@
+{
+ "_about": "Curves over the solar phase (tools/reference/environment.py).",
+ "curves": {
+  "one": [
+   [
+    0.3,
+    2.0
+   ]
+  ],
+  "two": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    0.5,
+    1.0
+   ]
+  ],
+  "day": [
+   [
+    0.0,
+    0.2
+   ],
+   [
+    0.05,
+    0.9
+   ],
+   [
+    0.25,
+    1.0
+   ],
+   [
+    0.45,
+    0.9
+   ],
+   [
+    0.5,
+    0.2
+   ],
+   [
+    0.75,
+    0.0
+   ]
+  ],
+  "late_start": [
+   [
+    0.2,
+    1.0
+   ],
+   [
+    0.7,
+    3.0
+   ]
+  ],
+  "colour": [
+   [
+    0.0,
+    [
+     1.0,
+     0.5,
+     0.2
+    ]
+   ],
+   [
+    0.25,
+    [
+     0.3,
+     0.5,
+     0.9
+    ]
+   ],
+   [
+    0.6,
+    [
+     0.02,
+     0.03,
+     0.08
+    ]
+   ]
+  ]
+ },
+ "cases": [
+  {
+   "curve": "one",
+   "phase": 0.0,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.025,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.05,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.075,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.1,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.125,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.15,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.175,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.2,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.225,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.25,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.275,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.3,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.325,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.35,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.375,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.4,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.425,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.45,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.475,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.5,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.525,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.55,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.575,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.6,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.625,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.65,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.675,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.7,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.725,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.75,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.775,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.8,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.825,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.85,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.875,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.9,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.925,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.95,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.975,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.0001,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.2499,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.2501,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.4999,
+   "value": 2.0
+  },
+  {
+   "curve": "one",
+   "phase": 0.9999,
+   "value": 2.0
+  },
+  {
+   "curve": "two",
+   "phase": 0.0,
+   "value": 0.0
+  },
+  {
+   "curve": "two",
+   "phase": 0.025,
+   "value": 0.007250000000000001
+  },
+  {
+   "curve": "two",
+   "phase": 0.05,
+   "value": 0.028000000000000004
+  },
+  {
+   "curve": "two",
+   "phase": 0.075,
+   "value": 0.06075
+  },
+  {
+   "curve": "two",
+   "phase": 0.1,
+   "value": 0.10400000000000002
+  },
+  {
+   "curve": "two",
+   "phase": 0.125,
+   "value": 0.15625
+  },
+  {
+   "curve": "two",
+   "phase": 0.15,
+   "value": 0.216
+  },
+  {
+   "curve": "two",
+   "phase": 0.175,
+   "value": 0.28174999999999994
+  },
+  {
+   "curve": "two",
+   "phase": 0.2,
+   "value": 0.3520000000000001
+  },
+  {
+   "curve": "two",
+   "phase": 0.225,
+   "value": 0.4252500000000001
+  },
+  {
+   "curve": "two",
+   "phase": 0.25,
+   "value": 0.5
+  },
+  {
+   "curve": "two",
+   "phase": 0.275,
+   "value": 0.5747500000000001
+  },
+  {
+   "curve": "two",
+   "phase": 0.3,
+   "value": 0.648
+  },
+  {
+   "curve": "two",
+   "phase": 0.325,
+   "value": 0.71825
+  },
+  {
+   "curve": "two",
+   "phase": 0.35,
+   "value": 0.7839999999999999
+  },
+  {
+   "curve": "two",
+   "phase": 0.375,
+   "value": 0.84375
+  },
+  {
+   "curve": "two",
+   "phase": 0.4,
+   "value": 0.8960000000000001
+  },
+  {
+   "curve": "two",
+   "phase": 0.425,
+   "value": 0.9392499999999999
+  },
+  {
+   "curve": "two",
+   "phase": 0.45,
+   "value": 0.972
+  },
+  {
+   "curve": "two",
+   "phase": 0.475,
+   "value": 0.99275
+  },
+  {
+   "curve": "two",
+   "phase": 0.5,
+   "value": 1.0
+  },
+  {
+   "curve": "two",
+   "phase": 0.525,
+   "value": 0.99275
+  },
+  {
+   "curve": "two",
+   "phase": 0.55,
+   "value": 0.972
+  },
+  {
+   "curve": "two",
+   "phase": 0.575,
+   "value": 0.93925
+  },
+  {
+   "curve": "two",
+   "phase": 0.6,
+   "value": 0.896
+  },
+  {
+   "curve": "two",
+   "phase": 0.625,
+   "value": 0.84375
+  },
+  {
+   "curve": "two",
+   "phase": 0.65,
+   "value": 0.7839999999999999
+  },
+  {
+   "curve": "two",
+   "phase": 0.675,
+   "value": 0.7182499999999998
+  },
+  {
+   "curve": "two",
+   "phase": 0.7,
+   "value": 0.6480000000000001
+  },
+  {
+   "curve": "two",
+   "phase": 0.725,
+   "value": 0.5747500000000001
+  },
+  {
+   "curve": "two",
+   "phase": 0.75,
+   "value": 0.5
+  },
+  {
+   "curve": "two",
+   "phase": 0.775,
+   "value": 0.4252499999999999
+  },
+  {
+   "curve": "two",
+   "phase": 0.8,
+   "value": 0.35199999999999987
+  },
+  {
+   "curve": "two",
+   "phase": 0.825,
+   "value": 0.28175000000000017
+  },
+  {
+   "curve": "two",
+   "phase": 0.85,
+   "value": 0.21600000000000008
+  },
+  {
+   "curve": "two",
+   "phase": 0.875,
+   "value": 0.15625
+  },
+  {
+   "curve": "two",
+   "phase": 0.9,
+   "value": 0.10399999999999987
+  },
+  {
+   "curve": "two",
+   "phase": 0.925,
+   "value": 0.06074999999999997
+  },
+  {
+   "curve": "two",
+   "phase": 0.95,
+   "value": 0.028000000000000025
+  },
+  {
+   "curve": "two",
+   "phase": 0.975,
+   "value": 0.007249999999999979
+  },
+  {
+   "curve": "two",
+   "phase": 0.0001,
+   "value": 1.19984e-07
+  },
+  {
+   "curve": "two",
+   "phase": 0.2499,
+   "value": 0.49970000001600007
+  },
+  {
+   "curve": "two",
+   "phase": 0.2501,
+   "value": 0.5002999999839999
+  },
+  {
+   "curve": "two",
+   "phase": 0.4999,
+   "value": 0.9999998800159999
+  },
+  {
+   "curve": "two",
+   "phase": 0.9999,
+   "value": 1.1998400006874022e-07
+  },
+  {
+   "curve": "day",
+   "phase": 0.0,
+   "value": 0.2
+  },
+  {
+   "curve": "day",
+   "phase": 0.025,
+   "value": 0.55
+  },
+  {
+   "curve": "day",
+   "phase": 0.05,
+   "value": 0.9
+  },
+  {
+   "curve": "day",
+   "phase": 0.075,
+   "value": 0.904296875
+  },
+  {
+   "curve": "day",
+   "phase": 0.1,
+   "value": 0.915625
+  },
+  {
+   "curve": "day",
+   "phase": 0.125,
+   "value": 0.931640625
+  },
+  {
+   "curve": "day",
+   "phase": 0.15,
+   "value": 0.95
+  },
+  {
+   "curve": "day",
+   "phase": 0.175,
+   "value": 0.968359375
+  },
+  {
+   "curve": "day",
+   "phase": 0.2,
+   "value": 0.984375
+  },
+  {
+   "curve": "day",
+   "phase": 0.225,
+   "value": 0.995703125
+  },
+  {
+   "curve": "day",
+   "phase": 0.25,
+   "value": 1.0
+  },
+  {
+   "curve": "day",
+   "phase": 0.275,
+   "value": 0.995703125
+  },
+  {
+   "curve": "day",
+   "phase": 0.3,
+   "value": 0.984375
+  },
+  {
+   "curve": "day",
+   "phase": 0.325,
+   "value": 0.968359375
+  },
+  {
+   "curve": "day",
+   "phase": 0.35,
+   "value": 0.9500000000000001
+  },
+  {
+   "curve": "day",
+   "phase": 0.375,
+   "value": 0.931640625
+  },
+  {
+   "curve": "day",
+   "phase": 0.4,
+   "value": 0.915625
+  },
+  {
+   "curve": "day",
+   "phase": 0.425,
+   "value": 0.904296875
+  },
+  {
+   "curve": "day",
+   "phase": 0.45,
+   "value": 0.9
+  },
+  {
+   "curve": "day",
+   "phase": 0.475,
+   "value": 0.5500000000000007
+  },
+  {
+   "curve": "day",
+   "phase": 0.5,
+   "value": 0.2
+  },
+  {
+   "curve": "day",
+   "phase": 0.525,
+   "value": 0.1944
+  },
+  {
+   "curve": "day",
+   "phase": 0.55,
+   "value": 0.17919999999999997
+  },
+  {
+   "curve": "day",
+   "phase": 0.575,
+   "value": 0.15680000000000005
+  },
+  {
+   "curve": "day",
+   "phase": 0.6,
+   "value": 0.12960000000000005
+  },
+  {
+   "curve": "day",
+   "phase": 0.625,
+   "value": 0.1
+  },
+  {
+   "curve": "day",
+   "phase": 0.65,
+   "value": 0.07039999999999999
+  },
+  {
+   "curve": "day",
+   "phase": 0.675,
+   "value": 0.04319999999999996
+  },
+  {
+   "curve": "day",
+   "phase": 0.7,
+   "value": 0.02080000000000004
+  },
+  {
+   "curve": "day",
+   "phase": 0.725,
+   "value": 0.005599999999999994
+  },
+  {
+   "curve": "day",
+   "phase": 0.75,
+   "value": 0.0
+  },
+  {
+   "curve": "day",
+   "phase": 0.775,
+   "value": 0.0056000000000000095
+  },
+  {
+   "curve": "day",
+   "phase": 0.8,
+   "value": 0.020800000000000034
+  },
+  {
+   "curve": "day",
+   "phase": 0.825,
+   "value": 0.04319999999999996
+  },
+  {
+   "curve": "day",
+   "phase": 0.85,
+   "value": 0.07039999999999998
+  },
+  {
+   "curve": "day",
+   "phase": 0.875,
+   "value": 0.1
+  },
+  {
+   "curve": "day",
+   "phase": 0.9,
+   "value": 0.12960000000000002
+  },
+  {
+   "curve": "day",
+   "phase": 0.925,
+   "value": 0.15680000000000005
+  },
+  {
+   "curve": "day",
+   "phase": 0.95,
+   "value": 0.17919999999999997
+  },
+  {
+   "curve": "day",
+   "phase": 0.975,
+   "value": 0.19440000000000002
+  },
+  {
+   "curve": "day",
+   "phase": 0.0001,
+   "value": 0.20000838880000002
+  },
+  {
+   "curve": "day",
+   "phase": 0.2499,
+   "value": 0.999999925025
+  },
+  {
+   "curve": "day",
+   "phase": 0.2501,
+   "value": 0.999999925025
+  },
+  {
+   "curve": "day",
+   "phase": 0.4999,
+   "value": 0.20000838880000005
+  },
+  {
+   "curve": "day",
+   "phase": 0.9999,
+   "value": 0.1999999040256
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.0,
+   "value": 1.7039999999999997
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.025,
+   "value": 1.5635000000000003
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.05,
+   "value": 1.4319999999999995
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.075,
+   "value": 1.3125
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.1,
+   "value": 1.2079999999999993
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.125,
+   "value": 1.1215
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.15,
+   "value": 1.056
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.175,
+   "value": 1.0145
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.2,
+   "value": 1.0
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.225,
+   "value": 1.0145
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.25,
+   "value": 1.056
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.275,
+   "value": 1.1215000000000002
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.3,
+   "value": 1.208
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.325,
+   "value": 1.3125
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.35,
+   "value": 1.432
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.375,
+   "value": 1.5635000000000001
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.4,
+   "value": 1.7040000000000002
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.425,
+   "value": 1.8505000000000003
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.45,
+   "value": 2.0
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.475,
+   "value": 2.1495
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.5,
+   "value": 2.2960000000000003
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.525,
+   "value": 2.4365000000000006
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.55,
+   "value": 2.5680000000000005
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.575,
+   "value": 2.6875
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.6,
+   "value": 2.7920000000000003
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.625,
+   "value": 2.8785
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.65,
+   "value": 2.944
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.675,
+   "value": 2.9855
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.7,
+   "value": 3.0
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.725,
+   "value": 2.9855
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.75,
+   "value": 2.944
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.775,
+   "value": 2.8785
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.8,
+   "value": 2.792
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.825,
+   "value": 2.6875
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.85,
+   "value": 2.568
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.875,
+   "value": 2.4364999999999997
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.9,
+   "value": 2.2959999999999994
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.925,
+   "value": 2.1494999999999997
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.95,
+   "value": 2.0
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.975,
+   "value": 1.8504999999999998
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.0001,
+   "value": 1.7034240480319998
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.2499,
+   "value": 1.055784192032
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.2501,
+   "value": 1.056216191968
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.4999,
+   "value": 2.2954239520320003
+  },
+  {
+   "curve": "late_start",
+   "phase": 0.9999,
+   "value": 1.7045760479679997
+  },
+  {
+   "curve": "colour",
+   "phase": 0.0,
+   "value": [
+    1.0,
+    0.5,
+    0.2
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.025,
+   "value": [
+    0.9804,
+    0.5,
+    0.21960000000000002
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.05,
+   "value": [
+    0.9272,
+    0.5,
+    0.27280000000000004
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.075,
+   "value": [
+    0.8488,
+    0.5,
+    0.3512
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.1,
+   "value": [
+    0.7535999999999999,
+    0.5,
+    0.4464
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.125,
+   "value": [
+    0.65,
+    0.5,
+    0.55
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.15,
+   "value": [
+    0.5464,
+    0.5,
+    0.6536
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.175,
+   "value": [
+    0.45120000000000005,
+    0.5,
+    0.7487999999999999
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.2,
+   "value": [
+    0.3727999999999999,
+    0.5,
+    0.8272000000000002
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.225,
+   "value": [
+    0.3196000000000001,
+    0.5,
+    0.8803999999999998
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.25,
+   "value": [
+    0.3,
+    0.5,
+    0.9
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.275,
+   "value": [
+    0.29591836734693877,
+    0.49314868804664724,
+    0.8880466472303207
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.3,
+   "value": [
+    0.2844897959183673,
+    0.4739650145772595,
+    0.8545772594752187
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.325,
+   "value": [
+    0.26693877551020406,
+    0.4445043731778425,
+    0.8031778425655977
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.35,
+   "value": [
+    0.24448979591836736,
+    0.40682215743440236,
+    0.7374344023323616
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.375,
+   "value": [
+    0.21836734693877552,
+    0.36297376093294464,
+    0.660932944606414
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.4,
+   "value": [
+    0.18979591836734688,
+    0.3150145772594752,
+    0.5772594752186588
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.425,
+   "value": [
+    0.16,
+    0.265,
+    0.49
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.45,
+   "value": [
+    0.130204081632653,
+    0.21498542274052473,
+    0.402740524781341
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.475,
+   "value": [
+    0.10163265306122451,
+    0.16702623906705544,
+    0.31906705539358604
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.5,
+   "value": [
+    0.07551020408163267,
+    0.12317784256559772,
+    0.24256559766763852
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.525,
+   "value": [
+    0.05306122448979589,
+    0.08549562682215739,
+    0.17682215743440222
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.55,
+   "value": [
+    0.035510204081632635,
+    0.05603498542274049,
+    0.1254227405247812
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.575,
+   "value": [
+    0.024081632653061236,
+    0.03685131195335278,
+    0.0919533527696792
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.6,
+   "value": [
+    0.02,
+    0.03,
+    0.08
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.625,
+   "value": [
+    0.03100585937500002,
+    0.03527832031250001,
+    0.08134765625000001
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.65,
+   "value": [
+    0.06210937500000008,
+    0.05019531250000003,
+    0.08515625000000002
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.675,
+   "value": [
+    0.11043945312500016,
+    0.07337402343750007,
+    0.09107421875000002
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.7,
+   "value": [
+    0.17312499999999995,
+    0.10343749999999997,
+    0.09875
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.725,
+   "value": [
+    0.247294921875,
+    0.1390087890625,
+    0.10783203125
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.75,
+   "value": [
+    0.3300781250000001,
+    0.17871093750000006,
+    0.11796875000000001
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.775,
+   "value": [
+    0.41860351562500026,
+    0.2211669921875001,
+    0.12880859375000003
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.8,
+   "value": [
+    0.5100000000000001,
+    0.265,
+    0.14
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.825,
+   "value": [
+    0.6013964843749999,
+    0.3088330078124999,
+    0.15119140625
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.85,
+   "value": [
+    0.689921875,
+    0.3512890625,
+    0.16203125000000002
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.875,
+   "value": [
+    0.772705078125,
+    0.3909912109375,
+    0.17216796875
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.9,
+   "value": [
+    0.8468750000000003,
+    0.42656250000000007,
+    0.18125000000000002
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.925,
+   "value": [
+    0.9095605468750001,
+    0.45662597656250004,
+    0.18892578125000004
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.95,
+   "value": [
+    0.9578906249999999,
+    0.47980468749999994,
+    0.19484374999999998
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.975,
+   "value": [
+    0.988994140625,
+    0.4947216796875,
+    0.19865234375000002
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.0001,
+   "value": [
+    0.9999996640896,
+    0.5,
+    0.2000003359104
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.2499,
+   "value": [
+    0.3000003359104001,
+    0.5,
+    0.8999996640896
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.2501,
+   "value": [
+    0.2999999314416326,
+    0.4999998849198834,
+    0.8999997992219242
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.4999,
+   "value": [
+    0.07560819263999996,
+    0.12334232335999995,
+    0.2428525641599999
+   ]
+  },
+  {
+   "curve": "colour",
+   "phase": 0.9999,
+   "value": [
+    0.999999816280625,
+    0.4999999118896874,
+    0.19999997750374998
+   ]
+  }
+ ]
+}

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import scripting, transforms
+from .. import environments, scripting, transforms
 from ..group_objects import ask_save_group_as_object
 from ..project import Project
 from ..scene_model import Entity, sky_component
@@ -132,7 +132,18 @@ class EntityForm(QWidget):
                     box.valueChanged.connect(lambda _v, k=label: self._transform_edited(k))
 
         self.sky: dict[str, QPushButton] = {}
+        self.environment = None
         if "sky" in entity.components:
+            self.environment = QComboBox()
+            self.environment.setToolTip("How the world looks through its day: the sky, sunlight, "
+                                        "ambient light and fog follow the clock, and so does the "
+                                        "sun. None: the flat colours below.")
+            self.environment.addItem("None (flat colours)", "")
+            for env in environments.load_all(project):
+                self.environment.addItem(env["name"], env["id"])
+            self.environment.currentIndexChanged.connect(
+                lambda _i: self.set_sky_environment(self.environment.currentData()))
+            form.addRow("Environment", self.environment)
             for key, label in self.SKY_COLOURS.items():
                 button = QPushButton()
                 button.clicked.connect(lambda _checked=False, k=key: self._pick_sky(k))
@@ -437,6 +448,13 @@ class EntityForm(QWidget):
             self.scale.set_value(t["scale"])
         for key, button in self.sky.items():
             style_color_button(button, entity.components["sky"].get(key, sky_component()[key]))
+        if self.environment is not None:
+            link = entity.components["sky"].get("environment", "")
+            self.environment.blockSignals(True)
+            if self.environment.findData(link) < 0:  # not in the project (deleted)
+                self.environment.addItem(f"{link} (missing)", link)
+            self.environment.setCurrentIndex(self.environment.findData(link))
+            self.environment.blockSignals(False)
         if self.mesh is not None:
             asset = entity.components["mesh"].get("asset", "")
             self.mesh.blockSignals(True)
@@ -585,6 +603,18 @@ class EntityForm(QWidget):
         chosen = QColorDialog.getColor(QColor.fromRgbF(*rgb[:3]), self, self.SKY_COLOURS[key])
         if chosen.isValid():
             self.set_sky_color(key, [chosen.redF(), chosen.greenF(), chosen.blueF()])
+
+    def set_sky_environment(self, environment_id: str | None) -> None:
+        entity = self._entity()
+        sky = dict(entity.components["sky"])
+        if (environment_id or "") == sky.get("environment", ""):
+            return
+        if environment_id:
+            sky["environment"] = environment_id
+        else:
+            sky.pop("environment", None)
+        entity.components["sky"] = sky
+        self._push(entity, "environment")
 
     def set_sky_color(self, key: str, rgb: list[float]) -> None:
         entity = self._entity()
