@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -16,6 +17,7 @@
 
 #include <glm/glm.hpp>
 
+#include "midgard/camera_rig.h"
 #include "midgard/materials.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
@@ -41,6 +43,10 @@ public:
     // An object's template (a JSON list of parts): its instances are filled in again.
     void set_object(const std::string& object_id, const std::string& parts_json);
     void set_camera(const glm::vec3& eye, const glm::vec3& target, float fov_degrees);
+    // Where the game's camera would be in one of its views, from the scene as edited (the
+    // Camera editor's preview): the game's own camera rig works it out, so the two agree. Walls
+    // don't stop it here (the viewport has no physics). None without a player and a camera.
+    std::optional<CameraRig::Pose> preview_camera(CameraView view);
     // Outlines of colliders, triggers and the player over the scene (midgard/collider_outlines.h).
     void set_show_colliders(bool show) { show_colliders_ = show; }
     bool show_colliders() const { return show_colliders_; }

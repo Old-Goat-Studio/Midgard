@@ -70,6 +70,7 @@ def main() -> int:
         bad = make_package(tmp / "bad_entity", {"e1": {"transform": {"position": [1, 2]}}}, [])
         report = _midgard.validate(bad)
         assert not report["ok"] and "e1" in report["errors"][0], report
+    check_camera_preview()
     check_viewport()
     check_bodies()
     print("_midgard: all checks passed")
@@ -128,6 +129,30 @@ def check_bodies() -> None:
 def pixel(rgba: bytes, width: int, x: int, y: int) -> tuple[int, int, int]:
     i = (y * width + x) * 4
     return rgba[i], rgba[i + 1], rgba[i + 2]
+
+
+def check_camera_preview() -> None:
+    """The Camera editor's preview: where the game's camera rig would put the camera, without
+    moving the camera the designer placed (needs no GPU)."""
+    view = _midgard.Viewport()
+    view.put_entity(json.dumps({"id": "p", "name": "Player", "parent": None, "components": {
+        "transform": {"position": [0, 0.5, 0]}, "player": {}}}))
+    view.put_entity(json.dumps({"id": "c", "name": "Camera", "parent": None, "components": {
+        "transform": {"position": [0, 3, 6]}, "camera": {"fov": 50}}}))
+    eye, forward, up, fov = view.preview_camera("third")
+    assert all(abs(a - b) < 1e-4 for a, b in zip(eye, [0, 3, 6], strict=True)), eye
+    assert fov == 50 and abs(up[1] - 1) < 1e-6 and forward[2] < 0
+    first = view.preview_camera("first")
+    assert abs(first[0][1] - 0.85) < 1e-4 and first[3] == 70, first  # the player's eyes
+    assert view.preview_camera("top")[0][1] > 10
+    assert view.preview_camera("third")[0] == eye, "the placed camera stayed where it was"
+    try:
+        view.preview_camera("sideways")
+        raise AssertionError("an unknown view must be refused")
+    except ValueError:
+        pass
+    view.remove_entity("p")
+    assert view.preview_camera("third") is None  # no player to follow
 
 
 def check_viewport() -> None:

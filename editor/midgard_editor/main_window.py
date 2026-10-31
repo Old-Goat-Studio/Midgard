@@ -37,6 +37,7 @@ from .backup import BackupScheduler
 from .cook import CookError, cook
 from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_project_under_git
 from .docks.assistant import AssistantPanel
+from .docks.camera_editor import CameraDialog
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.material_editor import MaterialDialog
@@ -629,6 +630,7 @@ class MainWindow(QMainWindow):
         self.project_page.set_project(project)
         self.objects_panel.set_project(project)
         MaterialDialog.close_all()
+        CameraDialog.close_all()
         if self.content_watcher is not None:
             self.content_watcher.stop()
             self.content_watcher.deleteLater()

@@ -28,6 +28,7 @@ from ..group_objects import ask_save_group_as_object
 from ..project import Project
 from ..scene_model import Entity, sky_component
 from ..undo import SetEntityCommand
+from .camera_editor import CameraDialog
 from .material_editor import EntityMaterial, MaterialDialog
 
 
@@ -155,7 +156,10 @@ class EntityForm(QWidget):
             self.fov.setSuffix("°")
             self.fov.valueChanged.connect(lambda _v: self._component_value("camera", "fov",
                                                                            self.fov.value()))
-            form.addRow("Field of view", self.fov)
+            edit = QPushButton("Edit…")
+            edit.setToolTip("The views of the player's camera, in the Camera editor")
+            edit.clicked.connect(self.edit_camera)
+            form.addRow("Field of view", _row(self.fov, edit))
         if "light" in entity.components:
             self.intensity = _spin(0.0, 100.0, 0.1, 2)
             self.intensity.valueChanged.connect(
@@ -522,6 +526,12 @@ class EntityForm(QWidget):
         """The entity's material in the Material editor (a window of its own)."""
         return MaterialDialog.show_for(self.project, EntityMaterial(self.project, self.entity_id),
                                        self.window())
+
+    def edit_camera(self):
+        """The camera's views in the Camera editor (a window of its own), previewed in the
+        main window's viewport."""
+        viewport = getattr(self.window(), "viewport", None)
+        return CameraDialog.show_for(self.project, self.entity_id, viewport, self.window())
 
     def set_object(self, object_id: str | None) -> None:
         entity = self._entity()

@@ -269,6 +269,22 @@ PYBIND11_MODULE(_midgard, m) {
             [](Viewport& v, const std::array<float, 3>& eye, const std::array<float, 3>& target,
                float fov) { v.set_camera(vec3(eye), vec3(target), fov); },
             py::arg("eye"), py::arg("target"), py::arg("fov") = 55.0f)
+        .def(
+            "preview_camera",
+            [](Viewport& v, const std::string& view) -> std::optional<py::tuple> {
+                const auto which = midgard::view_from_name(view);
+                if (!which) throw py::value_error("no camera view '" + view + "'");
+                const auto pose = v.preview_camera(*which);
+                if (!pose) return std::nullopt;
+                const auto list = [](const auto& p) {
+                    return std::array{double(p.x), double(p.y), double(p.z)};
+                };
+                return py::make_tuple(list(pose->position), list(pose->forward), list(pose->up),
+                                      pose->fov);
+            },
+            py::arg("view"),
+            "Where the game's camera would be in a view (first, third or top): (eye, forward, "
+            "up, fov), or None without a player and a camera. Walls don't stop it here.")
         .def("attach_window", &Viewport::attach_window, py::arg("platform"), py::arg("handle"),
              py::arg("width"), py::arg("height"),
              "Draws into a native window: platform 'windows' (HWND) or 'xcb' (X11 window id).")

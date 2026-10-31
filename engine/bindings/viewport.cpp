@@ -161,6 +161,26 @@ void Viewport::set_camera(const glm::vec3& eye, const glm::vec3& target, float f
     fov_ = fov_degrees;
 }
 
+std::optional<CameraRig::Pose> Viewport::preview_camera(CameraView view) {
+    // The rig moves the camera it follows; every camera goes back where the designer put it.
+    std::vector<std::pair<entt::entity, std::pair<Transform, CameraLens>>> cameras;
+    for (entt::entity e : scene_.registry.view<const CameraLens, const Transform>())
+        cameras.push_back(
+            {e, {scene_.registry.get<Transform>(e), scene_.registry.get<CameraLens>(e)}});
+    std::optional<CameraRig::Pose> pose;
+    CameraRig rig(scene_);
+    if (rig.active()) {
+        rig.set_view(scene_, view, false);
+        rig.follow(scene_, 0.0f);
+        pose = rig.pose();
+    }
+    for (const auto& [e, saved] : cameras) {
+        scene_.registry.replace<Transform>(e, saved.first);
+        scene_.registry.replace<CameraLens>(e, saved.second);
+    }
+    return pose;
+}
+
 void Viewport::attach_window(const std::string& platform, uint64_t handle, uint32_t width,
                              uint32_t height) {
     detach();

@@ -19,7 +19,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QGuiApplication,
@@ -114,6 +114,7 @@ class ViewportWindow(QWindow):
         pos = e.position().toPoint()
         dx, dy = pos.x() - self._last.x(), pos.y() - self._last.y()
         self._last = pos
+        self.panel.set_preview(None)  # the designer takes the view back
         if e.buttons() & Qt.MouseButton.MiddleButton:
             self.panel.camera.pan(dx, dy, self.height())
         elif e.buttons() & (Qt.MouseButton.LeftButton | Qt.MouseButton.RightButton):
@@ -121,15 +122,19 @@ class ViewportWindow(QWindow):
         self.panel.camera_changed()
 
     def wheelEvent(self, e: QWheelEvent) -> None:
+        self.panel.set_preview(None)
         self.panel.camera.zoom(e.angleDelta().y() / 120.0)
         self.panel.camera_changed()
 
 
 class ViewportPanel(QWidget):
+    preview_ended = Signal()  # the Camera editor's preview gave the view back
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.project: Project | None = None
         self.camera = OrbitCamera()
+        self.preview_view: str | None = None  # a game camera view shown (the Camera editor)
         self.view = None  # the engine's _midgard.Viewport, when there is one
         self._sent_meshes: set[str] = set()
         self._sent_content: dict[str, int] = {}  # object content id -> hash of what was sent
@@ -221,6 +226,7 @@ class ViewportPanel(QWidget):
             self.project.objects_changed.disconnect(self._objects_changed)
             self.project.files_changed.disconnect(self._files_changed)
         self.project = project
+        self.preview_view = None  # (the Camera editors close with the old project)
         self._sent_objects.clear()
         self.set_selected(None)
         if project is not None:
@@ -389,6 +395,7 @@ class ViewportPanel(QWidget):
             self.view.remove_entity(entity_id)
         else:
             self._put(entity)
+        self._show_preview()  # the camera, or the player, may have changed
         self.request_render()
 
     # ---- the window ---------------------------------------------------------------------
@@ -423,8 +430,36 @@ class ViewportPanel(QWidget):
     def camera_changed(self) -> None:
         self.gizmos.refresh()  # the axes as the camera now sees them
         if self.view is not None:
-            self.view.set_camera(self.camera.eye(), self.camera.target, self.camera.fov)
+            if not self._show_preview():
+                self.view.set_camera(self.camera.eye(), self.camera.target, self.camera.fov)
             self.request_render()
+
+    # ---- the Camera editor's preview ----------------------------------------------------
+    def set_preview(self, view: str | None) -> bool:
+        """Shows the game camera's view ("first", "third" or "top") from where the game would
+        put it, following edits, until set_preview(None) or the designer moves the view.
+        False if there is nothing to show (no 3D view, or no player and camera)."""
+        if view is None:
+            if self.preview_view is None:
+                return True
+            self.preview_view = None
+            self.camera_changed()
+            self.preview_ended.emit()
+            return True
+        self.preview_view = view
+        shown = self._show_preview()
+        self.request_render()
+        return shown
+
+    def _show_preview(self) -> bool:
+        if self.preview_view is None or self.view is None:
+            return False
+        pose = self.view.preview_camera(self.preview_view)
+        if pose is None:
+            return False
+        eye, forward, _up, fov = pose
+        self.view.set_camera(eye, [eye[i] + forward[i] for i in range(3)], fov)
+        return True
 
     def request_render(self) -> None:
         """Draws on the next pass of the event loop; many changes make one frame."""
