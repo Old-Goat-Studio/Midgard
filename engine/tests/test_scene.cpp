@@ -1353,3 +1353,67 @@ TEST_CASE("cameras: in top-down the mouse turns the view, and the keys walk rela
     CHECK(moved.x < -1.5);
     CHECK(std::abs(moved.z) < 0.1);
 }
+
+TEST_CASE("cameras: the player's profile keeps the view and zoom, and other keys") {
+    TestPackage pkg(camera_scene());
+    const fs::path file = pkg.dir / "profiles" / "default" / "profile.json";
+    CHECK_FALSE(midgard::PlayerProfile::load(file).view);  // none yet: an empty profile
+
+    midgard::PlayerProfile p;
+    p.view = midgard::CameraView::Top;
+    p.third_distance = 4.0f;
+    p.top_distance = 25.0f;
+    p.other = json{{"language", "en"}};
+    p.save(file);  // (its folder is made)
+    const midgard::PlayerProfile back = midgard::PlayerProfile::load(file);
+    CHECK(back.view == midgard::CameraView::Top);
+    CHECK(back.third_distance == doctest::Approx(4.0f));
+    CHECK(back.top_distance == doctest::Approx(25.0f));
+    CHECK(back.other == json{{"language", "en"}});
+    CHECK_FALSE(fs::exists(file.string() + ".tmp"));
+
+    // Values that make no sense are left out; a file that isn't a profile is an error.
+    std::ofstream(file) << R"({"camera": {"view": "sideways", "third_distance": -3}})";
+    const midgard::PlayerProfile odd = midgard::PlayerProfile::load(file);
+    CHECK_FALSE(odd.view);
+    CHECK_FALSE(odd.third_distance);
+    std::ofstream(file) << "{not json";
+    CHECK_THROWS_AS(midgard::PlayerProfile::load(file), midgard::ProfileError);
+}
+
+TEST_CASE("cameras: the game starts in the player's last view, and saves it") {
+    TestPackage pkg(camera_scene());
+    const fs::path file = pkg.dir / "profile.json";
+    midgard::Actions actions(midgard::InputMap::defaults());
+    {
+        midgard::Game game(pkg.dir);
+        game.use_profile(file);  // none yet: the camera's own settings
+        CHECK(game.camera_rig().view() == midgard::CameraView::Third);
+        CHECK_FALSE(fs::exists(file));
+        game.camera_rig().set_orbit(game.scene(), 0.0f, 25.0f, 3.0f);
+        press(game, actions, "V");  // third -> first: saved at once
+        CHECK(midgard::PlayerProfile::load(file).view == midgard::CameraView::First);
+        press(game, actions, "V");  // first -> top-down
+        game.save_profile();        // (the game ending)
+    }
+    const midgard::PlayerProfile saved = midgard::PlayerProfile::load(file);
+    CHECK(saved.view == midgard::CameraView::Top);
+    CHECK(saved.third_distance == doctest::Approx(3.0f));
+
+    // The next session starts there, at once (no blend from the designer's view).
+    midgard::Game game(pkg.dir);
+    game.use_profile(file);
+    CHECK(game.camera_rig().view() == midgard::CameraView::Top);
+    CHECK_FALSE(game.camera_rig().blending());
+    CHECK(game.camera_rig().distance() == doctest::Approx(3.0f));
+    play_with(game, actions, 0.1);
+    CHECK(camera_at(game.scene()).y > 10.0);  // high above the player
+
+    // A damaged profile is reported, the game plays on, and the next save replaces it.
+    std::ofstream(file) << "{not json";
+    midgard::Game fresh(pkg.dir);
+    CHECK_THROWS_AS(fresh.use_profile(file), midgard::ProfileError);
+    CHECK(fresh.camera_rig().view() == midgard::CameraView::Third);
+    press(fresh, actions, "V");
+    CHECK(midgard::PlayerProfile::load(file).view == midgard::CameraView::First);
+}

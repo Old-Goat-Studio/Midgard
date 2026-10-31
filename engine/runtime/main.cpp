@@ -24,6 +24,10 @@
 //                                       on screen. On Android, an APK with a selftest.txt asset
 //                                       starts this way (the self-test APK built in CI).
 //   any of these with --profile trace.json   timed zones, for ui.perfetto.dev or chrome://tracing
+//   --player-profile <dir>              keep the player's profile (its last camera view) in
+//                                       <dir>/profile.json. An exported game in a window keeps
+//                                       it in the user's data folder without this; under the
+//                                       editor and in tests there is none unless it is given.
 //
 // In a window, F3 (or --debug-overlay) shows the frame rate and timings over the game, and F4
 // (or --debug-physics, which also works with --screenshot) outlines the physics shapes.
@@ -46,6 +50,7 @@
 #include <windows.h>
 #endif
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -101,9 +106,10 @@ struct Options {
     long frames = -1;       // run until closed
     uint32_t width = 1280, height = 720;
     bool debug_overlay = false;
-    bool debug_physics = false;               // collider outlines (F4)
-    std::optional<std::string> overlay_text;  // fixed overlay lines, separated by '|'
-    std::optional<std::string> profile;       // where to write the profiling trace
+    bool debug_physics = false;                 // collider outlines (F4)
+    std::optional<std::string> overlay_text;    // fixed overlay lines, separated by '|'
+    std::optional<std::string> profile;         // where to write the profiling trace
+    std::optional<std::string> player_profile;  // the player's profile folder
     bool selftest = false;
     bool show = false;              // the self-test's results in a window
     glm::dvec3 origin_offset{0.0};  // where the demo scene is placed (precision tests)
@@ -119,7 +125,7 @@ int usage() {
         "usage: midgard_runtime [--version] [--package <dir>] [--frames N] [--size WxH]\n"
         "                       [--screenshot out.png [--overlay-text \"a|b\"]]\n"
         "                       [--editor-link host:port] [--debug-overlay] [--debug-physics]\n"
-        "                       [--profile out.json]\n"
+        "                       [--profile out.json] [--player-profile <dir>]\n"
         "                       [--quality desktop|phone]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
@@ -220,6 +226,8 @@ public:
     virtual std::vector<render::DebugLine> debug_lines(const glm::dvec3&) const { return {}; }
     // The scene as JSON (entities and their transforms and colours), for tests.
     virtual std::string dump() const { return "{}"; }
+    // The player's profile file: used from now on, and saved when the game ends.
+    virtual void use_profile(const std::filesystem::path&) {}
     // A message from the editor's live link (entity edits and the like).
     virtual void apply(const nlohmann::json& message, render::Renderer*) {
         warn("live link: '%s' needs a game package\n", message.value("type", "").c_str());
@@ -295,6 +303,21 @@ public:
         say("%s %s: scene '%s', %zu entities, built by editor %s\n", m.game_name.c_str(),
             m.game_version.c_str(), m.entry_scene.c_str(),
             game_.scene().registry.view<midgard::EntityInfo>().size(), m.editor_build.c_str());
+    }
+    ~GameSource() override {
+        try {
+            game_.save_profile();
+        } catch (const midgard::ProfileError& e) {
+            warn("%s\n", e.what());
+        }
+    }
+    void use_profile(const std::filesystem::path& file) override {
+        try {
+            game_.use_profile(file);
+            say("Player profile: %s\n", file.string().c_str());
+        } catch (const midgard::ProfileError& e) {
+            warn("%s; starting a new one\n", e.what());
+        }
     }
     void upload(render::Renderer& renderer) override { game_.upload_meshes(renderer); }
     std::vector<render::DrawItem> draws(float, const glm::dvec3& origin) const override {
@@ -1006,6 +1029,27 @@ std::filesystem::path executable_dir() {
     return base ? std::filesystem::path(base) : std::filesystem::current_path();
 }
 
+// Where the player's profile lives: --player-profile, or for an exported game in a window,
+// profiles/default/ in the user's data folder for this game (%APPDATA%\Midgard\<game> on
+// Windows, ~/.local/share/Midgard/<game> on Linux, the app's internal storage on Android). Under
+// the editor and in tests there is none, so play starts the way the designer set it up.
+std::optional<std::filesystem::path> player_profile_dir(const Options& opt, bool windowed,
+                                                        const std::string& game) {
+    if (opt.player_profile) return std::filesystem::path(*opt.player_profile);
+    if (!windowed || opt.editor_link || opt.frames >= 0) return std::nullopt;
+    std::string folder;  // the game's name, made safe for a folder name
+    for (const char c : game)
+        folder += (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '-' || c == '_')
+                      ? c
+                      : '_';
+    if (folder.find_first_not_of(" _") == std::string::npos) folder = "Game";
+    char* base = SDL_GetPrefPath("Midgard", folder.c_str());
+    if (!base) return std::nullopt;
+    const std::filesystem::path dir(reinterpret_cast<const char8_t*>(base));
+    SDL_free(base);
+    return dir / "profiles" / "default";
+}
+
 int dump_api() {
 #ifdef MIDGARD_HAS_SCRIPTING
     try {
@@ -1143,6 +1187,8 @@ int main(int argc, char** argv) {
             opt.overlay_text = argv[++i];
         } else if (arg == "--profile" && has_value) {
             opt.profile = argv[++i];
+        } else if (arg == "--player-profile" && has_value) {
+            opt.player_profile = argv[++i];
         } else if (arg == "--scene" && has_value) {
             opt.scene = argv[++i];
         } else if (arg == "--quality" && has_value) {
@@ -1193,10 +1239,13 @@ int main(int argc, char** argv) {
                 return finish(opt, windowed, 2);
             }
             source = std::make_unique<TestSceneSource>(std::move(scene));
-        } else if (opt.package_dir)
+        } else if (opt.package_dir) {
             source = std::make_unique<GameSource>(*opt.package_dir);
-        else
+            if (const auto folder = player_profile_dir(opt, windowed, source->title()))
+                source->use_profile(*folder / "profile.json");
+        } else {
             source = std::make_unique<DemoSource>(opt.origin_offset);
+        }
         if (opt.simulate >= 0)
             result = run_simulation(opt, *source);
         else if (opt.headless)

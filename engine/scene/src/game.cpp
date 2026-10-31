@@ -46,6 +46,37 @@ void Game::update(const Actions& actions, float dt) {
     physics_->update(scene_, dt);  // the player walks
     camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
+    if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
+        try {
+            save_profile();
+        } catch (const ProfileError&) {
+            saved_view_ = camera_->view();  // not retried every frame; the save at the end tries
+        }
+    }
+}
+
+void Game::use_profile(const std::filesystem::path& file) {
+    profile_file_ = file;
+    saved_view_ = camera_->view();
+    profile_ = PlayerProfile::load(file);  // (if damaged, the profile stays empty)
+    if (!camera_->active()) return;
+    CameraRig::State state = camera_->state();
+    if (profile_.third_distance) state.third_distance = *profile_.third_distance;
+    if (profile_.top_distance) state.top_distance = *profile_.top_distance;
+    camera_->restore(scene_, state);  // (the distances clamped to the camera's zoom range)
+    if (profile_.view) camera_->set_view(scene_, *profile_.view, false);
+    camera_->follow(scene_, 0.0f, camera_sweep());
+    saved_view_ = camera_->view();
+}
+
+void Game::save_profile() {
+    if (profile_file_.empty() || !camera_->active()) return;
+    const CameraRig::State state = camera_->state();
+    profile_.view = state.view;
+    profile_.third_distance = state.third_distance;
+    profile_.top_distance = state.top_distance;
+    saved_view_ = state.view;
+    profile_.save(profile_file_);
 }
 
 void Game::update_triggers() {

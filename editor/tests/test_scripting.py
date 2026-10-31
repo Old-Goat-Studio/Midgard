@@ -70,9 +70,9 @@ def add_door(project) -> None:
     write_script(project, "door", DOOR)
 
 
-def simulate(package, frames: int) -> tuple[dict, subprocess.CompletedProcess]:
+def simulate(package, frames: int, *args: str) -> tuple[dict, subprocess.CompletedProcess]:
     run = subprocess.run([str(scripting_runtime()), "--package", str(package), "--simulate",
-                          str(frames), "--dump-scene"], capture_output=True, text=True,
+                          str(frames), "--dump-scene", *args], capture_output=True, text=True,
                          timeout=60)
     lines = [line for line in run.stdout.splitlines() if line.startswith("{")]
     return (json.loads(lines[-1]) if lines else {}), run

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Cameras in the editor (milestone 5.6): the view action, the camera component and
 midgard.camera in game scripts."""
+import json
 import sqlite3
 
 from test_scripting import needs_scripting, simulate, write_script
@@ -85,3 +86,31 @@ def test_scripts_drive_the_camera(project, tmp_path):
     assert "first first False 70" in lines
     assert "look True [10.0, 2.0, 0.0]" in lines
     assert "back False first" in lines  # released: the player's own view came back
+
+
+SWITCHER = """
+import midgard
+
+def on_start(entity):
+    print("starts in", midgard.camera.view)
+    if midgard.camera.view == "third":
+        midgard.camera.view = "top"
+"""
+
+
+@needs_scripting
+def test_the_runtime_keeps_the_players_last_view_in_their_profile(project, tmp_path):
+    player = project.entity("e000004")
+    player.components["script"] = {"module": "switcher"}
+    project.put_entity(player)
+    write_script(project, "switcher", SWITCHER)
+    package = cook(project, tmp_path / "pkg").out_dir
+    profile = tmp_path / "profile"
+
+    _scene, run = simulate(package, 5)  # no profile: nothing is kept
+    assert "starts in third" in run.stdout
+    _scene, run = simulate(package, 5, "--player-profile", str(profile))
+    assert "starts in third" in run.stdout, run.stderr
+    assert json.loads((profile / "profile.json").read_text("utf-8"))["camera"]["view"] == "top"
+    _scene, run = simulate(package, 5, "--player-profile", str(profile))
+    assert "starts in top" in run.stdout, run.stderr

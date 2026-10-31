@@ -26,6 +26,22 @@ component}`) and replace the model's materials in the cooked parts. Image files 
 use (`tex:<path>`, the path relative to the project folder) are cooked to
 `images/<path>.ktx2` (`images/<path>.linear.ktx2` for `?linear`).
 
+## Player profile
+
+The runtime keeps a player's own settings in `profile.json`
+(`engine/scene/include/midgard/player_profile.h`), in `profiles/default/` in the user's data
+folder for the game (`%APPDATA%\Midgard\<game>` on Windows, `~/.local/share/Midgard/<game>`
+on Linux, the app's internal storage on Android), or in the folder given with
+`midgard_runtime --player-profile <dir>`. Play in the editor and tests use none unless that is
+given. For now it holds the camera's last view and zoom:
+
+```json
+{"camera": {"view": "first", "third_distance": 6.0, "top_distance": 18.0}}
+```
+
+It is saved when the view changes and when the game ends. Keys the engine doesn't know are
+kept. Phase 6's profile system takes the file over.
+
 ## Versioning
 
 - `format_version` in the manifest is `major.minor`. The engine refuses a package whose **major**

@@ -16,6 +16,7 @@
 #include "midgard/materials.h"
 #include "midgard/package.h"
 #include "midgard/pak.h"
+#include "midgard/player_profile.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
 #include "midgard/scene_physics.h"
@@ -89,6 +90,14 @@ public:
     const CameraRig& camera_rig() const { return *camera_; }
     CameraRig& camera_rig() { return *camera_; }
     ScenePhysics& physics() { return *physics_; }
+
+    // The player's profile file (midgard/player_profile.h). Its camera view and zoom are used
+    // now; from then on the profile is saved whenever the view changes and by save_profile()
+    // (call it when the game ends). Without a profile nothing is saved. Throws ProfileError if
+    // the file is damaged (it is still used, and replaced at the next save).
+    void use_profile(const std::filesystem::path& file);
+    void save_profile();
+    const std::filesystem::path& profile_file() const { return profile_file_; }
     const PhysicsLayers& physics_layers() const { return layers_; }
 
 private:
@@ -102,6 +111,9 @@ private:
     std::unique_ptr<Pak> pak_;
     Scene scene_;
     std::unique_ptr<CameraRig> camera_;
+    std::filesystem::path profile_file_;
+    PlayerProfile profile_;
+    CameraView saved_view_ = CameraView::Third;
     PhysicsLayers layers_;
     std::unique_ptr<ScenePhysics> physics_;
     std::unordered_map<std::string, render::MeshId> meshes_;
