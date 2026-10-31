@@ -291,3 +291,23 @@ def test_the_gizmos_toolbar_switch(qtbot, window, settings):
     window.scene_panel.entity_selected.emit("e000004")
     assert window.viewport.selected == "e000004"
 
+
+
+def test_world_shape_chooses_how_day_and_night_work_on_a_planet(qtbot, project):
+    dialog = WorldShapeDialog(project)
+    qtbot.addWidget(dialog)
+    assert not dialog.form.isRowVisible(dialog.sun_mode)  # flat ground: one sun for all
+    dialog.shape.setCurrentIndex(dialog.shape.findData("sphere_outside"))
+    assert dialog.form.isRowVisible(dialog.sun_mode)
+    assert dialog.sun_mode.currentData() == "uniform"
+    dialog.sun_mode.setCurrentIndex(dialog.sun_mode.findData("latitude"))
+    dialog.add_ground.setChecked(False)
+    dialog.accept()
+    assert project.scene_settings()["sun_mode"] == "latitude"
+    again = WorldShapeDialog(project)  # shows what's set
+    qtbot.addWidget(again)
+    assert again.sun_mode.currentData() == "latitude"
+    again.shape.setCurrentIndex(again.shape.findData("curved_cylinder"))
+    assert not again.form.isRowVisible(again.sun_mode)  # shades on a cylinder: no choice
+    again.accept()
+    assert "sun_mode" not in project.scene_settings()

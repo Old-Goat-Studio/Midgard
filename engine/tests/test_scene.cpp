@@ -1833,13 +1833,23 @@ TEST_CASE("environments: the Sky links to one, and the sky, sunlight and fog fol
     CHECK(scene.light(at).intensity < 0.01f);
     CHECK(glow(midnight) < glow(noon) * 0.2f);
 
-    // Without a clock, or without a link, the sky is flat as before.
+    // Without a clock, or without a link, the sky is flat as before, with the sun a small white
+    // disc in it.
+    const auto flat = [](const midgard::render::Environment& e) {
+        const midgard::render::SkyColors& s = e.sky_colors;
+        return e.sky && s.zenith == s.horizon && s.horizon == s.horizon_away &&
+               s.horizon_away == s.ground && s.glow_brightness == 0.0f &&
+               s.sun == glm::vec3(1.0f) && s.sun_size == 1.5f;
+    };
     scene.solar_phase.reset();
-    CHECK_FALSE(scene.environment(at).sky);
+    CHECK(flat(scene.environment(at)));
     scene.solar_phase = 0.25;
     game.set_component("e2_sky", "sky", json::parse(R"({"color": [0.1, 0.2, 0.3]})"));
+    CHECK(flat(scene.environment(at)));
+    CHECK(scene.environment(at).sky_colors.zenith == glm::vec3(0.1f, 0.2f, 0.3f));
+    // No sun in the scene: no disc, and no sky pass at all.
+    game.remove_entity("e1_sun");
     CHECK_FALSE(scene.environment(at).sky);
-    CHECK(scene.settings.sky == glm::vec3(0.1f, 0.2f, 0.3f));
 }
 
 TEST_CASE("environments: validation names a missing link and refuses a broken curve") {
@@ -1856,4 +1866,19 @@ TEST_CASE("environments: validation names a missing link and refuses a broken cu
     const midgard::ValidationReport report = midgard::validate_package(broken.dir);
     CHECK_FALSE(report.errors.empty());
     CHECK(report.errors.front().find("out of order") != std::string::npos);
+}
+
+TEST_CASE("sun_mode in the scene settings picks a planet's light model") {
+    TestPackage latitude({{"e1_sun", R"(NULL, '{"transform": {"rotation": [-50, 35, 0]},
+                                          "light": {"type": "directional",
+                                                    "follows_clock": true}}')"}},
+                         R"({"body": {"shape": "sphere_outside", "radius": 1000,
+                                      "origin": [0, -1000, 0]}, "sun_mode": "latitude"})");
+    midgard::Game game(latitude.dir);
+    CHECK(game.scene().settings.sun_mode == midgard::SunMode::Latitude);
+    game.scene().solar_phase = 0.25;
+    REQUIRE(game.scene().local_sun(glm::dvec3(0.0)).has_value());
+    TestPackage wrong({}, R"({"sun_mode": "sideways"})");
+    CHECK_THROWS_WITH_AS(midgard::Game(wrong.dir), doctest::Contains("sun_mode"),
+                         midgard::SceneError);
 }

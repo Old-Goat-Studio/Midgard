@@ -96,6 +96,18 @@ class WorldShapeDialog(QDialog):
                     self.form.addRow(name.capitalize(), self.sizes[name])
         self.gravity = _spin(0.1, 50.0, float(body.get("gravity", 9.81)), " m/s²")
         self.form.addRow("Gravity", self.gravity)
+        # How day and night work on a planet (midgard/sunlight.h).
+        self.sun_mode = QComboBox()
+        self.sun_mode.addItem("Uniform: the calendar's daylight everywhere", "uniform")
+        self.sun_mode.addItem("Latitude: tilt and seasons, polar day and night", "latitude")
+        self.sun_mode.setToolTip(
+            "Uniform: noon moves round the planet with longitude, and every place has the "
+            "calendar's share of daylight. Latitude: the planet is tilted (the calendar's tilt), "
+            "so days are longer towards the summer pole, with polar day and night; how high the "
+            "sun is placed sets the start's latitude.")
+        self.sun_mode.setCurrentIndex(max(self.sun_mode.findData(
+            project.scene_settings().get("sun_mode", "uniform")), 0))
+        self.form.addRow("Day and night", self.sun_mode)
         has_surface = any(e.components.get("mesh", {}).get("asset") == SURFACE
                           for e in project.entities())
         self.add_ground = QCheckBox("Add ground covering the whole world")
@@ -122,6 +134,7 @@ class WorldShapeDialog(QDialog):
                 low, high, _default = needed[name]
                 box.setRange(low, high)
         self.form.setRowVisible(self.gravity, bool(key))
+        self.form.setRowVisible(self.sun_mode, key == "sphere_outside")
         self.form.setRowVisible(self.add_ground, bool(key) and self.offers_ground)
 
     def body(self) -> dict[str, Any] | None:
@@ -150,6 +163,11 @@ class WorldShapeDialog(QDialog):
             settings.pop("body", None)
         else:
             settings["body"] = body
+        if body is not None and body["shape"] == "sphere_outside" and \
+                self.sun_mode.currentData() == "latitude":
+            settings["sun_mode"] = "latitude"
+        else:
+            settings.pop("sun_mode", None)  # uniform: the default
         add_ground = body is not None and self.offers_ground and self.add_ground.isChecked()
         stack = self.project.undo_stack
         stack.beginMacro("Change world shape")

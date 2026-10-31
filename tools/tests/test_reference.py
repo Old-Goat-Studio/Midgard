@@ -183,3 +183,39 @@ def test_environment_curves_match_their_table():
         assert env.evaluate(data["curves"][c["curve"]], c["phase"]) == c["value"], c
     assert env.evaluate([], 0.3) is None  # not set
     assert env.evaluate([[0.6, 4.0]], 0.1) == 4.0  # one key: all day
+
+
+# ---- light models per world shape (midgard/sunlight.h) ------------------------------------------
+def test_light_models_match_their_table():
+    from reference import light
+    data = json.loads((TABLES / "light_models.json").read_text("utf-8"))
+    assert len(data["cases"]) == 288
+    placed = tuple(data["placed"])
+    for c in data["cases"]:
+        body = data["bodies"][c["body"]]
+        if body is not None:
+            body = {"shape": body["shape"], "origin": tuple(body["origin"])}
+        phase, to_sun, height = light.local_sun(body, placed, c["clock"], tuple(c["point"]))
+        assert phase == c["phase"] and list(to_sun) == c["to_sun"] and height == c["height"], c
+
+
+def test_a_planets_noon_moves_with_longitude_and_its_poles_have_polar_day_and_night():
+    import math
+
+    from reference import light
+    planet = {"shape": "sphere_outside", "origin": (0.0, -1000.0, 0.0)}
+    placed = light.norm((0.3, 0.75, -0.6))
+    clock = {"time": 0.5, "daylight": 0.5, "noon": 0.5, "mode": "uniform", "tilt": 0.0,
+             "year": 0.0}
+    assert light.local_sun(planet, placed, clock, (0.0, 0.0, 0.0))[0] == 0.25  # noon here
+    assert abs(light.local_sun(planet, placed, clock, (0.0, -2000.0, 0.0))[0] - 0.75) < 1e-12
+    # Latitude mode at the north pole: the sun never sets in summer, never rises in winter.
+    north0 = light.mul(light.norm((placed[0], 0.0, placed[2])), -1.0)
+    lat0 = math.pi / 2 - math.asin(placed[1])
+    axis = light.add(light.mul(north0, math.cos(lat0)), light.mul((0.0, 1.0, 0.0), math.sin(lat0)))
+    pole = light.add(planet["origin"], light.mul(axis, 1000.0))
+    for hour in range(24):
+        summer = dict(clock, time=hour / 24, mode="latitude", tilt=23.5, year=0.25)
+        winter = dict(summer, year=0.75)
+        assert light.local_sun(planet, placed, summer, pole)[2] > 0.3
+        assert light.local_sun(planet, placed, winter, pole)[2] < -0.3

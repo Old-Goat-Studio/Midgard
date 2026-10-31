@@ -43,7 +43,7 @@ struct EnvironmentDef {
     std::string id, name;
     std::map<std::string, Curve> curves;  // by name, only those set
     // Not over the day:
-    float sun_size = 1.0f;            // the sun's disc, degrees across
+    float sun_size = 1.5f;            // the sun's disc, degrees across
     float glow_tightness = 0.8f;      // 0 spreads its glow over the sky, 0.95 hugs the sun
     float fog_height_falloff = 0.0f;  // per metre: how fast fog thins upwards
     float fog_sun_scatter = 0.5f;     // how much brighter fog is towards the sun

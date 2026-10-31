@@ -284,6 +284,10 @@ SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
         out.sky = vec3(settings, "sky", out.sky);
         out.ambient = vec3(settings, "ambient", out.ambient);
         if (settings.contains("body")) out.body = body_from_json(settings.at("body"));
+        if (const auto mode = sun_mode_from_name(settings.value("sun_mode", "uniform")))
+            out.sun_mode = *mode;
+        else
+            throw SceneError("sun_mode is \"uniform\" or \"latitude\"");
     } catch (const std::exception& e) {
         throw SceneError("scene '" + scene_id + "' settings: " + e.what());
     }
@@ -554,6 +558,21 @@ std::optional<CameraView> view_from_name(const std::string& name) {
     return std::nullopt;
 }
 
+std::optional<LocalSun> Scene::local_sun(const glm::dvec3& origin) const {
+    if (!solar_phase) return std::nullopt;
+    const entt::entity e = first_with<DirectionalLight>(registry);
+    if (e == entt::null) return std::nullopt;
+    if (!registry.get<DirectionalLight>(e).follows_clock && !active_environment())
+        return std::nullopt;
+    // As placed, the light shines along its -Z: the sun is the other way, at its noon.
+    const glm::dvec3 placed =
+        -glm::normalize(glm::dvec3(world_matrix(e) * glm::dvec4(0, 0, -1, 0)));
+    SunClock clock = sun_clock;
+    clock.time = time_of_phase(*solar_phase, clock.daylight, clock.noon);
+    clock.mode = settings.sun_mode;
+    return midgard::local_sun(settings.body, placed, clock, origin);
+}
+
 const EnvironmentDef* Scene::active_environment() const {
     const entt::entity e = first_with<Sky>(registry);
     if (e == entt::null) return nullptr;
@@ -566,11 +585,24 @@ const EnvironmentDef* Scene::active_environment() const {
 render::Environment Scene::environment(const glm::dvec3& origin) const {
     render::Environment out;
     const EnvironmentDef* env = active_environment();
-    if (!env || !solar_phase) return out;  // a flat sky
-    const render::Light sunlight = light(origin);
-    const glm::vec3 up = glm::normalize(sunlight.up);
-    const float height = std::clamp(glm::dot(-glm::normalize(sunlight.direction), up), -1.0f, 1.0f);
-    const EnvironmentLook look = evaluate(*env, *solar_phase, std::asin(height));
+    if (!env || !solar_phase) {
+        // A flat sky: the sky's colour everywhere, with the scene's sun as a small white disc in
+        // it (the same colour as the frame's clear colour, so only the disc shows).
+        if (first_with<DirectionalLight>(registry) == entt::null) return out;
+        out.sky = true;
+        render::SkyColors& s = out.sky_colors;
+        s.zenith = s.horizon = s.horizon_away = s.ground = settings.sky;
+        s.brightness = 1.0f;
+        s.glow_brightness = 0.0f;
+        s.sun = glm::vec3(1.0f);
+        s.sun_brightness = 20.0f;
+        s.sun_size = EnvironmentDef{}.sun_size;
+        return out;
+    }
+    const std::optional<LocalSun> sun = local_sun(origin);
+    const double phase = sun ? sun->phase : *solar_phase;
+    const float height = sun ? std::clamp(float(sun->height), -1.0f, 1.0f) : 1.0f;
+    const EnvironmentLook look = evaluate(*env, phase, std::asin(height));
     out.sky = true;
     out.sky_colors = look.sky;
     out.fog.density = look.fog_density;
@@ -612,37 +644,18 @@ render::Light Scene::light(const glm::dvec3& origin) const {
         light.color = l.color;
         light.intensity = l.intensity;
         const EnvironmentDef* env = active_environment();
-        if ((l.follows_clock || env) && solar_phase) {
-            // The sun's path: the great circle through where it was placed (its noon) and the
-            // horizon at right angles to it, so it rises at 0, peaks at 0.25 and sets at 0.5.
-            // The path is the scene's, as seen from its start (the world's origin), so the sun is
-            // one distant light for the whole world: on a planet it's noon at the start while
-            // it's midnight on the far side, and walking round there gets darker smoothly.
-            glm::vec3 up = glm::normalize(light.up);
-            if (settings.body) {
-                const glm::vec3 start(settings.body->up(glm::dvec3(0.0)));
-                if (glm::dot(start, start) > 0.5f) up = glm::normalize(start);
-            }
-            glm::vec3 noon = -glm::normalize(light.direction);
-            if (glm::dot(noon, up) < 0.01f) noon = up;  // placed below the horizon: overhead
-            glm::vec3 rising = glm::cross(up, noon);
-            if (glm::dot(rising, rising) < 1e-8f)  // straight overhead: any level direction
-                rising =
-                    glm::cross(up, std::abs(up.x) < 0.9f ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1));
-            rising = glm::normalize(rising);
-            const float a = float(2.0 * 3.141592653589793 * *solar_phase);
-            const glm::vec3 sun = rising * std::cos(a) + noon * std::sin(a);
-            light.direction = -sun;
-            // Twilight where the camera is: full light a little above the horizon there, none a
-            // little below it.
-            const float height = glm::dot(sun, glm::normalize(light.up));
+        if (const std::optional<LocalSun> sun = local_sun(origin)) {
+            // Where the world's light model puts the sun, seen from here (midgard/sunlight.h).
+            light.direction = -glm::vec3(sun->to_sun);
+            // Twilight here: full light a little above the horizon, none a little below it.
+            const float height = float(sun->height);
             const float t = std::clamp((height + 0.1f) / 0.2f, 0.0f, 1.0f);
             const float day = t * t * (3.0f - 2.0f * t);
             light.ambient *= 0.25f + 0.75f * day;
             light.ambient_ground *= 0.25f + 0.75f * day;
             if (env) {  // the environment's sunlight and ambient light at this time of day
                 const EnvironmentLook look =
-                    evaluate(*env, *solar_phase, std::asin(std::clamp(height, -1.0f, 1.0f)));
+                    evaluate(*env, sun->phase, std::asin(std::clamp(height, -1.0f, 1.0f)));
                 light.color = l.color * look.sunlight;
                 light.intensity = l.intensity * look.sunlight_intensity;
                 if (look.ambient) light.ambient = *look.ambient;

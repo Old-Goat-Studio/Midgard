@@ -112,6 +112,11 @@ void Viewport::set_settings(const std::string& settings_json) {
     };
     scene_.settings.sky = vec("sky", scene_.settings.sky);
     scene_.settings.ambient = vec("ambient", scene_.settings.ambient);
+    const auto it_mode = s.find("sun_mode");
+    const auto mode = it_mode != s.end() && it_mode->is_string()
+                          ? sun_mode_from_name(it_mode->get<std::string>())
+                          : std::nullopt;
+    scene_.settings.sun_mode = mode.value_or(SunMode::Uniform);
     // The world's shape: "up" for lights and the player's outline, and the world's surface.
     const std::string shape_json = s.contains("body") ? s.at("body").dump() : std::string();
     scene_.settings.body.reset();

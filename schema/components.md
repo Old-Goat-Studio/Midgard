@@ -36,6 +36,7 @@ editor creates one in every scene's World folder.
 | Key | Shape | Default |
 |---|---|---|
 | `sky` | `[r, g, b]` | `[0.08, 0.11, 0.18]` (night blue) |
+| `sun_mode` | `"uniform"` or `"latitude"` | `"uniform"`. How day and night work on an outside sphere (`midgard/sunlight.h`): `uniform` shifts each place's time by its longitude (noon on one side, midnight on the other) and gives every place the calendar's daylight share; `latitude` tilts the planet by the calendar's tilt, so the sun's height and the day's length follow latitude and the time of year (polar day and night), with the start's latitude set by how high the sun is placed at noon. Other shapes: one sun crossing the sky (bounded areas, flat-wrap cylinders), or a central sun or sun-line with shades going round (inside spheres, curved cylinders), each place's time shifted by its angle round the axis, with low light from the side at its dawn and dusk. |
 | `ambient` | `[r, g, b]` | `[0.18, 0.2, 0.26]` |
 | `body` | `{"id": "world", "shape": "sphere_outside", "radius": 1000, "gravity": 9.81, "origin": [x, y, z]}` | none: flat ground, +Y up, gravity 9.81 m/s² down |
 

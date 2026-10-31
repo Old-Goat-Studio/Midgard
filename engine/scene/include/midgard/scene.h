@@ -19,6 +19,7 @@
 #include "midgard/environment.h"
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
+#include "midgard/sunlight.h"
 
 namespace midgard {
 
@@ -211,6 +212,9 @@ struct SceneSettings {
     // The world's shape: where "up" is and how gravity pulls (midgard/body.h). None: flat
     // ground, +Y up, gravity 9.81 m/s^2 down.
     std::optional<Body> body;
+    // How day and night work on a planet (midgard/sunlight.h): Uniform (the calendar's daylight
+    // everywhere) or Latitude (tilt and seasons, polar day and night).
+    SunMode sun_mode = SunMode::Uniform;
 };
 
 // The scene's sky: an entity with this component sets the scene's sky and ambient colours
@@ -284,6 +288,13 @@ public:
     // The time of day for suns that follow the clock (0 sunrise, 0.25 noon, 0.5 sunset), set by
     // the game's clock or the editor's scrubber. None: every sun stays where it was placed.
     std::optional<double> solar_phase;
+    // The rest of the clock the sun follows (the game sets them from the calendar): the day's
+    // daylight share and noon, the axial tilt and the time of year. Its time comes from
+    // solar_phase, at the scene's start.
+    SunClock sun_clock;
+    // The sun as seen from `origin` (its light model, midgard/sunlight.h): none when it doesn't
+    // follow the clock (or there is no clock, or no sun).
+    std::optional<LocalSun> local_sun(const glm::dvec3& origin) const;
 
     // The first camera (by entity id order), for the given aspect ratio: its origin is its world
     // position and its view only turns (camera-relative rendering, see render::Camera).

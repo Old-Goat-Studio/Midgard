@@ -86,8 +86,14 @@ void Game::update_sun() {
     const Date d = date_at(c, time_.now());
     // With the part of a second not yet on the clock, so the sun moves smoothly.
     const double seconds = double(d.seconds_into_day) + (time_.precise() - double(time_.now()));
-    scene_.solar_phase = solar_phase(seconds, double(c.seconds_per_day()),
-                                     daylight_on(c, d.year, d.day_of_year), c.solar_noon);
+    const double daylight = daylight_on(c, d.year, d.day_of_year);
+    scene_.solar_phase = solar_phase(seconds, double(c.seconds_per_day()), daylight, c.solar_noon);
+    // The rest of the clock for the world's light model (midgard/sunlight.h): the year starts at
+    // the spring equinox; the tilt is the body's (or the middle of the calendar's range).
+    scene_.sun_clock.daylight = daylight;
+    scene_.sun_clock.noon = c.solar_noon;
+    scene_.sun_clock.tilt = c.tilt != 0.0 ? c.tilt : 0.5 * (c.tilt_min + c.tilt_max);
+    scene_.sun_clock.year = double(d.day_of_year) / double(std::max(c.year_days(d.year), 1));
 }
 
 void Game::use_world(const std::filesystem::path& folder) {
