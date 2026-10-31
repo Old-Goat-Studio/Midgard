@@ -573,6 +573,14 @@ std::optional<LocalSun> Scene::local_sun(const glm::dvec3& origin) const {
     return midgard::local_sun(settings.body, placed, clock, origin);
 }
 
+float Scene::horizon_dip(const glm::dvec3& origin) const {
+    // Above an outside sphere the ground falls away: its edge is acos(R / (R + h)) below level.
+    if (!settings.body || settings.body->shape.kind() != Shape::Kind::SphereOutside) return 0.0f;
+    const double r = settings.body->shape.radius();
+    const double h = std::max(settings.body->surface(origin).height, 0.0);
+    return float(std::acos(std::clamp(r / (r + h), -1.0, 1.0)));
+}
+
 const EnvironmentDef* Scene::active_environment() const {
     const entt::entity e = first_with<Sky>(registry);
     if (e == entt::null) return nullptr;
@@ -590,6 +598,7 @@ render::Environment Scene::environment(const glm::dvec3& origin) const {
         // it (the same colour as the frame's clear colour, so only the disc shows).
         if (first_with<DirectionalLight>(registry) == entt::null) return out;
         out.sky = true;
+        out.horizon_dip = horizon_dip(origin);
         render::SkyColors& s = out.sky_colors;
         s.zenith = s.horizon = s.horizon_away = s.ground = settings.sky;
         s.brightness = 1.0f;
@@ -605,6 +614,7 @@ render::Environment Scene::environment(const glm::dvec3& origin) const {
     const EnvironmentLook look = evaluate(*env, phase, std::asin(height));
     out.sky = true;
     out.sky_colors = look.sky;
+    out.horizon_dip = horizon_dip(origin);
     out.fog.density = look.fog_density;
     out.fog.height_falloff = env->fog_height_falloff;
     out.fog.sun_scatter = env->fog_sun_scatter;

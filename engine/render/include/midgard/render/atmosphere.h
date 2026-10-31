@@ -61,6 +61,9 @@ struct Environment {
     bool sky = false;  // false: the frame's clear colour is the whole sky, flat
     SkyColors sky_colors;
     Fog fog;
+    // Radians: how far below level the visible horizon is, from a camera above a curved world
+    // (a planet's ground falls away). The sky's horizon, and the sun setting behind it, are there.
+    float horizon_dip = 0.0f;
 };
 
 }  // namespace midgard::render

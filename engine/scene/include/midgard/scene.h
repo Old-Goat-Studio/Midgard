@@ -260,6 +260,9 @@ public:
     // The sky and fog for the renderer, seen from `origin` (the camera): the active environment
     // at the solar phase, or a flat sky without one (or without a clock).
     render::Environment environment(const glm::dvec3& origin) const;
+    // How far below level the visible horizon is from `origin` (radians): above a planet its
+    // ground falls away; 0 elsewhere.
+    float horizon_dip(const glm::dvec3& origin) const;
 
     // A template changed (or arrived): every instance of it is filled in again. Returns them.
     std::vector<entt::entity> set_object(const std::string& object_id,

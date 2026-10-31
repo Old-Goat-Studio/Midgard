@@ -32,7 +32,7 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 sky_ground;
     vec4 sun_disc;           // linear rgb, w: cos of the disc's radius
     vec4 sun_glow;           // linear rgb, w: tightness (Henyey-Greenstein g)
-    vec4 sky_params;         // x: cos of the disc's soft outer edge
+    vec4 sky_params;         // x: cos of the disc's soft outer edge; y: sin of the horizon's dip
     vec4 fog_color;          // linear rgb, w: how much brighter towards the sun
     vec4 fog_params;         // x: density, y: height falloff, z: camera height, w: sky distance
 } frame;

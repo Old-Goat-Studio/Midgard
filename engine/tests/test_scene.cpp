@@ -1882,3 +1882,21 @@ TEST_CASE("sun_mode in the scene settings picks a planet's light model") {
     CHECK_THROWS_WITH_AS(midgard::Game(wrong.dir), doctest::Contains("sun_mode"),
                          midgard::SceneError);
 }
+
+TEST_CASE("above a planet the sky's horizon dips to where the ground's edge is") {
+    TestPackage pkg({{"e1_sun", R"(NULL, '{"transform": {"rotation": [-50, 35, 0]},
+                                      "light": {"type": "directional"}}')"}},
+                    R"({"body": {"shape": "sphere_outside", "radius": 1000,
+                                 "origin": [0, -1000, 0]}})");
+    midgard::Game game(pkg.dir);
+    const midgard::Scene& scene = game.scene();
+    CHECK(scene.horizon_dip(glm::dvec3(0.0)) == doctest::Approx(0.0f));  // on the ground
+    // 2 m up: the ground's edge is acos(1000 / 1002) below level, about 3.6 degrees.
+    const float dip = scene.horizon_dip(glm::dvec3(0.0, 2.0, 0.0));
+    CHECK(glm::degrees(dip) == doctest::Approx(3.62f).epsilon(0.01));
+    CHECK(scene.environment(glm::dvec3(0.0, 2.0, 0.0)).horizon_dip == doctest::Approx(dip));
+    // Flat ground: level.
+    TestPackage flat({{"e1_sun", R"(NULL, '{"light": {"type": "directional"}}')"}});
+    midgard::Game level(flat.dir);
+    CHECK(level.scene().horizon_dip(glm::dvec3(0.0, 50.0, 0.0)) == 0.0f);
+}

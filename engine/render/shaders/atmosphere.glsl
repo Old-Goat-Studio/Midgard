@@ -11,7 +11,8 @@ vec3 to_sun() {
 vec3 sky_radiance(vec3 d) {
     const vec3 up = frame.up.xyz;
     const vec3 s = to_sun();
-    const float mu = dot(d, up);
+    // Height above the visible horizon, which a planet's curve puts below level.
+    const float mu = dot(d, up) + frame.sky_params.y;
     const vec3 d_level = d - up * mu;
     const vec3 s_level = s - up * dot(s, up);
     float side = 0.5;

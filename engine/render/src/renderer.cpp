@@ -72,7 +72,7 @@ struct FrameData {
     glm::vec4 sky_ground;
     glm::vec4 sun_disc;    // w: cos of the disc's radius
     glm::vec4 sun_glow;    // w: tightness
-    glm::vec4 sky_params;  // x: cos of the disc's soft outer edge
+    glm::vec4 sky_params;  // x: cos of the disc's soft outer edge; y: sin of the horizon's dip
     glm::vec4 fog_color;   // w: sun scatter
     glm::vec4 fog_params;  // density, height falloff, camera height, sky distance
 };
@@ -1947,6 +1947,7 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
     data.sun_disc = lit(sky.sun, sky.sun_brightness);
     data.sun_disc.w = std::cos(radius);
     data.sky_params.x = std::cos(radius * 1.25f);
+    data.sky_params.y = std::sin(std::clamp(env.horizon_dip, 0.0f, 1.5f));
     data.sun_glow = lit(sky.glow, sky.glow_brightness);
     data.sun_glow.w = std::clamp(sky.glow_tightness, 0.0f, 0.95f);
     const Fog& fog = env.fog;
