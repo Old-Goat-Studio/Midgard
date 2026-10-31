@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reference implementations: short, readable Python versions of the engine's specified formulas
-(hashing and deterministic maths now; shape mappings, solar phase and calendar dates later in
-Phase 5).
+(hashing, deterministic maths, shape mappings, and calendar dates and solar phase).
 
 Each formula has a shared table of inputs and expected outputs in schema/tests/<name>.json. The
 Python here and the C++ engine are both checked against the same table (tools/tests/

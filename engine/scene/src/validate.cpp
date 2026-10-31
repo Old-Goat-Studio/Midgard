@@ -7,6 +7,7 @@
 #include <memory>
 #include <set>
 
+#include "midgard/calendar.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
 #include "midgard/input.h"
@@ -29,6 +30,14 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
     }
     const Manifest& m = package.manifest;
     const std::filesystem::path database = dir / m.database;
+
+    // The calendars (the cook checks of roadmap §6).
+    try {
+        for (std::string& problem : calendar_problems(load_calendars(database)))
+            report.errors.push_back(std::move(problem));
+    } catch (const std::exception& e) {
+        report.errors.emplace_back(e.what());
+    }
 
     std::set<std::string> content_ids;
     for (const ContentEntry& c : m.content) content_ids.insert(c.id);

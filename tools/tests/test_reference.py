@@ -130,3 +130,35 @@ def test_det_atan_tan_and_atan2_match_their_table_bit_for_bit():
             got, system = det.atan2(y, x), math.atan2(y, x)
         assert _bits(got) == c["bits"], c
         assert abs(got - system) <= 1e-15 * max(1.0, abs(system)), c
+
+
+# ---- calendars (midgard/calendar.h) -----------------------------------------------------------
+def test_calendar_dates_match_their_table():
+    from reference import calendar as cal
+    data = json.loads((TABLES / "calendar_dates.json").read_text("utf-8"))
+    assert len(data["cases"]) > 1000
+    for c in data["cases"]:
+        calendar = data["calendars"][c["calendar"]]
+        t = c["time"]
+        d = cal.date_at(calendar, t)
+        for key in ("year", "month", "day", "hour", "minute", "second", "weekday", "day_of_year",
+                    "season"):
+            assert d[key] == c[key], (key, c)
+        assert _bits(cal.daylight_on(calendar, d["year"], d["day_of_year"])) == c["daylight"], c
+        assert _bits(cal.solar_phase_at(calendar, t)) == c["phase"], c
+        sunrise, sunset = cal.sun_times(calendar, t)
+        assert [_bits(sunrise), _bits(sunset)] == [c["sunrise"], c["sunset"]], c
+        assert [_bits(cal.moon_phase(calendar, i, t)) for i in range(len(calendar["moons"]))] \
+            == c["moons"], c
+        assert cal.time_of(calendar, d["year"], d["month"], d["day"], d["seconds_into_day"]) == t
+
+
+def test_a_20_hour_day_with_70_percent_daylight():
+    """Milestone 5.7's exit numbers: sunrise at 03:00 and sunset at 17:00."""
+    from reference import calendar as cal
+    twenty = json.loads((TABLES / "calendar_dates.json").read_text("utf-8"))["calendars"]["twenty"]
+    sunrise, sunset = cal.sun_times(twenty, 0)
+    assert round(sunrise) == 3 * 3600 and round(sunset) == 17 * 3600
+    assert cal.solar_phase_at(twenty, 3 * 3600) == 0.0  # sunrise
+    assert cal.solar_phase_at(twenty, 10 * 3600) == 0.25  # solar noon
+    assert cal.solar_phase_at(twenty, 17 * 3600) == 0.5  # sunset
