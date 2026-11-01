@@ -40,6 +40,7 @@ from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_proj
 from .docks.assistant import AssistantPanel
 from .docks.calendar_panel import CalendarPanel
 from .docks.camera_editor import CameraDialog
+from .docks.environment_panel import EnvironmentPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.material_editor import MaterialDialog
@@ -64,7 +65,7 @@ PLAY_ICON_SIZE = 32  # the Play, Pause and Stop buttons
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
-          "calendar": "Calendar"}
+          "calendar": "Calendar", "environment": "Environment"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -158,6 +159,8 @@ class MainWindow(QMainWindow):
         self.project_page = ProjectPage()
         self.objects_panel = ObjectsPanel()
         self.calendar_panel = CalendarPanel()
+        self.environment_panel = EnvironmentPanel()
+        self.environment_panel.phase_previewed.connect(self.viewport.set_solar_phase)
         self.calendar_panel.time_scrubbed.connect(self._time_scrubbed)
         self.objects_panel.place_requested.connect(self.place_object)
         self.scene_panel.show_objects.connect(lambda: self.edit_object(""))
@@ -177,7 +180,7 @@ class MainWindow(QMainWindow):
                    "log": self.log_panel, "history": self.history, "viewport": self.viewport,
                    "scripts": self.script_editor, "assistant": self.assistant,
                    "project_page": self.project_page, "objects": self.objects_panel,
-                   "calendar": self.calendar_panel}
+                   "calendar": self.calendar_panel, "environment": self.environment_panel}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -218,6 +221,7 @@ class MainWindow(QMainWindow):
         self._tab_behind_viewport("objects")
         self._place_assistant()
         self._tab_behind_inspector("calendar")
+        self._tab_behind_inspector("environment")
 
     def _place_assistant(self) -> None:
         """The Assistant is a tab behind the Inspector."""
@@ -316,6 +320,8 @@ class MainWindow(QMainWindow):
                 self._tab_behind_viewport("objects")
             if "calendar" not in saved:
                 self._tab_behind_inspector("calendar")
+            if "environment" not in saved:
+                self._tab_behind_inspector("environment")
 
     def reset_layout(self) -> None:
         self.dock_manager.restoreState(self._default_state)
@@ -653,6 +659,7 @@ class MainWindow(QMainWindow):
         self.project_page.set_project(project)
         self.objects_panel.set_project(project)
         self.calendar_panel.set_project(project)
+        self.environment_panel.set_project(project)
         MaterialDialog.close_all()
         CameraDialog.close_all()
         if self.content_watcher is not None:

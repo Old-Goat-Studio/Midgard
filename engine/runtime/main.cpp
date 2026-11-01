@@ -412,6 +412,20 @@ public:
             if (g_link) g_link->send({{"type", "scene"}, {"scene", nlohmann::json::parse(dump())}});
             return;
         }
+        if (type == "environment.put") {  // the Environment editor
+            const nlohmann::json& e = message.at("environment");
+            const std::string id = e.value("id", "");
+            try {
+                game_.scene().environments[id] = midgard::environment_from_json(
+                    id, e.value("name", id), e.value("curves", nlohmann::json::object()).dump(),
+                    e.value("settings", nlohmann::json::object()).dump());
+            } catch (const std::exception& ex) {
+                warn("live link: environment %s: %s\n", id.c_str(), ex.what());
+                return;
+            }
+            acknowledge("applied environment.put " + id);
+            return;
+        }
         if (type == "time.set") {  // the Calendar dock's scrubber
             game_.set_time(message.value("time", std::int64_t(0)));
             return;

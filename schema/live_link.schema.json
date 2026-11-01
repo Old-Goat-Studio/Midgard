@@ -80,6 +80,14 @@
       "required": ["type", "level", "text"]
     },
     {
+      "description": "Editor → runtime: an environment changed in the Environment editor (a row of the environment table: id, name, curves, settings); scenes linking to it follow at once.",
+      "properties": {
+        "type": { "const": "environment.put" },
+        "environment": { "type": "object" }
+      },
+      "required": ["type", "environment"]
+    },
+    {
       "description": "Editor → runtime: the Calendar dock's scrubber put the clock at a moment (game seconds since year 1, month 1, day 1, 00:00); no time signals fire.",
       "properties": {
         "type": { "const": "time.set" },

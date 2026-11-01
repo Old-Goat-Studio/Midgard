@@ -224,6 +224,7 @@ class ViewportPanel(QWidget):
             self.project.entities_changed.disconnect(self._entities_changed)
             self.project.scene_settings_changed.disconnect(self._settings_changed)
             self.project.objects_changed.disconnect(self._objects_changed)
+            self.project.environments_changed.disconnect(self._environments_changed)
             self.project.files_changed.disconnect(self._files_changed)
         self.project = project
         self.preview_view = None  # (the Camera editors close with the old project)
@@ -233,6 +234,7 @@ class ViewportPanel(QWidget):
             project.entities_changed.connect(self._entities_changed)
             project.scene_settings_changed.connect(self._settings_changed)
             project.objects_changed.connect(self._objects_changed)
+            project.environments_changed.connect(self._environments_changed)
             project.files_changed.connect(self._files_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
@@ -304,6 +306,10 @@ class ViewportPanel(QWidget):
             for entity in parents_first(self.project.entities()):
                 self._put(entity)
         self.camera_changed()
+
+    def _environments_changed(self, _environment_id: str) -> None:
+        self.send_environments()
+        self.request_render()
 
     def send_environments(self) -> None:
         """The project's environments, for the Sky to link to."""

@@ -29,6 +29,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
+from . import environments
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .objects import ObjectError, object_content
 from .project import Project
@@ -123,6 +124,7 @@ class PlaySession(QObject):
         self._asset_timer.timeout.connect(self._reload_assets)
         project.entities_changed.connect(self._entities_changed)
         project.objects_changed.connect(self._objects_changed)
+        project.environments_changed.connect(self._environments_changed)
         project.files_changed.connect(self._files_changed)
 
     # ---- control ------------------------------------------------------------------------
@@ -376,6 +378,15 @@ class PlaySession(QObject):
         for object_id, parts in changed.items():
             self.send({"type": "object.put", "object": object_id, "parts": json.loads(parts)})
             self._game_objects[object_id] = parts
+
+    def _environments_changed(self, environment_id: str) -> None:
+        """An environment edited in the Environment editor: the running game follows at once.
+        (One removed stays in the game until the next Play; a Sky linking to it is edited too.)"""
+        if self.socket is None:
+            return
+        for env in environments.load_all(self.project):
+            if not environment_id or env["id"] == environment_id:
+                self.send({"type": "environment.put", "environment": env})
 
     def _objects_changed(self, _object_id: str) -> None:
         """An object edited, re-imported, added or removed: the running game follows."""

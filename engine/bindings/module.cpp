@@ -26,6 +26,7 @@
 
 #include "midgard/body.h"
 #include "midgard/calendar.h"
+#include "midgard/environment.h"
 #include "midgard/gltf.h"
 #include "midgard/link.h"
 #include "midgard/model.h"
@@ -238,6 +239,59 @@ PYBIND11_MODULE(_midgard, m) {
           "The shapes' fingerprint (equal to schema/tests/shape_fingerprint.json everywhere).");
 
     // Calendars (midgard/calendar.h), for the Calendar dock: the engine's own maths.
+    py::class_<midgard::EnvironmentDef>(
+        m, "Environment",
+        "An environment (midgard/environment.h): curves over the solar phase, and settings.")
+        .def(py::init([](const std::string& curves_json, const std::string& settings_json) {
+                 try {
+                     return midgard::environment_from_json("environment", "Environment",
+                                                           curves_json, settings_json);
+                 } catch (const std::exception& e) {
+                     throw py::value_error(e.what());
+                 }
+             }),
+             py::arg("curves_json") = "{}", py::arg("settings_json") = "{}")
+        .def_static(
+            "curve_names",
+            []() {
+                py::list out;
+                for (const midgard::CurveName& n : midgard::environment_curve_names())
+                    out.append(py::make_tuple(n.name, n.width));
+                return out;
+            },
+            "The curves an environment may set: (name, 1 for a number or 3 for a colour).")
+        .def(
+            "problems", [](const midgard::EnvironmentDef& e) { return environment_problems(e); },
+            "What the cook refuses in it.")
+        .def(
+            "evaluate",
+            [](const midgard::EnvironmentDef& e, double phase, float sun_elevation) {
+                const midgard::EnvironmentLook look = midgard::evaluate(e, phase, sun_elevation);
+                const auto rgb = [](const glm::vec3& v) { return py::make_tuple(v.x, v.y, v.z); };
+                const midgard::render::SkyColors& s = look.sky;
+                py::dict out;
+                out["zenith"] = rgb(s.zenith);
+                out["horizon"] = rgb(s.horizon);
+                out["horizon_away"] = rgb(s.horizon_away);
+                out["ground"] = rgb(s.ground);
+                out["sky_brightness"] = s.brightness;
+                out["glow"] = rgb(s.glow);
+                out["glow_brightness"] = s.glow_brightness;
+                out["sun_disc"] = rgb(s.sun);
+                out["sun_disc_brightness"] = s.sun_brightness;
+                out["sunlight"] = rgb(look.sunlight);
+                out["sunlight_intensity"] = look.sunlight_intensity;
+                out["ambient"] = look.ambient ? py::object(rgb(*look.ambient)) : py::none();
+                out["ambient_ground"] =
+                    look.ambient_ground ? py::object(rgb(*look.ambient_ground)) : py::none();
+                out["fog_density"] = look.fog_density;
+                out["fog_color"] = look.fog_color ? py::object(rgb(*look.fog_color)) : py::none();
+                return out;
+            },
+            py::arg("phase"), py::arg("sun_elevation"),
+            "Every curve's value at a solar phase, with the sun this high (radians): those not set "
+            "from the analytic sky (ambient and fog colour: None, the scene's own).");
+
     py::class_<midgard::Calendar>(m, "Calendar",
                                   "A calendar, from JSON with the calendar table's columns and "
                                   "months, weekdays, seasons and moons.")
