@@ -23,6 +23,7 @@
 #include "midgard/materials.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
+#include "midgard/terrain_streamer.h"
 
 namespace midgard::editor {
 
@@ -97,6 +98,12 @@ private:
     float fov_ = 55.0f;
     bool show_colliders_ = false;
     std::string body_json_;  // the world shape the surface mesh was made for
+    // Terrain (midgard/terrain_streamer.h), on the current renderer: made when first drawn,
+    // and again when the world shape or terrain settings change.
+    std::string terrain_json_;
+    std::unique_ptr<JobSystem> jobs_;
+    std::unique_ptr<TerrainStreamer> terrain_;
+    void drop_terrain();
     struct Platform;
     std::unique_ptr<Platform> platform_;  // per-window-system state (the X11 connection)
 };

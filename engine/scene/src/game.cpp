@@ -21,6 +21,7 @@ Game::Game(const std::filesystem::path& package_dir)
     if (std::filesystem::is_regular_file(pak_file)) pak_ = std::make_unique<Pak>(pak_file);
     layers_ = PhysicsLayers::load(package_dir / package_.manifest.database);
     rebuild_physics();
+    rebuild_terrain();
     camera_ = std::make_unique<CameraRig>(scene_);
     camera_->follow(scene_, 0.0f, camera_sweep());
 
@@ -318,6 +319,21 @@ void Game::reload_scene_settings() {
     scene_.settings = Scene::read_settings(package_.root / package_.manifest.database, scene_.id);
     scene_.use_sky();   // a Sky entity outranks the settings
     rebuild_physics();  // the world's shape may have changed
+    rebuild_terrain();
+}
+
+void Game::rebuild_terrain() {
+    if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
+    terrain_.reset();
+    if (!scene_.settings.body || !scene_.settings.terrain) return;
+    if (!jobs_) jobs_ = std::make_unique<JobSystem>();
+    terrain_ = std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain,
+                                                 jobs_.get());
+}
+
+void Game::stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait) {
+    terrain_renderer_ = &renderer;
+    if (terrain_) terrain_->update(camera, &renderer, wait);
 }
 
 void Game::reload_entity(const std::string& entity_id) {
@@ -383,6 +399,10 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
         if (const Material* m = scene_.registry.try_get<Material>(e)) materials_.apply(*m, d);
         out.push_back(d);
     }
+    if (terrain_) {
+        std::vector<render::DrawItem> ground = terrain_->draws(origin);
+        out.insert(out.end(), ground.begin(), ground.end());
+    }
     return out;
 }
 
@@ -405,7 +425,8 @@ render::Camera Game::camera(float aspect) const {
     if (auto cam = scene_.camera(aspect)) return *cam;
     render::Camera cam;
     cam.view = glm::lookAt(glm::vec3(4.0f, 3.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0, 1, 0));
-    cam.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, 500.0f);
+    const float far_plane = terrain_ ? kTerrainViewDistance : 500.0f;
+    cam.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, far_plane);
     return cam;
 }
 

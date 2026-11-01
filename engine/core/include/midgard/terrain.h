@@ -78,6 +78,7 @@ struct ChunkKey {
 struct ChunkMesh {
     glm::dvec3 origin{0.0};
     std::vector<glm::vec3> positions, normals;
+    std::vector<glm::vec2> uvs;          // metres across the face, over 16 (for tiling textures)
     std::vector<std::uint32_t> indices;  // triangles, counter-clockwise seen from above
     std::vector<double> heights;         // as generated (before edges were matched)
 };
@@ -114,6 +115,8 @@ public:
     // chunk at its east edge lies past it (streaming draws it again a circumference over).
     glm::dvec3 position(int face, double u, double v, double h) const;
 
+    // Where a chunk's mesh is placed: its middle, on the ground at height 0.
+    glm::dvec3 chunk_origin(const ChunkKey& key) const;
     // grid: kChunkQuads + 1 points a side. coarser[edge]: the neighbour there is a level up.
     ChunkMesh mesh(const ChunkKey& key, const std::array<bool, 4>& coarser = {}) const;
     // A hash of the chunk's key and its generated heights (fnv1a64 over little-endian int32

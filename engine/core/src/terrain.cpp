@@ -241,6 +241,10 @@ double Terrain::v_at(const ChunkKey& k, int j) const {
     return double(std::int64_t(k.y) * kChunkQuads + j) / double(points_v(k.level));
 }
 
+glm::dvec3 Terrain::chunk_origin(const ChunkKey& k) const {
+    return position(k.face, u_at(k, kChunkQuads / 2), v_at(k, kChunkQuads / 2), 0.0);
+}
+
 ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) const {
     constexpr int n = kChunkQuads;
     constexpr int g = n + 3;  // with a border of one point all round, for normals
@@ -277,13 +281,16 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
     if (coarser[kSouth]) stitch(0, 0, 1, 0);
     if (coarser[kNorth]) stitch(0, n, 1, 0);
 
-    out.origin = position(k.face, u_at(k, n / 2), v_at(k, n / 2), 0.0);
+    out.origin = chunk_origin(k);
     out.positions.reserve(size_t(n + 1) * (n + 1));
     out.normals.reserve(size_t(n + 1) * (n + 1));
     for (int j = 0; j <= n; ++j)
         for (int i = 0; i <= n; ++i) {
             out.positions.push_back(glm::vec3(at(i, j) - out.origin));
             out.normals.push_back(glm::vec3(normal[size_t(j) * (n + 1) + i]));
+            const glm::dvec2 size = body_.shape.face_size();
+            out.uvs.emplace_back(float(u_at(k, i) * size.x / 16.0),
+                                 float(v_at(k, j) * size.y / 16.0));
         }
     out.indices.reserve(size_t(n) * n * 6);
     for (int j = 0; j < n; ++j)

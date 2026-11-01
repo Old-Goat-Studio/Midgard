@@ -238,6 +238,18 @@ PYBIND11_MODULE(_midgard, m) {
             py::arg("x"), py::arg("y"), py::arg("z"), "(up, east, north) at a point.");
     m.def("shape_fingerprint", &midgard::shape_fingerprint,
           "The shapes' fingerprint (equal to schema/tests/shape_fingerprint.json everywhere).");
+    m.def(
+        "terrain_problems",
+        [](const std::string& settings_json) {
+            try {
+                return midgard::terrain_problems(
+                    midgard::terrain_from_json(nlohmann::json::parse(settings_json)));
+            } catch (const std::exception& e) {
+                return std::vector<std::string>{e.what()};
+            }
+        },
+        py::arg("settings_json"),
+        "What the cook refuses in a scene's terrain settings (midgard/terrain.h).");
     m.def("terrain_fingerprint", &midgard::terrain_fingerprint,
           "The terrain's fingerprint (equal to schema/tests/terrain_chunks.json everywhere).");
 

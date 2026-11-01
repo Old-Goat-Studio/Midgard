@@ -143,6 +143,11 @@ public:
     MaterialId create_material(const MaterialTextures& textures);
     // Replaces an uploaded mesh (hot reload). Waits for the GPU to finish with the old one.
     void replace_mesh(MeshId id, const MeshData& mesh);
+    // Frees a mesh (streamed terrain chunks): it isn't drawn from now on, its id may be given
+    // to a later upload_mesh, and its memory goes once no frame in flight can still be using
+    // it (no waiting).
+    void free_mesh(MeshId id);
+    size_t mesh_count() const;  // meshes on the GPU, not counting those freed
 
     // Draws one frame. Returns false if the window surface changed and the frame was skipped.
     // clear_color is the sky when the environment has none.

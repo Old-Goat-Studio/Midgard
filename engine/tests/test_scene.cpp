@@ -1904,6 +1904,15 @@ TEST_CASE("terrain in the scene settings, and the cook's checks of it") {
     for (const std::string& w : midgard::validate_package(no_body.dir).warnings) all += w + "\n";
     CHECK(all.find("no world shape") != std::string::npos);
 
+    // The game streams it, and its camera sees as far as it is drawn.
+    REQUIRE(game.terrain() != nullptr);
+    CHECK(game.terrain()->terrain().roots_u() == 3);
+    const glm::mat4 p = game.camera(1.0f).projection;
+    const float far_plane = p[3][2] / (p[2][2] + 1.0f);  // (Vulkan's 0..1 depth)
+    CHECK(far_plane >= midgard::kTerrainViewDistance * 0.99f);
+    TestPackage none({});
+    CHECK(midgard::Game(none.dir).terrain() == nullptr);
+
     TestPackage unreadable({}, R"({"terrain": {"wall": "hedge"}})");
     CHECK_THROWS_WITH_AS(midgard::Game(unreadable.dir), doctest::Contains("wall"),
                          midgard::SceneError);

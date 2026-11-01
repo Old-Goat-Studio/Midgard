@@ -18,6 +18,7 @@
 #include "midgard/render/mesh_data.h"
 #include "midgard/scene.h"
 #include "midgard/sunlight.h"
+#include "midgard/terrain_streamer.h"
 
 namespace midgard::test_scenes {
 
@@ -550,6 +551,82 @@ private:
     render::MeshId cube_ = 0, sphere_ = 0, ground_ = 0;
 };
 
+// Terrain (milestone 5.9) at noon on the Earth-like environment: a bounded area seen from a
+// hill above it (land, then the ocean band at its edge), a flat-wrap cylinder at one of its end
+// walls, and a habitat seen along its length with the far side overhead.
+class TerrainScene : public TestScene {
+public:
+    explicit TerrainScene(const std::string& which) {
+        nlohmann::json body, terrain = nlohmann::json::object();
+        if (which == "area") {
+            body = {{"shape", "bounded_area"}, {"width", 3000}, {"length", 3000}, {"seed", 7}};
+            eye_ = {-600.0, 160.0, -600.0};
+            look_ = {-1000.0, 0.0, -1500.0};
+        } else if (which == "strip") {
+            body = {
+                {"shape", "flat_cylinder"}, {"circumference", 6000}, {"length", 5000}, {"seed", 8}};
+            terrain = {{"wall", "fortification"}};
+            eye_ = {0.0, 150.0, -2000.0};
+            look_ = {300.0, 120.0, -2500.0};
+        } else {
+            body = {{"shape", "curved_cylinder"},
+                    {"radius", 1000},
+                    {"length", 5000},
+                    {"seed", 9},
+                    {"origin", {0, 1000, 0}}};
+            terrain = {{"wall", "barrier"}};
+            eye_ = {0.0, 40.0, 0.0};
+            look_ = {0.0, 250.0, -1500.0};
+        }
+        body["id"] = which;
+        scene_.settings.body = body_from_json(body);
+        scene_.settings.terrain = terrain_from_json(terrain);
+        // Inside a habitat: the Environment editor's Inside-World Atmosphere preset, haze that
+        // softens the far side overhead.
+        const bool inside = which == "habitat";
+        scene_.environments.emplace(
+            "env_earth",
+            environment_from_json(
+                "env_earth", "Earth-like",
+                inside ? R"({"fog_density": [[0.0, 0.0012]],
+                             "fog_color": [[0.0, [0.55, 0.6, 0.66]], [0.25, [0.62, 0.7, 0.8]],
+                                           [0.5, [0.55, 0.5, 0.5]], [0.75, [0.05, 0.06, 0.09]]]})"
+                       : "{}",
+                inside ? R"({"fog_height_falloff": 0.0, "fog_sun_scatter": 0.8})" : "{}"));
+        scene_.put_entity("e_sky", "Sky", "",
+                          nlohmann::json::parse(R"({"sky": {"environment": "env_earth"}})"));
+        scene_.put_entity("e_sun", "Sun", "", nlohmann::json::parse(R"({"transform":
+            {"rotation": [-50, 30, 0]}, "light": {"type": "directional"}})"));
+        scene_.solar_phase = 0.2;
+        streamer_ =
+            std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain);
+        up_ = glm::vec3(scene_.settings.body->up(eye_));
+    }
+    void upload(render::Renderer&) override {}
+    void stream(render::Renderer& renderer, const glm::dvec3& origin) override {
+        streamer_->update(origin, &renderer, true);
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        return streamer_->draws(origin);
+    }
+    render::Camera camera(float aspect) const override {
+        render::Camera c;
+        c.origin = eye_;
+        c.view = glm::lookAt(glm::vec3(0.0f), glm::vec3(look_ - eye_), up_);
+        c.projection = render::perspective(glm::radians(65.0f), aspect, 0.5f, 8000.0f);
+        return c;
+    }
+    render::Light light(const glm::dvec3& origin) const override { return scene_.light(origin); }
+    glm::vec4 sky() const override { return {scene_.settings.sky, 1.0f}; }
+    render::Environment environment() const override { return scene_.environment(eye_); }
+
+private:
+    Scene scene_;
+    std::unique_ptr<TerrainStreamer> streamer_;
+    glm::dvec3 eye_{0.0}, look_{0.0, 0.0, -1.0};
+    glm::vec3 up_{0, 1, 0};
+};
+
 const char* const kDayShapes[] = {"area", "flat_cylinder", "planet", "hollow", "habitat"};
 const std::pair<const char*, double> kDayTimes[] = {
     {"dawn", 0.02}, {"noon", 0.25}, {"dusk", 0.48}, {"midnight", 0.75}};
@@ -563,6 +640,8 @@ std::vector<std::string> names() {
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
+    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat"})
+        out.push_back(which);
     return out;
 }
 
@@ -582,6 +661,9 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "sky_sunset")
         return std::make_unique<Sky>(
             Sky::Setup{3.0f, -15.0f, 0.02f, 0.6f, {0, 3.0f, 0}, {0, 2.2f, -20}});
+    if (name == "terrain_area") return std::make_unique<TerrainScene>("area");
+    if (name == "terrain_strip") return std::make_unique<TerrainScene>("strip");
+    if (name == "terrain_habitat") return std::make_unique<TerrainScene>("habitat");
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             if (name == std::string("day_") + shape + "_" + time)

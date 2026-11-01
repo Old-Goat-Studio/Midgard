@@ -22,6 +22,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
 #include "midgard/scene_physics.h"
+#include "midgard/terrain_streamer.h"
 #include "midgard/time_service.h"
 #include "midgard/world_save.h"
 
@@ -72,7 +73,13 @@ public:
     // Returns false if nothing in the scene uses it. Throws on a broken package.
     bool reload_asset(const std::string& asset, render::Renderer& renderer);
 
-    // One draw per entity with a mesh, in world space.
+    // Terrain (midgard/terrain_streamer.h): chooses the chunks to draw from `camera`, generates
+    // those missing on the game's job system and uploads them. Call once a frame before
+    // draws(); wait: finish every chunk wanted now (the first frame, screenshots).
+    void stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait = false);
+    const TerrainStreamer* terrain() const { return terrain_.get(); }
+
+    // One draw per entity with a mesh, and the terrain's chunks.
     // What to draw, relative to the camera's origin (camera-relative rendering).
     std::vector<render::DrawItem> draws(const glm::dvec3& origin) const;
 
@@ -158,6 +165,12 @@ private:
     std::vector<TimeEvent> time_events_, skipped_;          // this frame's; from advances since
     std::unordered_map<std::string, std::string> strings_;  // key -> English
     std::optional<WorldSave> world_;
+    // Terrain: its job system and streamer (none without a world shape and terrain settings),
+    // and the renderer its chunks are on (to free them when the settings change).
+    void rebuild_terrain();
+    std::unique_ptr<JobSystem> jobs_;
+    std::unique_ptr<TerrainStreamer> terrain_;
+    render::Renderer* terrain_renderer_ = nullptr;
 };
 
 }  // namespace midgard

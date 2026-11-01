@@ -207,6 +207,9 @@ struct PhysicsMaterial {
     float bounciness = 0.0f;
 };
 
+// How far a game camera sees over terrain (metres), however near its lens's far plane is.
+inline constexpr float kTerrainViewDistance = 8000.0f;
+
 struct SceneSettings {
     glm::vec3 sky{0.08f, 0.11f, 0.18f};
     glm::vec3 ambient{0.18f, 0.2f, 0.26f};

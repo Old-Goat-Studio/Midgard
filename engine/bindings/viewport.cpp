@@ -126,6 +126,20 @@ void Viewport::set_settings(const std::string& settings_json) {
         } catch (const std::exception&) {  // the World Shape dialog refuses these anyway
         }
     }
+    // Terrain: settings that can't be read are left out (the cook names them).
+    scene_.settings.terrain.reset();
+    if (const auto it = s.find("terrain"); it != s.end()) {
+        try {
+            scene_.settings.terrain = terrain_from_json(*it);
+        } catch (const std::exception&) {
+        }
+    }
+    const std::string terrain_json =
+        shape_json + "|" + (scene_.settings.terrain ? s.at("terrain").dump() : std::string());
+    if (terrain_json != terrain_json_) {
+        terrain_json_ = terrain_json;
+        drop_terrain();
+    }
     if (shape_json != body_json_) {  // a new shape: its surface is made again when it's next drawn
         body_json_ = shape_json;
         mesh_data_.erase(kBuiltinSurface);
@@ -246,7 +260,13 @@ void Viewport::attach_offscreen(uint32_t width, uint32_t height) {
     upload_meshes();
 }
 
+void Viewport::drop_terrain() {
+    if (terrain_ && renderer_) terrain_->release(*renderer_);
+    terrain_.reset();
+}
+
 void Viewport::detach() {
+    drop_terrain();
     renderer_.reset();  // the renderer waits for the GPU before it lets go of the surface
     meshes_.clear();
     materials_.clear();
@@ -317,8 +337,22 @@ bool Viewport::render() {
                                     return it == mesh_data_.end() ? nullptr : &it->second;
                                 })
             : std::vector<render::DebugLine>{});
+    // Terrain: the chunks for this view, all of them now (the viewport draws on request, so
+    // it doesn't stream over several frames as the game does).
+    float far_plane = 2000.0f;
+    if (scene_.settings.body && scene_.settings.terrain) {
+        if (!terrain_) {
+            if (!jobs_) jobs_ = std::make_unique<JobSystem>();
+            terrain_ = std::make_unique<TerrainStreamer>(*scene_.settings.body,
+                                                         *scene_.settings.terrain, jobs_.get());
+        }
+        terrain_->update(camera.origin, renderer_.get(), true);
+        const std::vector<render::DrawItem> ground = terrain_->draws(camera.origin);
+        draws.insert(draws.end(), ground.begin(), ground.end());
+        far_plane = kTerrainViewDistance;
+    }
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
-    camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, 2000.0f);
+    camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, far_plane);
     renderer_->set_environment(scene_.environment(camera.origin));
     return renderer_->render_frame(camera, scene_.light(camera.origin), draws,
                                    glm::vec4(scene_.settings.sky, 1.0f));

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """World ▸ World Shape… (the scene's body: which way is up and how gravity pulls; it can also
-add ground covering the whole world) and
+add ground covering the whole world, or terrain on bounded areas and cylinders) and
 World ▸ Physics Layers… (the project's collision layers and which of them pass through each
 other). Both are undoable."""
 import json
@@ -15,9 +15,11 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
+    QGroupBox,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -43,6 +45,24 @@ SHAPES: dict[str, tuple[str, dict[str, tuple[float, float, float]]]] = {
     "sphere_outside": ("Planet (outside a sphere)", {"radius": (1_000, 20_000, 1_000)}),
     "sphere_inside": ("Hollow world (inside a sphere)", {"radius": (1_000, 20_000, 1_000)}),
 }
+
+
+# Terrain (midgard/terrain.h): its settings, with the engine's defaults and the shapes they apply
+# to ("" for every shape with terrain). Spheres have terrain from milestone 5.10.
+TERRAIN_SHAPES = ("bounded_area", "flat_cylinder", "curved_cylinder")
+TERRAIN_FIELDS: dict[str, tuple[str, float, float, float, str, str]] = {
+    # key: (label, low, high, default, suffix, shapes)
+    "height_scale": ("Hill height", 0, 5000, 60, " m", ""),
+    "base": ("Average height", -2000, 2000, 8, " m", ""),
+    "feature_size": ("Hill size", 1, 100_000, 500, " m", ""),
+    "sea_level": ("Sea level", -2000, 2000, 0, " m", ""),
+    "ocean_band": ("Ocean round the edge", 0, 50_000, 300, " m", "bounded_area"),
+    "ocean_depth": ("Ocean depth", 0, 5000, 30, " m", "bounded_area"),
+    "end_ramp": ("Rising to the ends over", 0, 20_000, 150, " m", "cylinders"),
+    "wall_height": ("Height at the ends", -2000, 5000, 120, " m", "cylinders"),
+    "spacing": ("Finest grid spacing", 0.25, 64, 2, " m", ""),
+}
+WALLS = {"cliff": "Cliff face", "fortification": "Fortification", "barrier": "Energy barrier"}
 
 
 def origin(shape: str, sizes: dict[str, float]) -> list[float]:
@@ -116,6 +136,42 @@ class WorldShapeDialog(QDialog):
         self.add_ground.setChecked(not has_surface)
         self.offers_ground = not has_surface  # a scene with ground already isn't offered more
         self.form.addRow("", self.add_ground)
+
+        # Terrain: hills from the world's seed, on bounded areas and cylinders.
+        terrain: dict[str, Any] = project.scene_settings().get("terrain") or {}
+        self.terrain = QGroupBox("Terrain")
+        self.terrain.setCheckable(True)
+        self.terrain.setChecked(bool(project.scene_settings().get("terrain") is not None))
+        self.terrain.setToolTip("Hills and valleys from noise, streamed around the camera; a "
+                                "bounded area sinks into ocean at its edges, a cylinder rises "
+                                "to walls at its ends")
+        terrain_form = QFormLayout(self.terrain)
+        self.terrain_form = terrain_form
+        self.seed = QSpinBox()
+        self.seed.setRange(0, 2_000_000_000)
+        self.seed.setValue(int(terrain.get("seed", body.get("seed", 1))))
+        self.seed.setToolTip("The same seed always makes the same terrain, on every device")
+        terrain_form.addRow("Seed", self.seed)
+        self.terrain_fields: dict[str, QDoubleSpinBox] = {}
+        for key, (label, low, high, default, suffix, _shapes) in TERRAIN_FIELDS.items():
+            box = _spin(low, high, float(terrain.get(key, default)), suffix)
+            if key == "spacing":
+                box.setDecimals(2)
+                box.setSingleStep(0.25)
+            terrain_form.addRow(label, box)
+            self.terrain_fields[key] = box
+        self.octaves = QSpinBox()
+        self.octaves.setRange(1, 12)
+        self.octaves.setValue(int(terrain.get("octaves", 6)))
+        self.octaves.setToolTip("Layers of detail: each adds hills half the size")
+        terrain_form.addRow("Detail layers", self.octaves)
+        self.wall = QComboBox()
+        for key, label in WALLS.items():
+            self.wall.addItem(label, key)
+        self.wall.setCurrentIndex(max(self.wall.findData(terrain.get("wall", "cliff")), 0))
+        terrain_form.addRow("End walls", self.wall)
+        self.terrain.toggled.connect(lambda _on: self._shape_chosen())
+        layout.addWidget(self.terrain)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -135,7 +191,17 @@ class WorldShapeDialog(QDialog):
                 box.setRange(low, high)
         self.form.setRowVisible(self.gravity, bool(key))
         self.form.setRowVisible(self.sun_mode, key == "sphere_outside")
-        self.form.setRowVisible(self.add_ground, bool(key) and self.offers_ground)
+        terrain = key in TERRAIN_SHAPES
+        self.terrain.setVisible(terrain)
+        cylinder = key in ("flat_cylinder", "curved_cylinder")
+        for name, box in self.terrain_fields.items():
+            shapes = TERRAIN_FIELDS[name][5]
+            self.terrain_form.setRowVisible(
+                box, not shapes or (shapes == "cylinders" and cylinder) or shapes == key)
+        self.terrain_form.setRowVisible(self.wall, cylinder)
+        # Terrain is the ground: the flat World Surface isn't offered with it.
+        self.form.setRowVisible(self.add_ground, bool(key) and self.offers_ground and
+                                not (terrain and self.terrain.isChecked()))
 
     def body(self) -> dict[str, Any] | None:
         """The body as the scene settings keep it, or None for flat ground."""
@@ -149,6 +215,17 @@ class WorldShapeDialog(QDialog):
         body["origin"] = origin(key, body)
         return body
 
+    def terrain_settings(self) -> dict[str, Any] | None:
+        """The terrain settings as the scene settings keep them, or None for no terrain."""
+        if self.shape.currentData() not in TERRAIN_SHAPES or not self.terrain.isChecked():
+            return None
+        out: dict[str, Any] = {"seed": self.seed.value(), "octaves": self.octaves.value()}
+        for key, box in self.terrain_fields.items():
+            out[key] = round(box.value(), 2)
+        if self.shape.currentData() in ("flat_cylinder", "curved_cylinder"):
+            out["wall"] = self.wall.currentData()
+        return out
+
     def accept(self) -> None:
         body = self.body()
         midgard = engine.module()
@@ -158,17 +235,28 @@ class WorldShapeDialog(QDialog):
             except ValueError as e:
                 QMessageBox.warning(self, "World Shape", str(e))
                 return
+        terrain = self.terrain_settings()
+        if terrain is not None and midgard is not None and hasattr(midgard, "terrain_problems"):
+            problems = midgard.terrain_problems(json.dumps(terrain))
+            if problems:
+                QMessageBox.warning(self, "World Shape", "\n".join(problems))
+                return
         settings = self.project.scene_settings()
         if body is None:
             settings.pop("body", None)
         else:
             settings["body"] = body
+        if terrain is None:
+            settings.pop("terrain", None)
+        else:
+            settings["terrain"] = terrain
         if body is not None and body["shape"] == "sphere_outside" and \
                 self.sun_mode.currentData() == "latitude":
             settings["sun_mode"] = "latitude"
         else:
             settings.pop("sun_mode", None)  # uniform: the default
-        add_ground = body is not None and self.offers_ground and self.add_ground.isChecked()
+        add_ground = (body is not None and self.offers_ground and self.add_ground.isChecked()
+                      and terrain is None)
         stack = self.project.undo_stack
         stack.beginMacro("Change world shape")
         if settings != self.project.scene_settings():

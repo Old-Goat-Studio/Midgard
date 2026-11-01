@@ -638,8 +638,12 @@ std::optional<render::Camera> Scene::camera(float aspect) const {
     cam.origin = world_position(e);
     // Cameras look along their local -Z; relative to their own origin they only turn.
     cam.view = glm::inverse(render::relative_to(world_matrix(e), cam.origin));
+    // With terrain, the camera sees as far as it is drawn.
+    const float far_plane = settings.body && settings.terrain
+                                ? std::max(lens.far_plane, kTerrainViewDistance)
+                                : lens.far_plane;
     cam.projection =
-        render::perspective(glm::radians(lens.fov), aspect, lens.near_plane, lens.far_plane);
+        render::perspective(glm::radians(lens.fov), aspect, lens.near_plane, far_plane);
     return cam;
 }
 

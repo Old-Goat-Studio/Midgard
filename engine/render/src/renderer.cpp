@@ -211,6 +211,24 @@ struct Renderer::Impl {
     std::array<Frame, kFramesInFlight> frames{};
     uint32_t frame_index = 0;
     std::vector<GpuMesh> meshes;
+    // Meshes freed (free_mesh): their ids are used again, and their buffers are destroyed once
+    // no frame in flight can still be drawing them.
+    std::vector<MeshId> free_meshes;
+    struct Retired {
+        Buffer vertices, indices;
+        uint64_t freed_at = 0;  // frames_submitted when it was freed
+    };
+    std::vector<Retired> retired;
+    uint64_t frames_submitted = 0;
+
+    void destroy_retired(bool all) {
+        std::erase_if(retired, [&](Retired& r) {
+            if (!all && r.freed_at + kFramesInFlight > frames_submitted) return false;
+            destroy_buffer(r.vertices);
+            destroy_buffer(r.indices);
+            return true;
+        });
+    }
 
     // Textures and materials (sets of textures, set 1 of the mesh pipeline).
     std::vector<GpuTexture> textures;
@@ -1297,6 +1315,7 @@ struct Renderer::Impl {
             for (const DrawItem& d : draws) {
                 if (d.mesh >= meshes.size() || !d.casts_shadow) continue;
                 const GpuMesh& m = meshes[d.mesh];
+                if (m.index_count == 0) continue;
                 const glm::vec3 center(d.model * glm::vec4(m.center, 1.0f));
                 const float scale = std::max({glm::length(glm::vec3(d.model[0])),
                                               glm::length(glm::vec3(d.model[1])),
@@ -1656,6 +1675,7 @@ struct Renderer::Impl {
         for (const DrawItem& d : draws) {
             if (d.mesh >= meshes.size()) continue;
             const GpuMesh& m = meshes[d.mesh];
+            if (m.index_count == 0) continue;
             const MaterialId material = d.material < materials.size() ? d.material : 0;
             if (material != bound) {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1,
@@ -1729,6 +1749,7 @@ struct Renderer::Impl {
     ~Impl() {
         if (device) {
             vkDeviceWaitIdle(device);
+            destroy_retired(true);
             for (GpuMesh& m : meshes) {
                 destroy_buffer(m.vertices);
                 destroy_buffer(m.indices);
@@ -1830,10 +1851,29 @@ MaterialId Renderer::create_material(const MaterialTextures& textures) {
 
 MeshId Renderer::upload_mesh(const MeshData& mesh) {
     Impl& r = *impl_;
-    r.meshes.push_back({});
-    const auto id = static_cast<MeshId>(r.meshes.size() - 1);
+    MeshId id = 0;
+    if (!r.free_meshes.empty()) {
+        id = r.free_meshes.back();
+        r.free_meshes.pop_back();
+    } else {
+        r.meshes.push_back({});
+        id = static_cast<MeshId>(r.meshes.size() - 1);
+    }
     replace_mesh(id, mesh);
     return id;
+}
+
+void Renderer::free_mesh(MeshId id) {
+    Impl& r = *impl_;
+    if (id >= r.meshes.size() || !r.meshes[id].vertices.buffer) return;
+    GpuMesh& m = r.meshes[id];
+    r.retired.push_back({m.vertices, m.indices, r.frames_submitted});
+    m = GpuMesh{};
+    r.free_meshes.push_back(id);
+}
+
+size_t Renderer::mesh_count() const {
+    return impl_->meshes.size() - impl_->free_meshes.size();
 }
 
 void Renderer::replace_mesh(MeshId id, const MeshData& mesh) {
@@ -1897,6 +1937,7 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         if (acquired != VK_SUBOPTIMAL_KHR) check(acquired, "Acquiring a swapchain image");
     }
     check(vkResetFences(r.device, 1, &f.fence), "Resetting a fence");
+    r.destroy_retired(false);
 
     FrameData data{};
     data.view_proj = camera.projection * camera.view;
@@ -1998,6 +2039,7 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
             check(presented, "Presenting a frame");
     }
     r.frame_index = (r.frame_index + 1) % kFramesInFlight;
+    ++r.frames_submitted;
     return true;
 }
 

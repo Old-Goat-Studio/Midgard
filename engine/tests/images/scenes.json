@@ -209,6 +209,24 @@
       "_about": "A day on a habitat (inside a curved cylinder; the stylised sun-line), at midnight. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
       "args": ["--size", "320x180", "--scene", "day_habitat_midnight"],
       "max_bad": 0.01
+    },
+    {
+      "name": "terrain_area",
+      "_about": "Streamed terrain on a bounded area, seen from above: hills from deterministic noise, finer near the camera, sinking to the ocean band at the map's edge (milestone 5.9).",
+      "args": ["--size", "480x270", "--scene", "terrain_area"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_strip",
+      "_about": "A flat-wrap cylinder's terrain rising to its end wall (the fortification look).",
+      "args": ["--size", "480x270", "--scene", "terrain_strip"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_habitat",
+      "_about": "Inside a habitat: the ground curving up on both sides into the far side overhead, softened by the inside-world haze, with the barrier closing its far end.",
+      "args": ["--size", "480x270", "--scene", "terrain_habitat"],
+      "max_bad": 0.01
     }
   ]
 }

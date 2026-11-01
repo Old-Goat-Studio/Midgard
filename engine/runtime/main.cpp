@@ -214,6 +214,9 @@ class Source {
 public:
     virtual ~Source() = default;
     virtual void upload(render::Renderer& renderer) = 0;
+    // Streams what changes with where the camera is (terrain), before draws(); wait: all of it
+    // now (the first frame, screenshots).
+    virtual void stream(render::Renderer&, const glm::dvec3&, bool) {}
     // What to draw, relative to the camera's origin (camera-relative rendering).
     virtual std::vector<render::DrawItem> draws(float seconds, const glm::dvec3& origin) const = 0;
     virtual render::Camera camera(float aspect) const = 0;
@@ -285,6 +288,9 @@ public:
     explicit TestSceneSource(std::unique_ptr<midgard::test_scenes::TestScene> scene)
         : scene_(std::move(scene)) {}
     void upload(render::Renderer& renderer) override { scene_->upload(renderer); }
+    void stream(render::Renderer& renderer, const glm::dvec3& camera, bool) override {
+        scene_->stream(renderer, camera);
+    }
     std::vector<render::DrawItem> draws(float, const glm::dvec3& origin) const override {
         return scene_->draws(origin);
     }
@@ -343,6 +349,9 @@ public:
         }
     }
     void upload(render::Renderer& renderer) override { game_.upload_meshes(renderer); }
+    void stream(render::Renderer& renderer, const glm::dvec3& camera, bool wait) override {
+        game_.stream_terrain(renderer, camera, wait);
+    }
     std::vector<render::DrawItem> draws(float, const glm::dvec3& origin) const override {
         return game_.draws(origin);
     }
@@ -742,6 +751,7 @@ int run_screenshot(const Options& opt, Source& source) {
     if (opt.overlay_text) renderer.set_overlay(overlay_lines(*opt.overlay_text));
     renderer.set_exposure(opt.exposure);
     const render::Camera camera = source.camera(float(opt.width) / float(opt.height));
+    source.stream(renderer, camera.origin, true);
     renderer.set_environment(source.environment(camera.origin));
     const auto draws = source.draws(0.6f, camera.origin);
     if (opt.debug_physics) renderer.set_debug_lines(source.debug_lines(camera.origin));
@@ -1030,6 +1040,10 @@ int run_window(const Options& opt, Source& source) {
             const float t = std::chrono::duration<float>(now - start).count();
             const float aspect = float(renderer.width()) / float(renderer.height());
             const render::Camera camera = source.camera(aspect);
+            {
+                MIDGARD_PROFILE_SCOPE("terrain");
+                source.stream(renderer, camera.origin, frame == 0);
+            }
             const auto draws = source.draws(t, camera.origin);
             bool drawn = false;
             {

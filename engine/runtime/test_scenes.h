@@ -16,6 +16,8 @@
 //   day_<shape>_<time>  a day on each world shape (area, flat_cylinder, planet, hollow,
 //              habitat) at dawn, noon, dusk or midnight: the sky and sun from the scene's
 //              environment and the world's light model
+//   terrain_area, terrain_strip, terrain_habitat  streamed terrain: a bounded area and its
+//              ocean band, a flat-wrap cylinder's end wall, a habitat's far side overhead
 #pragma once
 
 #include <memory>
@@ -32,6 +34,8 @@ class TestScene {
 public:
     virtual ~TestScene() = default;
     virtual void upload(render::Renderer& renderer) = 0;
+    // Streams what changes with the camera's place (terrain), before draws().
+    virtual void stream(render::Renderer&, const glm::dvec3&) {}
     virtual std::vector<render::DrawItem> draws(const glm::dvec3& origin) const = 0;
     virtual render::Camera camera(float aspect) const = 0;
     virtual render::Light light(const glm::dvec3& origin) const = 0;

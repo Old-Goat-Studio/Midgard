@@ -124,6 +124,7 @@ add_library(midgard_scene STATIC
     scene/src/game.cpp
     scene/src/camera_rig.cpp
     scene/src/environment.cpp
+    scene/src/terrain_streamer.cpp
     scene/src/sunlight.cpp
     scene/src/player_profile.cpp
     scene/src/world_save.cpp
@@ -330,6 +331,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_environment.cpp
         tests/test_sunlight.cpp
         tests/test_terrain.cpp
+        tests/test_terrain_streamer.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp
         tests/test_ktx.cpp
