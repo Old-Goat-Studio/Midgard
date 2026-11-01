@@ -265,6 +265,8 @@ Terrain::Terrain(const Body& body, const TerrainSettings& settings,
     const glm::dvec2 size = body_.shape.face_size();
     if (sphere(body_.shape.kind())) {
         roots_u_ = roots_v_ = sphere_roots(size.x);
+        // Coarser than the roots, up to one chunk a face (the far side of a hollow world).
+        while ((1 << -min_level_) < roots_u_) --min_level_;
     } else {
         roots_u_ = roots_along(size.x);
         roots_v_ = roots_along(size.y);
@@ -277,18 +279,26 @@ Terrain::Terrain(const Body& body, const TerrainSettings& settings,
     for (const TerrainStamp& s : stamps_) bounds_.push_back(stamp_bounds(s));
 }
 
+std::int64_t Terrain::chunks_u(int level) const {
+    return level >= 0 ? std::int64_t(roots_u_) << level : std::int64_t(roots_u_) >> -level;
+}
+
+std::int64_t Terrain::chunks_v(int level) const {
+    return level >= 0 ? std::int64_t(roots_v_) << level : std::int64_t(roots_v_) >> -level;
+}
+
 std::int64_t Terrain::points_u(int level) const {
-    return std::int64_t(roots_u_) * (std::int64_t(1) << level) * kChunkQuads;
+    return chunks_u(level) * kChunkQuads;
 }
 
 std::int64_t Terrain::points_v(int level) const {
-    return std::int64_t(roots_v_) * (std::int64_t(1) << level) * kChunkQuads;
+    return chunks_v(level) * kChunkQuads;
 }
 
 bool Terrain::valid(const ChunkKey& k) const {
-    return k.face >= 0 && k.face < body_.shape.faces() && k.level >= 0 && k.level <= max_level_ &&
-           k.x >= 0 && k.y >= 0 && std::int64_t(k.x) < std::int64_t(roots_u_) << k.level &&
-           std::int64_t(k.y) < std::int64_t(roots_v_) << k.level;
+    return k.face >= 0 && k.face < body_.shape.faces() && k.level >= min_level_ &&
+           k.level <= max_level_ && k.x >= 0 && k.y >= 0 && k.x < chunks_u(k.level) &&
+           k.y < chunks_v(k.level);
 }
 
 std::array<ChunkKey, 4> Terrain::children(const ChunkKey& k) const {
@@ -298,12 +308,13 @@ std::array<ChunkKey, 4> Terrain::children(const ChunkKey& k) const {
 }
 
 ChunkKey Terrain::parent(const ChunkKey& k) const {
-    return {k.face, std::max(k.level - 1, 0), k.x / 2, k.y / 2};
+    if (k.level <= min_level_) return k;
+    return {k.face, k.level - 1, k.x / 2, k.y / 2};
 }
 
 std::optional<ChunkKey> Terrain::neighbour(const ChunkKey& k, ChunkEdge edge) const {
     ChunkKey n = k;
-    const int across_u = roots_u_ << k.level, across_v = roots_v_ << k.level;
+    const int across_u = int(chunks_u(k.level)), across_v = int(chunks_v(k.level));
     switch (edge) {
         case kWest:
             n.x -= 1;

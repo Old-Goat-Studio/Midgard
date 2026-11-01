@@ -50,7 +50,7 @@ void check_balanced(const midgard::Terrain& t, const std::vector<midgard::Terrai
     const auto covering = [&](midgard::ChunkKey k) -> std::optional<midgard::ChunkKey> {
         while (true) {
             if (level.contains(k)) return k;
-            if (k.level == 0) return std::nullopt;
+            if (k.level == t.min_level()) return std::nullopt;
             k = t.parent(k);
         }
     };
@@ -222,7 +222,7 @@ void check_no_cracks(const midgard::Terrain& t, const std::vector<midgard::Terra
             const auto n = t.neighbour(l.key, midgard::ChunkEdge(e));
             if (!n) continue;
             midgard::ChunkKey c = *n;
-            while (!by_key.contains(c) && c.level > 0) c = t.parent(c);
+            while (!by_key.contains(c) && c.level > t.min_level()) c = t.parent(c);
             if (!by_key.contains(c)) continue;  // finer there: it is checked against this one
             // The neighbour's edge facing this chunk.
             int back = -1;
@@ -289,5 +289,35 @@ TEST_CASE("a sphere chunk's up is encoded in its axis's frame, clear of the octa
                         CHECK(glm::length(local) == doctest::Approx(1.0f));
                     }
                 }
+    }
+}
+
+TEST_CASE("the far side of a hollow world comes in a few coarse chunks, at every size") {
+    for (const double radius : {1000.0, 2500.0, 8000.0, 20000.0}) {
+        CAPTURE(radius);
+        const std::string text = R"({"id": "h", "shape": "sphere_inside", "radius": )" +
+                                 std::to_string(radius) + R"(, "seed": 12, "origin": [0, )" +
+                                 std::to_string(radius) + ", 0]}";
+        midgard::TerrainStreamer s(body(text.c_str()), {});
+        const midgard::Terrain& t = s.terrain();
+        CHECK(t.chunks_u(t.min_level()) == 1);  // the coarsest: one chunk a face
+        const glm::dvec3 eye = t.ground(glm::dvec3(0.0)) + glm::dvec3(0.0, 2.0, 0.0);
+        const std::vector<midgard::TerrainLeaf> leaves = s.choose(eye);
+        // All of it is overhead, so all of it is drawn: every face, once, balanced.
+        const double side = std::ldexp(1.0, t.max_level() - t.min_level());
+        CHECK(coverage(t, leaves) == doctest::Approx(6.0 * side * side));
+        check_balanced(t, leaves);
+        int far = 0, coarsest_far = 99;
+        for (const midgard::TerrainLeaf& l : leaves)
+            if (glm::length(t.chunk_origin(l.key) - eye) > radius) {
+                ++far;
+                coarsest_far = std::min(coarsest_far, l.key.level);
+            }
+        MESSAGE("radius ", radius, ": ", leaves.size(), " chunks, ", far,
+                " of them more than a radius away, the coarsest at level ", coarsest_far);
+        // However big the world, the far side stays a few coarse chunks, and the whole view a
+        // bounded number (the frame's cost: render.terrain_hollow_phone in midgard_bench).
+        CHECK(far <= 200);
+        CHECK(leaves.size() <= 1000);
     }
 }

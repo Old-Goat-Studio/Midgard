@@ -401,8 +401,8 @@ TEST_CASE("cube-sphere terrain: no cracks on any of the 12 face edges, at every 
         CAPTURE(name);
         const midgard::Terrain tr = sphere(t, name);
         int checked = 0;
-        for (int level = 0; level <= tr.max_level(); ++level) {
-            const int across = tr.roots_u() << level;
+        for (int level = tr.min_level(); level <= tr.max_level(); ++level) {
+            const int across = int(tr.chunks_u(level));
             // Every chunk along the edge up to level 2; then the first, a middle one, the last.
             std::vector<int> along;
             if (level <= 2) {
@@ -450,9 +450,9 @@ TEST_CASE("cube-sphere terrain: the 8 corners are one point from all three faces
     for (const std::string name : {"world", "hollow"}) {
         CAPTURE(name);
         const midgard::Terrain tr = sphere(t, name);
-        for (int level = 0; level <= tr.max_level(); ++level) {
+        for (int level = tr.min_level(); level <= tr.max_level(); ++level) {
             CAPTURE(level);
-            const int last = (tr.roots_u() << level) - 1;
+            const int last = int(tr.chunks_u(level)) - 1;
             // Corner points (rounded to 10 cm, to group them) and the heights found there.
             std::map<std::vector<long long>, std::vector<double>> corners;
             std::map<std::vector<long long>, std::vector<glm::dvec3>> points;

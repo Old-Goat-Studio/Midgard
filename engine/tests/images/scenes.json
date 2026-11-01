@@ -260,8 +260,14 @@
     },
     {
       "name": "terrain_hollow",
-      "_about": "Inside a 2.5 km hollow world by a face edge: the ground and seas curving up all round into the far side, softened by the inside-world haze; its water's waves come from 3D, so they too run on across face edges.",
+      "_about": "Inside a 2.5 km hollow world by a face edge: the ground and seas curving up all round into the far side, softened by the inside-world haze (scaled to its size); its water's waves come from 3D, so they too run on across face edges.",
       "args": ["--size", "480x270", "--scene", "terrain_hollow"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_hollow_far",
+      "_about": "Inside an 8 km hollow world, looking up at its far side 16 km away: drawn in a few coarse chunks, its seas and coasts showing faintly through the inside-world haze, which thins with the world's size (1.2 / radius per metre) so the far side always shows (milestone 5.10).",
+      "args": ["--size", "480x270", "--scene", "terrain_hollow_far"],
       "max_bad": 0.01
     }
   ]

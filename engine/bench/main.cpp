@@ -30,6 +30,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/shape.h"
 #include "midgard/terrain.h"
+#include "midgard/terrain_streamer.h"
 #include "midgard/version.h"
 
 namespace {
@@ -205,6 +206,46 @@ std::vector<Benchmark> benchmarks() {
                  };
              }});
     }
+    // Inside the largest hollow world (radius 20 km), standing on the ground looking up: all of
+    // it is in view, the far side overhead in a few coarse chunks (milestone 5.10).
+    list.push_back(
+        {"render.terrain_hollow_phone",
+         "a frame inside a 20 km hollow world, every chunk streamed, at 640x360, phone quality "
+         "(GPU)",
+         30, [](std::string& skip) -> std::function<void()> {
+             using namespace midgard::render;
+             std::shared_ptr<Renderer> renderer;
+             try {
+                 RendererDesc desc;
+                 desc.offscreen = true;
+                 desc.width = 640;
+                 desc.height = 360;
+                 desc.quality = quality_settings(Quality::Phone);
+                 renderer = std::make_shared<Renderer>(desc);
+             } catch (const std::exception& e) {
+                 skip = std::string("no Vulkan: ") + e.what();
+                 return {};
+             }
+             const midgard::Body body = midgard::body_from_json(nlohmann::json::parse(
+                 R"({"id": "h", "shape": "sphere_inside", "radius": 20000, "seed": 12,
+                     "origin": [0, 20000, 0]})"));
+             auto streamer =
+                 std::make_shared<midgard::TerrainStreamer>(body, midgard::TerrainSettings{});
+             const glm::dvec3 eye =
+                 streamer->terrain().ground(glm::dvec3(0.0)) + glm::dvec3(0.0, 2.0, 0.0);
+             streamer->update(eye, renderer.get(), true);
+             auto draws = std::make_shared<std::vector<DrawItem>>(streamer->draws(eye));
+             Camera camera;
+             camera.origin = eye;
+             camera.view = glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 0.5f, -1.0f),
+                                       glm::vec3(0.0f, 1.0f, 0.0f));
+             camera.projection = perspective(glm::radians(65.0f), 640.0f / 360.0f, 0.5f, 50000.0f);
+             Light light;
+             light.up = glm::vec3(0.0f, 1.0f, 0.0f);
+             return [renderer, streamer, draws, camera, light] {
+                 renderer->render_frame(camera, light, *draws, glm::vec4(0.5f, 0.6f, 0.7f, 1));
+             };
+         }});
     list.push_back({"physics.step_500_boxes",
                     "one physics step with 500 boxes tumbling onto the ground and each other", 60,
                     [](std::string&) -> std::function<void()> {

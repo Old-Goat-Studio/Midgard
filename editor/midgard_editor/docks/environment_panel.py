@@ -357,7 +357,8 @@ class EnvironmentPanel(QWidget):
             self.settings[key] = box
         self.inside = QPushButton("Inside-World Atmosphere")
         self.inside.setToolTip("For hollow worlds and habitats: the far side of the world seen "
-                               "through haze, the same at every height (sets the fog)")
+                               "through haze, the same at every height (sets the fog, thinner "
+                               "the bigger the world, so its far side shows through)")
         self.inside.clicked.connect(self.inside_atmosphere)
         settings.addRow("Preset", self.inside)
 
@@ -578,8 +579,15 @@ class EnvironmentPanel(QWidget):
         if self.env is None:
             return
         new = copy.deepcopy(self.env)
-        new["curves"].update(copy.deepcopy(environments.INSIDE_ATMOSPHERE["curves"]))
-        new["settings"].update(environments.INSIDE_ATMOSPHERE["settings"])
+        # Scaled to the world's size: a hollow world's or habitat's radius, from the scene.
+        radius = None
+        if self.project is not None:
+            body = self.project.scene_settings().get("body") or {}
+            if body.get("shape") in ("sphere_inside", "curved_cylinder"):
+                radius = float(body.get("radius", 0.0)) or None
+        preset = environments.inside_atmosphere(radius)
+        new["curves"].update(preset["curves"])
+        new["settings"].update(preset["settings"])
         self._push(new, "inside-world atmosphere", "")
 
     def set_tint(self, season: str, key: str, rgb: list | None) -> None:

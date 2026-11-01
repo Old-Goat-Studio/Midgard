@@ -106,6 +106,18 @@ INSIDE_ATMOSPHERE = {
     },
     "settings": {"fog_height_falloff": 0.0, "fog_sun_scatter": 0.8},
 }
+
+
+def inside_atmosphere(radius: float | None = None) -> dict:
+    """The Inside-World Atmosphere preset for a world `radius` metres across the axis (a hollow
+    world or a habitat): haze that thickens with distance so that the far side, 2 radii away,
+    shows through faintly whatever the world's size (0.0012 per metre at 1 km)."""
+    preset = copy.deepcopy(INSIDE_ATMOSPHERE)
+    if radius and radius > 0.0:
+        preset["curves"]["fog_density"] = [[0.0, round(1.2 / radius, 7)]]
+    return preset
+
+
 SAMPLES = (0.0, 0.03, 0.08, 0.15, 0.25, 0.35, 0.42, 0.47, 0.5, 0.55, 0.65, 0.75, 0.9, 0.97)
 NOON_ELEVATION = 50.0  # degrees: the sun's height at noon the editor assumes for its previews
 

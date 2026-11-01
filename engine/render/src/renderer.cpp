@@ -1686,9 +1686,30 @@ struct Renderer::Impl {
     }
 
     // ---- drawing -----------------------------------------------------------------------
+    // Whether a draw's bounding sphere can be in view (the camera's frustum planes, from its
+    // view-projection; Vulkan's clip depth runs 0 to w). Draws out of view aren't recorded.
+    static bool in_view(const std::array<glm::vec4, 6>& planes, const glm::mat4& model,
+                        const GpuMesh& m) {
+        const glm::vec3 center(model * glm::vec4(m.center, 1.0f));
+        const float radius =
+            m.radius * std::max({glm::length(glm::vec3(model[0])), glm::length(glm::vec3(model[1])),
+                                 glm::length(glm::vec3(model[2]))});
+        for (const glm::vec4& plane : planes)
+            if (glm::dot(glm::vec3(plane), center) + plane.w < -radius) return false;
+        return true;
+    }
+    static std::array<glm::vec4, 6> frustum_planes(const glm::mat4& vp) {
+        const auto row = [&](int i) { return glm::vec4(vp[0][i], vp[1][i], vp[2][i], vp[3][i]); };
+        std::array<glm::vec4, 6> planes = {row(3) + row(0), row(3) - row(0), row(3) + row(1),
+                                           row(3) - row(1), row(2),          row(3) - row(2)};
+        for (glm::vec4& plane : planes) plane /= std::max(glm::length(glm::vec3(plane)), 1e-20f);
+        return planes;
+    }
+
     void record(VkCommandBuffer cmd, VkFramebuffer fb, const std::span<const DrawItem> draws,
                 const glm::vec4& clear_color, VkDescriptorSet set, const Frame& frame,
-                const ShadowCascades& cascades) {
+                const ShadowCascades& cascades, const glm::mat4& view_proj) {
+        const std::array<glm::vec4, 6> planes = frustum_planes(view_proj);
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         check(vkBeginCommandBuffer(cmd, &begin), "Beginning a command buffer");
@@ -1721,7 +1742,7 @@ struct Renderer::Impl {
                 continue;
             }
             const GpuMesh& m = meshes[d.mesh];
-            if (m.index_count == 0) continue;
+            if (m.index_count == 0 || !in_view(planes, d.model, m)) continue;
             const MaterialId material = d.material < materials.size() ? d.material : 0;
             if (material != bound) {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1,
@@ -1748,7 +1769,7 @@ struct Renderer::Impl {
             for (const DrawItem& d : draws) {
                 if (!d.terrain || d.mesh >= meshes.size()) continue;
                 const GpuMesh& m = meshes[d.mesh];
-                if (m.index_count == 0) continue;
+                if (m.index_count == 0 || !in_view(planes, d.model, m)) continue;
                 PushData push{d.model, d.color, glm::vec4(d.emissive, 0.0f),
                               glm::vec4(d.metallic, d.roughness, 0.0f, 0.0f)};
                 vkCmdPushConstants(cmd, pipeline_layout,
@@ -1774,7 +1795,7 @@ struct Renderer::Impl {
             for (const DrawItem& d : draws) {
                 if (!d.water || d.mesh >= meshes.size()) continue;
                 const GpuMesh& m = meshes[d.mesh];
-                if (m.index_count == 0) continue;
+                if (m.index_count == 0 || !in_view(planes, d.model, m)) continue;
                 PushData push{d.model, glm::vec4(to_linear(w.shallow), w.clarity),
                               glm::vec4(to_linear(w.deep), w.time),
                               glm::vec4(w.wave_strength, w.wave_size, d.emissive.x, 0.0f)};
@@ -2097,8 +2118,8 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
     r.prepare_overlay(f);
     r.prepare_lines(f);
     check(vkResetCommandBuffer(f.cmd, 0), "Resetting a command buffer");
-    r.record(f.cmd, r.framebuffers[r.offscreen ? 0 : image], draws, clear_color, f.set, f,
-             cascades);
+    r.record(f.cmd, r.framebuffers[r.offscreen ? 0 : image], draws, clear_color, f.set, f, cascades,
+             data.view_proj);
 
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};

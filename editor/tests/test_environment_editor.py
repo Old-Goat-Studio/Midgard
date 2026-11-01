@@ -100,6 +100,13 @@ def test_settings_presets_names_and_new_environments(dock, project):
     env = earth(project)
     assert env["curves"]["fog_density"] == [[0.0, 0.0012]]
     assert env["settings"]["fog_height_falloff"] == 0.0
+    # In a bigger hollow world the haze is thinner, so its far side still shows through.
+    settings = project.scene_settings()
+    settings["body"] = {"shape": "sphere_inside", "radius": 8000, "origin": [0, 8000, 0]}
+    project.set_scene_settings(settings)
+    dock.inside_atmosphere()
+    assert earth(project)["curves"]["fog_density"] == [[0.0, 0.00015]]
+    assert environments.inside_atmosphere(1000)["curves"]["fog_density"] == [[0.0, 0.0012]]
     dock.name.setText("Earth-like (tuned)")
     dock.name.editingFinished.emit()
     assert earth(project)["name"] == "Earth-like (tuned)"

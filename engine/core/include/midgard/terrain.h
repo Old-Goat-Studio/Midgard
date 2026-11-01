@@ -142,15 +142,21 @@ public:
     const TerrainSettings& settings() const { return settings_; }
     std::uint64_t seed() const { return seed_; }
 
-    // The layout: roots per face along u and v, and the finest level.
+    // The layout: roots per face along u and v (level 0), and the coarsest and finest levels.
+    // A sphere's faces (a power of two of roots a side) also have coarser levels, below 0, up
+    // to one chunk a face, for what is far away (the far side of a hollow world, overhead);
+    // other shapes start at their roots.
     int roots_u() const { return roots_u_; }
     int roots_v() const { return roots_v_; }
+    int min_level() const { return min_level_; }
     int max_level() const { return max_level_; }
-    // Grid points along u (or v) across a whole face at a level.
+    // Chunks, and grid points, along u (or v) across a whole face at a level.
+    std::int64_t chunks_u(int level) const;
+    std::int64_t chunks_v(int level) const;
     std::int64_t points_u(int level) const;
     std::int64_t points_v(int level) const;
     bool valid(const ChunkKey& key) const;
-    // The four children of a chunk, and its parent.
+    // The four children of a chunk, and its parent (a chunk at the coarsest level is its own).
     std::array<ChunkKey, 4> children(const ChunkKey& key) const;
     ChunkKey parent(const ChunkKey& key) const;
     // The neighbour across an edge at the same level (a flat-wrap or curved cylinder wraps
@@ -201,7 +207,7 @@ private:
     std::vector<TerrainStamp> stamps_;
     std::vector<StampBounds> bounds_;
     std::uint64_t seed_;
-    int roots_u_ = 1, roots_v_ = 1, max_level_ = 0;
+    int roots_u_ = 1, roots_v_ = 1, min_level_ = 0, max_level_ = 0;
 };
 
 // A hash over chunk hashes of fixed terrains on four shapes (those of

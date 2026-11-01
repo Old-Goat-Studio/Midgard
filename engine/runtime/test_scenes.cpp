@@ -575,6 +575,13 @@ public:
                     {"radius", 3000},
                     {"seed", 11},
                     {"origin", {0, -3000, 0}}};
+        } else if (which == "hollow_far") {
+            // Inside an 8 km hollow world, looking up: the far side overhead, 16 km away, in a
+            // few coarse chunks, softened by the inside-world haze.
+            body = {{"shape", "sphere_inside"},
+                    {"radius", 8000},
+                    {"seed", 12},
+                    {"origin", {0, 8000, 0}}};
         } else if (which == "hollow") {
             // Inside a 2.5 km hollow world, by the edge between faces -Y and +Z.
             body = {{"shape", "sphere_inside"},
@@ -600,7 +607,8 @@ public:
         body["id"] = which;
         scene_.settings.body = body_from_json(body);
         scene_.settings.terrain = terrain_from_json(terrain);
-        if (which == "planet" || which == "planet_low" || which == "hollow") {
+        if (which == "planet" || which == "planet_low" || which == "hollow" ||
+            which == "hollow_far") {
             const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
             // A point on the ground (in a direction from the centre) and a height above it.
             const auto above = [&](const glm::dvec3& direction, double height) {
@@ -614,22 +622,28 @@ public:
             } else if (which == "planet_low") {
                 eye_ = above({1.0, 0.86, 0.12}, 30.0);
                 look_ = above({1.0, 1.12, 0.12}, 0.0);
+            } else if (which == "hollow_far") {
+                eye_ = above({0.0, -1.0, 0.0}, 30.0);
+                look_ = above({0.0, 0.6, 1.0}, 0.0);
             } else {
                 eye_ = above({0.0, -1.0, 0.94}, 40.0);
                 look_ = above({0.0, -0.2, 1.0}, 0.0);
             }
         }
         // Inside a habitat: the Environment editor's Inside-World Atmosphere preset, haze that
-        // softens the far side overhead.
-        const bool inside = which == "habitat" || which == "hollow";
+        // softens the far side overhead: 1.2 / radius per metre, as the editor's preset sets it
+        // for the world's size (environments.inside_atmosphere).
+        const bool inside = which == "habitat" || which == "hollow" || which == "hollow_far";
+        nlohmann::json curves = nlohmann::json::object();
+        if (inside) {
+            curves = nlohmann::json::parse(R"({"fog_color": [[0.0, [0.55, 0.6, 0.66]],
+                [0.25, [0.62, 0.7, 0.8]], [0.5, [0.55, 0.5, 0.5]], [0.75, [0.05, 0.06, 0.09]]]})");
+            curves["fog_density"] = {{0.0, 1.2 / scene_.settings.body->shape.radius()}};
+        }
         scene_.environments.emplace(
             "env_earth",
             environment_from_json(
-                "env_earth", "Earth-like",
-                inside ? R"({"fog_density": [[0.0, 0.0012]],
-                             "fog_color": [[0.0, [0.55, 0.6, 0.66]], [0.25, [0.62, 0.7, 0.8]],
-                                           [0.5, [0.55, 0.5, 0.5]], [0.75, [0.05, 0.06, 0.09]]]})"
-                       : "{}",
+                "env_earth", "Earth-like", curves.dump(),
                 inside ? R"({"fog_height_falloff": 0.0, "fog_sun_scatter": 0.8})" : "{}"));
         scene_.put_entity("e_sky", "Sky", "",
                           nlohmann::json::parse(R"({"sky": {"environment": "env_earth"}})"));
@@ -639,6 +653,7 @@ public:
         streamer_ =
             std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain);
         up_ = glm::vec3(scene_.settings.body->up(eye_));
+        if (which == "hollow_far") far_ = 20000.0f;
     }
     void upload(render::Renderer&) override {}
     void stream(render::Renderer& renderer, const glm::dvec3& origin) override {
@@ -652,7 +667,7 @@ public:
         render::Camera c;
         c.origin = eye_;
         c.view = glm::lookAt(glm::vec3(0.0f), glm::vec3(look_ - eye_), up_);
-        c.projection = render::perspective(glm::radians(65.0f), aspect, 0.5f, 8000.0f);
+        c.projection = render::perspective(glm::radians(65.0f), aspect, 0.5f, far_);
         return c;
     }
     render::Light light(const glm::dvec3& origin) const override { return scene_.light(origin); }
@@ -665,6 +680,7 @@ private:
     glm::dvec3 eye_{0.0}, look_{0.0, 0.0, -1.0};
     glm::vec3 up_{0, 1, 0};
     double summer_ = 0.0, autumn_ = 0.0;
+    float far_ = 8000.0f;  // the far plane (inside a big hollow world, past its far side)
 };
 
 const char* const kDayShapes[] = {"area", "flat_cylinder", "planet", "hollow", "habitat"};
@@ -680,9 +696,9 @@ std::vector<std::string> names() {
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
-    for (const char* which :
-         {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore", "terrain_planet",
-          "terrain_planet_low", "terrain_hollow", "terrain_winter", "terrain_autumn"})
+    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore",
+                              "terrain_planet", "terrain_planet_low", "terrain_hollow",
+                              "terrain_hollow_far", "terrain_winter", "terrain_autumn"})
         out.push_back(which);
     return out;
 }
@@ -710,6 +726,7 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_planet") return std::make_unique<TerrainScene>("planet");
     if (name == "terrain_planet_low") return std::make_unique<TerrainScene>("planet_low");
     if (name == "terrain_hollow") return std::make_unique<TerrainScene>("hollow");
+    if (name == "terrain_hollow_far") return std::make_unique<TerrainScene>("hollow_far");
     if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
     if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
     for (const char* shape : kDayShapes)

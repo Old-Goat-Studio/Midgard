@@ -356,7 +356,7 @@ if(MIDGARD_BUILD_TESTS)
     if(NOT ANDROID)
         add_executable(midgard_bench bench/main.cpp)
         target_link_libraries(midgard_bench PRIVATE midgard_core midgard_render midgard_physics
-                              midgard_options
+                              midgard_scene midgard_options
                               nlohmann_json::nlohmann_json)
     endif()
     if(TARGET _midgard)

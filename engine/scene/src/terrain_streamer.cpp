@@ -5,6 +5,8 @@
 #include <cmath>
 #include <set>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -174,7 +176,8 @@ TerrainStreamer::MeshKey TerrainStreamer::mesh_key(const TerrainLeaf& l) {
     std::uint64_t flags = 0;
     for (int i = 0; i < 4; ++i)
         if (l.coarser[size_t(i)]) flags |= std::uint64_t(1) << i;
-    return (std::uint64_t(l.key.face) << 60) | (std::uint64_t(l.key.level) << 54) |
+    // (Levels from -16, a sphere's coarsest, to 47.)
+    return (std::uint64_t(l.key.face) << 60) | (std::uint64_t(l.key.level + 16) << 54) |
            (std::uint64_t(std::uint32_t(l.key.x)) << 31) |
            (std::uint64_t(std::uint32_t(l.key.y)) << 4) | flags;
 }
@@ -196,31 +199,33 @@ std::vector<TerrainLeaf> TerrainStreamer::choose(const glm::dvec3& camera) const
     const glm::dvec2 size = shape.face_size();
     const double circumference = wrap_length();
     double range = range_;
-    if (shape.kind() == Shape::Kind::CurvedCylinder)  // the far side is the sky
+    if (shape.kind() == Shape::Kind::CurvedCylinder ||
+        shape.kind() == Shape::Kind::SphereInside)  // the far side is the sky
         range = std::max(range, 2.2 * shape.radius());
 
     // Where a chunk is drawn, and how big it is.
     const auto centre = [&](const ChunkKey& k, int wrap) {
-        const double u = (double(k.x) + 0.5) / double(std::int64_t(t.roots_u()) << k.level);
-        const double v = (double(k.y) + 0.5) / double(std::int64_t(t.roots_v()) << k.level);
+        const double u = (double(k.x) + 0.5) / double(t.chunks_u(k.level));
+        const double v = (double(k.y) + 0.5) / double(t.chunks_v(k.level));
         glm::dvec3 p = t.position(k.face, u, v, t.height(k.face, u, v));
         p.x += wrap * circumference;
         return p;
     };
     const auto extent = [&](const ChunkKey& k) {
-        return std::max(size.x / double(std::int64_t(t.roots_u()) << k.level),
-                        size.y / double(std::int64_t(t.roots_v()) << k.level));
+        return std::max(size.x / double(t.chunks_u(k.level)), size.y / double(t.chunks_v(k.level)));
     };
     const auto distance = [&](const ChunkKey& k, int wrap) {
         return std::max(0.0, glm::length(camera - centre(k, wrap)) - 0.75 * extent(k));
     };
 
-    // Split while near; roots out of range aren't drawn.
+    // Split while near; the coarsest chunks out of range aren't drawn. (A sphere's coarsest
+    // are whole faces, so the far side of a hollow world comes in a few big chunks.)
+    const int top = t.min_level();
     std::vector<std::pair<ChunkKey, int>> stack;
     for (int f = 0; f < shape.faces(); ++f)
-        for (int y = 0; y < t.roots_v(); ++y)
-            for (int x = 0; x < t.roots_u(); ++x) {
-                const ChunkKey k{f, 0, x, y};
+        for (int y = 0; y < t.chunks_v(top); ++y)
+            for (int x = 0; x < t.chunks_u(top); ++x) {
+                const ChunkKey k{f, top, x, y};
                 int wrap = 0;
                 if (circumference > 0.0) {
                     const double cx = centre(k, 0).x;
@@ -229,9 +234,9 @@ std::vector<TerrainLeaf> TerrainStreamer::choose(const glm::dvec3& camera) const
                 if (distance(k, wrap) <= range) stack.emplace_back(k, wrap);
             }
     KeySet leaves;
-    std::unordered_map<std::uint64_t, int> wrap_of_root;  // root (x, y, face) -> wrap
+    std::unordered_map<std::uint64_t, int> wrap_of_root;  // coarsest (x, y, face) -> wrap
     const auto root_id = [&](const ChunkKey& k) {
-        const int shift = k.level;
+        const int shift = k.level - top;
         return (std::uint64_t(k.face) << 48) | (std::uint64_t(k.x >> shift) << 24) |
                std::uint64_t(k.y >> shift);
     };
@@ -250,7 +255,7 @@ std::vector<TerrainLeaf> TerrainStreamer::choose(const glm::dvec3& camera) const
     const auto covering = [&](ChunkKey k) -> std::optional<ChunkKey> {
         while (true) {
             if (leaves.contains(k)) return k;
-            if (k.level == 0) return std::nullopt;
+            if (k.level == t.min_level()) return std::nullopt;
             k = t.parent(k);
         }
     };
@@ -278,7 +283,7 @@ std::vector<TerrainLeaf> TerrainStreamer::choose(const glm::dvec3& camera) const
         TerrainLeaf leaf{k, {}, wrap_of_root[root_id(k)]};
         for (int e = 0; e < 4; ++e) {
             const std::optional<ChunkKey> n = t.neighbour(k, ChunkEdge(e));
-            if (!n || n->level == 0 || leaves.contains(*n)) continue;
+            if (!n || n->level == t.min_level() || leaves.contains(*n)) continue;
             const ChunkKey p = t.parent(*n);
             leaf.coarser[size_t(e)] = leaves.contains(p);
         }
@@ -402,11 +407,15 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
     const TerrainSettings& ts = terrain_.settings();
     const glm::vec3 levels(float(ts.snow_line), float(ts.sea_level), 0.0f);
     const bool round = sphere();
+    // The ground nearest first, so the depth test turns away what is hidden behind it before
+    // it is shaded; the water (blended) farthest first, after it.
+    std::vector<std::pair<double, render::DrawItem>> ground, water;
     for (const TerrainLeaf& leaf : drawn_) {
         const auto it = cache_.find(mesh_key(leaf));
         if (it == cache_.end() || !it->second->mesh) continue;
         const glm::dvec3 at = terrain_.chunk_origin(leaf.key) +
                               glm::dvec3(leaf.wrap * circumference, 0.0, 0.0) - origin;
+        const double distance = glm::length(at);
         render::DrawItem d;
         d.mesh = *it->second->mesh;
         d.model = glm::translate(glm::mat4(1.0f), glm::vec3(at));
@@ -415,7 +424,7 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
         if (round)  // up in the frame of its own axis (ground_mesh_data's frame)
             d.color.w = float(2 + up_frame(terrain_.body().up(terrain_.chunk_origin(leaf.key))));
         d.emissive = levels;
-        out.push_back(d);
+        ground.emplace_back(distance, d);
         if (it->second->water) {
             render::DrawItem w;
             w.mesh = *it->second->water;
@@ -423,9 +432,15 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
             w.water = true;
             w.casts_shadow = false;
             if (round) w.emissive.x = 1.0f;  // waves from each point's place (water_mesh_data)
-            out.push_back(w);
+            water.emplace_back(distance, w);
         }
     }
+    const auto nearer = [](const auto& a, const auto& b) { return a.first < b.first; };
+    std::sort(ground.begin(), ground.end(), nearer);
+    std::sort(water.begin(), water.end(),
+              [&](const auto& a, const auto& b) { return nearer(b, a); });
+    for (const auto& [distance, d] : ground) out.push_back(d);
+    for (const auto& [distance, w] : water) out.push_back(w);
     // The end walls (a flat-wrap cylinder's on either side of the camera too).
     const TerrainSettings& s = terrain_.settings();
     for (const Wall& w : walls_) {
