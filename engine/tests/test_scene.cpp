@@ -2287,3 +2287,53 @@ TEST_CASE("the cook warns about a World Surface under terrain") {
     for (const std::string& w : midgard::validate_package(surface.dir).warnings)
         CHECK(w.find("World Surface") == std::string::npos);
 }
+
+TEST_CASE("a scene's terrain from a world type: the same ground, and what the cook refuses") {
+    // A habitat whose terrain names a world type's version (migration 12) makes exactly the
+    // ground the same settings made inline.
+    const char* body = R"("body": {"shape": "curved_cylinder", "radius": 1000, "length": 5000,
+                                   "seed": 9, "origin": [0, 1000, 0]})";
+    TestPackage inline_pkg(
+        {}, std::string("{") + body + R"(, "terrain": {"height_scale": 35, "seed": 4}})");
+    TestPackage typed({}, std::string("{") + body +
+                              R"(, "terrain": {"world_type": "wt_hills", "version": 2,
+                                                "seed": 4}})");
+    const auto with_types = [](const TestPackage& pkg, const char* versions_sql) {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, "INSERT INTO world_type (id, name, version) VALUES ('wt_hills', 'Hills', 2)");
+        exec(db, versions_sql);
+        sqlite3_close(db);
+    };
+    with_types(typed, R"(INSERT INTO world_type_version (world_type, version, recipe) VALUES
+        ('wt_hills', 1, '{"terrain": {"height_scale": 90}}'),
+        ('wt_hills', 2, '{"shapes": ["curved_cylinder"], "terrain": {"height_scale": 35}}'))");
+    CHECK(midgard::validate_package(typed.dir).errors.empty());
+    midgard::Game a(inline_pkg.dir), b(typed.dir);
+    REQUIRE(b.scene().settings.world.has_value());
+    CHECK(b.scene().settings.world->version == 2);
+    CHECK(b.scene().settings.terrain->height_scale == 35.0);  // version 2's, not 1's
+    const midgard::Terrain& ta = a.terrain()->terrain();
+    const midgard::Terrain& tb = b.terrain()->terrain();
+    for (const midgard::ChunkKey k : {midgard::ChunkKey{0, 0, 0, 0}, midgard::ChunkKey{0, 2, 5, 3}})
+        CHECK(ta.chunk_hash(k) == tb.chunk_hash(k));
+
+    // A version that isn't there: the scene can't load, and the cook says why.
+    TestPackage missing(
+        {}, std::string("{") + body + R"(, "terrain": {"world_type": "wt_hills", "version": 7}})");
+    with_types(missing, R"(INSERT INTO world_type_version (world_type, version, recipe) VALUES
+        ('wt_hills', 1, '{}'))");
+    std::string all;
+    for (const std::string& e : midgard::validate_package(missing.dir).errors) all += e + "\n";
+    CHECK(all.find("no version 7") != std::string::npos);
+    // A world type for other shapes, and a recipe the cook refuses (in any version).
+    TestPackage misfit(
+        {}, std::string("{") + body + R"(, "terrain": {"world_type": "wt_hills", "version": 1}})");
+    with_types(misfit, R"(INSERT INTO world_type_version (world_type, version, recipe) VALUES
+        ('wt_hills', 1, '{"shapes": ["sphere_outside"]}'),
+        ('wt_hills', 2, '{"terrain": {"octaves": 0}}'))");
+    all.clear();
+    for (const std::string& e : midgard::validate_package(misfit.dir).errors) all += e + "\n";
+    CHECK(all.find("isn't for a curved_cylinder") != std::string::npos);
+    CHECK(all.find("version 2") != std::string::npos);
+}

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import engine
+from . import engine, world_types
 from .project import PHYSICS_LAYERS, Project
 from .scene_model import WORLD_FOLDER, Entity
 from .undo import (
@@ -144,8 +144,11 @@ class WorldShapeDialog(QDialog):
         self.offers_ground = not has_surface  # a scene with ground already isn't offered more
         self.form.addRow("", self.add_ground)
 
-        # Terrain: hills from the world's seed, on every shape (spheres from milestone 5.10).
-        terrain: dict[str, Any] = project.scene_settings().get("terrain") or {}
+        # Terrain: a world type's ground (milestone 5.11) from the world's seed, on every shape
+        # (spheres from milestone 5.10). The fields are the world type's; the seed the scene's.
+        self.world = world_types.scene_world(project)
+        terrain: dict[str, Any] = world_types.resolved_settings(
+            project, project.scene_settings()).get("terrain") or {}
         self.terrain = QGroupBox("Terrain")
         self.terrain.setCheckable(True)
         self.terrain.setChecked(bool(project.scene_settings().get("terrain") is not None))
@@ -154,6 +157,16 @@ class WorldShapeDialog(QDialog):
                                 "to walls at its ends")
         terrain_form = QFormLayout(self.terrain)
         self.terrain_form = terrain_form
+        self.world_type = QComboBox()
+        for t in world_types.load_all(project):
+            self.world_type.addItem(t["name"], t["id"])
+        self.world_type.addItem("New world type", "")
+        self.world_type.setCurrentIndex(max(self.world_type.findData(
+            self.world["world_type"] if self.world else ""), 0))
+        self.world_type.setToolTip("The recipe the ground is made from (World Types): the "
+                                   "settings below are the world type's, shared by every "
+                                   "world made from it; the seed is this world's own")
+        terrain_form.addRow("World type", self.world_type)
         self.seed = QSpinBox()
         self.seed.setRange(0, 2_000_000_000)
         self.seed.setValue(int(terrain.get("seed", body.get("seed", 1))))
@@ -178,6 +191,7 @@ class WorldShapeDialog(QDialog):
         self.wall.setCurrentIndex(max(self.wall.findData(terrain.get("wall", "cliff")), 0))
         terrain_form.addRow("End walls", self.wall)
         self.terrain.toggled.connect(lambda _on: self._shape_chosen())
+        self.world_type.currentIndexChanged.connect(lambda _i: self._world_type_chosen())
         layout.addWidget(self.terrain)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
@@ -221,6 +235,18 @@ class WorldShapeDialog(QDialog):
             body[name] = round(self.sizes[name].value(), 1)
         body["origin"] = origin(key, body)
         return body
+
+    def _world_type_chosen(self) -> None:
+        """The chosen world type's ground settings in the fields (a new one keeps them)."""
+        chosen = self.world_type.currentData()
+        found = world_types.recipe(self.project, chosen) if chosen else None
+        if found is None:
+            return
+        terrain = found.get("terrain", {})
+        for key, box in self.terrain_fields.items():
+            box.setValue(float(terrain.get(key, TERRAIN_FIELDS[key][3])))
+        self.octaves.setValue(int(terrain.get("octaves", 6)))
+        self.wall.setCurrentIndex(max(self.wall.findData(terrain.get("wall", "cliff")), 0))
 
     def terrain_settings(self) -> dict[str, Any] | None:
         """The terrain settings as the scene settings keep them, or None for no terrain."""
@@ -266,6 +292,24 @@ class WorldShapeDialog(QDialog):
                       and terrain is None)
         stack = self.project.undo_stack
         stack.beginMacro("Change world shape")
+        if terrain is not None:
+            # The ground's settings are the world type's (a new version if the one there has
+            # shipped); the scene names it, and keeps its own seed.
+            chosen = self.world_type.currentData() or world_types.new_id(self.project, "Custom")
+            old = world_types.recipe(self.project, chosen) or {}
+            ground = {k: v for k, v in terrain.items() if k != "seed"}
+            version = None
+            if old.get("terrain") != ground or not self.world_type.currentData():
+                save = world_types.SaveRecipeCommand(
+                    self.project, chosen, {**old, "terrain": ground},
+                    None if self.world_type.currentData() else "Custom")
+                stack.push(save)
+                version = save.version
+            if version is None:
+                version = next(t["version"] for t in world_types.load_all(self.project)
+                               if t["id"] == chosen)
+            settings["terrain"] = {"world_type": chosen, "version": version,
+                                   "seed": terrain["seed"]}
         if settings != self.project.scene_settings():
             stack.push(SetSceneSettingsCommand(self.project, settings, "world shape"))
         if add_ground:

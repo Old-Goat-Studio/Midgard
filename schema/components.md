@@ -39,7 +39,7 @@ editor creates one in every scene's World folder.
 | `sun_mode` | `"uniform"` or `"latitude"` | `"uniform"`. How day and night work on an outside sphere (`midgard/sunlight.h`): `uniform` shifts each place's time by its longitude (noon on one side, midnight on the other) and gives every place the calendar's daylight share; `latitude` tilts the planet by the calendar's tilt, so the sun's height and the day's length follow latitude and the time of year (polar day and night), with the start's latitude set by how high the sun is placed at noon. Other shapes: one sun crossing the sky (bounded areas, flat-wrap cylinders), or, inside spheres and curved cylinders, a light sphere 10 m across at the centre or a light rod 5 m across down the axis, drawn glowing, with shades going round: the light always comes straight down, and each place's time is shifted by its angle round the axis, the light brightening through its dawn and fading at its dusk. |
 | `ambient` | `[r, g, b]` | `[0.18, 0.2, 0.26]` |
 | `body` | `{"id": "world", "shape": "sphere_outside", "radius": 1000, "gravity": 9.81, "origin": [x, y, z]}` | none: flat ground, +Y up, gravity 9.81 m/s² down |
-| `terrain` | `{"seed": 1, "base": 8, "height_scale": 60, "feature_size": 500, "octaves": 6, "sea_level": 0, "ocean_band": 300, "ocean_depth": 30, "end_ramp": 150, "wall_height": 120, "wall": "cliff", "spacing": 2, "snow_line": 90}` | none: no terrain. See below. |
+| `terrain` | `{"world_type": "wt_custom", "version": 1, "seed": 1}` | none: no terrain. The world type and version its ground is made from, and its own seed (default: the body's); see below. Packages from before migration 12 hold the ground's settings here instead. |
 
 `body` is the scene's world shape (`midgard/body.h`): where "up" points and how gravity pulls.
 Shapes and their sizes in metres: `bounded_area` (`width`, `length`), `flat_cylinder`
@@ -51,8 +51,19 @@ centre at `[0, -radius, 0]`, a hollow world's or a cylinder's at `[0, radius, 0]
 within the roadmap's limits (§7, "Size and precision"); the engine refuses others. Physics pulls
 every moving body along the shape's gravity where it is, and the sun's shadows use its "up".
 
-`terrain` gives a bounded area or a cylinder ground of hills and valleys (`midgard/terrain.h`;
-spheres have terrain from milestone 5.10). Heights come from noise at points on the shape's
+`terrain` names a world type (the `world_type` and `world_type_version` tables, migration 12;
+`midgard/world_type.h`): a recipe for worlds, kept in versions so a world still generates the
+same after its world type changes. A version a shipped game used (an export marks the ones its
+scenes use) can't be changed or deleted; editing it saves a new version. A recipe is
+`{"shapes": [...], "size": [smallest, largest], "gravity", "atmosphere", "calendar",
+"terrain": {"base": 8, "height_scale": 60, "feature_size": 500, "octaves": 6, "sea_level": 0,
+"ocean_band": 300, "ocean_depth": 30, "end_ramp": 150, "wall_height": 120, "wall": "cliff",
+"spacing": 2, "snow_line": 90}}`; the cook refuses a world type made for other shapes or sizes
+than the scene's. Migration 12 made each scene's terrain settings into its own Custom world
+type, with the same ground.
+
+The ground is hills and valleys on any shape (`midgard/terrain.h`; spheres from milestone
+5.10). Heights come from noise at points on the shape's
 surface, so they are the same on every device and a cylinder's join is seamless: `base` plus
 `height_scale` times noise whose largest hills are `feature_size` metres across, with `octaves`
 layers of detail (1 to 12), from `seed` (default: the body's). A bounded area sinks to

@@ -39,6 +39,14 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
         report.errors.emplace_back(e.what());
     }
 
+    // The world types (milestone 5.11): every version's recipe, as the game would read it.
+    try {
+        for (std::string& problem : world_type_problems(load_world_type_versions(database)))
+            report.errors.push_back(std::move(problem));
+    } catch (const std::exception& e) {
+        report.errors.emplace_back(e.what());
+    }
+
     std::set<std::string> content_ids;
     for (const ContentEntry& c : m.content) content_ids.insert(c.id);
     std::unique_ptr<Pak> pak;
@@ -96,6 +104,12 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
             if (!scene.settings.body)
                 report.warnings.push_back(
                     "the scene has terrain settings but no world shape; there is no terrain");
+            // A world type made for other shapes or sizes.
+            if (scene.settings.recipe && scene.settings.body)
+                for (std::string& misfit :
+                     recipe_misfits(*scene.settings.recipe, *scene.settings.body))
+                    report.errors.push_back("world type '" + scene.settings.world->world_type +
+                                            "': " + std::move(misfit));
             // Terrain is the ground: a World Surface lies at height 0 under it (at sea level,
             // hiding the water there and solid where the sea should be).
             for (entt::entity e : scene.registry.view<const MeshRef>()) {

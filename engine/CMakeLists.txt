@@ -31,6 +31,7 @@ add_library(midgard_core STATIC
     core/src/shape.cpp
     core/src/body.cpp
     core/src/terrain.cpp
+    core/src/world_type.cpp
     core/src/calendar.cpp
     core/src/time_service.cpp
 )
@@ -334,6 +335,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_sunlight.cpp
         tests/test_terrain.cpp
         tests/test_terrain_streamer.cpp
+        tests/test_world_type.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp

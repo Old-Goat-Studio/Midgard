@@ -61,6 +61,7 @@ struct TerrainSettings {
     WallLook wall = WallLook::Cliff;
     double snow_line = 90.0;  // metres: snow lies above this all year (lower in winter)
     double spacing = 2.0;     // metres between grid points at the finest level, at most
+    bool operator==(const TerrainSettings&) const = default;
 };
 
 // From the scene settings' "terrain" object. Throws std::runtime_error naming what's wrong with

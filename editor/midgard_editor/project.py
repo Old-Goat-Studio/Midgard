@@ -68,6 +68,7 @@ class Project(QObject):
     calendars_changed = Signal(str)  # calendar id, or "" when calendars were added or removed
     environments_changed = Signal(str)  # environment id, or "" when added or removed
     terrain_changed = Signal(str)  # scene id: its terrain stamps (sculpting and painting)
+    world_types_changed = Signal(str)  # world type id: its recipe or name
     files_changed = Signal(list)  # model and image files changed on disk (paths in the project)
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):

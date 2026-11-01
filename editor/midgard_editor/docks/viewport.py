@@ -30,7 +30,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
-from .. import engine, environments, terrain_stamps, textures
+from .. import engine, environments, terrain_stamps, textures, world_types
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
@@ -287,6 +287,7 @@ class ViewportPanel(QWidget):
             project.objects_changed.connect(self._objects_changed)
             project.environments_changed.connect(self._environments_changed)
             project.terrain_changed.connect(self._terrain_changed)
+            project.world_types_changed.connect(lambda _id: self._settings_changed(MAIN_SCENE))
             project.files_changed.connect(self._files_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
@@ -346,14 +347,16 @@ class ViewportPanel(QWidget):
 
     def _settings_changed(self, _scene: str) -> None:
         if self.project is not None:
-            self.view.set_settings(json.dumps(self.project.scene_settings(MAIN_SCENE)))
+            self.view.set_settings(json.dumps(world_types.resolved_settings(
+                self.project, self.project.scene_settings(MAIN_SCENE))))
             self.request_render()
 
     def _sync_all(self) -> None:
         self.view.clear()
         if self.project is not None:
             # The fallback for a scene without a Sky entity, as in the game.
-            self.view.set_settings(json.dumps(self.project.scene_settings(MAIN_SCENE)))
+            self.view.set_settings(json.dumps(world_types.resolved_settings(
+                self.project, self.project.scene_settings(MAIN_SCENE))))
             self.send_environments()
             self.send_terrain()
             for entity in parents_first(self.project.entities()):

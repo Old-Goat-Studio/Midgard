@@ -30,7 +30,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import BUNDLE_DIR, android_apk, branding
+from . import BUNDLE_DIR, android_apk, branding, world_types
 from .cook import cook
 from .project import Project
 from .version import VERSION
@@ -163,6 +163,7 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path,
     game_dir.mkdir(parents=True)
 
     cook(project, game_dir / "data", {"os": spec["os"], "arch": spec["arch"], "role": "game"})
+    world_types.mark_shipped(project)  # its worlds must generate the same from now on
     exe = game_dir / (f"{name}.exe" if spec["os"] == "windows" else name)
     shutil.copy2(template.runtime, exe)
     icon = branding.path(project, "icon")
@@ -234,6 +235,7 @@ def _export_android(project: Project, template: Template, out_dir: Path, setting
     if work.exists():
         shutil.rmtree(work)
     cook(project, work / "data", {"os": spec["os"], "arch": spec["arch"], "role": "game"})
+    world_types.mark_shipped(project)  # its worlds must generate the same from now on
     assets = {"licenses/THIRD_PARTY_NOTICES.txt": _notices(template).encode("utf-8")}
     # The runtime copies these out of the APK on first start (scripts/, icon.png and the rest).
     data_files = sorted(p.relative_to(work / "data").as_posix()

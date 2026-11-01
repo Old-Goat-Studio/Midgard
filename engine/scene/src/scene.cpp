@@ -271,6 +271,28 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
 
+// A world type's version's recipe (migration 12).
+WorldRecipe world_recipe(sqlite3* db, const std::string& world_type, int version) {
+    if (!has_column(db, "world_type_version", "recipe"))
+        throw SceneError("terrain names a world type, but the database has none");
+    Stmt s = prepare(db,
+                     "SELECT recipe FROM world_type_version WHERE world_type = ? AND "
+                     "version = ?");
+    sqlite3_bind_text(s.get(), 1, world_type.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(s.get(), 2, version);
+    if (sqlite3_step(s.get()) != SQLITE_ROW)
+        throw SceneError("world type '" + world_type + "' has no version " +
+                         std::to_string(version));
+    try {
+        return recipe_from_json(json::parse(column_text(s.get(), 0)));
+    } catch (const SceneError&) {
+        throw;
+    } catch (const std::exception& e) {
+        throw SceneError("world type '" + world_type + "' version " + std::to_string(version) +
+                         ": " + e.what());
+    }
+}
+
 SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
     const bool settings_column = has_column(db, "scene", "settings");  // migration 2
     Stmt s = prepare(db, settings_column ? "SELECT settings FROM scene WHERE id = ?"
@@ -284,7 +306,16 @@ SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
         out.sky = vec3(settings, "sky", out.sky);
         out.ambient = vec3(settings, "ambient", out.ambient);
         if (settings.contains("body")) out.body = body_from_json(settings.at("body"));
-        if (settings.contains("terrain")) out.terrain = terrain_from_json(settings.at("terrain"));
+        if (settings.contains("terrain")) {
+            const json& terrain = settings.at("terrain");
+            if (is_world_ref(terrain)) {  // a world type's version, and a seed (migration 12)
+                out.world = world_ref_from_json(terrain);
+                out.recipe = world_recipe(db, out.world->world_type, out.world->version);
+                out.terrain = world_terrain(*out.recipe, *out.world);
+            } else {  // the settings themselves (packages from before)
+                out.terrain = terrain_from_json(terrain);
+            }
+        }
         if (const auto mode = sun_mode_from_name(settings.value("sun_mode", "uniform")))
             out.sun_mode = *mode;
         else

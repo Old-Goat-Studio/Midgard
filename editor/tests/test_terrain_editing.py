@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from midgard_editor import engine
+from midgard_editor import engine, world_types
 from midgard_editor.physics_dialogs import WorldShapeDialog
 
 needs_engine = pytest.mark.skipif(engine.module() is None, reason="engine module not built")
@@ -50,9 +50,13 @@ def test_terrain_settings_are_saved_undone_and_shown_again(qtbot, project):
     dialog.terrain_fields["height_scale"].setValue(90)
     dialog.octaves.setValue(5)
     dialog.accept()
-    terrain = project.scene_settings()["terrain"]
-    assert terrain["seed"] == 42 and terrain["height_scale"] == 90 and terrain["octaves"] == 5
-    assert "wall" not in terrain  # a bounded area has no ends
+    # The scene names a world type (milestone 5.11) and keeps its seed; the ground's settings
+    # are the world type's recipe.
+    world = project.scene_settings()["terrain"]
+    assert world["seed"] == 42 and world["version"] == 1
+    ground = world_types.recipe(project, world["world_type"])["terrain"]
+    assert ground["height_scale"] == 90 and ground["octaves"] == 5
+    assert "wall" not in ground and "seed" not in ground  # a bounded area has no ends
     assert not any(e.components.get("mesh", {}).get("asset") == "builtin:surface"
                    for e in project.entities())  # terrain is the ground
 

@@ -21,6 +21,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/sunlight.h"
 #include "midgard/terrain.h"
+#include "midgard/world_type.h"
 
 namespace midgard {
 
@@ -221,6 +222,11 @@ struct SceneSettings {
     SunMode sun_mode = SunMode::Uniform;
     // The world's ground (midgard/terrain.h), on its body: none, no terrain.
     std::optional<TerrainSettings> terrain;
+    // The world type and version it is made from, with its seed (midgard/world_type.h; from
+    // migration 12), and that version's recipe. Packages from before hold the terrain settings
+    // themselves, without these.
+    std::optional<WorldRef> world;
+    std::optional<WorldRecipe> recipe;
 };
 
 // The scene's sky: an entity with this component sets the scene's sky and ambient colours

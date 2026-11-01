@@ -130,7 +130,8 @@ void Viewport::set_settings(const std::string& settings_json) {
     scene_.settings.terrain.reset();
     if (const auto it = s.find("terrain"); it != s.end()) {
         try {
-            scene_.settings.terrain = terrain_from_json(*it);
+            // (A world type's name is looked up by the editor, which sends the settings.)
+            if (!is_world_ref(*it)) scene_.settings.terrain = terrain_from_json(*it);
         } catch (const std::exception&) {
         }
     }
