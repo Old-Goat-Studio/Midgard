@@ -13,5 +13,5 @@ layout(location = 0) out vec4 v_color;
 void main() {
     v_color = in_color;
     gl_Position = frame.view_proj * vec4(in_position, 1.0);
-    gl_Position.z = max(gl_Position.z - 0.0002 * gl_Position.w, 0.0);
+    gl_Position.z = min(gl_Position.z + 0.0002 * gl_Position.w, gl_Position.w);  // (reversed)
 }

@@ -15,23 +15,27 @@ def choose(dialog, shape: str) -> None:
     dialog.shape.setCurrentIndex(dialog.shape.findData(shape))
 
 
-def test_terrain_is_offered_on_bounded_areas_and_cylinders(qtbot, project):
+def test_terrain_is_offered_on_every_shape(qtbot, project):
+    """Bounded areas and cylinders (milestone 5.9), planets and hollow worlds (5.10); the ocean
+    band only on a bounded area and the end walls only on cylinders."""
     dialog = WorldShapeDialog(project)
     qtbot.addWidget(dialog)
     dialog.show()
-    for shape, offered in (("", False), ("bounded_area", True), ("flat_cylinder", True),
-                           ("curved_cylinder", True), ("sphere_outside", False)):
-        choose(dialog, shape)
-        assert dialog.terrain.isVisible() == offered, shape
-    choose(dialog, "bounded_area")
-    form = dialog.terrain_form
-    assert form.isRowVisible(dialog.terrain_fields["ocean_band"])
-    assert not form.isRowVisible(dialog.wall)  # walls are a cylinder's ends
-    choose(dialog, "curved_cylinder")
-    assert form.isRowVisible(dialog.wall) and form.isRowVisible(dialog.terrain_fields["end_ramp"])
-    assert not form.isRowVisible(dialog.terrain_fields["ocean_band"])
-    # With terrain, the flat World Surface isn't offered as well.
+    for shape in ("bounded_area", "flat_cylinder", "curved_cylinder", "sphere_outside",
+                  "sphere_inside"):
+        dialog.shape.setCurrentIndex(dialog.shape.findData(shape))
+        assert dialog.terrain.isVisible(), shape
+        assert dialog.terrain_form.isRowVisible(dialog.wall) == (shape.endswith("cylinder"))
+        assert dialog.terrain_form.isRowVisible(dialog.terrain_fields["ocean_band"]) == (
+            shape == "bounded_area")
+    dialog.shape.setCurrentIndex(dialog.shape.findData(""))
+    assert not dialog.terrain.isVisible()  # flat ground: no body, no terrain
+    # A planet with terrain is saved as such.
+    dialog.shape.setCurrentIndex(dialog.shape.findData("sphere_outside"))
     dialog.terrain.setChecked(True)
+    settings = dialog.terrain_settings()
+    assert settings is not None and "wall" not in settings and "ocean_band" in settings
+    # With terrain, the flat World Surface isn't offered as well.
     assert not dialog.form.isRowVisible(dialog.add_ground)
 
 
@@ -106,3 +110,29 @@ def test_the_viewport_draws_streamed_terrain(project):
     view.set_settings(json.dumps({"sky": [0.0, 0.0, 0.0], "body": body}))
     assert ground() < 0.05  # taken away again
     view.detach()
+
+
+def test_turning_terrain_on_removes_a_world_surface_from_before(qtbot, project):
+    """A World Surface lies at height 0, at sea level under the terrain: it would hide the water
+    and be walked on. Applying terrain removes it, in the same undoable step."""
+    from midgard_editor.physics_dialogs import SURFACE
+
+    dialog = WorldShapeDialog(project)
+    qtbot.addWidget(dialog)
+    choose(dialog, "curved_cylinder")
+    dialog.add_ground.setChecked(True)
+    dialog.accept()  # a habitat with a World Surface, no terrain
+    surfaces = [e for e in project.entities()
+                if e.components.get("mesh", {}).get("asset") == SURFACE]
+    assert len(surfaces) == 1
+    dialog = WorldShapeDialog(project)
+    qtbot.addWidget(dialog)
+    dialog.terrain.setChecked(True)
+    dialog.accept()
+    assert project.scene_settings().get("terrain") is not None
+    assert not [e for e in project.entities()
+                if e.components.get("mesh", {}).get("asset") == SURFACE]
+    project.undo_stack.undo()  # one step: the surface is back, the terrain gone
+    assert project.scene_settings().get("terrain") is None
+    assert [e.id for e in project.entities()
+            if e.components.get("mesh", {}).get("asset") == SURFACE] == [surfaces[0].id]

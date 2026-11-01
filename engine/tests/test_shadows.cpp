@@ -134,3 +134,29 @@ TEST_CASE("casters are kept or skipped per cascade, and shadows can be off") {
     CHECK(fit_cascades(view_towards({0, 0, -1}), kProjection, {}, sun, {0, 1, 0}, settings).count ==
           0);
 }
+
+TEST_CASE("reversed depth: near is 1, far is 0, and surfaces far away stay apart") {
+    // A habitat's view: a near plane of 5 cm and a far one of 8 km. Water 30 cm above the
+    // ground below it, 2 km away, must get a different depth (as a 32-bit float), or the two
+    // flicker against each other as the camera moves.
+    const glm::mat4 p = perspective(glm::radians(55.0f), 16.0f / 9.0f, 0.05f, 8000.0f);
+    const auto depth = [&](float distance) {
+        const glm::vec4 c = p * glm::vec4(0.0f, 0.0f, -distance, 1.0f);
+        return c.z / c.w;
+    };
+    CHECK(depth(0.05f) == doctest::Approx(1.0f));
+    CHECK(depth(8000.0f) == doctest::Approx(0.0f).epsilon(1e-6));
+    for (const float far_away : {500.0f, 2000.0f, 6000.0f}) {
+        CAPTURE(far_away);
+        CHECK(depth(far_away) > depth(far_away + 0.3f));  // nearer is greater, and apart
+    }
+    // The cascades still find the view's near and far ends.
+    ShadowSettings s;
+    s.cascades = 3;
+    s.distance = 100.0f;
+    const ShadowCascades c = fit_cascades(glm::mat4(1.0f), p, glm::dvec3(0.0),
+                                          glm::vec3(-0.3f, -1.0f, -0.2f), glm::vec3(0, 1, 0), s);
+    REQUIRE(c.count == 3);
+    CHECK(c.far_depth[2] == doctest::Approx(100.0f));
+    CHECK(c.far_depth[0] < c.far_depth[1]);
+}

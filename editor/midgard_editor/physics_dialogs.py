@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """World ▸ World Shape… (the scene's body: which way is up and how gravity pulls; it can also
-add ground covering the whole world, or terrain on bounded areas and cylinders) and
+add ground covering the whole world, or terrain on any curved or flat world) and
 World ▸ Physics Layers… (the project's collision layers and which of them pass through each
 other). Both are undoable."""
 import json
@@ -29,7 +29,12 @@ from PySide6.QtWidgets import (
 from . import engine
 from .project import PHYSICS_LAYERS, Project
 from .scene_model import WORLD_FOLDER, Entity
-from .undo import AddEntityCommand, SetPhysicsLayersCommand, SetSceneSettingsCommand
+from .undo import (
+    AddEntityCommand,
+    DeleteEntityCommand,
+    SetPhysicsLayersCommand,
+    SetSceneSettingsCommand,
+)
 
 SURFACE = "builtin:surface"  # the world's surface, made by the engine from the shape
 
@@ -49,7 +54,8 @@ SHAPES: dict[str, tuple[str, dict[str, tuple[float, float, float]]]] = {
 
 # Terrain (midgard/terrain.h): its settings, with the engine's defaults and the shapes they apply
 # to ("" for every shape with terrain). Spheres have terrain from milestone 5.10.
-TERRAIN_SHAPES = ("bounded_area", "flat_cylinder", "curved_cylinder")
+TERRAIN_SHAPES = ("bounded_area", "flat_cylinder", "curved_cylinder", "sphere_outside",
+                  "sphere_inside")
 TERRAIN_FIELDS: dict[str, tuple[str, float, float, float, str, str]] = {
     # key: (label, low, high, default, suffix, shapes)
     "height_scale": ("Hill height", 0, 5000, 60, " m", ""),
@@ -138,7 +144,7 @@ class WorldShapeDialog(QDialog):
         self.offers_ground = not has_surface  # a scene with ground already isn't offered more
         self.form.addRow("", self.add_ground)
 
-        # Terrain: hills from the world's seed, on bounded areas and cylinders.
+        # Terrain: hills from the world's seed, on every shape (spheres from milestone 5.10).
         terrain: dict[str, Any] = project.scene_settings().get("terrain") or {}
         self.terrain = QGroupBox("Terrain")
         self.terrain.setCheckable(True)
@@ -270,6 +276,12 @@ class WorldShapeDialog(QDialog):
                     "mesh": {"asset": SURFACE},
                     "material": {"color": [0.35, 0.42, 0.3, 1.0]},
                     "collider": {"shape": "mesh"}})))
+        if terrain is not None:
+            # Terrain is the ground: a World Surface from before would lie at height 0 under
+            # it, hiding the water there and solid where the sea should be.
+            for e in self.project.entities():
+                if e.components.get("mesh", {}).get("asset") == SURFACE:
+                    stack.push(DeleteEntityCommand(self.project, e))
         stack.endMacro()
         super().accept()
 

@@ -1911,7 +1911,7 @@ TEST_CASE("terrain in the scene settings, and the cook's checks of it") {
     REQUIRE(game.terrain() != nullptr);
     CHECK(game.terrain()->terrain().roots_u() == 3);
     const glm::mat4 p = game.camera(1.0f).projection;
-    const float far_plane = p[3][2] / (p[2][2] + 1.0f);  // (Vulkan's 0..1 depth)
+    const float far_plane = p[3][2] / p[2][2];  // (reversed depth: the far plane at 0)
     CHECK(far_plane >= midgard::kTerrainViewDistance * 0.99f);
     TestPackage none({});
     CHECK(midgard::Game(none.dir).terrain() == nullptr);
@@ -2265,4 +2265,25 @@ TEST_CASE("inside worlds' lights: the rod's mesh, and how far the camera sees") 
     CHECK(midgard::inside_view_distance(body(R"({"id": "p", "shape": "sphere_outside",
         "radius": 3000})")) == 0.0);
     CHECK(midgard::inside_view_distance(std::nullopt) == 0.0);
+}
+
+TEST_CASE("the cook warns about a World Surface under terrain") {
+    // A World Surface made before terrain was turned on lies at height 0, at sea level: it
+    // hides the water and the player walks on it.
+    const char* settings = R"({"body": {"shape": "curved_cylinder", "radius": 1000,
+                                        "length": 5000, "origin": [0, 1000, 0]},
+                               "terrain": {}})";
+    TestPackage both({{"e7_ground", R"(NULL, '{"mesh": {"asset": "builtin:surface"},
+                                         "collider": {"shape": "mesh"}}')"}},
+                     settings);
+    std::string all;
+    for (const std::string& w : midgard::validate_package(both.dir).warnings) all += w + "\n";
+    CHECK(all.find("e7_ground") != std::string::npos);
+    CHECK(all.find("World Surface") != std::string::npos);
+    // Without terrain it is the ground, as meant.
+    TestPackage surface({{"e7_ground", R"(NULL, '{"mesh": {"asset": "builtin:surface"}}')"}},
+                        R"({"body": {"shape": "curved_cylinder", "radius": 1000,
+                                     "length": 5000, "origin": [0, 1000, 0]}})");
+    for (const std::string& w : midgard::validate_package(surface.dir).warnings)
+        CHECK(w.find("World Surface") == std::string::npos);
 }

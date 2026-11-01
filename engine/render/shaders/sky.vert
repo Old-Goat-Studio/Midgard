@@ -7,5 +7,5 @@ layout(location = 0) out vec2 v_ndc;
 
 void main() {
     v_ndc = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2) * 2.0 - 1.0;
-    gl_Position = vec4(v_ndc, 1.0, 1.0);
+    gl_Position = vec4(v_ndc, 0.0, 1.0);  // the far plane (reversed depth: 0)
 }

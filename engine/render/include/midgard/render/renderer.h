@@ -205,6 +205,7 @@ private:
 };
 
 // A right-handed perspective projection for Vulkan (depth 0..1, y flipped).
+// (Reversed depth: the near plane maps to 1 and the far plane to 0.)
 glm::mat4 perspective(float fov_y_radians, float aspect, float near_plane, float far_plane);
 
 // Writes RGBA8 pixels as a PNG. Returns false on failure.

@@ -96,6 +96,17 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
             if (!scene.settings.body)
                 report.warnings.push_back(
                     "the scene has terrain settings but no world shape; there is no terrain");
+            // Terrain is the ground: a World Surface lies at height 0 under it (at sea level,
+            // hiding the water there and solid where the sea should be).
+            for (entt::entity e : scene.registry.view<const MeshRef>()) {
+                const std::vector<std::string> assets = scene.registry.get<MeshRef>(e).assets();
+                if (scene.settings.body &&
+                    std::find(assets.begin(), assets.end(), kBuiltinSurface) != assets.end())
+                    report.warnings.push_back(
+                        "entity '" + scene.registry.get<EntityInfo>(e).id +
+                        "' is a World Surface, but the scene has terrain: it lies at height 0 "
+                        "under the terrain, hiding its water; delete it");
+            }
         }
         for (const TerrainStamp& stamp : scene.terrain_stamps)
             for (std::string& problem : stamp_problems(stamp))

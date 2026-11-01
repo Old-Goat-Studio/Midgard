@@ -30,8 +30,10 @@ ShadowCascades fit_cascades(const glm::mat4& view, const glm::mat4& projection,
     // The camera's frustum: its near and far depth, and the rays through its four corners
     // (scaled so each reaches depth 1; the camera looks down -z).
     const glm::mat4 inverse_projection = glm::inverse(projection);
-    const float near_depth = -unproject(inverse_projection, 0, 0, 0).z;
-    const float far_depth = -unproject(inverse_projection, 0, 0, 1).z;
+    // (Depth 0 and 1 are the far and near planes, reversed, or the other way round.)
+    const float depth0 = -unproject(inverse_projection, 0, 0, 0).z;
+    const float depth1 = -unproject(inverse_projection, 0, 0, 1).z;
+    const float near_depth = std::min(depth0, depth1), far_depth = std::max(depth0, depth1);
     std::array<glm::vec3, 4> rays;
     for (int i = 0; i < 4; ++i) {
         const glm::vec3 p =

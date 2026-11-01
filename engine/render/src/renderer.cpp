@@ -827,7 +827,7 @@ struct Renderer::Impl {
             VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         depth_state.depthTestEnable = VK_TRUE;
         depth_state.depthWriteEnable = VK_TRUE;
-        depth_state.depthCompareOp = VK_COMPARE_OP_LESS;
+        depth_state.depthCompareOp = VK_COMPARE_OP_GREATER;  // reversed depth: nearer is greater
         VkPipelineColorBlendAttachmentState blend_att{};
         blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -882,7 +882,7 @@ struct Renderer::Impl {
         info.pVertexInputState = &no_vertices;
         raster.cullMode = VK_CULL_MODE_NONE;
         depth_state.depthWriteEnable = VK_FALSE;
-        depth_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depth_state.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
         const VkResult sky_result =
             vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &sky_pipeline);
         vkDestroyShaderModule(device, sky_v, nullptr);
@@ -896,7 +896,7 @@ struct Renderer::Impl {
         stages[0].module = water_v;
         stages[1].module = water_f;
         info.pVertexInputState = &vinput;
-        depth_state.depthCompareOp = VK_COMPARE_OP_LESS;
+        depth_state.depthCompareOp = VK_COMPARE_OP_GREATER;
         blend_att.blendEnable = VK_TRUE;
         blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
         blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
@@ -912,7 +912,7 @@ struct Renderer::Impl {
         blend_att = VkPipelineColorBlendAttachmentState{};
         blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        depth_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depth_state.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
 
         // Debug lines: a line list of (position, colour), tested against depth but not writing
         // it, so what's in front hides them.
@@ -1717,7 +1717,7 @@ struct Renderer::Impl {
         std::array<VkClearValue, 2> clears{};
         const glm::vec4 clear = to_linear(clear_color);
         clears[0].color = {{clear.r, clear.g, clear.b, clear.a}};
-        clears[1].depthStencil = {1.0f, 0};
+        clears[1].depthStencil = {0.0f, 0};  // reversed depth: the far plane is 0
         VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         rp.renderPass = scene_pass;
         rp.framebuffer = scene_framebuffer;
@@ -2217,7 +2217,11 @@ glm::mat4 relative_to(const glm::dmat4& world, const glm::dvec3& origin) {
 }
 
 glm::mat4 perspective(float fov_y_radians, float aspect, float near_plane, float far_plane) {
-    glm::mat4 p = glm::perspectiveRH_ZO(fov_y_radians, aspect, near_plane, far_plane);
+    // Reversed depth: the near plane at 1, the far plane at 0. A float depth buffer's precision
+    // then follows perspective's, about the same share of the distance everywhere; the usual
+    // way round, with a near plane of a few centimetres, it could only tell surfaces apart to
+    // metres a kilometre or two away (shallow water flickered against the ground below it).
+    glm::mat4 p = glm::perspectiveRH_ZO(fov_y_radians, aspect, far_plane, near_plane);
     p[1][1] *= -1.0f;  // Vulkan's clip space has y pointing down
     return p;
 }
