@@ -50,10 +50,12 @@ struct Collider {
     std::vector<glm::vec3> points;
     std::vector<std::uint32_t> triangles;
     // Heightfield: samples x samples heights (row by row, along x then z), `spacing` metres
-    // apart, centred on the body; for static bodies.
+    // apart along x and `spacing_z` along z (0: the same), centred on the body; for static
+    // bodies. Each square is split along its diagonal from (x, z) to (x + 1, z + 1).
     std::uint32_t samples = 0;
     std::vector<float> heights;
     float spacing = 1.0f;
+    float spacing_z = 0.0f;
 };
 
 struct Surface {

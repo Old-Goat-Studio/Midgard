@@ -1918,6 +1918,48 @@ TEST_CASE("terrain in the scene settings, and the cook's checks of it") {
                          midgard::SceneError);
 }
 
+TEST_CASE("terrain is solid: the player starting under it is lifted, stands and walks on it") {
+    // The player in a folder (as the editor's World folder keeps it).
+    TestPackage pkg({{"e0_world", R"(NULL, '{"folder": {}}')"},
+                     {"e1_player", R"('e0_world', '{"transform": {"position": [40, -50, -30]},
+                                         "player": {"speed": 6}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [40, 2, -24]},
+                                         "camera": {}}')"}},
+                    R"({"body": {"shape": "bounded_area", "width": 3000, "length": 3000,
+                                 "seed": 7},
+                        "terrain": {"height_scale": 40}})");
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity player = scene.find("e1_player");
+    REQUIRE(game.ground() != nullptr);
+    const midgard::Terrain& t = game.terrain()->terrain();
+    // Lifted onto the ground (it was 50 m under it): standing, its middle half its height up.
+    CHECK(t.above_ground(scene.world_position(player)) == doctest::Approx(0.55).epsilon(0.01));
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (int i = 0; i < 120; ++i) game.update(actions, 1.0f / 60.0f);  // 2 s: it settles
+    const double settled = t.above_ground(scene.world_position(player));
+    CHECK(settled > -0.05);  // not through the ground
+    CHECK(settled < 1.5);    // standing on it (the capsule's middle above the surface)
+    // Walking 10 s over the hills: always on the ground, never through it or floating off.
+    actions.set("keyboard", "W", 1.0f);
+    const glm::dvec3 start = scene.world_position(player);
+    for (int i = 0; i < 600; ++i) {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+        const double above = t.above_ground(scene.world_position(player));
+        CHECK(above > -0.1);
+        CHECK(above < 3.0);
+    }
+    CHECK(glm::length(scene.world_position(player) - start) > 30.0);  // it went somewhere
+    CHECK(game.ground()->bodies() > 0);
+    // Put under the ground mid-game (a script, say): it is put back on top.
+    actions.set("keyboard", "W", 0.0f);
+    scene.registry.get<midgard::Transform>(player).position.y -= 20.0;
+    for (int i = 0; i < 60; ++i) game.update(actions, 1.0f / 60.0f);
+    CHECK(t.above_ground(scene.world_position(player)) > -0.05);
+    CHECK(t.above_ground(scene.world_position(player)) < 1.5);
+}
+
 TEST_CASE("above a planet the sky's horizon dips to where the ground's edge is") {
     TestPackage pkg({{"e1_sun", R"(NULL, '{"transform": {"rotation": [-50, 35, 0]},
                                       "light": {"type": "directional"}}')"}},

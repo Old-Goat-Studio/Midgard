@@ -22,6 +22,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
 #include "midgard/scene_physics.h"
+#include "midgard/terrain_collision.h"
 #include "midgard/terrain_streamer.h"
 #include "midgard/time_service.h"
 #include "midgard/world_save.h"
@@ -78,6 +79,7 @@ public:
     // draws(); wait: finish every chunk wanted now (the first frame, screenshots).
     void stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait = false);
     const TerrainStreamer* terrain() const { return terrain_.get(); }
+    const TerrainCollision* ground() const { return ground_.get(); }
 
     // One draw per entity with a mesh, and the terrain's chunks.
     // What to draw, relative to the camera's origin (camera-relative rendering).
@@ -171,6 +173,10 @@ private:
     std::unique_ptr<JobSystem> jobs_;
     std::unique_ptr<TerrainStreamer> terrain_;
     render::Renderer* terrain_renderer_ = nullptr;
+    // The terrain's solid ground round the player (in physics_'s world).
+    std::unique_ptr<TerrainCollision> ground_;
+    void update_ground();
+    void put_on_ground(entt::entity e);
 };
 
 }  // namespace midgard

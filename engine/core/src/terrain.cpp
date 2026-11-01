@@ -224,6 +224,21 @@ double Terrain::height(int face, double u, double v) const {
     return h;
 }
 
+glm::dvec3 Terrain::ground(const glm::dvec3& p) const {
+    const SurfacePoint s = body_.surface(p);
+    glm::dvec3 g = position(s.face, s.u, s.v, height(s.face, s.u, s.v));
+    if (body_.shape.kind() == Shape::Kind::FlatCylinder) {  // the copy nearest the point
+        const double c = body_.shape.face_size().x;
+        g.x += std::round((p.x - g.x) / c) * c;
+    }
+    return g;
+}
+
+double Terrain::above_ground(const glm::dvec3& p) const {
+    const SurfacePoint s = body_.surface(p);
+    return s.height - height(s.face, s.u, s.v);
+}
+
 glm::dvec3 Terrain::position(int face, double u, double v, double h) const {
     const Shape& s = body_.shape;
     if (s.kind() == Shape::Kind::BoundedArea || s.kind() == Shape::Kind::FlatCylinder) {
@@ -297,7 +312,7 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
         for (int i = 0; i < n; ++i) {
             const std::uint32_t a = std::uint32_t(j * (n + 1) + i), b = a + (n + 1), c = a + 1,
                                 d = b + 1;
-            out.indices.insert(out.indices.end(), {a, b, c, c, b, d});
+            out.indices.insert(out.indices.end(), {a, b, d, a, d, c});
         }
     return out;
 }

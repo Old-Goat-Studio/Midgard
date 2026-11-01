@@ -130,6 +130,7 @@ void Game::save_world() {
 }
 
 void Game::rebuild_physics() {
+    ground_.reset();  // its bodies were in the old world
     physics_ = std::make_unique<ScenePhysics>(
         scene_, layers_, [this](const std::string& asset) { return load_mesh(asset); });
 }
@@ -156,6 +157,7 @@ void Game::update(const Actions& actions, float dt) {
     update_sun();
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
     physics_->set_player_intent(intent.walk, intent.jump);
+    update_ground();               // solid ground under the player before it moves
     physics_->update(scene_, dt);  // the player walks
     camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
@@ -329,6 +331,49 @@ void Game::rebuild_terrain() {
     if (!jobs_) jobs_ = std::make_unique<JobSystem>();
     terrain_ = std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain,
                                                  jobs_.get());
+    // Solid ground. A player who starts below it is lifted onto it.
+    if (ground_) ground_->clear(physics_->world());
+    ground_ = std::make_unique<TerrainCollision>(terrain_->terrain());
+    const entt::entity player = physics_->player();
+    if (player != entt::null && scene_.registry.valid(player) &&
+        terrain_->terrain().above_ground(scene_.world_position(player)) < 0.0)
+        put_on_ground(player);
+    update_ground();
+}
+
+void Game::put_on_ground(entt::entity e) {
+    // Standing on the terrain: the entity's origin (the player's capsule's middle) half its
+    // height above the ground, whatever its parents (folders and groups) are.
+    const Terrain& t = terrain_->terrain();
+    const glm::dvec3 p = scene_.world_position(e);
+    const double half =
+        scene_.registry.all_of<Player>(e) ? 0.5 * scene_.registry.get<Player>(e).height : 0.0;
+    const glm::dvec3 target = t.ground(p) + scene_.settings.body->up(p) * (half + 0.05);
+    const entt::entity parent = scene_.registry.get<EntityInfo>(e).parent;
+    glm::dvec3 local = target;
+    if (parent != entt::null && scene_.registry.valid(parent))
+        local = glm::dvec3(glm::inverse(scene_.world_matrix(parent)) * glm::dvec4(target, 1.0));
+    scene_.registry.get<Transform>(e).position = local;
+}
+
+void Game::update_ground() {
+    if (!ground_) return;
+    const entt::entity player = physics_->player();
+    const bool has_player = player != entt::null && scene_.registry.valid(player);
+    glm::dvec3 at = glm::dvec3(0.0);
+    if (physics_->character())
+        at = physics_->character()->position();
+    else if (has_player)
+        at = scene_.world_position(player);
+    // A player found well under the ground (fallen through, or put there) is put back on it.
+    if (has_player && terrain_->terrain().above_ground(at) < -1.0) {
+        put_on_ground(player);
+        at = scene_.world_position(player);
+    }
+    // Where the player is about to be, too (a teleport by a script or the editor).
+    std::vector<glm::dvec3> around{at};
+    if (has_player) around.push_back(scene_.world_position(player));
+    ground_->update(physics_->world(), around);
 }
 
 void Game::stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait) {

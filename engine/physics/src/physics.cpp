@@ -184,10 +184,11 @@ JPH::ShapeRefC make_shape(const Collider& c, const glm::vec3& scale) {
             const std::uint32_t n = c.samples;
             if (n < 2 || c.heights.size() != size_t(n) * n)
                 throw PhysicsError("collider: a heightfield needs samples x samples heights");
-            const float span = float(n - 1) * c.spacing;
-            shape = make(JPH::HeightFieldShapeSettings(c.heights.data(),
-                                                       JPH::Vec3(-0.5f * span, 0.0f, -0.5f * span),
-                                                       JPH::Vec3(c.spacing, 1.0f, c.spacing), n));
+            const float dz = c.spacing_z > 0.0f ? c.spacing_z : c.spacing;
+            const float span_x = float(n - 1) * c.spacing, span_z = float(n - 1) * dz;
+            shape = make(JPH::HeightFieldShapeSettings(
+                c.heights.data(), JPH::Vec3(-0.5f * span_x, 0.0f, -0.5f * span_z),
+                JPH::Vec3(c.spacing, 1.0f, dz), n));
             break;
         }
     }

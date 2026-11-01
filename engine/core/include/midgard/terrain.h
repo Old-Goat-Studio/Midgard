@@ -78,9 +78,11 @@ struct ChunkKey {
 struct ChunkMesh {
     glm::dvec3 origin{0.0};
     std::vector<glm::vec3> positions, normals;
-    std::vector<glm::vec2> uvs;          // metres across the face, over 16 (for tiling textures)
-    std::vector<std::uint32_t> indices;  // triangles, counter-clockwise seen from above
-    std::vector<double> heights;         // as generated (before edges were matched)
+    std::vector<glm::vec2> uvs;  // metres across the face, over 16 (for tiling textures)
+    // Triangles, counter-clockwise seen from above; each square is split along its diagonal from
+    // point (i, j) to (i + 1, j + 1), as a physics heightfield splits it.
+    std::vector<std::uint32_t> indices;
+    std::vector<double> heights;  // as generated (before edges were matched)
 };
 
 // Edges of a chunk, for ChunkMesh's coarser neighbours.
@@ -111,6 +113,10 @@ public:
 
     glm::dvec3 noise_position(int face, double u, double v) const;  // relative to the body
     double height(int face, double u, double v) const;
+    // The ground under (or over) a point: on the terrain at the point's place, and how high the
+    // point is above it along up (negative: below the ground).
+    glm::dvec3 ground(const glm::dvec3& p) const;
+    double above_ground(const glm::dvec3& p) const;
     // Where a point is drawn, in the room: a flat-wrap cylinder's u doesn't wrap here, so a
     // chunk at its east edge lies past it (streaming draws it again a circumference over).
     glm::dvec3 position(int face, double u, double v, double h) const;
