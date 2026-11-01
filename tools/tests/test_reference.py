@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from reference import TABLES, table  # noqa: E402
 from reference.hashing import fnv1a64  # noqa: E402
@@ -196,7 +198,10 @@ def test_light_models_match_their_table():
         if body is not None:
             body = {"shape": body["shape"], "origin": tuple(body["origin"])}
         phase, to_sun, height = light.local_sun(body, placed, c["clock"], tuple(c["point"]))
-        assert phase == c["phase"] and list(to_sun) == c["to_sun"] and height == c["height"], c
+        # (System trigonometry: the last bits differ between platforms' maths libraries.)
+        assert phase == pytest.approx(c["phase"], abs=1e-12), c
+        assert list(to_sun) == pytest.approx(c["to_sun"], abs=1e-12), c
+        assert height == pytest.approx(c["height"], abs=1e-12), c
 
 
 def test_a_planets_noon_moves_with_longitude_and_its_poles_have_polar_day_and_night():
@@ -237,7 +242,8 @@ def test_seasons_match_their_table():
         body = data["bodies"][c["body"]]
         if body is not None:
             body = {"shape": body["shape"], "origin": tuple(body["origin"])}
-        assert light.local_season(body, placed, c["clock"], tuple(c["point"])) == c["season"], c
+        season = light.local_season(body, placed, c["clock"], tuple(c["point"]))
+        assert season == pytest.approx(c["season"], abs=1e-12), c  # (system trigonometry)
     for c in data["tints"]:
         assert env.season_tint(data["settings"], c["season"]) == c["tint"], c
 
