@@ -33,18 +33,22 @@ glm::dvec3 path(const glm::dvec3& up, glm::dvec3 noon, double phase) {
 
 glm::dvec3 up_at(const std::optional<Body>& body, const glm::dvec3& p) {
     if (!body) return {0.0, 1.0, 0.0};
+    // At a sphere's centre or on a cylinder's axis "up" is undefined: +Y, as the shape layer
+    // has it. (The start, the scene's origin, is there when a body is centred on it.)
+    const glm::dvec3 q = p - body->origin;
     switch (body->shape.kind()) {
         case Shape::Kind::BoundedArea:
         case Shape::Kind::FlatCylinder:
             return {0.0, 1.0, 0.0};
-        case Shape::Kind::CurvedCylinder: {
-            const glm::dvec3 q = p - body->origin;
+        case Shape::Kind::CurvedCylinder:
+            if (q.x * q.x + q.y * q.y < 1e-18) return {0.0, 1.0, 0.0};
             return glm::normalize(glm::dvec3(-q.x, -q.y, 0.0));  // towards the axis (along Z)
-        }
         case Shape::Kind::SphereOutside:
-            return glm::normalize(p - body->origin);
+            if (glm::dot(q, q) < 1e-18) return {0.0, 1.0, 0.0};
+            return glm::normalize(q);
         default:
-            return -glm::normalize(p - body->origin);
+            if (glm::dot(q, q) < 1e-18) return {0.0, 1.0, 0.0};
+            return -glm::normalize(q);
     }
 }
 

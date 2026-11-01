@@ -218,3 +218,25 @@ TEST_CASE("Latitude: summer in the north is winter in the south, and the equator
     clock.tilt = 0.0;  // no tilt: the calendar's season everywhere
     CHECK(midgard::local_sun(kPlanet, kPlaced, clock, south).season == doctest::Approx(-0.3));
 }
+
+TEST_CASE("a body centred on the scene's origin still gives a sun everywhere (no NaN)") {
+    // The start (the scene's origin) is then the centre, where "up" is undefined: +Y is used.
+    for (const char* shape : {"sphere_outside", "sphere_inside", "curved_cylinder"}) {
+        CAPTURE(shape);
+        const midgard::Body body = midgard::body_from_json(
+            json{{"id", "b"}, {"shape", shape}, {"radius", 3000}, {"length", 5000}});
+        for (const midgard::SunMode mode :
+             {midgard::SunMode::Uniform, midgard::SunMode::Latitude}) {
+            midgard::SunClock clock;
+            clock.mode = mode;
+            clock.time = 0.4;
+            const midgard::LocalSun s =
+                midgard::local_sun(body, kPlaced, clock, glm::dvec3(2593.4, 3241.8, -1426.4));
+            CHECK(std::isfinite(s.phase));
+            CHECK(std::isfinite(s.height));
+            CHECK(std::isfinite(s.to_sun.x));
+            CHECK(std::isfinite(s.to_sun.y));
+            CHECK(std::isfinite(s.to_sun.z));
+        }
+    }
+}

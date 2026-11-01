@@ -16,7 +16,8 @@
 
 layout(push_constant) uniform Push {
     mat4 model;
-    vec4 season;  // x snow cover (0 to 1), y autumn (-1 spring to 1), z dry grass (0 to 1)
+    vec4 season;  // x snow cover (0 to 1), y autumn (-1 spring to 1), z dry grass (0 to 1),
+                  // w up's frame (1 as it is; 2 to 7 an axis's frame, for a sphere)
     vec4 levels;  // x snow line, y sea level (metres)
     vec4 params;
 } pc;
@@ -79,7 +80,16 @@ vec3 turn(vec3 v, vec3 from, vec3 to) {
 
 void main() {
     const vec3 n = normalize(v_normal);
-    const vec3 up = from_octahedral(v_tangent.xy);
+    vec3 up = from_octahedral(v_tangent.xy);
+    if (pc.season.w > 1.5) {  // in the frame of an axis: (next axis, the one after, the axis)
+        const int frame = int(pc.season.w + 0.5) - 2;
+        const int axis = frame / 2;
+        vec3 u;
+        u[axis] = frame % 2 == 1 ? -up.z : up.z;
+        u[(axis + 1) % 3] = up.x;
+        u[(axis + 2) % 3] = up.y;
+        up = u;
+    }
     const float painted = clamp(v_tangent.z, -1.0, 1.0);
     const float slope = 1.0 - clamp(dot(n, up), 0.0, 1.0);  // 0 flat, 1 a wall
     const float height = v_tangent.w - pc.levels.y;           // above the sea

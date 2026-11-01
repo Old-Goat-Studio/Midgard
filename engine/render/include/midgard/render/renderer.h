@@ -101,10 +101,15 @@ struct DrawItem {
     bool casts_shadow = true;  // false: lit and shadowed, but leaves no shadow of its own
     // A water surface: drawn after everything solid, blended, in the environment's Water look
     // (its colour and material are ignored). Its vertices' tangent w is the depth below them.
+    // Waves follow its uv (metres across a face, over 16); with `emissive.x` 1 they follow
+    // instead its vertices' tangent xyz, a position fixed to the world (a sphere's faces' uvs
+    // don't meet at their edges, so the waves there come from 3D). Model: a translation only.
     bool water = false;
     // Terrain ground (shaders/terrain.frag): coloured by its own material from each vertex's
     // data (uv: moisture and detail; tangent: "up" there, and the height). Here `color` is
-    // (snow cover, autumn, dry grass, 1) and `emissive` (snow line, sea level, 0), as they are.
+    // (snow cover, autumn, dry grass, frame) and `emissive` (snow line, sea level, 0), as they
+    // are. frame 1: up is encoded as it is; 2 to 7: in the frame of axis (frame - 2) / 2,
+    // negative if odd (midgard/terrain_streamer.h's up_frame, for spheres).
     bool terrain = false;
 };
 

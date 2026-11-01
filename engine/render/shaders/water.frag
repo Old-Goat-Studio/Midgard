@@ -15,7 +15,8 @@ layout(push_constant) uniform Push {
     mat4 model;
     vec4 shallow;  // linear rgb, w: clarity (metres)
     vec4 deep;     // linear rgb, w: time (seconds)
-    vec4 waves;    // x: wave strength (slope), y: the longest waves' length (metres)
+    vec4 waves;    // x: wave strength (slope), y: the longest waves' length (metres),
+                   // z: 1 for waves in 3D from v_tangent.xyz (a sphere), 0 from v_uv
 } pc;
 
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadow_map;
@@ -23,7 +24,8 @@ layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadow_map;
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;      // metres across the face, over 16
-layout(location = 3) in vec4 v_tangent;  // w: the water's depth here (metres)
+layout(location = 3) in vec4 v_tangent;  // w: the water's depth here (metres); xyz: on a
+                                         // sphere, this point's place in the world (metres)
 
 layout(location = 0) out vec4 out_color;
 
@@ -41,6 +43,26 @@ vec2 wave_slope(vec2 p, float t, float footprint) {
     for (int i = 0; i < 4; ++i) {
         const float k = 2.0 * kPi / wavelength;
         const float speed = sqrt(9.81 / k);  // deep-water waves
+        const float phase = k * (dot(dirs[i], p) - speed * t);
+        const float visible = 1.0 - smoothstep(wavelength / 12.0, wavelength / 6.0, footprint);
+        slope += dirs[i] * cos(phase) * (visible / float(i + 1));
+        wavelength *= 0.57;
+    }
+    return slope * pc.waves.x;
+}
+
+// The same waves in 3D, for a sphere (whose faces' uvs don't meet at their edges): travelling
+// along fixed directions in space, at p (metres, fixed to the world). Their slope as a 3D
+// vector; only its part along the surface bends the normal.
+vec3 wave_slope_3d(vec3 p, float t, float footprint) {
+    const float length0 = max(pc.waves.y, 0.5);
+    vec3 slope = vec3(0.0);
+    const vec3 dirs[4] = vec3[](vec3(0.64, 0.48, 0.6), vec3(-0.36, 0.71, -0.6),
+                                vec3(0.78, -0.19, -0.6), vec3(-0.56, -0.57, 0.6));
+    float wavelength = length0;
+    for (int i = 0; i < 4; ++i) {
+        const float k = 2.0 * kPi / wavelength;
+        const float speed = sqrt(9.81 / k);
         const float phase = k * (dot(dirs[i], p) - speed * t);
         const float visible = 1.0 - smoothstep(wavelength / 12.0, wavelength / 6.0, footprint);
         slope += dirs[i] * cos(phase) * (visible / float(i + 1));
@@ -73,7 +95,12 @@ void main() {
     const vec3 dp1 = dFdx(v_position), dp2 = dFdy(v_position);
     const vec2 duv1 = dFdx(v_uv), duv2 = dFdy(v_uv);
     const float det = duv1.x * duv2.y - duv2.x * duv1.y;
-    if (abs(det) > 1e-12 && !below) {
+    if (pc.waves.z > 0.5 && !below) {
+        const vec3 p = v_tangent.xyz;
+        const float footprint = max(length(dFdx(p)), length(dFdy(p)));
+        const vec3 slope = wave_slope_3d(p, pc.deep.w, footprint);
+        n = normalize(n - (slope - n * dot(n, slope)));
+    } else if (abs(det) > 1e-12 && !below) {
         vec3 t = (dp1 * duv2.y - dp2 * duv1.y) / det;
         vec3 b = (dp2 * duv1.x - dp1 * duv2.x) / det;
         t = normalize(t - n * dot(n, t));

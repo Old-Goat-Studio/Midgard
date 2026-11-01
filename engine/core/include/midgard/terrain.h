@@ -188,6 +188,9 @@ public:
     std::uint64_t chunk_hash(const ChunkKey& key) const;
 
 private:
+    // Whether the grid's u then v turn the other way to a flat map's, seen from above (the
+    // outside of a sphere): normals and triangles are turned over to face up.
+    bool flipped(const ChunkKey& key) const;
     double u_at(const ChunkKey& key, int i) const;
     double v_at(const ChunkKey& key, int j) const;
 

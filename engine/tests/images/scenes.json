@@ -245,6 +245,24 @@
       "_about": "terrain_area in autumn: the grass turned golden-brown, more where the ground is lush.",
       "args": ["--size", "480x270", "--scene", "terrain_autumn"],
       "max_bad": 0.01
+    },
+    {
+      "name": "terrain_planet",
+      "_about": "A 3 km planet from low orbit over a cube corner, where three of the cube-sphere's faces meet: hills, lakes and seas run across the face edges with no seams (milestone 5.10).",
+      "args": ["--size", "480x270", "--scene", "terrain_planet"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_planet_low",
+      "_about": "Low over the planet's ground by the edge between two faces, looking across it: one surface, lit the same either side.",
+      "args": ["--size", "480x270", "--scene", "terrain_planet_low"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_hollow",
+      "_about": "Inside a 2.5 km hollow world by a face edge: the ground and seas curving up all round into the far side, softened by the inside-world haze; its water's waves come from 3D, so they too run on across face edges.",
+      "args": ["--size", "480x270", "--scene", "terrain_hollow"],
+      "max_bad": 0.01
     }
   ]
 }

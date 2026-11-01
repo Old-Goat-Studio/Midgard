@@ -85,13 +85,28 @@ glm::vec2 octahedral(const glm::vec3& n) {
     return p;
 }
 
-render::MeshData ground_mesh_data(const ChunkMesh& mesh) {
+int up_frame(const glm::dvec3& up) {
+    int axis = 0;
+    for (int a = 1; a < 3; ++a)
+        if (std::abs(up[a]) > std::abs(up[axis])) axis = a;
+    return axis * 2 + (up[axis] < 0.0 ? 1 : 0);
+}
+
+glm::vec3 in_up_frame(const glm::vec3& v, int frame) {
+    if (frame < 0) return v;
+    const int axis = frame / 2;
+    const float sign = frame % 2 == 1 ? -1.0f : 1.0f;
+    return {v[(axis + 1) % 3], v[(axis + 2) % 3], sign * v[axis]};
+}
+
+render::MeshData ground_mesh_data(const ChunkMesh& mesh, int frame) {
     render::MeshData out;
     out.vertices.reserve(mesh.positions.size());
     for (size_t i = 0; i < mesh.positions.size(); ++i) {
         const glm::vec3 b = i < mesh.biome.size() ? mesh.biome[i] : glm::vec3(0.5f, 0.0f, 0.0f);
         render::Vertex v = vertex(mesh.positions[i], mesh.normals[i], glm::vec2(b.x, b.y));
-        const glm::vec2 up = octahedral(i < mesh.ups.size() ? mesh.ups[i] : glm::vec3(0, 1, 0));
+        const glm::vec2 up =
+            octahedral(in_up_frame(i < mesh.ups.size() ? mesh.ups[i] : glm::vec3(0, 1, 0), frame));
         v.tangent[0] = up.x;
         v.tangent[1] = up.y;
         v.tangent[2] = b.z;  // painted ground: -1 sand to 1 rock
@@ -102,10 +117,20 @@ render::MeshData ground_mesh_data(const ChunkMesh& mesh) {
     return out;
 }
 
-render::MeshData water_mesh_data(const ChunkMesh& mesh) {
+// round: on a sphere, where the waves come from each point's place in the body (tangent xyz)
+// rather than its face's uv, which doesn't meet the next face's at the edge.
+render::MeshData water_mesh_data(const ChunkMesh& mesh, bool round) {
     render::MeshData out = chunk_mesh_data(mesh);
-    for (size_t i = 0; i < out.vertices.size(); ++i)  // the depth below, for the water shader
-        out.vertices[i].tangent[3] = float(mesh.heights[i]);
+    for (size_t i = 0; i < out.vertices.size(); ++i) {  // the depth below, for the water shader
+        render::Vertex& v = out.vertices[i];
+        v.tangent[3] = float(mesh.heights[i]);
+        if (round) {
+            const glm::dvec3 p = mesh.origin + glm::dvec3(mesh.positions[i]);
+            v.tangent[0] = float(p.x);
+            v.tangent[1] = float(p.y);
+            v.tangent[2] = float(p.z);
+        }
+    }
     return out;
 }
 
@@ -152,6 +177,11 @@ TerrainStreamer::MeshKey TerrainStreamer::mesh_key(const TerrainLeaf& l) {
     return (std::uint64_t(l.key.face) << 60) | (std::uint64_t(l.key.level) << 54) |
            (std::uint64_t(std::uint32_t(l.key.x)) << 31) |
            (std::uint64_t(std::uint32_t(l.key.y)) << 4) | flags;
+}
+
+bool TerrainStreamer::sphere() const {
+    const Shape::Kind kind = terrain_.body().shape.kind();
+    return kind == Shape::Kind::SphereOutside || kind == Shape::Kind::SphereInside;
 }
 
 double TerrainStreamer::wrap_length() const {
@@ -290,10 +320,12 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
         auto made = e->made;
         const Terrain* terrain = &terrain_;
         const TerrainLeaf l = e->leaf;
-        auto make = [terrain, l, made] {
-            made->ground = ground_mesh_data(terrain->mesh(l.key, l.coarser));
+        const bool round = sphere();
+        const int frame = round ? up_frame(terrain_.body().up(terrain_.chunk_origin(l.key))) : -1;
+        auto make = [terrain, l, made, round, frame] {
+            made->ground = ground_mesh_data(terrain->mesh(l.key, l.coarser), frame);
             if (const auto water = terrain->water_mesh(l.key, l.coarser))
-                made->water = water_mesh_data(*water);
+                made->water = water_mesh_data(*water, round);
         };
         if (jobs_) {
             e->job = jobs_->submit([make](const JobContext&) { make(); });
@@ -369,6 +401,7 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
     const glm::vec4 look(float(snow), float(autumn), float(dry), 1.0f);
     const TerrainSettings& ts = terrain_.settings();
     const glm::vec3 levels(float(ts.snow_line), float(ts.sea_level), 0.0f);
+    const bool round = sphere();
     for (const TerrainLeaf& leaf : drawn_) {
         const auto it = cache_.find(mesh_key(leaf));
         if (it == cache_.end() || !it->second->mesh) continue;
@@ -379,6 +412,8 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
         d.model = glm::translate(glm::mat4(1.0f), glm::vec3(at));
         d.terrain = true;
         d.color = look;
+        if (round)  // up in the frame of its own axis (ground_mesh_data's frame)
+            d.color.w = float(2 + up_frame(terrain_.body().up(terrain_.chunk_origin(leaf.key))));
         d.emissive = levels;
         out.push_back(d);
         if (it->second->water) {
@@ -387,6 +422,7 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
             w.model = d.model;
             w.water = true;
             w.casts_shadow = false;
+            if (round) w.emissive.x = 1.0f;  // waves from each point's place (water_mesh_data)
             out.push_back(w);
         }
     }

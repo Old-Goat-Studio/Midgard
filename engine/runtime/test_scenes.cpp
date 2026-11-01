@@ -568,6 +568,19 @@ public:
                 eye_ = {-1180.0, 4.0, -300.0};
                 look_ = {-1000.0, 0.0, -260.0};
             }
+        } else if (which == "planet" || which == "planet_low") {
+            // A 3 km planet: from low orbit over a cube corner, where three faces meet; or
+            // low over the ground by the edge between faces +X and +Y, looking across it.
+            body = {{"shape", "sphere_outside"},
+                    {"radius", 3000},
+                    {"seed", 11},
+                    {"origin", {0, -3000, 0}}};
+        } else if (which == "hollow") {
+            // Inside a 2.5 km hollow world, by the edge between faces -Y and +Z.
+            body = {{"shape", "sphere_inside"},
+                    {"radius", 2500},
+                    {"seed", 12},
+                    {"origin", {0, 2500, 0}}};
         } else if (which == "strip") {
             body = {
                 {"shape", "flat_cylinder"}, {"circumference", 6000}, {"length", 5000}, {"seed", 8}};
@@ -587,9 +600,28 @@ public:
         body["id"] = which;
         scene_.settings.body = body_from_json(body);
         scene_.settings.terrain = terrain_from_json(terrain);
+        if (which == "planet" || which == "planet_low" || which == "hollow") {
+            const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
+            // A point on the ground (in a direction from the centre) and a height above it.
+            const auto above = [&](const glm::dvec3& direction, double height) {
+                const glm::dvec3 g =
+                    t.ground(t.body().origin + glm::normalize(direction) * t.body().shape.radius());
+                return g + glm::dvec3(t.body().up(g)) * height;
+            };
+            if (which == "planet") {
+                eye_ = above({1.0, 1.25, -0.55}, 1400.0);
+                look_ = above({1.0, 1.0, -1.0}, 0.0);
+            } else if (which == "planet_low") {
+                eye_ = above({1.0, 0.86, 0.12}, 30.0);
+                look_ = above({1.0, 1.12, 0.12}, 0.0);
+            } else {
+                eye_ = above({0.0, -1.0, 0.94}, 40.0);
+                look_ = above({0.0, -0.2, 1.0}, 0.0);
+            }
+        }
         // Inside a habitat: the Environment editor's Inside-World Atmosphere preset, haze that
         // softens the far side overhead.
-        const bool inside = which == "habitat";
+        const bool inside = which == "habitat" || which == "hollow";
         scene_.environments.emplace(
             "env_earth",
             environment_from_json(
@@ -648,8 +680,9 @@ std::vector<std::string> names() {
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
-    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore",
-                              "terrain_winter", "terrain_autumn"})
+    for (const char* which :
+         {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore", "terrain_planet",
+          "terrain_planet_low", "terrain_hollow", "terrain_winter", "terrain_autumn"})
         out.push_back(which);
     return out;
 }
@@ -674,6 +707,9 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_strip") return std::make_unique<TerrainScene>("strip");
     if (name == "terrain_habitat") return std::make_unique<TerrainScene>("habitat");
     if (name == "terrain_shore") return std::make_unique<TerrainScene>("shore");
+    if (name == "terrain_planet") return std::make_unique<TerrainScene>("planet");
+    if (name == "terrain_planet_low") return std::make_unique<TerrainScene>("planet_low");
+    if (name == "terrain_hollow") return std::make_unique<TerrainScene>("hollow");
     if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
     if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
     for (const char* shape : kDayShapes)

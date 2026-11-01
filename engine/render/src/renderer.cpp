@@ -1777,7 +1777,7 @@ struct Renderer::Impl {
                 if (m.index_count == 0) continue;
                 PushData push{d.model, glm::vec4(to_linear(w.shallow), w.clarity),
                               glm::vec4(to_linear(w.deep), w.time),
-                              glm::vec4(w.wave_strength, w.wave_size, 0.0f, 0.0f)};
+                              glm::vec4(w.wave_strength, w.wave_size, d.emissive.x, 0.0f)};
                 vkCmdPushConstants(cmd, pipeline_layout,
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                    sizeof(push), &push);

@@ -92,6 +92,7 @@ private:
     struct Entry;
     using MeshKey = std::uint64_t;  // a chunk key and its coarser edges
     static MeshKey mesh_key(const TerrainLeaf& leaf);
+    bool sphere() const;         // a cube-sphere's terrain
     double wrap_length() const;  // a flat-wrap cylinder's circumference, else 0
     void upload_walls(render::Renderer& renderer);
 
@@ -114,10 +115,18 @@ private:
 // A chunk's ground for the renderer's terrain material (uv: moisture and detail; tangent: up
 // as an octahedral direction in xy, the painted ground in z, the height in w).
 glm::vec2 octahedral(const glm::vec3& unit);
-render::MeshData ground_mesh_data(const ChunkMesh& mesh);
+// On a sphere every direction occurs, so "up" would cross the octahedral encoding's fold (its
+// lower half's x = 0 and y = 0 lines) somewhere, and values between vertices either side of it
+// come out wrong. A chunk's up is instead encoded in the frame of the axis nearest its own
+// (frame 2 axis + 1 if that way is negative): there it stays well inside the upper half.
+// up_frame gives that frame, and in_up_frame turns a vector into it (none for frame -1).
+int up_frame(const glm::dvec3& up);
+glm::vec3 in_up_frame(const glm::vec3& v, int frame);
+render::MeshData ground_mesh_data(const ChunkMesh& mesh, int frame = -1);
 // A chunk's mesh for the renderer (uv: metres across the face, over 16).
 render::MeshData chunk_mesh_data(const ChunkMesh& mesh);
-// The water over a chunk for the renderer (tangent w: the depth below each point).
-render::MeshData water_mesh_data(const ChunkMesh& mesh);
+// The water over a chunk for the renderer (tangent w: the depth below each point; round: on a
+// sphere, tangent xyz is each point's place, which its waves follow across face edges).
+render::MeshData water_mesh_data(const ChunkMesh& mesh, bool round = false);
 
 }  // namespace midgard

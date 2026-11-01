@@ -522,3 +522,25 @@ TEST_CASE("cube-sphere terrain: a fine chunk meets a coarse one across a face ed
             }
     }
 }
+
+TEST_CASE("cube-sphere terrain: normals and triangles face up on every face, outside and in") {
+    const json t = sphere_table();
+    for (const std::string name : {"world", "hollow"}) {
+        const midgard::Terrain tr = sphere(t, name);
+        for (int f = 0; f < 6; ++f) {
+            CAPTURE(name);
+            CAPTURE(f);
+            const midgard::ChunkMesh m = tr.mesh({f, 1, 2, 5});
+            for (size_t i = 0; i < m.positions.size(); ++i) {
+                const glm::dvec3 up = tr.body().up(m.origin + glm::dvec3(m.positions[i]));
+                CHECK(glm::dot(glm::dvec3(m.normals[i]), up) > 0.2);
+            }
+            for (size_t i = 0; i < m.indices.size(); i += 3) {
+                const glm::dvec3 a = m.origin + glm::dvec3(m.positions[m.indices[i]]),
+                                 b = m.origin + glm::dvec3(m.positions[m.indices[i + 1]]),
+                                 c = m.origin + glm::dvec3(m.positions[m.indices[i + 2]]);
+                CHECK(glm::dot(glm::cross(b - a, c - a), tr.body().up(a)) > 0.0);
+            }
+        }
+    }
+}

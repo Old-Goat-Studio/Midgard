@@ -5,8 +5,10 @@
 // holes or lets memory grow.
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <map>
 #include <tuple>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -149,4 +151,143 @@ TEST_CASE("streaming: fast travel never leaves holes, and memory stays bounded")
     s.update({1000.0, 30.0, 0.0}, nullptr, true);
     CHECK(s.stats().complete);
     check_balanced(s.terrain(), s.drawn());
+}
+
+TEST_CASE("terrain chunks on a cube-sphere: every face covered once, balanced across face edges") {
+    for (const char* text : {R"({"id": "w", "shape": "sphere_outside", "radius": 3000, "seed": 11,
+              "origin": [0, -3000, 0]})",
+                             R"({"id": "h", "shape": "sphere_inside", "radius": 2500, "seed": 12,
+              "origin": [0, 2500, 0]})"}) {
+        CAPTURE(text);
+        midgard::TerrainStreamer s(body(text), {});
+        const midgard::Terrain& t = s.terrain();
+        s.set_range(1e9);
+        const double side = double(std::int64_t(1) << t.max_level());
+        // From near a face edge, near a cube corner, and from the start.
+        const glm::dvec3 c = t.body().origin;
+        const double r = t.body().shape.radius();
+        for (const glm::dvec3 d : {glm::dvec3(0.0, -1.0, 0.94), glm::dvec3(1.0, 1.0, -1.0),
+                                   glm::dvec3(0.0, 1.0, 0.0), glm::dvec3(0.0, -1.0, 0.0)}) {
+            const glm::dvec3 eye =
+                t.ground(c + glm::normalize(d) * r) + t.body().up(c + glm::normalize(d) * r) * 30.0;
+            const std::vector<midgard::TerrainLeaf> leaves = s.choose(eye);
+            CHECK(coverage(t, leaves) ==
+                  doctest::Approx(6.0 * t.roots_u() * t.roots_v() * side * side));
+            check_balanced(t, leaves);
+        }
+    }
+}
+
+namespace {
+
+// The world positions along a chunk mesh's edge (0 -u, 1 +u, 2 -v, 3 +v), in grid order.
+std::vector<glm::dvec3> edge_points(const midgard::ChunkMesh& m, int edge) {
+    constexpr int n = midgard::kChunkQuads;
+    std::vector<glm::dvec3> out;
+    for (int s = 0; s <= n; ++s) {
+        const int i = edge == 0 ? 0 : edge == 1 ? n : s;
+        const int j = edge == 2 ? 0 : edge == 3 ? n : s;
+        out.push_back(m.origin + glm::dvec3(m.positions[size_t(j) * (n + 1) + size_t(i)]));
+    }
+    return out;
+}
+
+double distance_to_polyline(const glm::dvec3& p, const std::vector<glm::dvec3>& line) {
+    double best = 1e30;
+    for (size_t i = 0; i + 1 < line.size(); ++i) {
+        const glm::dvec3 a = line[i], b = line[i + 1];
+        const double t = std::clamp(glm::dot(p - a, b - a) / glm::dot(b - a, b - a), 0.0, 1.0);
+        best = std::min(best, glm::length(p - (a + (b - a) * t)));
+    }
+    return best;
+}
+
+// Every chosen chunk's edge lies on its neighbour's edge (same level, or one coarser), as drawn.
+void check_no_cracks(const midgard::Terrain& t, const std::vector<midgard::TerrainLeaf>& leaves) {
+    auto less = [](const midgard::ChunkKey& a, const midgard::ChunkKey& b) {
+        return std::tie(a.face, a.level, a.x, a.y) < std::tie(b.face, b.level, b.x, b.y);
+    };
+    std::map<midgard::ChunkKey, midgard::TerrainLeaf, decltype(less)> by_key(less);
+    for (const midgard::TerrainLeaf& l : leaves) by_key[l.key] = l;
+    std::map<midgard::ChunkKey, midgard::ChunkMesh, decltype(less)> meshes(less);
+    const auto mesh = [&](const midgard::TerrainLeaf& l) -> const midgard::ChunkMesh& {
+        auto it = meshes.find(l.key);
+        if (it == meshes.end()) it = meshes.emplace(l.key, t.mesh(l.key, l.coarser)).first;
+        return it->second;
+    };
+    double worst = 0.0;
+    int pairs = 0;
+    for (const midgard::TerrainLeaf& l : leaves) {
+        for (int e = 0; e < 4; ++e) {
+            const auto n = t.neighbour(l.key, midgard::ChunkEdge(e));
+            if (!n) continue;
+            midgard::ChunkKey c = *n;
+            while (!by_key.contains(c) && c.level > 0) c = t.parent(c);
+            if (!by_key.contains(c)) continue;  // finer there: it is checked against this one
+            // The neighbour's edge facing this chunk.
+            int back = -1;
+            for (int f = 0; f < 4; ++f) {
+                const auto m = t.neighbour(c, midgard::ChunkEdge(f));
+                if (!m) continue;
+                midgard::ChunkKey a = l.key;
+                while (a.level > m->level) a = t.parent(a);
+                if (*m == a) back = f;
+            }
+            REQUIRE(back >= 0);
+            const std::vector<glm::dvec3> theirs = edge_points(mesh(by_key[c]), back);
+            for (const glm::dvec3& p : edge_points(mesh(l), e))
+                worst = std::max(worst, distance_to_polyline(p, theirs));
+            ++pairs;
+        }
+    }
+    CAPTURE(pairs);
+    CHECK(worst < 1e-3);
+}
+
+}  // namespace
+
+TEST_CASE("terrain chunks as drawn meet with no cracks, on every shape") {
+    const auto run = [](const char* text, const std::vector<glm::dvec3>& directions) {
+        CAPTURE(text);
+        midgard::TerrainStreamer s(body(text), {});
+        const midgard::Terrain& t = s.terrain();
+        const glm::dvec3 c = t.body().origin;
+        const double r = t.body().shape.kind() == midgard::Shape::Kind::BoundedArea
+                             ? 0.0
+                             : t.body().shape.radius();
+        for (const glm::dvec3& d : directions) {
+            CAPTURE(d);
+            const glm::dvec3 on = r > 0.0 ? c + glm::normalize(d) * r : d;
+            const glm::dvec3 eye = t.ground(on) + t.body().up(on) * 40.0;
+            check_no_cracks(t, s.choose(eye));
+        }
+    };
+    run(kArea, {glm::dvec3(0.0), glm::dvec3(1200.0, 0.0, -900.0)});
+    run(R"({"id": "h", "shape": "sphere_inside", "radius": 2500, "seed": 12,
+            "origin": [0, 2500, 0]})",
+        {glm::dvec3(0.0, -1.0, 0.94), glm::dvec3(0.3, -1.0, 0.2)});
+    run(R"({"id": "w", "shape": "sphere_outside", "radius": 3000, "seed": 11,
+            "origin": [0, -3000, 0]})",
+        {glm::dvec3(1.0, 1.0, -1.0), glm::dvec3(1.0, 0.86, 0.12)});
+}
+
+TEST_CASE("a sphere chunk's up is encoded in its axis's frame, clear of the octahedral fold") {
+    for (const char* text :
+         {R"({"id": "w", "shape": "sphere_outside", "radius": 3000, "seed": 11})",
+          R"({"id": "h", "shape": "sphere_inside", "radius": 2500, "seed": 12})"}) {
+        CAPTURE(text);
+        const midgard::Terrain t(body(text), {});
+        for (int f = 0; f < 6; ++f)
+            for (int y = 0; y < t.roots_v(); ++y)
+                for (int x = 0; x < t.roots_u(); ++x) {
+                    const midgard::ChunkKey k{f, 0, x, y};
+                    const int frame = midgard::up_frame(t.body().up(t.chunk_origin(k)));
+                    const midgard::ChunkMesh m = t.mesh(k);
+                    for (const glm::vec3& up : m.ups) {
+                        const glm::vec3 local = midgard::in_up_frame(up, frame);
+                        CHECK(local.z > 0.5f);  // the upper half: no fold anywhere in the chunk
+                        CHECK(glm::length(local) == doctest::Approx(1.0f));
+                    }
+                }
+    }
 }

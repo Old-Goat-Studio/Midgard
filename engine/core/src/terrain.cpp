@@ -549,6 +549,16 @@ glm::vec3 Terrain::biome_at(int face, double u, double v) const {
     return {float(moisture), float(std::clamp(detail, -1.0, 1.0)), float(ground)};
 }
 
+bool Terrain::flipped(const ChunkKey& k) const {
+    // Across the chunk's middle: from v's step to u's, crossed, against up there.
+    const double u = u_at(k, kChunkQuads / 2), v = v_at(k, kChunkQuads / 2);
+    const double du = 1.0 / double(points_u(k.level)), dv = 1.0 / double(points_v(k.level));
+    const glm::dvec3 p = position(k.face, u, v, 0.0);
+    const glm::dvec3 c =
+        glm::cross(position(k.face, u, v + dv, 0.0) - p, position(k.face, u + du, v, 0.0) - p);
+    return glm::dot(c, body_.up(p)) < 0.0;
+}
+
 glm::dvec3 Terrain::chunk_origin(const ChunkKey& k) const {
     return position(k.face, u_at(k, kChunkQuads / 2), v_at(k, kChunkQuads / 2), 0.0);
 }
@@ -574,11 +584,16 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
         }
     }
     const auto at = [&](int i, int j) -> glm::dvec3& { return p[size_t(j + 1) * g + (i + 1)]; };
+    // Which way round the grid turns, seen from above: u then v turn clockwise on a flat map
+    // (x then z, seen from +y), but the other way on the outside of a sphere.
+    const bool flip = flipped(k);
     std::vector<glm::dvec3> normal(size_t(n + 1) * (n + 1));
     for (int j = 0; j <= n; ++j)
-        for (int i = 0; i <= n; ++i)
-            normal[size_t(j) * (n + 1) + i] = glm::normalize(
-                glm::cross(at(i, j + 1) - at(i, j - 1), at(i + 1, j) - at(i - 1, j)));
+        for (int i = 0; i <= n; ++i) {
+            const glm::dvec3 c =
+                glm::cross(at(i, j + 1) - at(i, j - 1), at(i + 1, j) - at(i - 1, j));
+            normal[size_t(j) * (n + 1) + i] = glm::normalize(flip ? -c : c);
+        }
     // Onto a coarser neighbour's edge: the points between its points move to the midpoint.
     const auto stitch = [&](int i0, int j0, int di, int dj) {
         for (int s = 1; s < n; s += 2) {
@@ -612,7 +627,10 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
         for (int i = 0; i < n; ++i) {
             const std::uint32_t a = std::uint32_t(j * (n + 1) + i), b = a + (n + 1), c = a + 1,
                                 d = b + 1;
-            out.indices.insert(out.indices.end(), {a, b, d, a, d, c});
+            if (flip)
+                out.indices.insert(out.indices.end(), {a, d, b, a, c, d});
+            else
+                out.indices.insert(out.indices.end(), {a, b, d, a, d, c});
         }
     return out;
 }
@@ -639,6 +657,7 @@ std::optional<ChunkMesh> Terrain::water_mesh(const ChunkKey& k,
         }
     }
     if (!wet) return std::nullopt;
+    const bool flip = flipped(k);
     const auto stitch = [&](int i0, int j0, int di, int dj) {
         for (int s = 1; s < n; s += 2) {
             const size_t at = size_t(j0 + dj * s) * (n + 1) + (i0 + di * s);
@@ -660,7 +679,10 @@ std::optional<ChunkMesh> Terrain::water_mesh(const ChunkKey& k,
         for (int i = 0; i < n; ++i) {
             const std::uint32_t a = std::uint32_t(j * (n + 1) + i), b = a + (n + 1), c = a + 1,
                                 d = b + 1;
-            out.indices.insert(out.indices.end(), {a, b, d, a, d, c});
+            if (flip)
+                out.indices.insert(out.indices.end(), {a, d, b, a, c, d});
+            else
+                out.indices.insert(out.indices.end(), {a, b, d, a, d, c});
         }
     return out;
 }
