@@ -616,9 +616,28 @@ void Character::step(const glm::vec3& walk, float jump_speed) {
     settings.mWalkStairsStepUp = up * c.desc.step_height;
     const JPH::ObjectLayer layer = object_layer(c.desc.layer, true);
     const SolidOnly solid;
-    ch.ExtendedUpdate(float(kStep), gravity, settings,
-                      c.world->system.GetDefaultBroadPhaseLayerFilter(layer),
-                      c.world->system.GetDefaultLayerFilter(layer), solid, {}, *c.world->temp);
+    const JPH::RVec3 before = ch.GetPosition();
+    const auto update = [&] {
+        ch.ExtendedUpdate(float(kStep), gravity, settings,
+                          c.world->system.GetDefaultBroadPhaseLayerFilter(layer),
+                          c.world->system.GetDefaultLayerFilter(layer), solid, {}, *c.world->temp);
+    };
+    update();
+    // Walking on ground with nothing in the way, the ground's contacts can, at rare exact
+    // positions and speeds (where two triangles meet), cancel the step entirely, and with the
+    // same input the next step too: the character would stand still for good (seen walking on
+    // curved terrain). A step that should have gone somewhere but went almost nowhere is taken
+    // again from a centimetre higher, clear of those contacts (sticking to the floor brings it
+    // back down). A wall really in the way stops the step either way.
+    if (standing && jump_speed <= 0.0f) {
+        const float wanted = (next - up * next.Dot(up)).Length() * float(kStep);
+        const float moved = JPH::Vec3(ch.GetPosition() - before).Length();
+        if (wanted > 0.01f && moved < 0.001f * wanted) {
+            ch.SetPosition(before + JPH::RVec3(up * 0.01f));
+            ch.SetLinearVelocity(next);
+            update();
+        }
+    }
 }
 
 glm::dvec3 Character::position() const {
