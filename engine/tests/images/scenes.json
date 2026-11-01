@@ -233,6 +233,18 @@
       "_about": "Low over the sea by a coast (milestone 5.9): water from the Earth-like environment's look, its waves reflecting the sky, the island beyond, and the shallows below showing the ground through foam.",
       "args": ["--size", "480x270", "--scene", "terrain_shore"],
       "max_bad": 0.01
+    },
+    {
+      "name": "terrain_winter",
+      "_about": "terrain_area in deep winter: snow down to just above the beaches, the sea and lakes as before (milestone 5.9's terrain material).",
+      "args": ["--size", "480x270", "--scene", "terrain_winter"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_autumn",
+      "_about": "terrain_area in autumn: the grass turned golden-brown, more where the ground is lush.",
+      "args": ["--size", "480x270", "--scene", "terrain_autumn"],
+      "max_bad": 0.01
     }
   ]
 }

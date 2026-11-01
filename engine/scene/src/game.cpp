@@ -96,6 +96,7 @@ void Game::update_sun() {
     scene_.sun_clock.tilt = c.tilt != 0.0 ? c.tilt : 0.5 * (c.tilt_min + c.tilt_max);
     scene_.sun_clock.year = double(d.day_of_year) / double(std::max(c.year_days(d.year), 1));
     scene_.sun_clock.season = summer_on(c, d.year, d.day_of_year);  // for the season tints
+    scene_.sun_clock.autumn = autumn_on(c, d.year, d.day_of_year);  // and the terrain's
 }
 
 void Game::use_world(const std::filesystem::path& folder) {
@@ -446,6 +447,10 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
         out.push_back(d);
     }
     if (terrain_) {
+        // The season where the camera is (a tilted planet's hemispheres differ).
+        const std::optional<LocalSun> sun = scene_.local_sun(origin);
+        terrain_->set_season(sun ? sun->season : scene_.sun_clock.season,
+                             sun ? sun->autumn : scene_.sun_clock.autumn);
         std::vector<render::DrawItem> ground = terrain_->draws(origin);
         out.insert(out.end(), ground.begin(), ground.end());
     }

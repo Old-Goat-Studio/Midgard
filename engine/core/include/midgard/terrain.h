@@ -59,7 +59,8 @@ struct TerrainSettings {
     double end_ramp = 150.0;     // cylinders: how far from the ends the ground rises (0: none)
     double wall_height = 120.0;  // cylinders: how high it rises, to meet the end walls
     WallLook wall = WallLook::Cliff;
-    double spacing = 2.0;  // metres between grid points at the finest level, at most
+    double snow_line = 90.0;  // metres: snow lies above this all year (lower in winter)
+    double spacing = 2.0;     // metres between grid points at the finest level, at most
 };
 
 // From the scene settings' "terrain" object. Throws std::runtime_error naming what's wrong with
@@ -83,6 +84,10 @@ struct ChunkMesh {
     // point (i, j) to (i + 1, j + 1), as a physics heightfield splits it.
     std::vector<std::uint32_t> indices;
     std::vector<double> heights;  // as generated (before edges were matched)
+    // For the terrain's material: "up" at each point, and its biome: x moisture (0 dry to 1
+    // lush, over kilometres), y fine detail (-1 to 1, over metres).
+    std::vector<glm::vec3> ups;
+    std::vector<glm::vec2> biome;
 };
 
 // Edges of a chunk, for ChunkMesh's coarser neighbours.
@@ -121,6 +126,8 @@ public:
     // chunk at its east edge lies past it (streaming draws it again a circumference over).
     glm::dvec3 position(int face, double u, double v, double h) const;
 
+    // The biome at a point: x moisture (0 dry to 1 lush), y fine detail (-1 to 1).
+    glm::vec2 biome_at(int face, double u, double v) const;
     // Where a chunk's mesh is placed: its middle, on the ground at height 0.
     glm::dvec3 chunk_origin(const ChunkKey& key) const;
     // grid: kChunkQuads + 1 points a side. coarser[edge]: the neighbour there is a level up.

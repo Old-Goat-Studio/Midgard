@@ -94,6 +94,18 @@ def daylight_on(c: dict, year: int, day_of_year: int) -> float:
     return min(max(d, 0.01), 0.99)
 
 
+def autumn_on(c: dict, year: int, day_of_year: int) -> float:
+    """Which way the year is turning: 1 halfway from the longest day to the shortest, -1
+    halfway back, 0 at midsummer and midwinter (and without seasons)."""
+    if len(c.get("seasons", [])) < 2:
+        return 0.0
+    _, amplitude, middle = season_blend(c)
+    if not amplitude > 0.0:
+        return 0.0
+    f = (day_of_year + 0.5) / year_days(c, year)
+    return det.sin(2 * math.pi * (f - middle))
+
+
 def summer_on(c: dict, year: int, day_of_year: int) -> float:
     """How far into summer a day is: 1 on the longest day, -1 on the shortest, 0 without
     seasons whose daylight differs."""

@@ -76,6 +76,7 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
     number("end_ramp", t.end_ramp);
     number("wall_height", t.wall_height);
     number("spacing", t.spacing);
+    number("snow_line", t.snow_line);
     if (j.contains("wall")) {
         const std::string wall = j.at("wall").is_string() ? j.at("wall").get<std::string>() : "";
         if (wall == "cliff")
@@ -102,7 +103,8 @@ nlohmann::json terrain_to_json(const TerrainSettings& t) {
                      {"end_ramp", t.end_ramp},
                      {"wall_height", t.wall_height},
                      {"wall", wall_look_name(t.wall)},
-                     {"spacing", t.spacing}};
+                     {"spacing", t.spacing},
+                     {"snow_line", t.snow_line}};
     if (t.seed) j["seed"] = *t.seed;
     return j;
 }
@@ -111,7 +113,7 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
     std::vector<std::string> out;
     const auto finite = [](double v) { return std::isfinite(v); };
     if (!finite(t.base) || !finite(t.height_scale) || !finite(t.sea_level) ||
-        !finite(t.ocean_depth) || !finite(t.wall_height))
+        !finite(t.ocean_depth) || !finite(t.wall_height) || !finite(t.snow_line))
         out.push_back("terrain: heights are numbers");
     if (!(t.height_scale >= 0.0 && t.height_scale <= 5000.0))
         out.push_back("terrain: the height scale is from 0 to 5000 m");
@@ -256,6 +258,17 @@ double Terrain::v_at(const ChunkKey& k, int j) const {
     return double(std::int64_t(k.y) * kChunkQuads + j) / double(points_v(k.level));
 }
 
+glm::vec2 Terrain::biome_at(int face, double u, double v) const {
+    const glm::dvec3 q = noise_position(face, u, v);
+    const double moist = double(det::fbm(seed_ ^ det::tag("moisture"), q.x / 1500.0, q.y / 1500.0,
+                                         q.z / 1500.0, 4)) /
+                         65536.0;
+    const double detail =
+        double(det::gradient_noise(seed_ ^ det::tag("detail"), q.x / 7.0, q.y / 7.0, q.z / 7.0)) /
+        65536.0;
+    return {float(std::clamp(0.5 + 0.7 * moist, 0.0, 1.0)), float(std::clamp(detail, -1.0, 1.0))};
+}
+
 glm::dvec3 Terrain::chunk_origin(const ChunkKey& k) const {
     return position(k.face, u_at(k, kChunkQuads / 2), v_at(k, kChunkQuads / 2), 0.0);
 }
@@ -303,6 +316,8 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
         for (int i = 0; i <= n; ++i) {
             out.positions.push_back(glm::vec3(at(i, j) - out.origin));
             out.normals.push_back(glm::vec3(normal[size_t(j) * (n + 1) + i]));
+            out.ups.push_back(glm::vec3(body_.up(at(i, j))));
+            out.biome.push_back(biome_at(k.face, u_at(k, i), v_at(k, j)));
             const glm::dvec2 size = body_.shape.face_size();
             out.uvs.emplace_back(float(u_at(k, i) * size.x / 16.0),
                                  float(v_at(k, j) * size.y / 16.0));

@@ -102,6 +102,10 @@ struct DrawItem {
     // A water surface: drawn after everything solid, blended, in the environment's Water look
     // (its colour and material are ignored). Its vertices' tangent w is the depth below them.
     bool water = false;
+    // Terrain ground (shaders/terrain.frag): coloured by its own material from each vertex's
+    // data (uv: moisture and detail; tangent: "up" there, and the height). Here `color` is
+    // (snow cover, autumn, dry grass, 1) and `emissive` (snow line, sea level, 0), as they are.
+    bool terrain = false;
 };
 
 // The textures of a material (kNoTexture: none, a neutral default).

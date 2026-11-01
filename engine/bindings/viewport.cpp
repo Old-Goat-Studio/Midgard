@@ -347,6 +347,9 @@ bool Viewport::render() {
                                                          *scene_.settings.terrain, jobs_.get());
         }
         terrain_->update(camera.origin, renderer_.get(), true);
+        const std::optional<LocalSun> sun = scene_.local_sun(camera.origin);
+        terrain_->set_season(sun ? sun->season : scene_.sun_clock.season,
+                             sun ? sun->autumn : scene_.sun_clock.autumn);
         const std::vector<render::DrawItem> ground = terrain_->draws(camera.origin);
         draws.insert(draws.end(), ground.begin(), ground.end());
         far_plane = kTerrainViewDistance;

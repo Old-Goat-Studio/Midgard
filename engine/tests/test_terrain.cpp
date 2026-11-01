@@ -205,3 +205,22 @@ TEST_CASE("water over a chunk: at sea level, its depth at each point, none over 
     const midgard::Terrain dry(area().body(), high);
     CHECK_FALSE(dry.water_mesh({0, 2, 5, 3}).has_value());
 }
+
+TEST_CASE("a chunk's material data: up at each point, moisture and detail in range") {
+    const midgard::ChunkMesh m = habitat().mesh({0, 1, 3, 2});
+    REQUIRE(m.ups.size() == m.positions.size());
+    REQUIRE(m.biome.size() == m.positions.size());
+    for (size_t i = 0; i < m.ups.size(); ++i) {
+        const glm::dvec3 p = m.origin + glm::dvec3(m.positions[i]);
+        CHECK(glm::length(glm::dvec3(m.ups[i]) - habitat().body().up(p)) < 1e-5);
+        CHECK(m.biome[i].x >= 0.0f);
+        CHECK(m.biome[i].x <= 1.0f);
+        CHECK(std::abs(m.biome[i].y) <= 1.0f);
+    }
+    // The same point from two chunks: the same biome (it comes from the surface position).
+    const glm::vec2 a = habitat().biome_at(0, 0.0, 0.4), b = habitat().biome_at(0, 1.0, 0.4);
+    CHECK(a == b);
+    midgard::TerrainSettings t;
+    t.snow_line = 40.0;
+    CHECK(midgard::terrain_from_json(midgard::terrain_to_json(t)).snow_line == 40.0);
+}

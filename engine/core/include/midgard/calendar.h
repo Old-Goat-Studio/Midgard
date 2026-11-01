@@ -105,6 +105,10 @@ double daylight_on(const Calendar& c, std::int64_t year, int day_of_year);
 // How far into summer a day is (by its middle), on the same blend: 1 on the longest day, -1 on
 // the shortest, 0 at the equinoxes, and 0 all year without seasons whose daylight differs.
 double summer_on(const Calendar& c, std::int64_t year, int day_of_year);
+// Which way the year is turning, on the same blend: 1 halfway from the longest day to the
+// shortest (autumn), -1 halfway back (spring), 0 at midsummer and midwinter (and without
+// seasons). summer_on^2 + autumn_on^2 is 1 with seasons.
+double autumn_on(const Calendar& c, std::int64_t year, int day_of_year);
 
 // The reference formula (roadmap §6): 0 = sunrise, 0.5 = sunset, 1 = the next sunrise.
 double solar_phase(double seconds_into_day, double day_length, double day_fraction,

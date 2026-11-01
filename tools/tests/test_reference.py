@@ -281,3 +281,15 @@ def test_a_cylinders_terrain_meets_itself_at_the_join():
         t = terrain.Terrain(body)
         for v in (0.2, 0.5, 0.77):
             assert t.height(0, 0.0, v) == t.height(0, 1.0, v)
+
+
+def test_autumn_is_a_quarter_year_from_summer():
+    from reference import calendar as cal
+    calendars = json.loads((TABLES / "calendar_dates.json").read_text("utf-8"))["calendars"]
+    for c in calendars.values():
+        for day in range(0, cal.year_days(c, 1), 7):
+            s, a = cal.summer_on(c, 1, day), cal.autumn_on(c, 1, day)
+            if len(c.get("seasons", [])) >= 2:
+                assert abs(s * s + a * a - 1.0) < 1e-12
+            else:
+                assert a == 0.0

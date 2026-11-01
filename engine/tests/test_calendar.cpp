@@ -66,6 +66,29 @@ fs::path migrated_database() {
 
 }  // namespace
 
+TEST_CASE("autumn: which way the year turns, a quarter year from summer") {
+    const json calendars = shared_table().at("calendars");
+    for (const auto& [name, c] : calendars.items()) {
+        const midgard::Calendar cal = midgard::calendar_from_json(c);
+        CAPTURE(name);
+        for (int day = 0; day < cal.year_days(1); day += 7) {
+            const double s = midgard::summer_on(cal, 1, day), a = midgard::autumn_on(cal, 1, day);
+            if (cal.seasons.size() >= 2)
+                CHECK(s * s + a * a == doctest::Approx(1.0).epsilon(1e-12));
+            else
+                CHECK(a == 0.0);
+        }
+    }
+    // The standard calendar: just after midsummer it's turning towards autumn.
+    const midgard::Calendar standard = midgard::calendar_from_json(calendars.at("standard"));
+    int longest = 0;
+    for (int day = 0; day < 365; ++day)
+        if (midgard::summer_on(standard, 1, day) > midgard::summer_on(standard, 1, longest))
+            longest = day;
+    CHECK(midgard::autumn_on(standard, 1, longest + 30) > 0.3);
+    CHECK(midgard::autumn_on(standard, 1, (longest + 365 - 60) % 365) < -0.3);  // spring
+}
+
 TEST_CASE("how far into summer a day is matches the shared table") {
     const json calendars_json = shared_table().at("calendars");
     std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "seasons.json");

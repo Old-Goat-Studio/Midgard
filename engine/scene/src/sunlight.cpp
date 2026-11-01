@@ -78,6 +78,7 @@ LocalSun local_sun(const std::optional<Body>& body, const glm::dvec3& placed, co
                    const glm::dvec3& p) {
     LocalSun out;
     out.season = clock.season;
+    out.autumn = clock.autumn;
     const glm::dvec3 up0 = up_at(body, glm::dvec3(0.0));
     const glm::dvec3 up_p = up_at(body, p);
     const Shape::Kind kind = body ? body->shape.kind() : Shape::Kind::BoundedArea;
@@ -122,8 +123,11 @@ LocalSun local_sun(const std::optional<Body>& body, const glm::dvec3& placed, co
         out.to_sun = (e_y * std::cos(hour) + e_x * -std::sin(hour)) * std::cos(declination) +
                      axis * std::sin(declination);
         const double latitude = std::asin(std::clamp(glm::dot(q, axis), -1.0, 1.0));
-        if (clock.tilt > 0.0)
-            out.season = std::sin(kTau * clock.year) * std::clamp(latitude / (kPi / 4), -1.0, 1.0);
+        if (clock.tilt > 0.0) {
+            const double k = std::clamp(latitude / (kPi / 4), -1.0, 1.0);
+            out.season = std::sin(kTau * clock.year) * k;
+            out.autumn = -std::cos(kTau * clock.year) * k;  // after midsummer, towards winter
+        }
         const double c = -std::tan(latitude) * std::tan(declination);
         const double h0 = c <= -1.0 ? kPi : (c >= 1.0 ? 0.0 : std::acos(c));
         double local_hour = std::fmod(hour + longitude + kPi, kTau);

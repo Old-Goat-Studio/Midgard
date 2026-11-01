@@ -32,6 +32,7 @@
 #include "shadow_vert.h"
 #include "sky_frag.h"
 #include "sky_vert.h"
+#include "terrain_frag.h"
 #include "tonemap_frag.h"
 #include "water_frag.h"
 
@@ -186,9 +187,10 @@ struct Renderer::Impl {
     VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkPipeline sky_pipeline = VK_NULL_HANDLE;    // in the scene pass, after the opaque objects
-    VkPipeline water_pipeline = VK_NULL_HANDLE;  // after the sky: blended, no depth writes
-    VkPipeline line_pipeline = VK_NULL_HANDLE;   // debug lines, after the sky
+    VkPipeline sky_pipeline = VK_NULL_HANDLE;      // in the scene pass, after the opaque objects
+    VkPipeline water_pipeline = VK_NULL_HANDLE;    // after the sky: blended, no depth writes
+    VkPipeline terrain_pipeline = VK_NULL_HANDLE;  // opaque, with the terrain's material
+    VkPipeline line_pipeline = VK_NULL_HANDLE;     // debug lines, after the sky
     std::vector<DebugLine> debug_lines;
     Environment environment;
     VkPipelineLayout overlay_layout = VK_NULL_HANDLE;
@@ -857,6 +859,17 @@ struct Renderer::Impl {
         vkDestroyShaderModule(device, vert, nullptr);
         vkDestroyShaderModule(device, frag, nullptr);
         check(result, "Creating the graphics pipeline");
+
+        // Terrain: as the meshes, with its own material.
+        VkShaderModule terrain_v = shader(mesh_vert, sizeof(mesh_vert));
+        VkShaderModule terrain_f = shader(terrain_frag, sizeof(terrain_frag));
+        stages[0].module = terrain_v;
+        stages[1].module = terrain_f;
+        const VkResult terrain_result =
+            vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &terrain_pipeline);
+        vkDestroyShaderModule(device, terrain_v, nullptr);
+        vkDestroyShaderModule(device, terrain_f, nullptr);
+        check(terrain_result, "Creating the terrain pipeline");
 
         // The sky: one triangle at the far plane, no vertices, drawn where the depth is still
         // clear (so only where no object was drawn) without writing it.
@@ -1699,11 +1712,12 @@ struct Renderer::Impl {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &set,
                                 0, nullptr);
         MaterialId bound = ~0u;
-        bool any_water = false;
+        bool any_water = false, any_terrain = false;
         for (const DrawItem& d : draws) {
             if (d.mesh >= meshes.size()) continue;
-            if (d.water) {
-                any_water = true;
+            if (d.water || d.terrain) {
+                any_water = any_water || d.water;
+                any_terrain = any_terrain || d.terrain;
                 continue;
             }
             const GpuMesh& m = meshes[d.mesh];
@@ -1724,6 +1738,27 @@ struct Renderer::Impl {
             vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
             vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+        }
+        if (any_terrain) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrain_pipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1,
+                                    &set, 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1,
+                                    &materials[0], 0, nullptr);
+            for (const DrawItem& d : draws) {
+                if (!d.terrain || d.mesh >= meshes.size()) continue;
+                const GpuMesh& m = meshes[d.mesh];
+                if (m.index_count == 0) continue;
+                PushData push{d.model, d.color, glm::vec4(d.emissive, 0.0f),
+                              glm::vec4(d.metallic, d.roughness, 0.0f, 0.0f)};
+                vkCmdPushConstants(cmd, pipeline_layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(push), &push);
+                VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
+                vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+            }
         }
         if (environment.sky) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sky_pipeline);
@@ -1827,6 +1862,7 @@ struct Renderer::Impl {
             if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
             if (sky_pipeline) vkDestroyPipeline(device, sky_pipeline, nullptr);
             if (water_pipeline) vkDestroyPipeline(device, water_pipeline, nullptr);
+            if (terrain_pipeline) vkDestroyPipeline(device, terrain_pipeline, nullptr);
             if (line_pipeline) vkDestroyPipeline(device, line_pipeline, nullptr);
             if (shadow_pipeline) vkDestroyPipeline(device, shadow_pipeline, nullptr);
             if (shadow_layout) vkDestroyPipelineLayout(device, shadow_layout, nullptr);

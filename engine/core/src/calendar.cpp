@@ -222,6 +222,14 @@ double daylight_on(const Calendar& c, std::int64_t year, int day_of_year) {
     return std::min(std::max(d, 0.01), 0.99);
 }
 
+double autumn_on(const Calendar& c, std::int64_t year, int day_of_year) {
+    if (c.seasons.size() < 2) return 0.0;
+    const SeasonBlend b = season_blend(c);
+    if (!(b.amplitude > 0.0)) return 0.0;
+    const double f = (day_of_year + 0.5) / c.year_days(year);
+    return det::sin(2 * kPi * (f - b.middle));
+}
+
 double summer_on(const Calendar& c, std::int64_t year, int day_of_year) {
     if (c.seasons.size() < 2) return 0.0;
     const SeasonBlend b = season_blend(c);

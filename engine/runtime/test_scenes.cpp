@@ -558,7 +558,9 @@ class TerrainScene : public TestScene {
 public:
     explicit TerrainScene(const std::string& which) {
         nlohmann::json body, terrain = nlohmann::json::object();
-        if (which == "area" || which == "shore") {
+        if (which == "winter") summer_ = -1.0;  // deep winter: snow down to the shore
+        if (which == "autumn") autumn_ = 1.0;   // between summer and winter, the leaves turning
+        if (which == "area" || which == "shore" || which == "winter" || which == "autumn") {
             body = {{"shape", "bounded_area"}, {"width", 3000}, {"length", 3000}, {"seed", 7}};
             eye_ = {-600.0, 160.0, -600.0};
             look_ = {-1000.0, 0.0, -1500.0};
@@ -611,6 +613,7 @@ public:
         streamer_->update(origin, &renderer, true);
     }
     std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        streamer_->set_season(summer_, autumn_);
         return streamer_->draws(origin);
     }
     render::Camera camera(float aspect) const override {
@@ -629,6 +632,7 @@ private:
     std::unique_ptr<TerrainStreamer> streamer_;
     glm::dvec3 eye_{0.0}, look_{0.0, 0.0, -1.0};
     glm::vec3 up_{0, 1, 0};
+    double summer_ = 0.0, autumn_ = 0.0;
 };
 
 const char* const kDayShapes[] = {"area", "flat_cylinder", "planet", "hollow", "habitat"};
@@ -644,7 +648,8 @@ std::vector<std::string> names() {
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
-    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore"})
+    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore",
+                              "terrain_winter", "terrain_autumn"})
         out.push_back(which);
     return out;
 }
@@ -669,6 +674,8 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_strip") return std::make_unique<TerrainScene>("strip");
     if (name == "terrain_habitat") return std::make_unique<TerrainScene>("habitat");
     if (name == "terrain_shore") return std::make_unique<TerrainScene>("shore");
+    if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
+    if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             if (name == std::string("day_") + shape + "_" + time)

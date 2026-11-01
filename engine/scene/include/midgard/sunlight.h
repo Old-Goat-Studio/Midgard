@@ -47,6 +47,7 @@ struct SunClock {
     double tilt = 0.0;    // the axial tilt, degrees (Latitude)
     double year = 0.0;    // the fraction of the year since the spring equinox (Latitude)
     double season = 0.0;  // how far into summer at the start: 1 summer, -1 winter (calendar.h)
+    double autumn = 0.0;  // which way the year turns there: 1 autumn, -1 spring (calendar.h)
 };
 
 struct LocalSun {
@@ -54,6 +55,7 @@ struct LocalSun {
     glm::dvec3 to_sun{0.0, 1.0, 0.0};  // towards the sun (unit)
     double height = 1.0;               // along up here: the sine of the sun's elevation
     double season = 0.0;               // how far into summer here: 1 summer, -1 winter
+    double autumn = 0.0;               // which way the year turns here: 1 autumn, -1 spring
 };
 
 // The solar phase at a time of day (calendar.h's solar_phase, as a fraction of the day), and

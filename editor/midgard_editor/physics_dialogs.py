@@ -60,6 +60,7 @@ TERRAIN_FIELDS: dict[str, tuple[str, float, float, float, str, str]] = {
     "ocean_depth": ("Ocean depth", 0, 5000, 30, " m", "bounded_area"),
     "end_ramp": ("Rising to the ends over", 0, 20_000, 150, " m", "cylinders"),
     "wall_height": ("Height at the ends", -2000, 5000, 120, " m", "cylinders"),
+    "snow_line": ("Snow line (lower in winter)", -2000, 5000, 90, " m", ""),
     "spacing": ("Finest grid spacing", 0.25, 64, 2, " m", ""),
 }
 WALLS = {"cliff": "Cliff face", "fortification": "Fortification", "barrier": "Energy barrier"}

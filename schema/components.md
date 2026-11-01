@@ -39,7 +39,7 @@ editor creates one in every scene's World folder.
 | `sun_mode` | `"uniform"` or `"latitude"` | `"uniform"`. How day and night work on an outside sphere (`midgard/sunlight.h`): `uniform` shifts each place's time by its longitude (noon on one side, midnight on the other) and gives every place the calendar's daylight share; `latitude` tilts the planet by the calendar's tilt, so the sun's height and the day's length follow latitude and the time of year (polar day and night), with the start's latitude set by how high the sun is placed at noon. Other shapes: one sun crossing the sky (bounded areas, flat-wrap cylinders), or a central sun or sun-line with shades going round (inside spheres, curved cylinders), each place's time shifted by its angle round the axis, with low light from the side at its dawn and dusk. |
 | `ambient` | `[r, g, b]` | `[0.18, 0.2, 0.26]` |
 | `body` | `{"id": "world", "shape": "sphere_outside", "radius": 1000, "gravity": 9.81, "origin": [x, y, z]}` | none: flat ground, +Y up, gravity 9.81 m/s² down |
-| `terrain` | `{"seed": 1, "base": 8, "height_scale": 60, "feature_size": 500, "octaves": 6, "sea_level": 0, "ocean_band": 300, "ocean_depth": 30, "end_ramp": 150, "wall_height": 120, "wall": "cliff", "spacing": 2}` | none: no terrain. See below. |
+| `terrain` | `{"seed": 1, "base": 8, "height_scale": 60, "feature_size": 500, "octaves": 6, "sea_level": 0, "ocean_band": 300, "ocean_depth": 30, "end_ramp": 150, "wall_height": 120, "wall": "cliff", "spacing": 2, "snow_line": 90}` | none: no terrain. See below. |
 
 `body` is the scene's world shape (`midgard/body.h`): where "up" points and how gravity pulls.
 Shapes and their sizes in metres: `bounded_area` (`width`, `length`), `flat_cylinder`
@@ -59,6 +59,11 @@ layers of detail (1 to 12), from `seed` (default: the body's). A bounded area si
 `ocean_depth` below the sea over `ocean_band` metres at its edges; a cylinder rises to
 `wall_height` over `end_ramp` metres at its ends, where walls close it (`wall`: `cliff`,
 `fortification` or `barrier`). `spacing` is the finest grid's spacing in metres (0.25 to 64).
+The ground's material comes from the terrain itself: grass from dry to lush with a moisture
+that varies over kilometres, sand on beaches and under shallow water, rock where it's steep, and
+snow above `snow_line` metres. The calendar's seasons change it: the snow line comes down to the
+shore in deep winter, grass dries in high summer and turns golden-brown in autumn (on a tilted
+planet in Latitude mode, by hemisphere).
 Chunks are streamed round the camera (finer near it) and are solid round the player (a player
 starting under the ground is lifted onto it). Water lies at `sea_level` wherever the ground is
 below it, in the look of the scene's environment (its `water_*` curves, `wave_strength` and

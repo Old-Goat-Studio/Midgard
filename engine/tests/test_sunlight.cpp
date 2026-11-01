@@ -210,6 +210,11 @@ TEST_CASE("Latitude: summer in the north is winter in the south, and the equator
     const glm::dvec3 pole_axis = north0 * std::cos(lat0) + glm::dvec3(0, 1, 0) * std::sin(lat0);
     const glm::dvec3 south = kPlanet.origin - pole_axis * 1000.0;
     CHECK(midgard::local_sun(kPlanet, kPlaced, clock, south).season == doctest::Approx(-1.0));
+    // After the north's midsummer it's autumn there, and spring in the south.
+    clock.year = 0.375;
+    CHECK(midgard::local_sun(kPlanet, kPlaced, clock, {0, 0, 0}).autumn > 0.3);
+    CHECK(midgard::local_sun(kPlanet, kPlaced, clock, south).autumn < -0.3);
+    clock.year = 0.25;
     clock.tilt = 0.0;  // no tilt: the calendar's season everywhere
     CHECK(midgard::local_sun(kPlanet, kPlaced, clock, south).season == doctest::Approx(-0.3));
 }

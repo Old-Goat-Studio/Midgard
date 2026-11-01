@@ -71,6 +71,12 @@ public:
     // (renderer: none keeps them on the CPU, for tests) and frees chunks long unwanted.
     // wait: finishes every chunk wanted now (a game's first frame, screenshots).
     void update(const glm::dvec3& camera, render::Renderer* renderer, bool wait = false);
+    // The season the ground shows (calendar.h's summer_on and autumn_on, or LocalSun's): snow
+    // in winter, dry grass in summer, turning leaves in autumn.
+    void set_season(double summer, double autumn) {
+        summer_ = summer;
+        autumn_ = autumn;
+    }
     // The chunks and end walls drawn, relative to the camera's origin.
     std::vector<render::DrawItem> draws(const glm::dvec3& origin) const;
     TerrainStreamStats stats() const;
@@ -89,6 +95,7 @@ private:
     Terrain terrain_;
     JobSystem* jobs_;
     double range_ = 8000.0, detail_ = 2.5;
+    double summer_ = 0.0, autumn_ = 0.0;
     size_t cache_limit_ = 512;
     std::uint64_t tick_ = 0;
     std::unordered_map<MeshKey, std::unique_ptr<Entry>> cache_;
@@ -101,6 +108,9 @@ private:
     bool walls_uploaded_ = false;
 };
 
+// A chunk's ground for the renderer's terrain material (uv: moisture and detail; tangent: up, and
+// the height).
+render::MeshData ground_mesh_data(const ChunkMesh& mesh);
 // A chunk's mesh for the renderer (uv: metres across the face, over 16).
 render::MeshData chunk_mesh_data(const ChunkMesh& mesh);
 // The water over a chunk for the renderer (tangent w: the depth below each point).

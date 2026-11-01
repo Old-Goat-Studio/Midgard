@@ -75,6 +75,23 @@ render::MeshData wall(double w, double low, double high, float facing) {
 
 }  // namespace
 
+render::MeshData ground_mesh_data(const ChunkMesh& mesh) {
+    render::MeshData out;
+    out.vertices.reserve(mesh.positions.size());
+    for (size_t i = 0; i < mesh.positions.size(); ++i) {
+        render::Vertex v = vertex(mesh.positions[i], mesh.normals[i],
+                                  i < mesh.biome.size() ? mesh.biome[i] : glm::vec2(0.5f, 0.0f));
+        const glm::vec3 up = i < mesh.ups.size() ? mesh.ups[i] : glm::vec3(0.0f, 1.0f, 0.0f);
+        v.tangent[0] = up.x;
+        v.tangent[1] = up.y;
+        v.tangent[2] = up.z;
+        v.tangent[3] = float(mesh.heights[i]);
+        out.vertices.push_back(v);
+    }
+    out.indices = mesh.indices;
+    return out;
+}
+
 render::MeshData water_mesh_data(const ChunkMesh& mesh) {
     render::MeshData out = chunk_mesh_data(mesh);
     for (size_t i = 0; i < out.vertices.size(); ++i)  // the depth below, for the water shader
@@ -263,7 +280,7 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
         const Terrain* terrain = &terrain_;
         const TerrainLeaf l = e->leaf;
         auto make = [terrain, l, made] {
-            made->ground = chunk_mesh_data(terrain->mesh(l.key, l.coarser));
+            made->ground = ground_mesh_data(terrain->mesh(l.key, l.coarser));
             if (const auto water = terrain->water_mesh(l.key, l.coarser))
                 made->water = water_mesh_data(*water);
         };
@@ -325,7 +342,18 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
 std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) const {
     std::vector<render::DrawItem> out;
     const double circumference = wrap_length();
-    const glm::vec4 ground(0.42f, 0.48f, 0.3f, 1.0f);
+    // The terrain's material: the season's snow, autumn and dryness, and its levels.
+    const double summer = std::clamp(summer_, -1.0, 1.0), turn = std::clamp(autumn_, -1.0, 1.0);
+    const auto smooth = [](double lo, double hi, double x) {
+        const double t = std::clamp((x - lo) / (hi - lo), 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
+    };
+    const double snow = smooth(0.25, 0.9, -summer);
+    const double autumn = std::max(turn, 0.0) * (1.0 - snow);
+    const double dry = smooth(0.3, 1.0, summer);
+    const glm::vec4 look(float(snow), float(autumn), float(dry), 1.0f);
+    const TerrainSettings& ts = terrain_.settings();
+    const glm::vec3 levels(float(ts.snow_line), float(ts.sea_level), 0.0f);
     for (const TerrainLeaf& leaf : drawn_) {
         const auto it = cache_.find(mesh_key(leaf));
         if (it == cache_.end() || !it->second->mesh) continue;
@@ -334,8 +362,9 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
         render::DrawItem d;
         d.mesh = *it->second->mesh;
         d.model = glm::translate(glm::mat4(1.0f), glm::vec3(at));
-        d.color = ground;
-        d.roughness = 0.95f;
+        d.terrain = true;
+        d.color = look;
+        d.emissive = levels;
         out.push_back(d);
         if (it->second->water) {
             render::DrawItem w;
