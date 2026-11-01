@@ -105,6 +105,11 @@ Check terrain_check() {
         return {"Terrain", Status::Fail,
                 format("world graphs' fingerprint %016" PRIx64 ", expected %016" PRIx64, graphs,
                        kWorldGraphFingerprint)};
+    const std::uint64_t placed = placement_fingerprint();
+    if (placed != kPlacementFingerprint)
+        return {"Terrain", Status::Fail,
+                format("placements' fingerprint %016" PRIx64 ", expected %016" PRIx64, placed,
+                       kPlacementFingerprint)};
     const std::uint64_t spheres = sphere_terrain_fingerprint();
     if (spheres != kSphereTerrainFingerprint)
         return {"Terrain", Status::Fail,

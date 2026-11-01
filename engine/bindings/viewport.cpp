@@ -300,6 +300,8 @@ std::optional<Viewport::TerrainHit> Viewport::terrain_hit(const glm::dvec3& orig
 }
 
 void Viewport::drop_terrain() {
+    if (placed_) placed_->clear(scene_);
+    placed_.reset();
     if (terrain_ && renderer_) terrain_->release(*renderer_);
     terrain_.reset();
 }
@@ -394,6 +396,12 @@ bool Viewport::render() {
                              sun ? sun->autumn : scene_.sun_clock.autumn);
         const std::vector<render::DrawItem> ground = terrain_->draws(camera.origin);
         draws.insert(draws.end(), ground.begin(), ground.end());
+        // The world type's objects round the camera (drawn next time, once their meshes are
+        // made: they join the scene like any instance).
+        if (!terrain_->terrain().settings().placements.empty()) {
+            if (!placed_) placed_ = std::make_unique<PlacedObjects>(terrain_->terrain());
+            placed_->update(scene_, camera.origin, 8);
+        }
         far_plane = kTerrainViewDistance;
     }
     // A curved cylinder's light rod or a hollow world's light sphere, and seeing that far.

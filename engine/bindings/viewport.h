@@ -21,6 +21,7 @@
 
 #include "midgard/camera_rig.h"
 #include "midgard/materials.h"
+#include "midgard/placed_objects.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
 #include "midgard/terrain_streamer.h"
@@ -128,6 +129,7 @@ private:
     std::unique_ptr<JobSystem> jobs_;
     std::unique_ptr<TerrainStreamer> terrain_;
     WorldLight world_light_;  // a curved cylinder's light rod or a hollow world's light sphere
+    std::unique_ptr<PlacedObjects> placed_;  // the world type's objects round the camera
     void drop_terrain();
     struct Platform;
     std::unique_ptr<Platform> platform_;  // per-window-system state (the X11 connection)

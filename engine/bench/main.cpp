@@ -184,6 +184,24 @@ std::vector<Benchmark> benchmarks() {
                             g_sink = g_sink + m.indices.size();
                         };
                     }});
+    list.push_back({"terrain.placements_tile",
+                    "objects placed in one 125 m tile by two rules (trees every 9 m, rocks every "
+                    "20 m; one thread)",
+                    30, [](std::string&) -> std::function<void()> {
+                        const auto terrain = std::make_shared<midgard::Terrain>(
+                            midgard::body_from_json(nlohmann::json::parse(
+                                R"({"id": "a", "shape": "bounded_area", "width": 3000,
+                                    "length": 2000, "seed": 7})")),
+                            midgard::terrain_from_json(nlohmann::json::parse(R"({"placements": [
+                                {"object": "t", "spacing": 9, "chance": 0.7, "slope": [0, 25]},
+                                {"object": "r", "spacing": 20, "chance": 0.5, "slope": [5, 70],
+                                 "align": 1}]})")));
+                        return [terrain] {
+                            const auto placed =
+                                terrain->placements_in({0, terrain->placement_level(), 12, 9});
+                            g_sink = g_sink + placed.size();
+                        };
+                    }});
     list.push_back({"shape.sphere_64x64_positions",
                     "positions and up for a 64 x 64 grid on all 6 faces of a planet", 30,
                     [](std::string&) -> std::function<void()> {

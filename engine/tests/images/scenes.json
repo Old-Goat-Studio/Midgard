@@ -253,6 +253,12 @@
       "max_bad": 0.01
     },
     {
+      "name": "terrain_placed",
+      "_about": "A world type's objects placed over a bounded area (milestone 5.11): trees (a trunk and a crown) on the gentle ground, grey boulders leaning with the steeper, each at its own turn and size, with their shadows.",
+      "args": ["--size", "480x270", "--scene", "terrain_placed"],
+      "max_bad": 0.01
+    },
+    {
       "name": "terrain_shore",
       "_about": "Low over the sea by a coast (milestone 5.9): water from the Earth-like environment's look, its waves reflecting the sky, the island beyond, and the shallows below showing the ground through foam.",
       "args": ["--size", "480x270", "--scene", "terrain_shore"],

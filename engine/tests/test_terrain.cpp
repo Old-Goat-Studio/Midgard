@@ -14,6 +14,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -739,4 +740,103 @@ TEST_CASE("a climate and biomes: from JSON and back, what the cook refuses, and 
     CHECK(m.temperatures[0] ==
           doctest::Approx(flat.temperature_at(0, 5.0 / 12.0, 3.0 / 8.0, m.heights[0])));
     CHECK(area().mesh({0, 2, 5, 3}).temperatures.empty());
+}
+
+namespace {
+
+midgard::TerrainSettings forest_rules() {
+    return midgard::terrain_from_json(json::parse(R"({"placements": [
+        {"object": "obj_tree", "spacing": 9, "chance": 0.7, "slope": [0, 25], "height": [1, 1000],
+         "scale": [0.8, 1.3], "salt": "trees"},
+        {"object": "obj_rock", "spacing": 20, "chance": 0.5, "slope": [5, 70], "align": 1}]})"));
+}
+
+}  // namespace
+
+TEST_CASE("placing objects: rules as JSON, what the cook refuses, and the same at every level") {
+    const midgard::TerrainSettings s = forest_rules();
+    REQUIRE(s.placements.size() == 2);
+    CHECK(s.placements[0].scale_max == 1.3);
+    CHECK(midgard::terrain_from_json(midgard::terrain_to_json(s)) == s);
+    CHECK(midgard::terrain_problems(s).empty());
+    for (const char* bad : {R"({"placements": [{"spacing": 9}]})",  // which object
+                            R"({"placements": [{"object": "o", "spacing": 0.1}]})",
+                            R"({"placements": [{"object": "o", "chance": 1.5}]})",
+                            R"({"placements": [{"object": "o", "slope": [40, 10]}]})",
+                            R"({"placements": [{"object": "o", "scale": [0, 1]}]})",
+                            R"({"placements": [{"object": "o", "distance": 5000}]})"}) {
+        CAPTURE(bad);
+        CHECK_FALSE(
+            midgard::terrain_problems(midgard::terrain_from_json(json::parse(bad))).empty());
+    }
+
+    const midgard::Terrain t(
+        midgard::body_from_json(json::parse(
+            R"({"id": "a", "shape": "bounded_area", "width": 3000, "length": 2000, "seed": 7})")),
+        s);
+    const int level = t.placement_level();
+    const double side = 3000.0 / double(t.chunks_u(level));
+    CHECK(side >= 64.0);
+    CHECK(side < 128.0 + 1e-9);
+    // The same objects whichever tiles hold them: a tile's are its four children's together.
+    const midgard::ChunkKey tile{0, level, 12, 9};
+    std::vector<midgard::TerrainPlacement> parent = t.placements_in(t.parent(tile));
+    std::vector<midgard::TerrainPlacement> children;
+    for (const midgard::ChunkKey& c : t.children(t.parent(tile)))
+        for (const midgard::TerrainPlacement& p : t.placements_in(c)) children.push_back(p);
+    const auto key = [](const midgard::TerrainPlacement& p) {
+        return std::tuple(p.rule, p.u, p.v);
+    };
+    std::set<std::tuple<int, double, double>> a, b;
+    for (const auto& p : parent) a.insert(key(p));
+    for (const auto& p : children) b.insert(key(p));
+    CHECK(a == b);
+    CHECK(a.size() > 20);
+    // Each where its rule allows: on the ground, its slope in range, upright or leaning.
+    for (const midgard::TerrainPlacement& p : parent) {
+        const midgard::PlacementRule& r = s.placements[size_t(p.rule)];
+        CHECK(std::abs(t.above_ground(p.position)) < 1e-6);
+        CHECK(p.scale >= r.scale_min);
+        CHECK(p.scale <= r.scale_max);
+        CHECK(glm::length(p.up) == doctest::Approx(1.0));
+        if (r.align == 0.0) CHECK(p.up == t.body().up(p.position));
+    }
+    // Same rules on every target: the fingerprint (also in the self-test).
+    char fp[17];
+    std::snprintf(fp, sizeof(fp), "%016" PRIx64, midgard::placement_fingerprint());
+    MESSAGE("placement fingerprint ", fp);
+    CHECK(midgard::placement_fingerprint() == midgard::kPlacementFingerprint);
+}
+
+TEST_CASE("placing objects by biome, and on a planet") {
+    midgard::TerrainSettings s = midgard::terrain_from_json(json::parse(R"({
+        "climate": {"temperature": 15, "variation": 4},
+        "biomes": [{"name": "Wet", "moisture": [0.5, 1]}, {"name": "Dry", "moisture": [0, 0.5]}],
+        "placements": [{"object": "obj_reed", "spacing": 6, "biomes": ["Wet"], "height": [-1e6, 1e6],
+                        "slope": [0, 90]}]})"));
+    const midgard::Terrain t(
+        midgard::body_from_json(json::parse(
+            R"({"id": "a", "shape": "bounded_area", "width": 3000, "length": 2000, "seed": 7})")),
+        s);
+    int placed = 0;
+    for (int x = 0; x < 6; ++x)
+        for (const midgard::TerrainPlacement& p :
+             t.placements_in({0, t.placement_level(), 10 + x, 8})) {
+            CHECK(t.biome_index(p.face, p.u, p.v, t.height(p.face, p.u, p.v)) == 0);  // Wet
+            ++placed;
+        }
+    CHECK(placed > 0);
+    // A planet: placements on the ground of any face.
+    const midgard::Terrain planet(
+        midgard::body_from_json(
+            json::parse(R"({"id": "p", "shape": "sphere_outside", "radius": 3000, "seed": 11})")),
+        forest_rules());
+    int on_planet = 0;
+    for (int f = 0; f < 6; ++f)
+        for (const midgard::TerrainPlacement& p :
+             planet.placements_in({f, planet.placement_level(), 3, 5})) {
+            CHECK(std::abs(planet.above_ground(p.position)) < 1e-6);
+            ++on_planet;
+        }
+    CHECK(on_planet > 0);
 }

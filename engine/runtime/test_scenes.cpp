@@ -14,6 +14,7 @@
 
 #include "midgard/collider_outlines.h"
 #include "midgard/environment.h"
+#include "midgard/placed_objects.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/scene.h"
@@ -561,7 +562,28 @@ public:
         nlohmann::json body, terrain = nlohmann::json::object();
         if (which == "winter") summer_ = -1.0;  // deep winter: snow down to the shore
         if (which == "autumn") autumn_ = 1.0;   // between summer and winter, the leaves turning
-        if (which == "area" || which == "shore" || which == "winter" || which == "autumn") {
+        if (which == "placed") {
+            // A world type's objects on a bounded area (milestone 5.11): "trees" (a trunk and a
+            // crown, both cubes) on the gentle ground, and grey boulders, leaning with it, on the
+            // steeper.
+            body = {{"shape", "bounded_area"}, {"width", 3000}, {"length", 3000}, {"seed", 7}};
+            terrain = nlohmann::json::parse(R"({"placements": [
+                {"object": "obj_tree", "spacing": 7, "chance": 0.55, "slope": [0, 14],
+                 "height": [2, 200], "scale": [0.8, 1.4], "salt": "trees", "distance": 150},
+                {"object": "obj_boulder", "spacing": 11, "chance": 0.5, "slope": [10, 60],
+                 "height": [1, 200], "scale": [0.6, 1.6], "align": 1, "distance": 150}]})");
+            scene_.objects["obj_tree"] = R"([
+                {"name": "trunk", "components": {"transform": {"position": [0, 1.5, 0],
+                  "scale": [0.35, 3, 0.35]}, "mesh": {"asset": "builtin:cube"},
+                  "material": {"color": [0.35, 0.24, 0.15, 1]}}},
+                {"name": "crown", "components": {"transform": {"position": [0, 4, 0],
+                  "scale": [2.2, 2.6, 2.2]}, "mesh": {"asset": "builtin:cube"},
+                  "material": {"color": [0.16, 0.36, 0.14, 1]}}}])";
+            scene_.objects["obj_boulder"] = R"([
+                {"name": "stone", "components": {"transform": {"position": [0, 0.4, 0],
+                  "scale": [1.6, 1.0, 1.3]}, "mesh": {"asset": "builtin:cube"},
+                  "material": {"color": [0.45, 0.44, 0.42, 1]}}}])";
+        } else if (which == "area" || which == "shore" || which == "winter" || which == "autumn") {
             body = {{"shape", "bounded_area"}, {"width", 3000}, {"length", 3000}, {"seed", 7}};
             eye_ = {-600.0, 160.0, -600.0};
             look_ = {-1000.0, 0.0, -1500.0};
@@ -634,6 +656,13 @@ public:
         body["id"] = which;
         scene_.settings.body = body_from_json(body);
         scene_.settings.terrain = terrain_from_json(terrain);
+        if (which == "placed") {  // above a hillside, looking across it
+            const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
+            eye_ = t.ground({-420.0, 0.0, -380.0}) + glm::dvec3(0.0, 28.0, 0.0);
+            look_ = t.ground({-500.0, 0.0, -470.0});
+            placed_ = std::make_unique<PlacedObjects>(t);
+            placed_->update(scene_, eye_, 1000);
+        }
         if (which == "habitat_rod") {  // on the floor, looking up at the light rod on the axis
             const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
             eye_ = t.ground({0.0, 0.0, 0.0}) + glm::dvec3(0.0, 1.7, 0.0);
@@ -702,13 +731,22 @@ public:
         up_ = glm::vec3(scene_.settings.body->up(eye_));
         if (which == "hollow_far" || which == "planet_biomes") far_ = 20000.0f;
     }
-    void upload(render::Renderer& renderer) override { light_.upload(renderer); }
+    void upload(render::Renderer& renderer) override {
+        light_.upload(renderer);
+        cube_ = renderer.upload_mesh(render::make_cube());
+    }
     void stream(render::Renderer& renderer, const glm::dvec3& origin) override {
         streamer_->update(origin, &renderer, true);
     }
     std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
         streamer_->set_season(summer_, autumn_);
         std::vector<DrawItem> out = streamer_->draws(origin);
+        // Placed objects' parts (all cubes here).
+        for (entt::entity e : scene_.registry.view<const MeshRef>()) {
+            DrawItem d = scene_.draw_item(e, cube_, origin);
+            if (const Material* m = scene_.registry.try_get<Material>(e)) d.color = m->color;
+            out.push_back(d);
+        }
         if (const auto light = light_.draw(scene_, origin)) out.push_back(*light);  // rod, sphere
         return out;
     }
@@ -727,6 +765,8 @@ public:
 private:
     Scene scene_;
     std::unique_ptr<TerrainStreamer> streamer_;
+    std::unique_ptr<PlacedObjects> placed_;
+    render::MeshId cube_ = 0;
     WorldLight light_;
     glm::dvec3 eye_{0.0}, look_{0.0, 0.0, -1.0};
     glm::vec3 up_{0, 1, 0};
@@ -750,8 +790,8 @@ std::vector<std::string> names() {
     for (const char* which :
          {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore", "terrain_planet",
           "terrain_planet_low", "terrain_hollow", "terrain_hollow_far", "terrain_habitat_ground",
-          "terrain_habitat_rod", "terrain_hollow_light", "terrain_planet_biomes", "terrain_winter",
-          "terrain_autumn"})
+          "terrain_habitat_rod", "terrain_hollow_light", "terrain_planet_biomes", "terrain_placed",
+          "terrain_winter", "terrain_autumn"})
         out.push_back(which);
     return out;
 }
@@ -784,6 +824,7 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_habitat_rod") return std::make_unique<TerrainScene>("habitat_rod");
     if (name == "terrain_hollow_light") return std::make_unique<TerrainScene>("hollow_light");
     if (name == "terrain_planet_biomes") return std::make_unique<TerrainScene>("planet_biomes");
+    if (name == "terrain_placed") return std::make_unique<TerrainScene>("placed");
     if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
     if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
     for (const char* shape : kDayShapes)

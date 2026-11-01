@@ -330,6 +330,7 @@ void Game::reload_scene_settings() {
 void Game::rebuild_terrain() {
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
+    place_again();  // (none without terrain)
     if (!scene_.settings.body || !scene_.settings.terrain) return;
     if (!jobs_) jobs_ = std::make_unique<JobSystem>();
     terrain_ = std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain,
@@ -342,7 +343,18 @@ void Game::rebuild_terrain() {
     if (player != entt::null && scene_.registry.valid(player) &&
         terrain_->terrain().above_ground(scene_.world_position(player)) < 0.0)
         put_on_ground(player);
-    update_ground();
+    place_again();
+    update_ground(1000);  // everything within reach of the start, now
+}
+
+void Game::place_again() {
+    if (placed_) {
+        placed_->clear(scene_, [this](entt::entity e) { physics_->remove(e); });
+        physics_->prune(scene_);
+        placed_.reset();
+    }
+    if (terrain_ && !terrain_->terrain().settings().placements.empty())
+        placed_ = std::make_unique<PlacedObjects>(terrain_->terrain());
 }
 
 void Game::put_on_ground(entt::entity e) {
@@ -360,7 +372,7 @@ void Game::put_on_ground(entt::entity e) {
     scene_.registry.get<Transform>(e).position = local;
 }
 
-void Game::update_ground() {
+void Game::update_ground(int max_tiles) {
     if (!ground_) return;
     const entt::entity player = physics_->player();
     const bool has_player = player != entt::null && scene_.registry.valid(player);
@@ -378,6 +390,21 @@ void Game::update_ground() {
     std::vector<glm::dvec3> around{at};
     if (has_player) around.push_back(scene_.world_position(player));
     ground_->update(physics_->world(), around);
+    // The world type's objects round the player: solid as they come, gone well behind.
+    if (placed_) {
+        bool removed = false;
+        placed_->update(
+            scene_, at, max_tiles,
+            [this](entt::entity e) {
+                physics_->rebuild(scene_, e);
+                placed_changed_ = true;
+            },
+            [this, &removed](entt::entity e) {
+                physics_->remove(e);
+                removed = true;
+            });
+        if (removed) physics_->prune(scene_);  // their parts went with them
+    }
 }
 
 void Game::set_terrain_stamps(std::vector<TerrainStamp> stamps) {
@@ -387,12 +414,17 @@ void Game::set_terrain_stamps(std::vector<TerrainStamp> stamps) {
     // The solid ground follows: made again round the player.
     if (ground_) ground_->clear(physics_->world());
     ground_ = std::make_unique<TerrainCollision>(terrain_->terrain());
-    update_ground();
+    place_again();  // they stand on the ground as it now is
+    update_ground(1000);
 }
 
 void Game::stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait) {
     terrain_renderer_ = &renderer;
     if (terrain_) terrain_->update(camera, &renderer, wait);
+    if (placed_changed_) {  // the placed objects' meshes, as they come
+        upload_new_meshes(renderer);
+        placed_changed_ = false;
+    }
 }
 
 void Game::reload_entity(const std::string& entity_id) {

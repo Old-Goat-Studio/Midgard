@@ -18,6 +18,7 @@
 #include "midgard/materials.h"
 #include "midgard/package.h"
 #include "midgard/pak.h"
+#include "midgard/placed_objects.h"
 #include "midgard/player_profile.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
@@ -81,6 +82,7 @@ public:
     void stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait = false);
     const TerrainStreamer* terrain() const { return terrain_.get(); }
     const TerrainCollision* ground() const { return ground_.get(); }
+    const PlacedObjects* placed() const { return placed_.get(); }
     // New sculpting and painting (the editor's live link): the ground drawn and the solid ground
     // follow.
     void set_terrain_stamps(std::vector<TerrainStamp> stamps);
@@ -183,7 +185,11 @@ private:
     render::Renderer* terrain_renderer_ = nullptr;
     // The terrain's solid ground round the player (in physics_'s world).
     std::unique_ptr<TerrainCollision> ground_;
-    void update_ground();
+    // Objects the world type places over the ground, round the player (midgard/placed_objects.h).
+    std::unique_ptr<PlacedObjects> placed_;
+    bool placed_changed_ = false;  // new instances whose meshes may need uploading
+    void place_again();            // the terrain changed: its placed objects are made again
+    void update_ground(int max_tiles = 6);
     void put_on_ground(entt::entity e);
 };
 

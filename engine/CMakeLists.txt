@@ -128,6 +128,7 @@ add_library(midgard_scene STATIC
     scene/src/environment.cpp
     scene/src/terrain_streamer.cpp
     scene/src/world_light.cpp
+    scene/src/placed_objects.cpp
     scene/src/terrain_collision.cpp
     scene/src/sunlight.cpp
     scene/src/player_profile.cpp

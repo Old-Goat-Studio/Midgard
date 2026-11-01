@@ -2365,3 +2365,58 @@ TEST_CASE("a world type's graph makes the game's ground, and the cook weighs its
     for (const std::string& w : midgard::validate_package(pkg.dir).warnings) all += w + "\n";
     CHECK(all.find("streams slowly") != std::string::npos);
 }
+
+TEST_CASE("a world type's objects: placed round the player, solid, and following it") {
+    // Posts (a box each) on a bounded area, one cell in three, within 60 m of the player.
+    TestPackage pkg(
+        {{"e1_player", R"(NULL, '{"transform": {"position": [0, 30, 0]}, "player": {}}')"}},
+        R"({"body": {"shape": "bounded_area", "width": 3000, "length": 3000, "seed": 7},
+            "terrain": {"world_type": "wt_posts", "version": 1}})",
+        {{"obj_post", R"([{"name": "post", "components": {
+              "transform": {"position": [0, 1, 0]}, "mesh": {"asset": "builtin:cube"},
+              "collider": {"shape": "box", "size": [0.5, 2, 0.5]}}}])"}});
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, "INSERT INTO world_type (id, name, version) VALUES ('wt_posts', 'Posts', 1)");
+    exec(db, R"(INSERT INTO world_type_version (world_type, version, recipe) VALUES ('wt_posts', 1,
+        '{"terrain": {"placements": [{"object": "obj_post", "spacing": 12, "chance": 0.35,
+          "slope": [0, 90], "height": [-1000, 1000], "distance": 60}]}}'))");
+    sqlite3_close(db);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+    midgard::Game game(pkg.dir);
+    REQUIRE(game.placed() != nullptr);
+    const size_t near_start = game.placed()->count();
+    CHECK(near_start > 5);
+    // Each an instance of the template, standing on the ground.
+    const midgard::Terrain& t = game.terrain()->terrain();
+    int checked = 0;
+    for (entt::entity e : game.scene().registry.view<const midgard::ObjectRef>()) {
+        const std::string& id = game.scene().registry.get<midgard::EntityInfo>(e).id;
+        if (!midgard::PlacedObjects::is_placed(id)) continue;
+        const glm::dvec3 p = game.scene().world_position(e);
+        CHECK(std::abs(t.above_ground(p)) < 1e-3);
+        CHECK(glm::length(p - glm::dvec3(0, p.y, 0)) < 60.0 + 200.0);  // round the start
+        // Solid: a ray down onto its top hits the post, not the ground.
+        const auto hit = game.physics().world().raycast(p + glm::dvec3(0, 10, 0), {0, -1, 0}, 20.0);
+        REQUIRE(hit.has_value());
+        CHECK(hit->point.y == doctest::Approx(p.y + 2.0).epsilon(1e-3));
+        if (++checked == 3) break;
+    }
+    CHECK(checked == 3);
+    // The player moves 600 m away: the old ones go, new ones come.
+    game.put_entity(json::parse(R"({"id": "e1_player", "components": {
+        "transform": {"position": [600, 30, 0]}, "player": {}}})"));
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (int i = 0; i < 40; ++i) game.update(actions, 1.0f / 60.0f);
+    int near_new = 0, near_old = 0;
+    for (entt::entity e : game.scene().registry.view<const midgard::ObjectRef>()) {
+        if (!midgard::PlacedObjects::is_placed(
+                game.scene().registry.get<midgard::EntityInfo>(e).id))
+            continue;
+        const glm::dvec3 p = game.scene().world_position(e);
+        if (glm::length(glm::dvec2(p.x - 600.0, p.z)) < 100.0) ++near_new;
+        if (glm::length(glm::dvec2(p.x, p.z)) < 100.0) ++near_old;
+    }
+    CHECK(near_new > 5);
+    CHECK(near_old == 0);
+}

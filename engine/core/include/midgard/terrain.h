@@ -77,6 +77,39 @@ struct Biome {
     bool operator==(const Biome&) const = default;
 };
 
+// Placing objects over the ground (milestone 5.11): a rule scatters an object template on a
+// grid of cells `spacing` metres across each face, one candidate a cell at a random spot, kept
+// with `chance` where the ground's slope (degrees), height above the sea (metres) and biome
+// suit it, at a random turn and size, upright or (by `align`) leaning with the ground. The
+// cells are fixed to the world, so the same objects stand in the same places at every detail
+// level and on every device; they are placed within `distance` metres of the camera.
+inline constexpr int kMaxPlacementRules = 16;
+struct PlacementRule {
+    std::string object;  // an object template's id
+    double spacing = 8.0;
+    double chance = 1.0;
+    double slope_min = 0.0, slope_max = 30.0;
+    double height_min = 0.5, height_max = 1e6;
+    std::vector<std::string> biomes;  // names; none: any
+    double scale_min = 1.0, scale_max = 1.0;
+    double align = 0.0;  // 0 upright, 1 along the ground
+    std::string salt;    // a name: rules with the same settings but different salts differ
+    double distance = 200.0;
+    bool operator==(const PlacementRule&) const = default;
+};
+
+// One placed object: which rule, where (face, u, v; and in the room, on the ground), which way
+// is its up, its turn about it (degrees) and its size.
+struct TerrainPlacement {
+    int rule = 0;
+    int face = 0;
+    double u = 0.0, v = 0.0;
+    glm::dvec3 position{0.0};
+    glm::dvec3 up{0.0, 1.0, 0.0};
+    double yaw = 0.0;
+    double scale = 1.0;
+};
+
 struct TerrainSettings {
     std::optional<std::uint64_t> seed;  // none: the body's
     double base = 8.0;                  // metres: the height where the noise is 0
@@ -97,6 +130,8 @@ struct TerrainSettings {
     // Its climate and biomes (milestone 5.11); none: the 5.9 grass and snow line.
     std::optional<Climate> climate;
     std::vector<Biome> biomes;
+    // Objects placed over it (milestone 5.11).
+    std::vector<PlacementRule> placements;
     bool operator==(const TerrainSettings&) const = default;
 };
 
@@ -226,6 +261,14 @@ public:
     // The temperature (degrees Celsius, before the seasons) at a point `height` metres up, from
     // the climate; 0 without one.
     double temperature_at(int face, double u, double v, double height) const;
+    // The biome at a point (the first of the settings' whose ranges hold its temperature and
+    // moisture), or -1.
+    int biome_index(int face, double u, double v, double height) const;
+
+    // Placing objects: the level whose chunks are the placement tiles (about 64 to 128 metres
+    // across), and the objects placed in one of them (each candidate in exactly one tile).
+    int placement_level() const;
+    std::vector<TerrainPlacement> placements_in(const ChunkKey& tile) const;
     // Where a chunk's mesh is placed: its middle, on the ground at height 0.
     glm::dvec3 chunk_origin(const ChunkKey& key) const;
     // grid: kChunkQuads + 1 points a side. coarser[edge]: the neighbour there is a level up.
@@ -273,6 +316,11 @@ inline constexpr std::uint64_t kTerrainFingerprint = 0x667639e2e799c3b4ULL;
 // sides of it (tools/reference/terrain.py's sphere_fingerprint(); the fingerprint of
 // schema/tests/terrain_sphere_stamps.json). The self-test checks it on devices.
 std::uint64_t sphere_terrain_fingerprint();
+// Placements on a fixed terrain with two rules (objects/placement test): kPlacementFingerprint
+// on every target. The self-test checks it on devices.
+std::uint64_t placement_fingerprint();
+inline constexpr std::uint64_t kPlacementFingerprint = 0x19525d845f37b6ecULL;
+
 inline constexpr std::uint64_t kSphereTerrainFingerprint = 0x6c7f25335e3bb8dfULL;
 
 }  // namespace midgard

@@ -76,7 +76,18 @@ lies where it is below freezing, in place of the snow line. Up to 8 `biomes`,
 `{"name", "temperature": [lowest, highest], "moisture": [0 to 1, 0 to 1], "color": [r, g, b],
 "dry_color": [r, g, b]}` (sRGB, lush and dry), colour the ground where both are in range,
 blended across their edges; sand on beaches, rock on slopes and snow still come by their own
-rules. Without them, the ground is the 5.9 grass. Migration 12 made each scene's terrain settings into its own Custom world
+rules. Without them, the ground is the 5.9 grass.
+
+A recipe's ground can place objects too: up to 16 `placements`, `{"object": "obj_tree",
+"spacing": 8, "chance": 1, "slope": [0, 30], "height": [0.5, 1000000], "biomes": ["Forest"],
+"scale": [1, 1], "align": 0, "salt": "trees", "distance": 200}`. Each scatters an object
+template on a grid of cells `spacing` metres across, one candidate a cell at a random spot,
+kept with `chance` where the slope (degrees), the height above the sea and the biome (none
+listed: any) suit it, at a random turn and size between the `scale`s, upright or, by `align`
+(0 to 1), leaning with the ground. The cells are fixed to the world, so the same objects stand
+in the same places at every detail level and on every device. The game places them as the
+player comes within `distance` metres and takes them away once well beyond; they are instances
+like any other (drawn, lit, solid), never saved. Migration 12 made each scene's terrain settings into its own Custom world
 type, with the same ground.
 
 The ground is hills and valleys on any shape (`midgard/terrain.h`; spheres from milestone

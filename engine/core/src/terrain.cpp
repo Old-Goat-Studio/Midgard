@@ -195,6 +195,45 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
             t.biomes.push_back(biome);
         }
     }
+    if (j.contains("placements")) {
+        if (!j.at("placements").is_array())
+            throw std::runtime_error("terrain: \"placements\" is a list");
+        for (const nlohmann::json& r : j.at("placements")) {
+            if (!r.is_object()) throw std::runtime_error("placements: each is an object");
+            PlacementRule rule;
+            rule.object = r.value("object", std::string());
+            const auto number = [&](const char* key, double& into) {
+                if (!r.contains(key)) return;
+                if (!r.at(key).is_number())
+                    throw std::runtime_error(std::string("placement: \"") + key + "\" is a number");
+                into = r.at(key).get<double>();
+            };
+            const auto range = [&](const char* key, double& lo, double& hi) {
+                if (!r.contains(key)) return;
+                const nlohmann::json& v = r.at(key);
+                if (!v.is_array() || v.size() != 2 || !v[0].is_number() || !v[1].is_number())
+                    throw std::runtime_error(std::string("placement: \"") + key +
+                                             "\" is [lowest, highest]");
+                lo = v[0].get<double>();
+                hi = v[1].get<double>();
+            };
+            number("spacing", rule.spacing);
+            number("chance", rule.chance);
+            range("slope", rule.slope_min, rule.slope_max);
+            range("height", rule.height_min, rule.height_max);
+            range("scale", rule.scale_min, rule.scale_max);
+            number("align", rule.align);
+            number("distance", rule.distance);
+            rule.salt = r.value("salt", std::string());
+            if (r.contains("biomes")) {
+                if (!r.at("biomes").is_array())
+                    throw std::runtime_error("placement: \"biomes\" is a list of names");
+                for (const nlohmann::json& b : r.at("biomes"))
+                    rule.biomes.push_back(b.get<std::string>());
+            }
+            t.placements.push_back(rule);
+        }
+    }
     return t;
 }
 
@@ -219,6 +258,20 @@ nlohmann::json terrain_to_json(const TerrainSettings& t) {
                         {"lapse_rate", t.climate->lapse_rate},
                         {"variation", t.climate->variation},
                         {"season_swing", t.climate->season_swing}};
+    if (!t.placements.empty()) {
+        j["placements"] = nlohmann::json::array();
+        for (const PlacementRule& r : t.placements)
+            j["placements"].push_back({{"object", r.object},
+                                       {"spacing", r.spacing},
+                                       {"chance", r.chance},
+                                       {"slope", {r.slope_min, r.slope_max}},
+                                       {"height", {r.height_min, r.height_max}},
+                                       {"biomes", r.biomes},
+                                       {"scale", {r.scale_min, r.scale_max}},
+                                       {"align", r.align},
+                                       {"salt", r.salt},
+                                       {"distance", r.distance}});
+    }
     if (!t.biomes.empty()) {
         j["biomes"] = nlohmann::json::array();
         for (const Biome& b : t.biomes)
@@ -262,6 +315,24 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
             out.push_back("climate: the variation is from 0 to 50 degrees");
         if (!(c.season_swing >= 0.0 && c.season_swing <= 100.0))
             out.push_back("climate: the seasons' swing is from 0 to 100 degrees");
+    }
+    if (int(t.placements.size()) > kMaxPlacementRules)
+        out.push_back("placements: at most " + std::to_string(kMaxPlacementRules) + " rules");
+    for (const PlacementRule& r : t.placements) {
+        const std::string who = "placing '" + r.object + "': ";
+        if (r.object.empty()) out.push_back("placing: which object it places is needed");
+        if (!(r.spacing >= 0.5 && r.spacing <= 1000.0))
+            out.push_back(who + "the spacing is from 0.5 to 1000 m");
+        if (!(r.chance >= 0.0 && r.chance <= 1.0)) out.push_back(who + "the chance is 0 to 1");
+        if (!(r.slope_min >= 0.0 && r.slope_min <= r.slope_max && r.slope_max <= 90.0))
+            out.push_back(who + "slopes run from lowest to highest, within 0 to 90 degrees");
+        if (!(r.height_min <= r.height_max))
+            out.push_back(who + "heights run from lowest to highest");
+        if (!(r.scale_min > 0.0 && r.scale_min <= r.scale_max && r.scale_max <= 100.0))
+            out.push_back(who + "sizes run from lowest to highest, above 0 and at most 100");
+        if (!(r.align >= 0.0 && r.align <= 1.0)) out.push_back(who + "align is 0 to 1");
+        if (!(r.distance >= 10.0 && r.distance <= 2000.0))
+            out.push_back(who + "the distance is from 10 to 2000 m");
     }
     if (int(t.biomes.size()) > kMaxBiomes)
         out.push_back("biomes: at most " + std::to_string(kMaxBiomes));
@@ -750,6 +821,92 @@ double Terrain::temperature_at(int face, double u, double v, double height) cons
            c.lapse_rate * std::max(height, 0.0) / 1000.0 + c.variation * noise;
 }
 
+int Terrain::biome_index(int face, double u, double v, double height) const {
+    if (settings_.biomes.empty()) return -1;
+    const double t = temperature_at(face, u, v, height);
+    const double m = biome_at(face, u, v).x;
+    for (size_t i = 0; i < settings_.biomes.size(); ++i) {
+        const Biome& b = settings_.biomes[i];
+        if (t >= b.temperature_min && t <= b.temperature_max && m >= b.moisture_min &&
+            m <= b.moisture_max)
+            return int(i);
+    }
+    return -1;
+}
+
+int Terrain::placement_level() const {
+    const double width = body_.shape.face_size().x;
+    int level = max_level_;
+    while (level > min_level_ && width / double(chunks_u(level)) < 64.0) --level;
+    return level;
+}
+
+std::vector<TerrainPlacement> Terrain::placements_in(const ChunkKey& tile) const {
+    std::vector<TerrainPlacement> out;
+    if (settings_.placements.empty()) return out;
+    const glm::dvec2 size = body_.shape.face_size();
+    const double cu = double(chunks_u(tile.level)), cv = double(chunks_v(tile.level));
+    const double u0 = double(tile.x) / cu, u1 = double(tile.x + 1) / cu;
+    const double v0 = double(tile.y) / cv, v1 = double(tile.y + 1) / cv;
+    for (size_t r = 0; r < settings_.placements.size(); ++r) {
+        const PlacementRule& rule = settings_.placements[r];
+        const std::uint64_t rule_seed =
+            seed_ ^ det::tag("placement") ^ det::mix64(r + 1) ^ det::tag(rule.salt.c_str());
+        const auto first = [&](double t, double extent) {
+            return std::int64_t(std::floor(t * extent / rule.spacing));
+        };
+        for (std::int64_t cy = first(v0, size.y); cy <= first(v1, size.y); ++cy)
+            for (std::int64_t cx = first(u0, size.x); cx <= first(u1, size.x); ++cx) {
+                // Every random number drawn, in this order, whatever is kept.
+                det::Rng rng(det::hash3(rule_seed, cx, cy, tile.face));
+                const double ju = rng.uniform(), jv = rng.uniform(), keep = rng.uniform();
+                const double size_t01 = rng.uniform(), yaw = rng.uniform() * 360.0;
+                const double u = (double(cx) + ju) * rule.spacing / size.x;
+                const double v = (double(cy) + jv) * rule.spacing / size.y;
+                if (!(u >= u0 && u < u1 && v >= v0 && v < v1) || u < 0.0 || u >= 1.0 || v < 0.0 ||
+                    v >= 1.0 || !(keep < rule.chance))
+                    continue;
+                const double h = height(tile.face, u, v);
+                const double above = h - settings_.sea_level;
+                if (above < rule.height_min || above > rule.height_max) continue;
+                // The slope, from the heights half a metre either way.
+                const double d = 0.5;
+                const double gx =
+                    (height(tile.face, u + d / size.x, v) - height(tile.face, u - d / size.x, v)) /
+                    (2.0 * d);
+                const double gy =
+                    (height(tile.face, u, v + d / size.y) - height(tile.face, u, v - d / size.y)) /
+                    (2.0 * d);
+                const double slope = det::atan(det::sqrt(gx * gx + gy * gy)) * 57.29577951308232;
+                if (slope < rule.slope_min || slope > rule.slope_max) continue;
+                if (!rule.biomes.empty()) {
+                    const int b = biome_index(tile.face, u, v, h);
+                    if (b < 0 || std::find(rule.biomes.begin(), rule.biomes.end(),
+                                           settings_.biomes[size_t(b)].name) == rule.biomes.end())
+                        continue;
+                }
+                TerrainPlacement p;
+                p.rule = int(r);
+                p.face = tile.face;
+                p.u = u;
+                p.v = v;
+                p.position = position(tile.face, u, v, h);
+                const glm::dvec3 up = body_.up(p.position);
+                if (rule.align > 0.0) {
+                    const SurfaceFrame f = body_.frame(p.position);
+                    const glm::dvec3 normal = glm::normalize(f.up - f.east * gx - f.north * gy);
+                    p.up = glm::normalize(up + (normal - up) * rule.align);
+                } else {
+                    p.up = up;
+                }
+                p.yaw = yaw;
+                p.scale = rule.scale_min + (rule.scale_max - rule.scale_min) * size_t01;
+                out.push_back(p);
+            }
+    }
+    return out;
+}
+
 glm::vec3 Terrain::biome_at(int face, double u, double v) const {
     const glm::dvec3 q = noise_position(face, u, v);
     const double moist = double(det::fbm(seed_ ^ det::tag("moisture"), q.x / 1500.0, q.y / 1500.0,
@@ -998,6 +1155,54 @@ std::uint64_t sphere_terrain_fingerprint() {
     add(sculpted.chunk_hash({0, 2, last, 6}));
     add(sculpted.chunk_hash({5, 2, 0, 6}));
     return all.value();
+}
+
+std::uint64_t placement_fingerprint() {
+    TerrainSettings t;
+    PlacementRule trees;
+    trees.object = "obj_tree";
+    trees.spacing = 9.0;
+    trees.chance = 0.7;
+    trees.slope_max = 25.0;
+    trees.height_min = 1.0;
+    trees.scale_min = 0.8;
+    trees.scale_max = 1.3;
+    trees.salt = "trees";
+    PlacementRule rocks;
+    rocks.object = "obj_rock";
+    rocks.spacing = 20.0;
+    rocks.chance = 0.5;
+    rocks.slope_min = 5.0;
+    rocks.slope_max = 70.0;
+    rocks.align = 1.0;
+    t.placements = {trees, rocks};
+    const Terrain terrain(
+        body_from_json(nlohmann::json::parse(
+            R"({"id": "area", "shape": "bounded_area", "width": 3000, "length": 2000, "seed": 7})")),
+        t);
+    Fnv1a64 h;
+    const auto add = [&](double value) {
+        std::uint64_t bits = 0;
+        std::memcpy(&bits, &value, 8);
+        unsigned char b[8];
+        for (int i = 0; i < 8; ++i) b[i] = static_cast<unsigned char>(bits >> (8 * i));
+        h.add(b, 8);
+    };
+    const int level = terrain.placement_level();
+    for (const ChunkKey k :
+         {ChunkKey{0, level, 12, 9}, ChunkKey{0, level, 13, 9}, ChunkKey{0, level, 20, 14}})
+        for (const TerrainPlacement& p : terrain.placements_in(k)) {
+            add(double(p.rule));
+            add(p.position.x);
+            add(p.position.y);
+            add(p.position.z);
+            add(p.up.x);
+            add(p.up.y);
+            add(p.up.z);
+            add(p.yaw);
+            add(p.scale);
+        }
+    return h.value();
 }
 
 std::uint64_t terrain_fingerprint() {
