@@ -265,8 +265,9 @@ PYBIND11_MODULE(_midgard, m) {
             "What the cook refuses in it.")
         .def(
             "evaluate",
-            [](const midgard::EnvironmentDef& e, double phase, float sun_elevation) {
-                const midgard::EnvironmentLook look = midgard::evaluate(e, phase, sun_elevation);
+            [](const midgard::EnvironmentDef& e, double phase, float sun_elevation, double season) {
+                const midgard::EnvironmentLook look =
+                    midgard::evaluate(e, phase, sun_elevation, season);
                 const auto rgb = [](const glm::vec3& v) { return py::make_tuple(v.x, v.y, v.z); };
                 const midgard::render::SkyColors& s = look.sky;
                 py::dict out;
@@ -286,11 +287,26 @@ PYBIND11_MODULE(_midgard, m) {
                     look.ambient_ground ? py::object(rgb(*look.ambient_ground)) : py::none();
                 out["fog_density"] = look.fog_density;
                 out["fog_color"] = look.fog_color ? py::object(rgb(*look.fog_color)) : py::none();
+                out["ambient_tint"] = rgb(look.ambient_tint);
                 return out;
             },
-            py::arg("phase"), py::arg("sun_elevation"),
-            "Every curve's value at a solar phase, with the sun this high (radians): those not set "
-            "from the analytic sky (ambient and fog colour: None, the scene's own).");
+            py::arg("phase"), py::arg("sun_elevation"), py::arg("season") = 0.0,
+            "Every curve's value at a solar phase, with the sun this high (radians), this far into "
+            "summer (1) or winter (-1): those not set from the analytic sky (ambient and fog "
+            "colour: None, the scene's own), with the season's tint applied (ambient_tint: for "
+            "the ambient light).")
+        .def(
+            "season_tint",
+            [](const midgard::EnvironmentDef& e, double season) {
+                const midgard::SeasonTint t = midgard::season_tint(e, season);
+                const auto rgb = [](const glm::vec3& v) { return py::make_tuple(v.x, v.y, v.z); };
+                py::dict out;
+                out["sunlight"] = rgb(t.sunlight);
+                out["ambient"] = rgb(t.ambient);
+                out["sky"] = rgb(t.sky);
+                return out;
+            },
+            py::arg("season"), "The season's tints: 1 summer, -1 winter, 0 none.");
 
     py::class_<midgard::Calendar>(m, "Calendar",
                                   "A calendar, from JSON with the calendar table's columns and "
@@ -359,6 +375,8 @@ PYBIND11_MODULE(_midgard, m) {
         .def("season_on", &midgard::season_on, py::arg("year"), py::arg("day_of_year"))
         .def("daylight", &midgard::daylight_on, py::arg("year"), py::arg("day_of_year"),
              "The day's share of daylight (0.01 to 0.99).")
+        .def("summer", &midgard::summer_on, py::arg("year"), py::arg("day_of_year"),
+             "How far into summer: 1 on the longest day, -1 on the shortest.")
         .def(
             "solar_phase",
             [](const midgard::Calendar& c, std::int64_t year, int day_of_year, double seconds) {
@@ -433,6 +451,9 @@ PYBIND11_MODULE(_midgard, m) {
             "solar_phase", &Viewport::solar_phase, &Viewport::set_solar_phase,
             "The time of day for suns that follow the clock (0 sunrise, 0.25 noon, 0.5 sunset), "
             "or None: suns stay where they were placed.")
+        .def_property("season", &Viewport::season, &Viewport::set_season,
+                      "How far into summer (1) or winter (-1), for the environment's season "
+                      "tints.")
         .def(
             "preview_camera",
             [](Viewport& v, const std::string& view) -> std::optional<py::tuple> {

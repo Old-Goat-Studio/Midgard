@@ -179,27 +179,53 @@ int season_on(const Calendar& c, std::int64_t year, int day_of_year) {
     return int(c.seasons.size()) - 1;
 }
 
+namespace {
+
+// The seasons' daylight over the year: base + amplitude cos(2 pi (f - middle)), f the day's
+// middle as a fraction of the year. Needs two seasons or more.
+struct SeasonBlend {
+    double base = 0.0, amplitude = 0.0, middle = 0.0;
+};
+
+SeasonBlend season_blend(const Calendar& c) {
+    size_t longest = 0;
+    double lo = c.seasons[0].daylight;
+    for (size_t i = 0; i < c.seasons.size(); ++i) {
+        if (c.seasons[i].daylight > c.seasons[longest].daylight) longest = i;
+        lo = std::min(lo, c.seasons[i].daylight);
+    }
+    const double hi = c.seasons[longest].daylight;
+    SeasonBlend b;
+    b.base = (hi + lo) / 2;
+    b.amplitude = (hi - lo) / 2;
+    double start = 0.0;
+    for (size_t i = 0; i < longest; ++i) start += c.seasons[i].share;
+    b.middle = start + c.seasons[longest].share / 2;
+    return b;
+}
+
+double year_wave(const Calendar& c, const SeasonBlend& b, std::int64_t year, int day_of_year) {
+    const double f = (day_of_year + 0.5) / c.year_days(year);
+    return det::cos(2 * kPi * (f - b.middle));
+}
+
+}  // namespace
+
 double daylight_on(const Calendar& c, std::int64_t year, int day_of_year) {
     double d = c.daylight;
     if (c.seasons.size() == 1) {
         d = c.seasons[0].daylight;
     } else if (c.seasons.size() > 1) {
-        size_t longest = 0;
-        double lo = c.seasons[0].daylight;
-        for (size_t i = 0; i < c.seasons.size(); ++i) {
-            if (c.seasons[i].daylight > c.seasons[longest].daylight) longest = i;
-            lo = std::min(lo, c.seasons[i].daylight);
-        }
-        const double hi = c.seasons[longest].daylight;
-        const double base = (hi + lo) / 2;
-        const double amplitude = (hi - lo) / 2;
-        double start = 0.0;
-        for (size_t i = 0; i < longest; ++i) start += c.seasons[i].share;
-        const double middle = start + c.seasons[longest].share / 2;
-        const double f = (day_of_year + 0.5) / c.year_days(year);
-        d = base + amplitude * det::cos(2 * kPi * (f - middle));
+        const SeasonBlend b = season_blend(c);
+        d = b.base + b.amplitude * year_wave(c, b, year, day_of_year);
     }
     return std::min(std::max(d, 0.01), 0.99);
+}
+
+double summer_on(const Calendar& c, std::int64_t year, int day_of_year) {
+    if (c.seasons.size() < 2) return 0.0;
+    const SeasonBlend b = season_blend(c);
+    return b.amplitude > 0.0 ? year_wave(c, b, year, day_of_year) : 0.0;
 }
 
 double solar_phase(double seconds_into_day, double day_length, double day_fraction, double noon) {

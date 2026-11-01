@@ -64,6 +64,24 @@ def season_on(c: dict, year: int, day_of_year: int) -> int:
     return len(seasons) - 1
 
 
+def season_blend(c: dict) -> tuple:
+    """The seasons' daylight over the year, base + amplitude cos(2 pi (f - middle)): (base,
+    amplitude, middle). Needs two seasons or more."""
+    seasons = c["seasons"]
+    longest = max(range(len(seasons)), key=lambda i: (seasons[i]["daylight"], -i))
+    hi = seasons[longest]["daylight"]
+    lo = min(s["daylight"] for s in seasons)
+    start = 0.0
+    for s in seasons[:longest]:
+        start += s["share"]
+    return (hi + lo) / 2, (hi - lo) / 2, start + seasons[longest]["share"] / 2
+
+
+def year_wave(c: dict, middle: float, year: int, day_of_year: int) -> float:
+    f = (day_of_year + 0.5) / year_days(c, year)
+    return det.cos(2 * math.pi * (f - middle))
+
+
 def daylight_on(c: dict, year: int, day_of_year: int) -> float:
     seasons = c.get("seasons", [])
     if not seasons:
@@ -71,18 +89,18 @@ def daylight_on(c: dict, year: int, day_of_year: int) -> float:
     elif len(seasons) == 1:
         d = seasons[0]["daylight"]
     else:
-        longest = max(range(len(seasons)), key=lambda i: (seasons[i]["daylight"], -i))
-        hi = seasons[longest]["daylight"]
-        lo = min(s["daylight"] for s in seasons)
-        base = (hi + lo) / 2
-        amplitude = (hi - lo) / 2
-        start = 0.0
-        for s in seasons[:longest]:
-            start += s["share"]
-        middle = start + seasons[longest]["share"] / 2
-        f = (day_of_year + 0.5) / year_days(c, year)
-        d = base + amplitude * det.cos(2 * math.pi * (f - middle))
+        base, amplitude, middle = season_blend(c)
+        d = base + amplitude * year_wave(c, middle, year, day_of_year)
     return min(max(d, 0.01), 0.99)
+
+
+def summer_on(c: dict, year: int, day_of_year: int) -> float:
+    """How far into summer a day is: 1 on the longest day, -1 on the shortest, 0 without
+    seasons whose daylight differs."""
+    if len(c.get("seasons", [])) < 2:
+        return 0.0
+    _, amplitude, middle = season_blend(c)
+    return year_wave(c, middle, year, day_of_year) if amplitude > 0.0 else 0.0
 
 
 def solar_phase(seconds_into_day: float, day_length: float, day_fraction: float,

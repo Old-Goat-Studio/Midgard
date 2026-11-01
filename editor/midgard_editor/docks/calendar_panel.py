@@ -180,6 +180,7 @@ def _real_spin(low: float, high: float, decimals: int, suffix: str = "") -> QDou
 
 class CalendarPanel(QWidget):
     time_scrubbed = Signal(int, float)  # the clock (game seconds) and its solar phase
+    season_scrubbed = Signal(float)  # how far into summer that day is (1 summer, -1 winter)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -637,6 +638,8 @@ class CalendarPanel(QWidget):
         date = engine_cal.date(t)
         self.time_scrubbed.emit(t, engine_cal.solar_phase(self.year, date["day_of_year"],
                                                           self.seconds))
+        if hasattr(engine_cal, "summer"):  # the environment's season tints follow
+            self.season_scrubbed.emit(engine_cal.summer(self.year, date["day_of_year"]))
 
     # ---- changes (each one undoable) -------------------------------------------------------
     def _push(self, new: dict[str, Any], label: str, field: str) -> None:

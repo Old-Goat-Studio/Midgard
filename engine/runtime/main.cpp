@@ -389,13 +389,16 @@ public:
         const glm::vec3 to_sun = -glm::normalize(light.direction);
         const nlohmann::json sun{{"direction", {to_sun.x, to_sun.y, to_sun.z}},
                                  {"height", glm::dot(to_sun, glm::normalize(light.up))},
-                                 {"intensity", light.intensity}};
+                                 {"intensity", light.intensity},
+                                 {"color", {light.color.x, light.color.y, light.color.z}},
+                                 {"ambient", {light.ambient.x, light.ambient.y, light.ambient.z}}};
         const auto phase = game_.scene().solar_phase;
         return nlohmann::json{{"entities", entities},
                               {"sky", {sky.x, sky.y, sky.z}},
                               {"time", game_.time().now()},
                               {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},
-                              {"sun", sun}}
+                              {"sun", sun},
+                              {"season", game_.scene().sun_clock.season}}
             .dump();
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }

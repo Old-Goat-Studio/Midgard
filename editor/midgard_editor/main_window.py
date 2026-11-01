@@ -161,6 +161,8 @@ class MainWindow(QMainWindow):
         self.calendar_panel = CalendarPanel()
         self.environment_panel = EnvironmentPanel()
         self.environment_panel.phase_previewed.connect(self.viewport.set_solar_phase)
+        self.environment_panel.season_previewed.connect(self.viewport.set_season)
+        self.calendar_panel.season_scrubbed.connect(self.viewport.set_season)
         self.calendar_panel.time_scrubbed.connect(self._time_scrubbed)
         self.objects_panel.place_requested.connect(self.place_object)
         self.scene_panel.show_objects.connect(lambda: self.edit_object(""))

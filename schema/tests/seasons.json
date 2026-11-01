@@ -1,0 +1,2349 @@
+{
+ "_about": "Seasons' colours (tools/reference/seasons.py).",
+ "summer": [
+  {
+   "calendar": "standard",
+   "year": 1,
+   "day_of_year": 0,
+   "summer": -0.7131666551921211
+  },
+  {
+   "calendar": "standard",
+   "year": 1,
+   "day_of_year": 1,
+   "summer": -0.7251274602520767
+  },
+  {
+   "calendar": "standard",
+   "year": 1,
+   "day_of_year": 91,
+   "summer": -0.7040571720788414
+  },
+  {
+   "calendar": "standard",
+   "year": 1,
+   "day_of_year": 121,
+   "summer": -0.26158925049597154
+  },
+  {
+   "calendar": "standard",
+   "year": 1,
+   "day_of_year": 182,
+   "summer": 0.7071067811865476
+  },
+  {
+   "calendar": "standard",
+   "year": 1,
+   "day_of_year": 273,
+   "summer": 0.7101432943035824
+  },
+  {
+   "calendar": "standard",
+   "year": 1,
+   "day_of_year": 364,
+   "summer": -0.7009945234608344
+  },
+  {
+   "calendar": "twenty",
+   "year": 1,
+   "day_of_year": 0,
+   "summer": 0.0
+  },
+  {
+   "calendar": "twenty",
+   "year": 1,
+   "day_of_year": 1,
+   "summer": 0.0
+  },
+  {
+   "calendar": "twenty",
+   "year": 1,
+   "day_of_year": 7,
+   "summer": 0.0
+  },
+  {
+   "calendar": "twenty",
+   "year": 1,
+   "day_of_year": 10,
+   "summer": 0.0
+  },
+  {
+   "calendar": "twenty",
+   "year": 1,
+   "day_of_year": 15,
+   "summer": 0.0
+  },
+  {
+   "calendar": "twenty",
+   "year": 1,
+   "day_of_year": 22,
+   "summer": 0.0
+  },
+  {
+   "calendar": "twenty",
+   "year": 1,
+   "day_of_year": 29,
+   "summer": 0.0
+  },
+  {
+   "calendar": "odd",
+   "year": 1,
+   "day_of_year": 0,
+   "summer": -0.9355268763125093
+  },
+  {
+   "calendar": "odd",
+   "year": 1,
+   "day_of_year": 1,
+   "summer": -0.8983367811494509
+  },
+  {
+   "calendar": "odd",
+   "year": 1,
+   "day_of_year": 16,
+   "summer": 0.28663685951946366
+  },
+  {
+   "calendar": "odd",
+   "year": 1,
+   "day_of_year": 22,
+   "summer": 0.7535120167358328
+  },
+  {
+   "calendar": "odd",
+   "year": 1,
+   "day_of_year": 33,
+   "summer": 0.9510565162951536
+  },
+  {
+   "calendar": "odd",
+   "year": 1,
+   "day_of_year": 50,
+   "summer": -0.33122728428768244
+  },
+  {
+   "calendar": "odd",
+   "year": 1,
+   "day_of_year": 66,
+   "summer": -0.9644955276485386
+  }
+ ],
+ "placed": [
+  0.29814239699997197,
+  0.74535599249993,
+  -0.5962847939999439
+ ],
+ "bodies": {
+  "flat": null,
+  "planet": {
+   "shape": "sphere_outside",
+   "origin": [
+    0.0,
+    -1000.0,
+    0.0
+   ]
+  },
+  "hollow": {
+   "shape": "sphere_inside",
+   "origin": [
+    0.0,
+    1000.0,
+    0.0
+   ]
+  }
+ },
+ "cases": [
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "flat",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": 0.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": 0.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": 0.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": 0.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": 0.9291181087950797
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.432693791877571
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.9291181087950797
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": 0.92911810879508
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.92911810879508
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": 1.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": 1.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.5461219219876213
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": 0.2543310296241449
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": 0.5461219219876213
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.5461219219876216
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": 0.5461219219876216
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.587785252292473
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.587785252292473
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.9291181087950797
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": 0.432693791877571
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": 0.9291181087950797
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.92911810879508
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": 0.92911810879508
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -1.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -1.0
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    1000.0,
+    -1000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -2000.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    -1000.0,
+    -1000.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    300.0,
+    -150.0,
+    400.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "planet",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    -600.0,
+    -400.0,
+    690.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "uniform",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 23.5,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.0,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.25,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.6,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  },
+  {
+   "body": "hollow",
+   "clock": {
+    "time": 0.5,
+    "daylight": 0.5,
+    "noon": 0.5,
+    "mode": "latitude",
+    "tilt": 0.0,
+    "year": 0.75,
+    "season": -0.4
+   },
+   "point": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "season": -0.4
+  }
+ ],
+ "settings": {
+  "winter": {
+   "sunlight": [
+    0.8,
+    0.9,
+    1.2
+   ],
+   "sky": [
+    0.85,
+    0.9,
+    1.1
+   ]
+  },
+  "summer": {
+   "sunlight": [
+    1.1,
+    1.0,
+    0.85
+   ],
+   "ambient": [
+    1.05,
+    1.0,
+    0.9
+   ]
+  }
+ },
+ "tints": [
+  {
+   "season": -1.5,
+   "tint": {
+    "sunlight": [
+     0.8,
+     0.9,
+     1.2
+    ],
+    "ambient": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "sky": [
+     0.85,
+     0.9,
+     1.1
+    ]
+   }
+  },
+  {
+   "season": -1.0,
+   "tint": {
+    "sunlight": [
+     0.8,
+     0.9,
+     1.2
+    ],
+    "ambient": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "sky": [
+     0.85,
+     0.9,
+     1.1
+    ]
+   }
+  },
+  {
+   "season": -0.75,
+   "tint": {
+    "sunlight": [
+     0.8500000000000001,
+     0.925,
+     1.15
+    ],
+    "ambient": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "sky": [
+     0.8875,
+     0.925,
+     1.0750000000000002
+    ]
+   }
+  },
+  {
+   "season": -0.5,
+   "tint": {
+    "sunlight": [
+     0.9,
+     0.95,
+     1.1
+    ],
+    "ambient": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "sky": [
+     0.925,
+     0.95,
+     1.05
+    ]
+   }
+  },
+  {
+   "season": -0.1,
+   "tint": {
+    "sunlight": [
+     0.98,
+     0.99,
+     1.02
+    ],
+    "ambient": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "sky": [
+     0.985,
+     0.99,
+     1.01
+    ]
+   }
+  },
+  {
+   "season": 0.0,
+   "tint": {
+    "sunlight": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "ambient": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "sky": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "season": 0.1,
+   "tint": {
+    "sunlight": [
+     1.01,
+     1.0,
+     0.985
+    ],
+    "ambient": [
+     1.005,
+     1.0,
+     0.99
+    ],
+    "sky": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "season": 0.5,
+   "tint": {
+    "sunlight": [
+     1.05,
+     1.0,
+     0.925
+    ],
+    "ambient": [
+     1.025,
+     1.0,
+     0.95
+    ],
+    "sky": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "season": 0.75,
+   "tint": {
+    "sunlight": [
+     1.0750000000000002,
+     1.0,
+     0.8875
+    ],
+    "ambient": [
+     1.0375,
+     1.0,
+     0.925
+    ],
+    "sky": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "season": 1.0,
+   "tint": {
+    "sunlight": [
+     1.1,
+     1.0,
+     0.85
+    ],
+    "ambient": [
+     1.05,
+     1.0,
+     0.9
+    ],
+    "sky": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "season": 1.5,
+   "tint": {
+    "sunlight": [
+     1.1,
+     1.0,
+     0.85
+    ],
+    "ambient": [
+     1.05,
+     1.0,
+     0.9
+    ],
+    "sky": [
+     1.0,
+     1.0,
+     1.0
+    ]
+   }
+  }
+ ]
+}

@@ -461,6 +461,12 @@ class ViewportPanel(QWidget):
             self.view.solar_phase = phase
             self.request_render()
 
+    def set_season(self, season: float) -> None:
+        """The environment's season tints as at this season (1 summer, -1 winter, 0 none)."""
+        if self.view is not None and hasattr(self.view, "season"):
+            self.view.season = season
+            self.request_render()
+
     # ---- the Camera editor's preview ----------------------------------------------------
     def set_preview(self, view: str | None) -> bool:
         """Shows the game camera's view ("first", "third" or "top") from where the game would

@@ -5,6 +5,7 @@
 // stylised sun of inside worlds.
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -175,4 +176,40 @@ TEST_CASE("inside worlds: the light is overhead at noon and low from the side at
         CHECK(midgard::local_sun(world, kPlaced, clock, glm::dvec3(0.0, 2000.0, 0.0)).phase ==
               doctest::Approx(0.75));
     }
+}
+
+TEST_CASE("each place's season matches the shared table") {
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "seasons.json");
+    REQUIRE(in);
+    const json table = json::parse(in);
+    const glm::dvec3 placed = vec(table.at("placed"));
+    int checked = 0;
+    for (const json& c : table.at("cases")) {
+        CAPTURE(c.dump());
+        const auto body = body_named(table.at("bodies"), c.at("body").get<std::string>());
+        midgard::SunClock clock = clock_from(c.at("clock"));
+        clock.season = c.at("clock").at("season").get<double>();
+        const midgard::LocalSun sun = midgard::local_sun(body, placed, clock, vec(c.at("point")));
+        CHECK(sun.season == doctest::Approx(c.at("season").get<double>()).epsilon(1e-9));
+        ++checked;
+    }
+    CHECK(checked == 108);
+}
+
+TEST_CASE("Latitude: summer in the north is winter in the south, and the equator has neither") {
+    midgard::SunClock clock;
+    clock.mode = midgard::SunMode::Latitude;
+    clock.tilt = 23.5;
+    clock.year = 0.25;    // the north's midsummer
+    clock.season = -0.3;  // the calendar's, ignored here
+    // The start's latitude is 90 degrees less the sun's height at noon, as placed.
+    const double lat0 = std::acos(-1.0) / 2 - std::asin(kPlaced.y);
+    const double start = midgard::local_sun(kPlanet, kPlaced, clock, {0, 0, 0}).season;
+    CHECK(start == doctest::Approx(std::min(lat0 / (std::acos(-1.0) / 4), 1.0)));
+    const glm::dvec3 north0 = glm::normalize(glm::dvec3(-kPlaced.x, 0.0, -kPlaced.z));
+    const glm::dvec3 pole_axis = north0 * std::cos(lat0) + glm::dvec3(0, 1, 0) * std::sin(lat0);
+    const glm::dvec3 south = kPlanet.origin - pole_axis * 1000.0;
+    CHECK(midgard::local_sun(kPlanet, kPlaced, clock, south).season == doctest::Approx(-1.0));
+    clock.tilt = 0.0;  // no tilt: the calendar's season everywhere
+    CHECK(midgard::local_sun(kPlanet, kPlaced, clock, south).season == doctest::Approx(-0.3));
 }

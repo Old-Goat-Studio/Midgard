@@ -33,6 +33,11 @@ const std::vector<CurveName>& environment_curve_names() {
     return names;
 }
 
+const std::vector<std::string>& season_tint_names() {
+    static const std::vector<std::string> names = {"sunlight", "ambient", "sky"};
+    return names;
+}
+
 std::array<float, 3> Curve::at(double phase) const {
     if (keys.empty()) return {0.0f, 0.0f, 0.0f};
     if (keys.size() == 1) return keys.front().second;
@@ -98,6 +103,30 @@ EnvironmentDef environment_from_json(const std::string& id, const std::string& n
     env.glow_tightness = settings.value("glow_tightness", env.glow_tightness);
     env.fog_height_falloff = settings.value("fog_height_falloff", env.fog_height_falloff);
     env.fog_sun_scatter = settings.value("fog_sun_scatter", env.fog_sun_scatter);
+    for (const char* season : {"winter", "summer"}) {
+        if (!settings.contains(season)) continue;
+        const json& tints = settings.at(season);
+        if (!tints.is_object())
+            throw std::runtime_error("environment '" + id + "': " + season +
+                                     " is an object of tints");
+        SeasonTint& into = std::string(season) == "winter" ? env.winter : env.summer;
+        for (const auto& [key, rgb] : tints.items()) {
+            if (!rgb.is_array() || rgb.size() != 3 || !rgb[0].is_number() || !rgb[1].is_number() ||
+                !rgb[2].is_number())
+                throw std::runtime_error("environment '" + id + "': " + season + "'s " + key +
+                                         " tint is a colour [r, g, b]");
+            const glm::vec3 c(rgb[0].get<float>(), rgb[1].get<float>(), rgb[2].get<float>());
+            if (key == "sunlight")
+                into.sunlight = c;
+            else if (key == "ambient")
+                into.ambient = c;
+            else if (key == "sky")
+                into.sky = c;
+            else
+                throw std::runtime_error("environment '" + id + "': " + season + " has a tint '" +
+                                         key + "' that nothing uses");
+        }
+    }
     return env;
 }
 
@@ -128,10 +157,27 @@ std::vector<std::string> environment_problems(const EnvironmentDef& env) {
     if (env.glow_tightness < 0.0f || env.glow_tightness >= 1.0f)
         out.push_back(who + ": the glow's tightness is from 0 up to (not including) 1");
     if (env.fog_height_falloff < 0.0f) out.push_back(who + ": fog can't thicken upwards");
+    const auto negative = [](const SeasonTint& t) {
+        for (const glm::vec3& c : {t.sunlight, t.ambient, t.sky})
+            for (int i = 0; i < 3; ++i)
+                if (!std::isfinite(c[i]) || c[i] < 0.0f) return true;
+        return false;
+    };
+    if (negative(env.winter)) out.push_back(who + ": the winter tints can't be negative");
+    if (negative(env.summer)) out.push_back(who + ": the summer tints can't be negative");
     return out;
 }
 
-EnvironmentLook evaluate(const EnvironmentDef& env, double phase, float sun_elevation) {
+SeasonTint season_tint(const EnvironmentDef& env, double season) {
+    const double s = std::clamp(season, -1.0, 1.0);
+    const SeasonTint& to = s < 0.0 ? env.winter : env.summer;
+    const float a = float(std::abs(s));
+    const auto blend = [a](const glm::vec3& c) { return glm::vec3(1.0f) + (c - 1.0f) * a; };
+    return {blend(to.sunlight), blend(to.ambient), blend(to.sky)};
+}
+
+EnvironmentLook evaluate(const EnvironmentDef& env, double phase, float sun_elevation,
+                         double season) {
     const render::AnalyticSky analytic = render::analytic_sky(sun_elevation);
     EnvironmentLook look;
     look.sky = analytic.colors;
@@ -175,6 +221,14 @@ EnvironmentLook evaluate(const EnvironmentDef& env, double phase, float sun_elev
         colour("fog_color", c);
         look.fog_color = c;
     }
+    const SeasonTint tint = season_tint(env, season);
+    look.sky.zenith *= tint.sky;
+    look.sky.horizon *= tint.sky;
+    look.sky.horizon_away *= tint.sky;
+    look.sky.ground *= tint.sky;
+    if (look.fog_color) *look.fog_color *= tint.sky;
+    look.sunlight *= tint.sunlight;
+    look.ambient_tint = tint.ambient;
     return look;
 }
 

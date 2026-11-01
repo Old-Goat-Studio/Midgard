@@ -19,6 +19,10 @@
 //                                     the light is stylised (low from the side at dawn and dusk,
 //                                     overhead at noon)
 //
+// Each place's season (for the environment's season tints) is the calendar's everywhere, except
+// on a tilted planet in Latitude mode: there it follows the sun's declination, opposite in the
+// two hemispheres, none at the equator and full from 45 degrees of latitude.
+//
 // tools/reference/light.py is the reference; schema/tests/light_models.json holds both to it.
 #pragma once
 
@@ -40,14 +44,16 @@ struct SunClock {
     double daylight = 0.5;  // the day's daylight share (Uniform, and every other shape)
     double noon = 0.5;      // the middle of daylight, as a fraction of the day
     SunMode mode = SunMode::Uniform;
-    double tilt = 0.0;  // the axial tilt, degrees (Latitude)
-    double year = 0.0;  // the fraction of the year since the spring equinox (Latitude)
+    double tilt = 0.0;    // the axial tilt, degrees (Latitude)
+    double year = 0.0;    // the fraction of the year since the spring equinox (Latitude)
+    double season = 0.0;  // how far into summer at the start: 1 summer, -1 winter (calendar.h)
 };
 
 struct LocalSun {
     double phase = 0.25;               // the solar phase here
     glm::dvec3 to_sun{0.0, 1.0, 0.0};  // towards the sun (unit)
     double height = 1.0;               // along up here: the sine of the sun's elevation
+    double season = 0.0;               // how far into summer here: 1 summer, -1 winter
 };
 
 // The solar phase at a time of day (calendar.h's solar_phase, as a fraction of the day), and

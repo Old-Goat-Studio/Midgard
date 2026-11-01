@@ -8,7 +8,9 @@ to add one (or, on a colour key, to choose its colour; on a number, to type it),
 Delete to remove the selected one. A curve that isn't set follows the analytic sky (shown faint
 behind it); "Start from the analytic sky" turns that into keys to change. The time-of-day slider
 previews the look in the viewport (as the Calendar dock's scrubber does), and the running game
-follows every change. Every change is undoable; dragging a key is one step in the History.
+follows every change. Seasons: tints for the sunlight, ambient light and sky at the depth of
+winter and of summer (a colder light in winter, say), blended through the year; the season
+slider previews them. Every change is undoable; dragging a key is one step in the History.
 """
 import copy
 import json
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -37,7 +40,16 @@ from PySide6.QtWidgets import (
 )
 
 from .. import engine, environments
-from ..environments import COLOURS, GROUPS, LABELS, SETTINGS, EnvironmentCommand
+from ..environments import (
+    COLOURS,
+    GROUPS,
+    LABELS,
+    SEASONS,
+    SETTINGS,
+    TINTS,
+    WHITE,
+    EnvironmentCommand,
+)
 from ..project import Project
 
 NAME_ROLE = Qt.ItemDataRole.UserRole
@@ -281,6 +293,7 @@ class CurveView(QWidget):
 
 class EnvironmentPanel(QWidget):
     phase_previewed = Signal(float)  # the time of day to preview (the viewport's sun follows)
+    season_previewed = Signal(float)  # how far into summer (1) or winter (-1) to preview
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -348,6 +361,33 @@ class EnvironmentPanel(QWidget):
         self.inside.clicked.connect(self.inside_atmosphere)
         settings.addRow("Preset", self.inside)
 
+        # Seasons: a tint for each light at the depth of winter and of summer.
+        seasons = QGridLayout()
+        seasons.addWidget(QLabel("<b>Seasons</b>"), 0, 0)
+        self.tints: dict[tuple[str, str], QPushButton] = {}
+        for column, (season, season_label) in enumerate(SEASONS.items(), start=1):
+            seasons.addWidget(QLabel(season_label), 0, column)
+            for row, (key, label) in enumerate(TINTS.items(), start=1):
+                if column == 1:
+                    seasons.addWidget(QLabel(label), row, 0)
+                swatch = QPushButton()
+                swatch.setFixedSize(54, 20)
+                swatch.setToolTip(f"{label} in {season_label.lower()}: click to choose a tint; "
+                                  "white changes nothing")
+                swatch.clicked.connect(lambda _c=False, s=season, k=key: self.choose_tint(s, k))
+                seasons.addWidget(swatch, row, column)
+                self.tints[(season, key)] = swatch
+        self.season_preset = QPushButton("Colder Winter, Warmer Summer")
+        self.season_preset.setToolTip("Bluer light and sky in winter, warmer in summer")
+        self.season_preset.clicked.connect(self.colder_winter)
+        self.clear_seasons = QPushButton("No Tints")
+        self.clear_seasons.setToolTip("The same colours all year")
+        self.clear_seasons.clicked.connect(self.no_season_tints)
+        season_buttons = QHBoxLayout()
+        season_buttons.addWidget(self.season_preset)
+        season_buttons.addWidget(self.clear_seasons)
+        season_buttons.addStretch()
+
         self.preview = QSlider(Qt.Orientation.Horizontal)
         self.preview.setRange(0, 999)
         self.preview.setValue(250)
@@ -358,6 +398,17 @@ class EnvironmentPanel(QWidget):
         preview_row.addWidget(QLabel("Time of day"))
         preview_row.addWidget(self.preview, 1)
         preview_row.addWidget(self.preview_label)
+        self.season = QSlider(Qt.Orientation.Horizontal)
+        self.season.setRange(-100, 100)
+        self.season.setValue(0)
+        self.season.setToolTip("Preview a season in the viewport: winter to the left, summer to "
+                               "the right")
+        self.season.valueChanged.connect(lambda v: self.preview_season(v / 100.0))
+        self.season_label = QLabel()
+        season_row = QHBoxLayout()
+        season_row.addWidget(QLabel("Season"))
+        season_row.addWidget(self.season, 1)
+        season_row.addWidget(self.season_label)
         self.problems = QLabel()
         self.problems.setWordWrap(True)
         self.problems.setStyleSheet("color: #d08030;")
@@ -372,7 +423,10 @@ class EnvironmentPanel(QWidget):
         layout.addWidget(self.view, 1)
         layout.addLayout(curve_buttons)
         layout.addLayout(settings)
+        layout.addLayout(seasons)
+        layout.addLayout(season_buttons)
         layout.addLayout(preview_row)
+        layout.addLayout(season_row)
         layout.addWidget(self.problems)
         # The panel fits its width (it scrolls up and down only).
         self.chooser.setSizeAdjustPolicy(
@@ -390,6 +444,7 @@ class EnvironmentPanel(QWidget):
         self.stack.addWidget(self.empty)
         self.stack.addWidget(scroll)
         self._references: dict[str, list] = {}
+        self.preview_season(0.0)
         self.set_project(None)
 
     # ---- the project -----------------------------------------------------------------------------
@@ -433,6 +488,7 @@ class EnvironmentPanel(QWidget):
             has = self.env is not None
             for w in (self.name, self.curves, self.view, self.from_analytic, self.clear,
                       self.duplicate_button, self.delete_button, self.inside,
+                      self.season_preset, self.clear_seasons, *self.tints.values(),
                       *self.settings.values()):
                 w.setEnabled(has)
             if not has:
@@ -442,6 +498,9 @@ class EnvironmentPanel(QWidget):
             self.name.setText(self.env["name"])
             for key, box in self.settings.items():
                 box.setValue(float(self.env["settings"].get(key, SETTINGS[key][1])))
+            for (season, key), swatch in self.tints.items():
+                rgb = environments.tint(self.env, season, key)
+                swatch.setStyleSheet(f"background-color: {_qcolor(rgb).name()};")
             for i in range(self.curves.count()):
                 item = self.curves.item(i)
                 name = item.data(NAME_ROLE)
@@ -523,6 +582,44 @@ class EnvironmentPanel(QWidget):
         new["settings"].update(environments.INSIDE_ATMOSPHERE["settings"])
         self._push(new, "inside-world atmosphere", "")
 
+    def set_tint(self, season: str, key: str, rgb: list | None) -> None:
+        """A season's tint for the sunlight, ambient light or sky; None (or white) removes it."""
+        if self.env is None:
+            return
+        new = copy.deepcopy(self.env)
+        tints = new["settings"].setdefault(season, {})
+        if rgb is None or [round(c, 4) for c in rgb] == WHITE:
+            tints.pop(key, None)
+        else:
+            tints[key] = [round(float(c), 4) for c in rgb]
+        if not tints:
+            new["settings"].pop(season, None)
+        self._push(new, f"{SEASONS[season].lower()} {TINTS[key].lower()} tint",
+                   f"tint {season} {key}")
+
+    def choose_tint(self, season: str, key: str) -> None:
+        if self.env is None:
+            return
+        chosen = QColorDialog.getColor(_qcolor(environments.tint(self.env, season, key)), self,
+                                       f"{TINTS[key]} in {SEASONS[season].lower()}")
+        if chosen.isValid():
+            self.set_tint(season, key, [chosen.redF(), chosen.greenF(), chosen.blueF()])
+
+    def colder_winter(self) -> None:
+        if self.env is None:
+            return
+        new = copy.deepcopy(self.env)
+        new["settings"].update(copy.deepcopy(environments.SEASON_PRESET))
+        self._push(new, "season tints", "")
+
+    def no_season_tints(self) -> None:
+        if self.env is None:
+            return
+        new = copy.deepcopy(self.env)
+        for season in SEASONS:
+            new["settings"].pop(season, None)
+        self._push(new, "no season tints", "")
+
     def _name_edited(self) -> None:
         name = self.name.text().strip()
         if self._refreshing or self.env is None or not name or name == self.env["name"]:
@@ -572,3 +669,7 @@ class EnvironmentPanel(QWidget):
         self.preview_label.setText(f"{phase:.2f} ({label[1].lower()})")
         self.view.set_preview(phase)
         self.phase_previewed.emit(phase)
+
+    def preview_season(self, season: float) -> None:
+        self.season_label.setText(environments.season_name(season))
+        self.season_previewed.emit(season)

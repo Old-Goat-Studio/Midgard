@@ -18,6 +18,10 @@ day; the scene's sun, as placed, is where it stands there at solar noon.
                                      light is stylised (low from the side at dawn and dusk,
                                      overhead at noon)
 
+Each place's season (local_season) is the calendar's everywhere, except on a tilted planet in
+"latitude" mode: there it follows the sun's declination, opposite in the two hemispheres, none
+at the equator and full from 45 degrees of latitude.
+
 Vectors are tuples; all maths in doubles, in the same order as the engine.
 """
 import math
@@ -162,6 +166,25 @@ def local_sun(body, placed, clock, p):
         a = TAU * phase
         to_sun = add(mul(east, math.cos(a)), mul(up_p, math.sin(a)))
     return phase, to_sun, dot(to_sun, up_p)
+
+
+def local_season(body, placed, clock, p) -> float:
+    """How far into summer it is at p: 1 summer, -1 winter. clock["season"] is the calendar's
+    (calendar.summer_on) at the start."""
+    season = clock.get("season", 0.0)
+    if (body is None or body["shape"] != "sphere_outside" or clock["mode"] != "latitude"
+            or clock["tilt"] <= 0.0):
+        return season
+    up0 = up_at(body, (0.0, 0.0, 0.0))
+    h = flat(placed, up0)
+    north0 = mul(norm(h), -1.0) if dot(h, h) > 1e-16 else any_perpendicular(up0)
+    elev0 = math.asin(min(max(dot(placed, up0), -1.0), 1.0))
+    elev0 = min(max(elev0, math.radians(1.0)), math.pi / 2)
+    lat0 = math.pi / 2 - elev0
+    axis = add(mul(north0, math.cos(lat0)), mul(up0, math.sin(lat0)))
+    q = norm(sub(p, body["origin"]))
+    latitude = math.asin(min(max(dot(q, axis), -1.0), 1.0))
+    return math.sin(TAU * clock["year"]) * min(max(latitude / (math.pi / 4), -1.0), 1.0)
 
 
 def make_table() -> dict:

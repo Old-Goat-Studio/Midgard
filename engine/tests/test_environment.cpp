@@ -86,3 +86,45 @@ TEST_CASE("an empty environment is the analytic sky; set curves take over from i
     CHECK(look.ambient.has_value());
     CHECK(look.sky.sun_size == 3.0f);
 }
+
+TEST_CASE("season tints match the shared table, and colour the light and sky") {
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "seasons.json");
+    REQUIRE(in);
+    const json table = json::parse(in);
+    const midgard::EnvironmentDef env =
+        midgard::environment_from_json("env_test", "Test", "{}", table.at("settings").dump());
+    CHECK(midgard::environment_problems(env).empty());
+    for (const json& c : table.at("tints")) {
+        CAPTURE(c.dump());
+        const midgard::SeasonTint t = midgard::season_tint(env, c.at("season").get<double>());
+        const json& want = c.at("tint");
+        for (int i = 0; i < 3; ++i) {
+            CHECK(t.sunlight[i] == doctest::Approx(want.at("sunlight")[i].get<double>()));
+            CHECK(t.ambient[i] == doctest::Approx(want.at("ambient")[i].get<double>()));
+            CHECK(t.sky[i] == doctest::Approx(want.at("sky")[i].get<double>()));
+        }
+    }
+
+    // In deep winter the sunlight is bluer and the sky too; at the equinox nothing changes.
+    const float noon = 0.9f;
+    const midgard::EnvironmentLook plain = midgard::evaluate(env, 0.25, noon, 0.0);
+    const midgard::EnvironmentLook winter = midgard::evaluate(env, 0.25, noon, -1.0);
+    CHECK(winter.sunlight.b == doctest::Approx(plain.sunlight.b * 1.2f));
+    CHECK(winter.sunlight.r == doctest::Approx(plain.sunlight.r * 0.8f));
+    CHECK(winter.sky.zenith.g == doctest::Approx(plain.sky.zenith.g * 0.9f));
+    CHECK(winter.ambient_tint == glm::vec3(1.0f));  // no winter ambient tint
+    const midgard::EnvironmentLook summer = midgard::evaluate(env, 0.25, noon, 1.0);
+    CHECK(summer.ambient_tint.b == doctest::Approx(0.9f));
+    CHECK(summer.sky.zenith == plain.sky.zenith);  // no summer sky tint
+    CHECK(plain.ambient_tint == glm::vec3(1.0f));
+}
+
+TEST_CASE("season tints the cook refuses, and JSON that can't be read") {
+    const auto env = [](const char* settings) {
+        return midgard::environment_from_json("env_x", "X", "{}", settings);
+    };
+    CHECK(midgard::environment_problems(env(R"({"winter": {"sky": [0.5, -0.1, 1]}})")).size() == 1);
+    CHECK_THROWS(env(R"({"summer": {"sunlight": [1, 1]}})"));
+    CHECK_THROWS(env(R"({"summer": {"moonlight": [1, 1, 1]}})"));
+    CHECK_THROWS(env(R"({"winter": [1, 1, 1]})"));
+}

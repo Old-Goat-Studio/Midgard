@@ -246,6 +246,18 @@ def test_the_scrubber_gives_the_time_and_solar_phase(dock):
     assert scrubbed[-1][0] == START - 6 * 3600 + (200 - 90) * 86400 + 20 * 3600
 
 
+@needs_engine
+def test_the_scrubber_gives_the_season_for_the_environments_tints(dock):
+    seasons = []
+    dock.season_scrubbed.connect(seasons.append)
+    dock.year_strip.day_picked.emit(200)  # July 20: summer
+    dock.scrub(12 * 3600)
+    summer = seasons[-1]
+    dock.year_strip.day_picked.emit(20)  # January 21: winter
+    dock.scrub(12 * 3600)
+    assert summer > 0.5 and seasons[-1] < -0.5
+
+
 def test_a_sun_can_follow_the_clock(qtbot, project):
     from midgard_editor.docks.entity_form import EntityForm
 

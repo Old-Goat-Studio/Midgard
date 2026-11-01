@@ -57,6 +57,41 @@ SETTINGS = {  # key: (label, default, low, high, step, decimals)
     "fog_height_falloff": ("Fog thins upwards (per m)", 0.0, 0.0, 1.0, 0.001, 4),
     "fog_sun_scatter": ("Fog brighter towards the sun", 0.5, 0.0, 4.0, 0.05, 2),
 }
+# Season tints (settings "winter" and "summer"): the light and sky multiplied by these colours at
+# the depth of each season, none at the equinoxes; white (or not given) changes nothing.
+SEASONS = {"winter": "Winter", "summer": "Summer"}
+TINTS = {"sunlight": "Sunlight", "ambient": "Ambient light", "sky": "Sky"}
+WHITE = [1.0, 1.0, 1.0]
+SEASON_PRESET = {  # a colder light in winter, a warmer one in summer
+    "winter": {"sunlight": [0.82, 0.9, 1.0], "ambient": [0.88, 0.93, 1.0],
+               "sky": [0.9, 0.94, 1.0]},
+    "summer": {"sunlight": [1.0, 0.95, 0.85], "ambient": [1.0, 0.97, 0.9],
+               "sky": [1.0, 1.0, 0.96]},
+}
+
+
+def tint(env: dict[str, Any], season: str, key: str) -> list:
+    """A season's tint for the sunlight, ambient light or sky (white if not given)."""
+    return list(env["settings"].get(season, {}).get(key, WHITE))
+
+
+def season_tint(settings: dict[str, Any], season: float) -> dict[str, list]:
+    """The tints at a season (1 summer, -1 winter): white blended towards the season's
+    (tools/reference/environment.py, which the engine is held to)."""
+    s = min(max(season, -1.0), 1.0)
+    to = settings.get("winter" if s < 0.0 else "summer", {})
+    a = abs(s)
+    return {k: [1.0 + (c - 1.0) * a for c in to.get(k, WHITE)] for k in TINTS}
+
+
+def season_name(season: float) -> str:
+    if season <= -0.5:
+        return "winter"
+    if season >= 0.5:
+        return "summer"
+    return "spring or autumn"
+
+
 # Inside worlds: no open sky overhead, but the far side of the world seen through haze, bluish by
 # day and dark by night, the same at every height (roadmap §6).
 INSIDE_ATMOSPHERE = {

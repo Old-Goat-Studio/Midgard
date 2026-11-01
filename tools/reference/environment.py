@@ -50,3 +50,14 @@ def make_table() -> dict:
              for name, keys in curves.items() for p in phases]
     return {"_about": "Curves over the solar phase (tools/reference/environment.py).",
             "curves": curves, "cases": cases}
+
+
+def season_tint(settings: dict, season: float) -> dict:
+    """The season's tints ({"sunlight", "ambient", "sky"}: [r, g, b]): white blended towards
+    settings["winter"]'s as season goes to -1, or settings["summer"]'s as it goes to 1 (tints not
+    given are white). The engine blends in single precision."""
+    s = min(max(season, -1.0), 1.0)
+    to = settings.get("winter" if s < 0.0 else "summer", {})
+    a = abs(s)
+    return {k: [1.0 + (c - 1.0) * a for c in to.get(k, [1.0, 1.0, 1.0])]
+            for k in ("sunlight", "ambient", "sky")}

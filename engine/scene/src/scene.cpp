@@ -611,7 +611,8 @@ render::Environment Scene::environment(const glm::dvec3& origin) const {
     const std::optional<LocalSun> sun = local_sun(origin);
     const double phase = sun ? sun->phase : *solar_phase;
     const float height = sun ? std::clamp(float(sun->height), -1.0f, 1.0f) : 1.0f;
-    const EnvironmentLook look = evaluate(*env, phase, std::asin(height));
+    const double season = sun ? sun->season : sun_clock.season;
+    const EnvironmentLook look = evaluate(*env, phase, std::asin(height), season);
     out.sky = true;
     out.sky_colors = look.sky;
     out.horizon_dip = horizon_dip(origin);
@@ -664,12 +665,14 @@ render::Light Scene::light(const glm::dvec3& origin) const {
             light.ambient *= 0.25f + 0.75f * day;
             light.ambient_ground *= 0.25f + 0.75f * day;
             if (env) {  // the environment's sunlight and ambient light at this time of day
-                const EnvironmentLook look =
-                    evaluate(*env, sun->phase, std::asin(std::clamp(height, -1.0f, 1.0f)));
+                const EnvironmentLook look = evaluate(
+                    *env, sun->phase, std::asin(std::clamp(height, -1.0f, 1.0f)), sun->season);
                 light.color = l.color * look.sunlight;
                 light.intensity = l.intensity * look.sunlight_intensity;
                 if (look.ambient) light.ambient = *look.ambient;
                 if (look.ambient_ground) light.ambient_ground = *look.ambient_ground;
+                light.ambient *= look.ambient_tint;
+                light.ambient_ground *= look.ambient_tint;
             } else {
                 light.intensity *= day;
             }

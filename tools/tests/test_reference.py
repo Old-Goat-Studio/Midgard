@@ -219,3 +219,35 @@ def test_a_planets_noon_moves_with_longitude_and_its_poles_have_polar_day_and_ni
         winter = dict(summer, year=0.75)
         assert light.local_sun(planet, placed, summer, pole)[2] > 0.3
         assert light.local_sun(planet, placed, winter, pole)[2] < -0.3
+
+
+# ---- seasons' colours (milestone 5.8) -----------------------------------------------------------
+def test_seasons_match_their_table():
+    from reference import calendar as cal
+    from reference import environment as env
+    from reference import light
+    data = json.loads((TABLES / "seasons.json").read_text("utf-8"))
+    calendars = json.loads((TABLES / "calendar_dates.json").read_text("utf-8"))["calendars"]
+    assert len(data["summer"]) == 21 and len(data["cases"]) == 108
+    for c in data["summer"]:
+        got = cal.summer_on(calendars[c["calendar"]], c["year"], c["day_of_year"])
+        assert got == c["summer"], c
+    placed = tuple(data["placed"])
+    for c in data["cases"]:
+        body = data["bodies"][c["body"]]
+        if body is not None:
+            body = {"shape": body["shape"], "origin": tuple(body["origin"])}
+        assert light.local_season(body, placed, c["clock"], tuple(c["point"])) == c["season"], c
+    for c in data["tints"]:
+        assert env.season_tint(data["settings"], c["season"]) == c["tint"], c
+
+
+def test_summer_is_the_longest_day_and_winter_the_shortest():
+    from reference import calendar as cal
+    c = {"months": [{"days": 100}], "seasons": [
+        {"share": 0.25, "daylight": 0.5}, {"share": 0.25, "daylight": 0.7},
+        {"share": 0.25, "daylight": 0.5}, {"share": 0.25, "daylight": 0.3}]}
+    summer = [cal.summer_on(c, 1, d) for d in range(100)]
+    assert max(range(100), key=lambda d: summer[d]) == 37  # the middle of the second season
+    assert min(range(100), key=lambda d: summer[d]) == 87
+    assert cal.summer_on({"months": [{"days": 10}]}, 1, 3) == 0.0  # no seasons

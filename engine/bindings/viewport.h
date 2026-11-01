@@ -7,6 +7,8 @@
 // dock moved to another monitor or floated), so it never draws into a window that has gone.
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -49,6 +51,15 @@ public:
     // The time of day for suns that follow the clock (the Calendar dock's scrubber), or none.
     void set_solar_phase(std::optional<double> phase) { scene_.solar_phase = phase; }
     std::optional<double> solar_phase() const { return scene_.solar_phase; }
+    // How far into summer (1) or winter (-1), for the environment's season tints; on a tilted
+    // planet in Latitude mode it also sets the year, so the sun's declination follows.
+    void set_season(double season) {
+        season = std::clamp(season, -1.0, 1.0);
+        scene_.sun_clock.season = season;
+        const double year = std::asin(season) / (2.0 * 3.14159265358979323846);
+        scene_.sun_clock.year = year - std::floor(year);
+    }
+    double season() const { return scene_.sun_clock.season; }
     // Where the game's camera would be in one of its views, from the scene as edited (the
     // Camera editor's preview): the game's own camera rig works it out, so the two agree. Walls
     // don't stop it here (the viewport has no physics). None without a player and a camera.

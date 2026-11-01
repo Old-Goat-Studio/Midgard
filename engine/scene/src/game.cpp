@@ -94,6 +94,7 @@ void Game::update_sun() {
     scene_.sun_clock.noon = c.solar_noon;
     scene_.sun_clock.tilt = c.tilt != 0.0 ? c.tilt : 0.5 * (c.tilt_min + c.tilt_max);
     scene_.sun_clock.year = double(d.day_of_year) / double(std::max(c.year_days(d.year), 1));
+    scene_.sun_clock.season = summer_on(c, d.year, d.day_of_year);  // for the season tints
 }
 
 void Game::use_world(const std::filesystem::path& folder) {

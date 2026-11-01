@@ -102,6 +102,9 @@ int season_on(const Calendar& c, std::int64_t year, int day_of_year);
 // base + amplitude cos(2 pi (day - longest day) / year length), or the calendar's own without
 // seasons.
 double daylight_on(const Calendar& c, std::int64_t year, int day_of_year);
+// How far into summer a day is (by its middle), on the same blend: 1 on the longest day, -1 on
+// the shortest, 0 at the equinoxes, and 0 all year without seasons whose daylight differs.
+double summer_on(const Calendar& c, std::int64_t year, int day_of_year);
 
 // The reference formula (roadmap §6): 0 = sunrise, 0.5 = sunset, 1 = the next sunrise.
 double solar_phase(double seconds_into_day, double day_length, double day_fraction,

@@ -5,8 +5,10 @@
 // different calendar (a 20-hour day, or 70% daylight) never breaks a look already set up. Curves
 // that aren't set come from the analytic sky (render/atmosphere.h, an Earth-like atmosphere) at
 // the sun's height, so an empty environment already gives a whole day. The scene's Sky entity
-// links to one. The editor's Environment editor edits them (through _midgard, so its preview and
-// the game agree); tools/reference/environment.py is the reference for the curves.
+// links to one. Season tints colour the light and the sky through the year (a colder light in
+// winter, say): full at the depth of winter or summer, none at the equinoxes. The editor's
+// Environment editor edits them (through _midgard, so its preview and the game agree);
+// tools/reference/environment.py is the reference for the curves and tints.
 #pragma once
 
 #include <array>
@@ -39,6 +41,13 @@ struct CurveName {
 };
 const std::vector<CurveName>& environment_curve_names();
 
+// Colours the light and sky are multiplied by at the depth of a season.
+struct SeasonTint {
+    glm::vec3 sunlight{1.0f}, ambient{1.0f}, sky{1.0f};
+};
+// The keys of a season's tint in the settings ("winter": {"sunlight": [r, g, b], ...}).
+const std::vector<std::string>& season_tint_names();  // sunlight, ambient, sky
+
 struct EnvironmentDef {
     std::string id, name;
     std::map<std::string, Curve> curves;  // by name, only those set
@@ -47,6 +56,7 @@ struct EnvironmentDef {
     float glow_tightness = 0.8f;      // 0 spreads its glow over the sky, 0.95 hugs the sun
     float fog_height_falloff = 0.0f;  // per metre: how fast fog thins upwards
     float fog_sun_scatter = 0.5f;     // how much brighter fog is towards the sun
+    SeasonTint winter, summer;        // white: no change
 
     const Curve* curve(const std::string& curve_name) const;
 };
@@ -66,9 +76,15 @@ struct EnvironmentLook {
     std::optional<glm::vec3> ambient, ambient_ground;  // none: the scene's own (dimmed at night)
     float fog_density = 0.0f;
     std::optional<glm::vec3> fog_color;  // none: the sky's horizon
+    glm::vec3 ambient_tint{1.0f};        // the season's, for the ambient light (whichever it is)
 };
+// The season's tint: white blended towards the winter tint as season goes to -1, or the summer
+// tint as it goes to 1.
+SeasonTint season_tint(const EnvironmentDef& environment, double season);
 // At this solar phase, with the sun this high where the camera is (radians; for the curves not
-// set, from the analytic sky).
-EnvironmentLook evaluate(const EnvironmentDef& environment, double phase, float sun_elevation);
+// set, from the analytic sky), this far into summer (1) or winter (-1). The season's tint is
+// applied to the sky, the fog's colour and the sunlight, and given for the ambient light.
+EnvironmentLook evaluate(const EnvironmentDef& environment, double phase, float sun_elevation,
+                         double season = 0.0);
 
 }  // namespace midgard

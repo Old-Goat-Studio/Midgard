@@ -66,6 +66,23 @@ fs::path migrated_database() {
 
 }  // namespace
 
+TEST_CASE("how far into summer a day is matches the shared table") {
+    const json calendars_json = shared_table().at("calendars");
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "seasons.json");
+    REQUIRE(in);
+    const json table = json::parse(in);
+    int checked = 0;
+    for (const json& c : table.at("summer")) {
+        CAPTURE(c.dump());
+        const midgard::Calendar cal =
+            midgard::calendar_from_json(calendars_json.at(c.at("calendar").get<std::string>()));
+        CHECK(midgard::summer_on(cal, c.at("year").get<std::int64_t>(),
+                                 c.at("day_of_year").get<int>()) == c.at("summer").get<double>());
+        ++checked;
+    }
+    CHECK(checked == 21);
+}
+
 TEST_CASE("calendar dates, daylight, solar phase and moons match the shared table") {
     const json table = shared_table();
     std::map<std::string, midgard::Calendar> calendars;
