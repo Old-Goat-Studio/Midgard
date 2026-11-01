@@ -182,6 +182,14 @@ TerrainStreamer::MeshKey TerrainStreamer::mesh_key(const TerrainLeaf& l) {
            (std::uint64_t(std::uint32_t(l.key.y)) << 4) | flags;
 }
 
+bool TerrainStreamer::casts_shadow(const ChunkKey& key, const glm::dvec3& camera) const {
+    const Shape::Kind kind = terrain_.body().shape.kind();
+    if (kind == Shape::Kind::BoundedArea || kind == Shape::Kind::FlatCylinder) return true;
+    // Within about 25 degrees of the camera's own frame.
+    const Body& b = terrain_.body();
+    return glm::dot(b.up(terrain_.chunk_origin(key)), b.up(camera)) > 0.9;
+}
+
 bool TerrainStreamer::sphere() const {
     const Shape::Kind kind = terrain_.body().shape.kind();
     return kind == Shape::Kind::SphereOutside || kind == Shape::Kind::SphereInside;
@@ -424,6 +432,7 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
         if (round)  // up in the frame of its own axis (ground_mesh_data's frame)
             d.color.w = float(2 + up_frame(terrain_.body().up(terrain_.chunk_origin(leaf.key))));
         d.emissive = levels;
+        d.casts_shadow = casts_shadow(leaf.key, origin);
         ground.emplace_back(distance, d);
         if (it->second->water) {
             render::DrawItem w;

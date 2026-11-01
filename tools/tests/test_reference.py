@@ -275,6 +275,28 @@ def test_terrain_matches_its_table():
     assert f"{terrain.fingerprint():016x}" == data["fingerprint"]
 
 
+def test_cube_sphere_terrain_matches_its_tables():
+    """Milestone 5.10's tables: a sample of their chunk hashes (the C++ tests check them all)."""
+    from reference import terrain
+    data = json.loads((TABLES / "terrain_spheres.json").read_text("utf-8"))
+    for name, layout in data["layout"].items():
+        t = terrain.Terrain(data["bodies"][name])
+        assert [t.roots_u, t.roots_v, t.max_level] == layout
+    cases = data["cases"]
+    for c in [c for c in cases if "hash" in c][::24] + [c for c in cases if "height" in c]:
+        t = terrain.Terrain(data["bodies"][c["body"]])
+        if "hash" in c:
+            assert f"{t.chunk_hash(tuple(c['key'])):016x}" == c["hash"], c
+        else:
+            assert t.height(c["face"], c["u"], c["v"]) == c["height"], c
+    stamped = json.loads((TABLES / "terrain_sphere_stamps.json").read_text("utf-8"))
+    t = terrain.Terrain(stamped["body"], {}, stamped["stamps"])
+    for c in stamped["cases"]:
+        if "height" in c:
+            assert t.height(c["face"], c["u"], c["v"]) == c["height"], c
+    assert f"{terrain.sphere_fingerprint():016x}" == stamped["fingerprint"]
+
+
 def test_a_cylinders_terrain_meets_itself_at_the_join():
     from reference import terrain
     for body in (terrain.BODIES["strip"], terrain.BODIES["habitat"]):

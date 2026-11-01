@@ -14,10 +14,13 @@
 //   sphere outside, Latitude          a tilted planet: the sun's declination follows the year,
 //                                     day length follows latitude (polar day and night), and the
 //                                     start's latitude is set by how high the sun was placed
-//   sphere inside, curved cylinder    a central sun (or sun-line) with shades going round: each
-//                                     place's time is shifted by its angle round the axis, and
-//                                     the light is stylised (low from the side at dawn and dusk,
-//                                     overhead at noon)
+//   sphere inside, curved cylinder    a light sphere at the centre (10 m across) or a light rod
+//                                     down the axis (5 m across), with shades going round: each
+//                                     place's time is shifted by its angle round the axis, the
+//                                     light always comes straight down, and how much of it gets
+//                                     through follows a stylised sun's height (rising at dawn,
+//                                     highest at noon, gone at dusk; midgard/world_light.h draws
+//                                     the rod or sphere)
 //
 // Each place's season (for the environment's season tints) is the calendar's everywhere, except
 // on a tilted planet in Latitude mode: there it follows the sun's declination, opposite in the
@@ -53,9 +56,11 @@ struct SunClock {
 struct LocalSun {
     double phase = 0.25;               // the solar phase here
     glm::dvec3 to_sun{0.0, 1.0, 0.0};  // towards the sun (unit)
-    double height = 1.0;               // along up here: the sine of the sun's elevation
-    double season = 0.0;               // how far into summer here: 1 summer, -1 winter
-    double autumn = 0.0;               // which way the year turns here: 1 autumn, -1 spring
+    double height = 1.0;  // the sine of the sun's elevation here (along up). Inside a sphere
+                          // or a cylinder, that of the stylised sun the shades give: to_sun is
+                          // then straight up, to the light at the centre or on the axis
+    double season = 0.0;  // how far into summer here: 1 summer, -1 winter
+    double autumn = 0.0;  // which way the year turns here: 1 autumn, -1 spring
 };
 
 // The solar phase at a time of day (calendar.h's solar_phase, as a fraction of the day), and

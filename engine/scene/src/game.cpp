@@ -237,6 +237,7 @@ void Game::upload_meshes(render::Renderer& renderer) {
                 meshes_.emplace(asset, renderer.upload_mesh(load_mesh(asset)));
     // A missing texture is drawn without (the cook warned).
     materials_.upload(scene_, renderer, [this](const std::string& t) { return read_texture(t); });
+    world_light_.upload(renderer);
 }
 
 std::vector<uint8_t> Game::read_texture(const std::string& asset) const {
@@ -465,6 +466,7 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
         std::vector<render::DrawItem> ground = terrain_->draws(origin);
         out.insert(out.end(), ground.begin(), ground.end());
     }
+    if (const auto light = world_light_.draw(scene_, origin)) out.push_back(*light);
     return out;
 }
 
@@ -487,7 +489,8 @@ render::Camera Game::camera(float aspect) const {
     if (auto cam = scene_.camera(aspect)) return *cam;
     render::Camera cam;
     cam.view = glm::lookAt(glm::vec3(4.0f, 3.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0, 1, 0));
-    const float far_plane = terrain_ ? kTerrainViewDistance : 500.0f;
+    const float far_plane = std::max(terrain_ ? kTerrainViewDistance : 500.0f,
+                                     float(inside_view_distance(scene_.settings.body)));
     cam.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, far_plane);
     return cam;
 }

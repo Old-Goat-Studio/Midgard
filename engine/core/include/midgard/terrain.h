@@ -226,4 +226,11 @@ private:
 std::uint64_t terrain_fingerprint();
 inline constexpr std::uint64_t kTerrainFingerprint = 0x667639e2e799c3b4ULL;
 
+// The cube-sphere's (milestone 5.10): every face of a planet and a hollow world, whole (the
+// coarsest level) and a chunk by an edge, then the planet sculpted across a face edge, on both
+// sides of it (tools/reference/terrain.py's sphere_fingerprint(); the fingerprint of
+// schema/tests/terrain_sphere_stamps.json). The self-test checks it on devices.
+std::uint64_t sphere_terrain_fingerprint();
+inline constexpr std::uint64_t kSphereTerrainFingerprint = 0x6c7f25335e3bb8dfULL;
+
 }  // namespace midgard

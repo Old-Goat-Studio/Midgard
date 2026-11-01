@@ -25,6 +25,7 @@
 #include "midgard/pak.h"
 #include "midgard/scene.h"
 #include "midgard/validate.h"
+#include "midgard/world_light.h"
 #include "midgard/world_surface.h"
 
 namespace fs = std::filesystem;
@@ -2118,6 +2119,7 @@ namespace {
 // points down all the way.
 struct SphereWalk {
     double turned = 0.0, lowest = 1e9, worst_gravity_angle = 0.0, nearest_corner = 1e9;
+    double worst_gravity_strength = 0.0;  // how far |g| is from the surface's 9.81
     int frames = 0, faces_crossed = 0;
 };
 
@@ -2182,6 +2184,8 @@ SphereWalk walk_round_sphere(const char* shape, const glm::dvec3& from, const gl
         if (f != face) ++w.faces_crossed;
         face = f;
         const glm::dvec3 g = game.physics().world().gravity(p);
+        w.worst_gravity_strength =
+            std::max(w.worst_gravity_strength, std::abs(glm::length(g) - 9.81));
         const double cosine = glm::dot(glm::normalize(g), -t.body().up(p));
         w.worst_gravity_angle = std::max(w.worst_gravity_angle, std::acos(std::min(cosine, 1.0)));
         const glm::dvec3 q = glm::normalize(p - centre);
@@ -2214,6 +2218,7 @@ TEST_CASE("terrain, the exit: all the way round a planet, by three paths, no sea
         CHECK(w.faces_crossed >= 4);                          // over face edges
         CHECK(w.lowest > -0.1);                               // never through the ground
         CHECK(w.worst_gravity_angle < 1e-6);                  // down, to the centre
+        CHECK(w.worst_gravity_strength < 1e-9);               // 9.81 m/s^2 all the way
         if (path.corners) CHECK(w.nearest_corner < 25.0);     // through cube corners
     }
 }
@@ -2228,6 +2233,36 @@ TEST_CASE("terrain, the exit: all the way round inside a hollow world, no seams"
         CHECK(w.faces_crossed >= 4);
         CHECK(w.lowest > -0.1);
         CHECK(w.worst_gravity_angle < 1e-6);  // outwards, away from the centre
+        CHECK(w.worst_gravity_strength < 1e-9);
         if (corners) CHECK(w.nearest_corner < 25.0);
     }
+}
+
+TEST_CASE("inside worlds' lights: the rod's mesh, and how far the camera sees") {
+    // A cylinder along Z, 1 m across and long: sides facing outwards.
+    const midgard::render::MeshData rod = midgard::make_light_rod();
+    REQUIRE_FALSE(rod.indices.empty());
+    for (const midgard::render::Vertex& v : rod.vertices) {
+        CHECK(std::hypot(v.position[0], v.position[1]) == doctest::Approx(0.5));
+        CHECK(std::abs(v.position[2]) == doctest::Approx(0.5));
+    }
+    for (size_t i = 0; i < rod.indices.size(); i += 3) {
+        const auto p = [&](size_t k) {
+            const float* q = rod.vertices[rod.indices[i + k]].position;
+            return glm::dvec3(q[0], q[1], q[2]);
+        };
+        const glm::dvec3 n = glm::cross(p(1) - p(0), p(2) - p(0));
+        const glm::dvec3 middle = (p(0) + p(1) + p(2)) / 3.0;
+        CHECK(glm::dot(n, glm::dvec3(middle.x, middle.y, 0.0)) > 0.0);  // counter-clockwise, out
+    }
+    // Inside a habitat or a hollow world the camera sees past the far side; elsewhere, no
+    // change.
+    const auto body = [](const char* text) { return midgard::body_from_json(json::parse(text)); };
+    CHECK(midgard::inside_view_distance(body(R"({"id": "h", "shape": "curved_cylinder",
+        "radius": 1000, "length": 5000})")) == doctest::Approx(2200.0));
+    CHECK(midgard::inside_view_distance(body(R"({"id": "s", "shape": "sphere_inside",
+        "radius": 20000})")) == doctest::Approx(44000.0));
+    CHECK(midgard::inside_view_distance(body(R"({"id": "p", "shape": "sphere_outside",
+        "radius": 3000})")) == 0.0);
+    CHECK(midgard::inside_view_distance(std::nullopt) == 0.0);
 }

@@ -89,7 +89,8 @@ Check shapes_check() {
             format("planets, hollow worlds, cylinders: %016" PRIx64, got)};
 }
 
-// The terrain on this device: chunk hashes as on every other target, and a chunk made within
+// The terrain on this device: chunk hashes as on every other target (the cube-sphere's too,
+// sculpted across a face edge), and a chunk made within
 // its budget (schema/budgets.json's terrain.chunk_mesh, 3 ms, plus the budgets' 25% margin).
 constexpr double kChunkBudgetMs = 3.0 * 1.25;
 
@@ -99,6 +100,11 @@ Check terrain_check() {
         return {
             "Terrain", Status::Fail,
             format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, kTerrainFingerprint)};
+    const std::uint64_t spheres = sphere_terrain_fingerprint();
+    if (spheres != kSphereTerrainFingerprint)
+        return {"Terrain", Status::Fail,
+                format("cube-sphere fingerprint %016" PRIx64 ", expected %016" PRIx64, spheres,
+                       kSphereTerrainFingerprint)};
     const Terrain terrain(body_from_json(nlohmann::json::parse(
                               R"({"id": "a", "shape": "bounded_area", "width": 3000,
                                   "length": 2000, "seed": 7})")),
@@ -115,8 +121,9 @@ Check terrain_check() {
     std::sort(times.begin(), times.end());
     const double median = times[times.size() / 2];
     const std::string detail =
-        format("chunk hashes on four shapes: %016" PRIx64 "; a chunk in %.2f ms (budget %.2f)", got,
-               median, kChunkBudgetMs);
+        format("chunk hashes on four shapes: %016" PRIx64
+               ", on planets and hollow worlds: %016" PRIx64 "; a chunk in %.2f ms (budget %.2f)",
+               got, spheres, median, kChunkBudgetMs);
     return {"Terrain", median <= kChunkBudgetMs ? Status::Pass : Status::Fail, detail};
 }
 

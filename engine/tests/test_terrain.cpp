@@ -622,6 +622,9 @@ TEST_CASE("cube-sphere sculpting: heights and chunk hashes match the shared tabl
     }
     CHECK(heights == 9);
     CHECK(hashes == 4);
+    // The self-test's fingerprint (checked on devices) is the table's.
+    CHECK(hex(midgard::sphere_terrain_fingerprint()) == t.at("fingerprint").get<std::string>());
+    CHECK(midgard::sphere_terrain_fingerprint() == midgard::kSphereTerrainFingerprint);
 }
 
 TEST_CASE("cube-sphere sculpting: strokes reach across a face edge, which stays exact") {

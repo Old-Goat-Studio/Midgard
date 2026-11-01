@@ -155,7 +155,7 @@ TEST_CASE("Latitude: polar day in summer, polar night in winter, and seasons at 
     }
 }
 
-TEST_CASE("inside worlds: the light is overhead at noon and low from the side at dawn") {
+TEST_CASE("inside worlds: the light comes straight down from the centre, brightest at noon") {
     for (const char* settings :
          {R"({"id": "w", "shape": "sphere_inside", "radius": 1000, "origin": [0, 1000, 0]})",
           R"({"id": "w", "shape": "curved_cylinder", "radius": 1000, "length": 5000,
@@ -170,7 +170,15 @@ TEST_CASE("inside worlds: the light is overhead at noon and low from the side at
         const midgard::LocalSun dawn = midgard::local_sun(world, kPlaced, clock, glm::dvec3(0.0));
         CHECK(dawn.phase == doctest::Approx(0.02));
         CHECK(dawn.height > 0.0);
-        CHECK(dawn.height < 0.2);  // low, from the side
+        CHECK(dawn.height < 0.2);  // little light gets through the shades yet
+        // From the rod on the axis, or the sphere at the centre: straight down, at any time.
+        for (const double time : {0.1, 0.5, 0.8})
+            for (const glm::dvec3 p : {glm::dvec3(0.0), glm::dvec3(700.0, 300.0, 40.0)}) {
+                clock.time = time;
+                const glm::dvec3 to_sun = midgard::local_sun(world, kPlaced, clock, p).to_sun;
+                const glm::dvec3 up = world.up(p);
+                CHECK(glm::length(to_sun - up) < 1e-12);
+            }
         // Halfway round the world it's the middle of the night.
         clock.time = 0.5;
         CHECK(midgard::local_sun(world, kPlaced, clock, glm::dvec3(0.0, 2000.0, 0.0)).phase ==

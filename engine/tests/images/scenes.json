@@ -229,6 +229,24 @@
       "max_bad": 0.01
     },
     {
+      "name": "terrain_habitat_ground",
+      "_about": "Standing on a habitat's floor, looking ahead: the ground round the player lit like the rest (the far side overhead casts no shadow on it; it used to darken a disc round the camera as far as shadows reach).",
+      "args": ["--size", "480x270", "--scene", "terrain_habitat_ground"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_habitat_rod",
+      "_about": "Standing on a habitat's floor looking up: the light rod down its axis (5 m across, glowing as bright as the day there), the far side beyond it in the haze. The rod lights the ground straight down everywhere.",
+      "args": ["--size", "480x270", "--scene", "terrain_habitat_rod"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_hollow_light",
+      "_about": "Inside a 1 km hollow world looking up: the light sphere at the centre (10 m across), small and bright in the haze's glow round it, the far side's seas beyond.",
+      "args": ["--size", "480x270", "--scene", "terrain_hollow_light"],
+      "max_bad": 0.01
+    },
+    {
       "name": "terrain_shore",
       "_about": "Low over the sea by a coast (milestone 5.9): water from the Earth-like environment's look, its waves reflecting the sky, the island beyond, and the shallows below showing the ground through foam.",
       "args": ["--size", "480x270", "--scene", "terrain_shore"],

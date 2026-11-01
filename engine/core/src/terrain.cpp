@@ -842,6 +842,43 @@ std::uint64_t Terrain::chunk_hash(const ChunkKey& k) const {
     return h.value();
 }
 
+std::uint64_t sphere_terrain_fingerprint() {
+    // tools/reference/terrain.py's SPHERES and SPHERE_STAMPS.
+    const Body world = body_from_json(nlohmann::json::parse(
+        R"({"id": "world", "shape": "sphere_outside", "radius": 3000, "seed": 11})"));
+    const Body hollow = body_from_json(nlohmann::json::parse(
+        R"({"id": "hollow", "shape": "sphere_inside", "radius": 2500, "seed": 12})"));
+    std::vector<TerrainStamp> stamps;
+    for (const nlohmann::json& s : nlohmann::json::parse(R"([
+        {"tool": "raise", "radius": 60.0, "strength": 25.0, "face": 0,
+         "points": [[0.97, 0.40], [0.995, 0.41], [1.02, 0.42], [1.05, 0.43]]},
+        {"tool": "lower", "radius": 30.0, "strength": 8.0, "face": 5, "points": [[0.008, 0.52]]},
+        {"tool": "flatten", "radius": 45.0, "strength": 0.8, "height": 20.0, "face": 0,
+         "points": [[0.99, 0.60], [1.01, 0.61]]},
+        {"tool": "smooth", "radius": 50.0, "strength": 0.9, "face": 0,
+         "points": [[0.985, 0.45], [1.01, 0.46]]}])"))
+        stamps.push_back(stamp_from_json(s));
+    Fnv1a64 all;
+    const auto add = [&](std::uint64_t c) {
+        unsigned char bytes[8];
+        for (int i = 0; i < 8; ++i) bytes[i] = static_cast<unsigned char>(c >> (8 * i));
+        all.add(bytes, 8);
+    };
+    for (const Body& b : {world, hollow}) {
+        const Terrain t(b, TerrainSettings{});
+        const int last = int(t.chunks_u(2)) - 1;
+        for (int face = 0; face < 6; ++face) {
+            add(t.chunk_hash({face, t.min_level(), 0, 0}));
+            add(t.chunk_hash({face, 2, last, 5}));
+        }
+    }
+    const Terrain sculpted(world, TerrainSettings{}, stamps);
+    const int last = int(sculpted.chunks_u(2)) - 1;
+    add(sculpted.chunk_hash({0, 2, last, 6}));
+    add(sculpted.chunk_hash({5, 2, 0, 6}));
+    return all.value();
+}
+
 std::uint64_t terrain_fingerprint() {
     // The shapes and chunks of tools/reference/terrain.py's fingerprint().
     const auto body = [](const char* json_text) {

@@ -155,11 +155,17 @@ LocalSun local_sun(const std::optional<Body>& body, const glm::dvec3& placed, co
         north = glm::dot(north, north) > 1e-16 ? glm::normalize(north) : any_perpendicular(up_p);
         const glm::dvec3 noon_dir = up_p * std::sin(elev0) - north * std::cos(elev0);
         out.to_sun = path(up_p, noon_dir, out.phase);
-    } else {  // inside: low from the east at dawn, overhead at noon, low from the west at dusk
+    } else {
+        // Inside: the light comes straight down from the light rod on the axis (a cylinder) or
+        // the light sphere at the centre (a hollow world). The shades going round give each
+        // place its day: how far the light gets through is the height of a stylised sun, low
+        // from the east at dawn, overhead at noon, low from the west at dusk.
         glm::dvec3 east = glm::cross(axis, q);
         east = glm::dot(east, east) > 1e-16 ? glm::normalize(east) : any_perpendicular(up_p);
         const double a = kTau * out.phase;
-        out.to_sun = east * std::cos(a) + up_p * std::sin(a);
+        out.height = glm::dot(east * std::cos(a) + up_p * std::sin(a), up_p);
+        out.to_sun = up_p;
+        return out;
     }
     out.height = glm::dot(out.to_sun, up_p);
     return out;

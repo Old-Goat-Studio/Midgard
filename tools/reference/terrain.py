@@ -238,8 +238,22 @@ class Terrain:
             h = h + (t["wall_height"] - h) * s
         return h
 
+    def min_level(self) -> int:
+        """A sphere's coarsest level: one chunk a face (its roots are a power of two)."""
+        level = 0
+        if self.sphere():
+            while (1 << -level) < self.roots_u:
+                level -= 1
+        return level
+
+    def chunks(self, level: int) -> tuple[int, int]:
+        if level >= 0:
+            return self.roots_u << level, self.roots_v << level
+        return self.roots_u >> -level, self.roots_v >> -level
+
     def points(self, level: int) -> tuple[int, int]:
-        return (self.roots_u << level) * CHUNK_QUADS, (self.roots_v << level) * CHUNK_QUADS
+        cu, cv = self.chunks(level)
+        return cu * CHUNK_QUADS, cv * CHUNK_QUADS
 
     def heights(self, key: tuple[int, int, int, int]) -> list[float]:
         """A chunk's (CHUNK_QUADS + 1)^2 heights, row by row along v."""
@@ -373,6 +387,24 @@ SPHERE_STAMPS = [
 ]
 
 
+def sphere_fingerprint() -> int:
+    """midgard/terrain.h's sphere_terrain_fingerprint(): every face of the planet and the hollow
+    world, whole (the coarsest level) and a chunk by an edge, then the planet sculpted across a
+    face edge (SPHERE_STAMPS) on both sides of it. The self-test checks it on devices."""
+    data = b""
+    for body in SPHERES.values():
+        t = Terrain(body)
+        last = t.chunks(2)[0] - 1
+        for face in range(6):
+            for key in ((face, t.min_level(), 0, 0), (face, 2, last, 5)):
+                data += struct.pack("<Q", t.chunk_hash(key))
+    sculpted = Terrain(SPHERES["world"], {}, SPHERE_STAMPS)
+    last = sculpted.chunks(2)[0] - 1
+    for key in ((0, 2, last, 6), (5, 2, 0, 6)):
+        data += struct.pack("<Q", sculpted.chunk_hash(key))
+    return fnv1a64(data)
+
+
 def make_sphere_stamp_table() -> dict:
     """The shared table schema/tests/terrain_sphere_stamps.json (made once, then fixed):
     heights on both sides of a face edge that strokes cross, and chunk hashes either side."""
@@ -397,7 +429,8 @@ def make_sphere_stamp_table() -> dict:
         cases.append({"key": list(other), "hash": f"{t.chunk_hash(other):016x}"})
     return {"_about": "Cube-sphere sculpting: strokes across a face edge, heights either side "
                       "and chunk hashes (tools/reference/terrain.py).",
-            "body": body, "stamps": SPHERE_STAMPS, "cases": cases}
+            "body": body, "stamps": SPHERE_STAMPS, "cases": cases,
+            "fingerprint": f"{sphere_fingerprint():016x}"}
 
 
 if __name__ == "__main__":

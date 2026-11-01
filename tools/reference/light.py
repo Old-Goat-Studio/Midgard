@@ -160,11 +160,14 @@ def local_sun(body, placed, clock, p):
         north = norm(north) if dot(north, north) > 1e-16 else any_perpendicular(up_p)
         noon_dir = sub(mul(up_p, math.sin(elev0)), mul(north, math.cos(elev0)))
         to_sun = path(up_p, noon_dir, phase)
-    else:  # inside: low from the east at dawn, overhead at noon, low from the west at dusk
+    else:
+        # Inside: straight down from the light rod or sphere; the shades give each place's day
+        # (the height of a stylised sun: low from the east at dawn, overhead at noon).
         east = cross(axis, q)
         east = norm(east) if dot(east, east) > 1e-16 else any_perpendicular(up_p)
         a = TAU * phase
-        to_sun = add(mul(east, math.cos(a)), mul(up_p, math.sin(a)))
+        stylised = add(mul(east, math.cos(a)), mul(up_p, math.sin(a)))
+        return phase, up_p, dot(stylised, up_p)
     return phase, to_sun, dot(to_sun, up_p)
 
 

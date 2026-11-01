@@ -321,3 +321,30 @@ TEST_CASE("the far side of a hollow world comes in a few coarse chunks, at every
         CHECK(leaves.size() <= 1000);
     }
 }
+
+TEST_CASE("on a curved world only the ground round about casts shadows (not the far side)") {
+    // Inside a habitat the far side is overhead, between the sun and the floor: if it cast
+    // shadows, all the ground round the camera (as far as shadows are looked up) went dark.
+    for (const char* text :
+         {R"({"id": "h", "shape": "curved_cylinder", "radius": 1000, "length": 5000, "seed": 9,
+              "origin": [0, 1000, 0]})",
+          R"({"id": "w", "shape": "sphere_inside", "radius": 2500, "seed": 12,
+              "origin": [0, 2500, 0]})"}) {
+        CAPTURE(text);
+        midgard::TerrainStreamer s(body(text), {});
+        const midgard::Terrain& t = s.terrain();
+        const glm::dvec3 eye = t.ground(glm::dvec3(0.0)) + glm::dvec3(0.0, 2.0, 0.0);
+        int near_casting = 0, far_casting = 0;
+        for (const midgard::TerrainLeaf& l : s.choose(eye)) {
+            const double turn = glm::dot(t.body().up(t.chunk_origin(l.key)), t.body().up(eye));
+            if (turn > 0.99 && s.casts_shadow(l.key, eye)) ++near_casting;
+            if (turn < 0.5 && s.casts_shadow(l.key, eye)) ++far_casting;
+        }
+        CHECK(near_casting > 0);
+        CHECK(far_casting == 0);
+    }
+    // Flat ground: all of it casts shadows, as before.
+    midgard::TerrainStreamer flat(body(kArea), {});
+    for (const midgard::TerrainLeaf& l : flat.choose({0.0, 20.0, 0.0}))
+        CHECK(flat.casts_shadow(l.key, {2900.0, 20.0, 1900.0}));
+}

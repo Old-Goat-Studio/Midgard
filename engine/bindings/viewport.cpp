@@ -305,7 +305,8 @@ void Viewport::drop_terrain() {
 
 void Viewport::detach() {
     drop_terrain();
-    renderer_.reset();  // the renderer waits for the GPU before it lets go of the surface
+    world_light_ = WorldLight{};  // (its meshes go with the renderer)
+    renderer_.reset();            // the renderer waits for the GPU before it lets go of the surface
     meshes_.clear();
     materials_.clear();
 }
@@ -325,6 +326,7 @@ void Viewport::upload_meshes() {
     if (needs_surface() && !mesh_data_.contains(kBuiltinSurface))
         mesh_data_[kBuiltinSurface] = surface_mesh(scene_.settings.body);
     if (!renderer_) return;
+    world_light_.upload(*renderer_);
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         for (const std::string& asset : scene_.registry.get<MeshRef>(e).assets()) {
             if (meshes_.contains(asset)) continue;
@@ -393,6 +395,9 @@ bool Viewport::render() {
         draws.insert(draws.end(), ground.begin(), ground.end());
         far_plane = kTerrainViewDistance;
     }
+    // A curved cylinder's light rod or a hollow world's light sphere, and seeing that far.
+    if (const auto light = world_light_.draw(scene_, camera.origin)) draws.push_back(*light);
+    far_plane = std::max(far_plane, float(inside_view_distance(scene_.settings.body)));
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
     camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, far_plane);
     renderer_->set_environment(scene_.environment(camera.origin));

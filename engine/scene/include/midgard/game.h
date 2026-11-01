@@ -25,6 +25,7 @@
 #include "midgard/terrain_collision.h"
 #include "midgard/terrain_streamer.h"
 #include "midgard/time_service.h"
+#include "midgard/world_light.h"
 #include "midgard/world_save.h"
 
 namespace midgard {
@@ -175,6 +176,7 @@ private:
     void rebuild_terrain();
     std::unique_ptr<JobSystem> jobs_;
     std::unique_ptr<TerrainStreamer> terrain_;
+    WorldLight world_light_;  // a curved cylinder's light rod or a hollow world's light sphere
     render::Renderer* terrain_renderer_ = nullptr;
     // The terrain's solid ground round the player (in physics_'s world).
     std::unique_ptr<TerrainCollision> ground_;

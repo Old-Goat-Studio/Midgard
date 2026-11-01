@@ -19,6 +19,7 @@
 #include "midgard/scene.h"
 #include "midgard/sunlight.h"
 #include "midgard/terrain_streamer.h"
+#include "midgard/world_light.h"
 
 namespace midgard::test_scenes {
 
@@ -582,6 +583,12 @@ public:
                     {"radius", 8000},
                     {"seed", 12},
                     {"origin", {0, 8000, 0}}};
+        } else if (which == "hollow_light") {
+            // Inside a 1 km hollow world, looking up at its light sphere at the centre.
+            body = {{"shape", "sphere_inside"},
+                    {"radius", 1000},
+                    {"seed", 12},
+                    {"origin", {0, 1000, 0}}};
         } else if (which == "hollow") {
             // Inside a 2.5 km hollow world, by the edge between faces -Y and +Z.
             body = {{"shape", "sphere_inside"},
@@ -607,6 +614,21 @@ public:
         body["id"] = which;
         scene_.settings.body = body_from_json(body);
         scene_.settings.terrain = terrain_from_json(terrain);
+        if (which == "habitat_rod") {  // on the floor, looking up at the light rod on the axis
+            const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
+            eye_ = t.ground({0.0, 0.0, 0.0}) + glm::dvec3(0.0, 1.7, 0.0);
+            look_ = {30.0, 1000.0, -200.0};
+        }
+        if (which == "hollow_light") {  // on the floor, looking up at the light sphere
+            const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
+            eye_ = t.ground({0.0, 0.0, 0.0}) + glm::dvec3(0.0, 1.7, 0.0);
+            look_ = t.body().origin + glm::dvec3(0.0, 0.0, -150.0);
+        }
+        if (which == "habitat_ground") {  // on the floor, looking ahead and a little down
+            const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
+            eye_ = t.ground({0.0, 0.0, 0.0}) + glm::dvec3(0.0, 1.7, 0.0);
+            look_ = t.ground({0.0, 0.0, -60.0});
+        }
         if (which == "planet" || which == "planet_low" || which == "hollow" ||
             which == "hollow_far") {
             const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
@@ -633,7 +655,9 @@ public:
         // Inside a habitat: the Environment editor's Inside-World Atmosphere preset, haze that
         // softens the far side overhead: 1.2 / radius per metre, as the editor's preset sets it
         // for the world's size (environments.inside_atmosphere).
-        const bool inside = which == "habitat" || which == "hollow" || which == "hollow_far";
+        const bool inside = which == "habitat" || which == "habitat_ground" ||
+                            which == "habitat_rod" || which == "hollow" || which == "hollow_far" ||
+                            which == "hollow_light";
         nlohmann::json curves = nlohmann::json::object();
         if (inside) {
             curves = nlohmann::json::parse(R"({"fog_color": [[0.0, [0.55, 0.6, 0.66]],
@@ -655,13 +679,15 @@ public:
         up_ = glm::vec3(scene_.settings.body->up(eye_));
         if (which == "hollow_far") far_ = 20000.0f;
     }
-    void upload(render::Renderer&) override {}
+    void upload(render::Renderer& renderer) override { light_.upload(renderer); }
     void stream(render::Renderer& renderer, const glm::dvec3& origin) override {
         streamer_->update(origin, &renderer, true);
     }
     std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
         streamer_->set_season(summer_, autumn_);
-        return streamer_->draws(origin);
+        std::vector<DrawItem> out = streamer_->draws(origin);
+        if (const auto light = light_.draw(scene_, origin)) out.push_back(*light);  // rod, sphere
+        return out;
     }
     render::Camera camera(float aspect) const override {
         render::Camera c;
@@ -677,6 +703,7 @@ public:
 private:
     Scene scene_;
     std::unique_ptr<TerrainStreamer> streamer_;
+    WorldLight light_;
     glm::dvec3 eye_{0.0}, look_{0.0, 0.0, -1.0};
     glm::vec3 up_{0, 1, 0};
     double summer_ = 0.0, autumn_ = 0.0;
@@ -696,9 +723,10 @@ std::vector<std::string> names() {
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
-    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore",
-                              "terrain_planet", "terrain_planet_low", "terrain_hollow",
-                              "terrain_hollow_far", "terrain_winter", "terrain_autumn"})
+    for (const char* which :
+         {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore", "terrain_planet",
+          "terrain_planet_low", "terrain_hollow", "terrain_hollow_far", "terrain_habitat_ground",
+          "terrain_habitat_rod", "terrain_hollow_light", "terrain_winter", "terrain_autumn"})
         out.push_back(which);
     return out;
 }
@@ -727,6 +755,9 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_planet_low") return std::make_unique<TerrainScene>("planet_low");
     if (name == "terrain_hollow") return std::make_unique<TerrainScene>("hollow");
     if (name == "terrain_hollow_far") return std::make_unique<TerrainScene>("hollow_far");
+    if (name == "terrain_habitat_ground") return std::make_unique<TerrainScene>("habitat_ground");
+    if (name == "terrain_habitat_rod") return std::make_unique<TerrainScene>("habitat_rod");
+    if (name == "terrain_hollow_light") return std::make_unique<TerrainScene>("hollow_light");
     if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
     if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
     for (const char* shape : kDayShapes)

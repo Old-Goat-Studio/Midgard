@@ -66,6 +66,11 @@ public:
 
     // The chunks to draw seen from `camera` (pure: the choice alone).
     std::vector<TerrainLeaf> choose(const glm::dvec3& camera) const;
+    // Whether a chunk's ground casts shadows, seen from the camera: on a curved world only the
+    // ground round about does. Shadows are only looked up near the camera, and the ground far
+    // round the curve (inside a habitat or a hollow world, the far side overhead, between the
+    // sun and the floor) would darken all of it.
+    bool casts_shadow(const ChunkKey& key, const glm::dvec3& camera) const;
 
     // Chooses for `camera`, starts jobs for chunks not yet generated, uploads those generated
     // (renderer: none keeps them on the CPU, for tests) and frees chunks long unwanted.
