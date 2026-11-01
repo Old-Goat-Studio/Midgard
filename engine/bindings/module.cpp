@@ -33,6 +33,7 @@
 #include "midgard/pak.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
+#include "midgard/terrain.h"
 #include "midgard/validate.h"
 #include "midgard/version.h"
 #include "viewport.h"
@@ -237,6 +238,8 @@ PYBIND11_MODULE(_midgard, m) {
             py::arg("x"), py::arg("y"), py::arg("z"), "(up, east, north) at a point.");
     m.def("shape_fingerprint", &midgard::shape_fingerprint,
           "The shapes' fingerprint (equal to schema/tests/shape_fingerprint.json everywhere).");
+    m.def("terrain_fingerprint", &midgard::terrain_fingerprint,
+          "The terrain's fingerprint (equal to schema/tests/terrain_chunks.json everywhere).");
 
     // Calendars (midgard/calendar.h), for the Calendar dock: the engine's own maths.
     py::class_<midgard::EnvironmentDef>(

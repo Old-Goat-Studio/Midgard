@@ -284,6 +284,7 @@ SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
         out.sky = vec3(settings, "sky", out.sky);
         out.ambient = vec3(settings, "ambient", out.ambient);
         if (settings.contains("body")) out.body = body_from_json(settings.at("body"));
+        if (settings.contains("terrain")) out.terrain = terrain_from_json(settings.at("terrain"));
         if (const auto mode = sun_mode_from_name(settings.value("sun_mode", "uniform")))
             out.sun_mode = *mode;
         else

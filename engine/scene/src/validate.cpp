@@ -90,6 +90,13 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                         "entity '" + scene.registry.get<EntityInfo>(e).id + "' uses mesh '" +
                         asset + "', which is not in the package; it will not be drawn");
         }
+        if (scene.settings.terrain) {
+            for (std::string& problem : terrain_problems(*scene.settings.terrain))
+                report.errors.push_back(std::move(problem));
+            if (!scene.settings.body)
+                report.warnings.push_back(
+                    "the scene has terrain settings but no world shape; there is no terrain");
+        }
         for (const auto& [id, env] : scene.environments)
             for (std::string& problem : environment_problems(env))
                 report.errors.push_back(std::move(problem));

@@ -257,3 +257,27 @@ def test_summer_is_the_longest_day_and_winter_the_shortest():
     assert max(range(100), key=lambda d: summer[d]) == 37  # the middle of the second season
     assert min(range(100), key=lambda d: summer[d]) == 87
     assert cal.summer_on({"months": [{"days": 10}]}, 1, 3) == 0.0  # no seasons
+
+
+# ---- terrain (midgard/terrain.h) ----------------------------------------------------------------
+def test_terrain_matches_its_table():
+    from reference import terrain
+    data = json.loads((TABLES / "terrain_chunks.json").read_text("utf-8"))
+    for name, layout in data["layout"].items():
+        t = terrain.Terrain(data["bodies"][name])
+        assert [t.roots_u, t.roots_v, t.max_level] == layout
+    for c in data["cases"]:
+        t = terrain.Terrain(data["bodies"][c["body"]], data["settings"][c["settings"]])
+        if "hash" in c:
+            assert f"{t.chunk_hash(tuple(c['key'])):016x}" == c["hash"], c
+        else:
+            assert t.height(0, c["u"], c["v"]) == c["height"], c
+    assert f"{terrain.fingerprint():016x}" == data["fingerprint"]
+
+
+def test_a_cylinders_terrain_meets_itself_at_the_join():
+    from reference import terrain
+    for body in (terrain.BODIES["strip"], terrain.BODIES["habitat"]):
+        t = terrain.Terrain(body)
+        for v in (0.2, 0.5, 0.77):
+            assert t.height(0, 0.0, v) == t.height(0, 1.0, v)

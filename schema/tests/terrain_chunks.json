@@ -1,0 +1,665 @@
+{
+ "_about": "Terrain heights and chunk hashes (tools/reference/terrain.py).",
+ "bodies": {
+  "area": {
+   "shape": "bounded_area",
+   "width": 3000,
+   "length": 2000,
+   "seed": 7
+  },
+  "strip": {
+   "shape": "flat_cylinder",
+   "circumference": 6000,
+   "length": 5000,
+   "seed": 8
+  },
+  "habitat": {
+   "shape": "curved_cylinder",
+   "radius": 1000,
+   "length": 5000,
+   "seed": 9
+  },
+  "planet": {
+   "shape": "sphere_outside",
+   "radius": 1000,
+   "seed": 10
+  }
+ },
+ "settings": {
+  "default": {},
+  "rough": {
+   "base": -5.0,
+   "height_scale": 200.0,
+   "feature_size": 120.0,
+   "octaves": 4,
+   "ocean_band": 100.0,
+   "end_ramp": 400.0,
+   "seed": 1234
+  }
+ },
+ "layout": {
+  "area": [
+   3,
+   2,
+   4
+  ],
+  "strip": [
+   6,
+   5,
+   4
+  ],
+  "habitat": [
+   6,
+   5,
+   5
+  ],
+  "planet": [
+   2,
+   2,
+   4
+  ]
+ },
+ "fingerprint": "667639e2e799c3b4",
+ "cases": [
+  {
+   "body": "area",
+   "settings": "default",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "55607993e02ace26"
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "4d9c5889dcd572d8"
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "key": [
+    0,
+    1,
+    5,
+    0
+   ],
+   "hash": "21211db030eb82be"
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "u": 0.0,
+   "v": 0.0,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "u": 0.5,
+   "v": 0.5,
+   "height": 8.0
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "u": 0.999,
+   "v": 0.03,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "u": 0.25,
+   "v": 0.97,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "u": 1.0,
+   "v": 0.4,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "default",
+   "u": 0.013,
+   "v": 0.6,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "5156b49926a46632"
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "82ad5a459c776bf6"
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "key": [
+    0,
+    1,
+    5,
+    0
+   ],
+   "hash": "cab3f4289b12f41d"
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "u": 0.0,
+   "v": 0.0,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "u": 0.5,
+   "v": 0.5,
+   "height": -5.0
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "u": 0.999,
+   "v": 0.03,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "u": 0.25,
+   "v": 0.97,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "u": 1.0,
+   "v": 0.4,
+   "height": -30.0
+  },
+  {
+   "body": "area",
+   "settings": "rough",
+   "u": 0.013,
+   "v": 0.6,
+   "height": -30.0
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "7caae38525e28083"
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "f95cc7764551cb7d"
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "key": [
+    0,
+    1,
+    11,
+    0
+   ],
+   "hash": "3c708393ab2eb9a8"
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "u": 0.0,
+   "v": 0.0,
+   "height": 120.0
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "u": 0.5,
+   "v": 0.5,
+   "height": 16.6077880859375
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "u": 0.999,
+   "v": 0.03,
+   "height": -20.2257080078125
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "u": 0.25,
+   "v": 0.97,
+   "height": 17.32098388671875
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "u": 1.0,
+   "v": 0.4,
+   "height": 17.94354248046875
+  },
+  {
+   "body": "strip",
+   "settings": "default",
+   "u": 0.013,
+   "v": 0.6,
+   "height": 4.6839599609375
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "7cb4ca360c5e37d4"
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "c4a96bb7d8c4bae3"
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "key": [
+    0,
+    1,
+    11,
+    0
+   ],
+   "hash": "eab6fccbf4ff6097"
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "u": 0.0,
+   "v": 0.0,
+   "height": 120.0
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "u": 0.5,
+   "v": 0.5,
+   "height": 22.8778076171875
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "u": 0.999,
+   "v": 0.03,
+   "height": 78.63872766494751
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "u": 0.25,
+   "v": 0.97,
+   "height": 72.20689773559563
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "u": 1.0,
+   "v": 0.4,
+   "height": 53.60595703125
+  },
+  {
+   "body": "strip",
+   "settings": "rough",
+   "u": 0.013,
+   "v": 0.6,
+   "height": 15.9686279296875
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "fa9256cd50cc20ec"
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "1b921419e5a80fe9"
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "key": [
+    0,
+    1,
+    11,
+    0
+   ],
+   "hash": "f305150ba70891de"
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "u": 0.0,
+   "v": 0.0,
+   "height": 120.0
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "u": 0.5,
+   "v": 0.5,
+   "height": 8.0
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "u": 0.999,
+   "v": 0.03,
+   "height": -4.1307373046875
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "u": 0.25,
+   "v": 0.97,
+   "height": 30.50091552734375
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "u": 1.0,
+   "v": 0.4,
+   "height": 8.0
+  },
+  {
+   "body": "habitat",
+   "settings": "default",
+   "u": 0.013,
+   "v": 0.6,
+   "height": 3.8709716796875
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "aa05abdcab2a1e5f"
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "694e325bd15c1d3d"
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "key": [
+    0,
+    1,
+    11,
+    0
+   ],
+   "hash": "483ea960d659e52f"
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "u": 0.0,
+   "v": 0.0,
+   "height": 120.0
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "u": 0.5,
+   "v": 0.5,
+   "height": -57.288818359375
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "u": 0.999,
+   "v": 0.03,
+   "height": 85.0184154510498
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "u": 0.25,
+   "v": 0.97,
+   "height": 37.464780807495
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "u": 1.0,
+   "v": 0.4,
+   "height": 78.2672119140625
+  },
+  {
+   "body": "habitat",
+   "settings": "rough",
+   "u": 0.013,
+   "v": 0.6,
+   "height": -50.6756591796875
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "7be638ae3bfeb4b4"
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "2201264c22fedd59"
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "key": [
+    0,
+    1,
+    3,
+    0
+   ],
+   "hash": "893545d4187e1fc7"
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "u": 0.0,
+   "v": 0.0,
+   "height": 17.63958740234375
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "u": 0.5,
+   "v": 0.5,
+   "height": 8.0
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "u": 0.999,
+   "v": 0.03,
+   "height": 0.87628173828125
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "u": 0.25,
+   "v": 0.97,
+   "height": -1.298095703125
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "u": 1.0,
+   "v": 0.4,
+   "height": -26.0869140625
+  },
+  {
+   "body": "planet",
+   "settings": "default",
+   "u": 0.013,
+   "v": 0.6,
+   "height": 6.3612060546875
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "61c0ec1b4a8f4f0d"
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "key": [
+    0,
+    2,
+    3,
+    1
+   ],
+   "hash": "a71f011eb2f0c636"
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "key": [
+    0,
+    1,
+    3,
+    0
+   ],
+   "hash": "d574501859ac407d"
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "u": 0.0,
+   "v": 0.0,
+   "height": -26.7620849609375
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "u": 0.5,
+   "v": 0.5,
+   "height": -4.200439453125
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "u": 0.999,
+   "v": 0.03,
+   "height": 2.769775390625
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "u": 0.25,
+   "v": 0.97,
+   "height": 106.29150390625
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "u": 1.0,
+   "v": 0.4,
+   "height": -95.3289794921875
+  },
+  {
+   "body": "planet",
+   "settings": "rough",
+   "u": 0.013,
+   "v": 0.6,
+   "height": -48.2830810546875
+  }
+ ]
+}

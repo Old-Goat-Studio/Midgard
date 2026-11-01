@@ -29,6 +29,7 @@
 #include "midgard/render/overlay.h"
 #include "midgard/render/renderer.h"
 #include "midgard/shape.h"
+#include "midgard/terrain.h"
 #include "midgard/version.h"
 
 namespace {
@@ -120,6 +121,20 @@ std::vector<Benchmark> benchmarks() {
                                 for (int i = 0; i < 64; ++i)
                                     sum += midgard::det::fbm(7, i * 0.173, j * 0.173, 2.5, 6);
                             g_sink = g_sink + static_cast<std::uint64_t>(sum);
+                        };
+                    }});
+    list.push_back({"terrain.chunk_mesh",
+                    "one terrain chunk's mesh: 35 x 35 heights of 6-octave noise, normals and "
+                    "triangles (one thread)",
+                    30, [](std::string&) -> std::function<void()> {
+                        const auto terrain = std::make_shared<midgard::Terrain>(
+                            midgard::body_from_json(nlohmann::json::parse(
+                                R"({"id": "a", "shape": "bounded_area", "width": 3000,
+                                    "length": 2000, "seed": 7})")),
+                            midgard::TerrainSettings{});
+                        return [terrain] {
+                            const midgard::ChunkMesh m = terrain->mesh({0, 2, 5, 3});
+                            g_sink = g_sink + m.indices.size();
                         };
                     }});
     list.push_back({"shape.sphere_64x64_positions",

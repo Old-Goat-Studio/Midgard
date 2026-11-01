@@ -19,6 +19,7 @@
 #include "midgard/render/mesh_data.h"
 #include "midgard/render/renderer.h"
 #include "midgard/shape.h"
+#include "midgard/terrain.h"
 #include "midgard/version.h"
 #include "test_scenes.h"
 #ifdef MIDGARD_HAS_SCRIPTING
@@ -84,6 +85,15 @@ Check shapes_check() {
                 format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, kShapeFingerprint)};
     return {"World shapes", Status::Pass,
             format("planets, hollow worlds, cylinders: %016" PRIx64, got)};
+}
+
+Check terrain_check() {
+    const std::uint64_t got = terrain_fingerprint();
+    if (got != kTerrainFingerprint)
+        return {
+            "Terrain", Status::Fail,
+            format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, kTerrainFingerprint)};
+    return {"Terrain", Status::Pass, format("chunk hashes on four shapes: %016" PRIx64, got)};
 }
 
 // A missing Vulkan driver: skipped on PCs (CI machines have none), a failure on phones.
@@ -251,6 +261,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(data_check());
     checks.push_back(maths_check());
     checks.push_back(shapes_check());
+    checks.push_back(terrain_check());
     checks.push_back(physics_check());
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(frame_check(options));

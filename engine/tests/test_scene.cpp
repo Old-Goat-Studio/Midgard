@@ -1883,6 +1883,32 @@ TEST_CASE("sun_mode in the scene settings picks a planet's light model") {
                          midgard::SceneError);
 }
 
+TEST_CASE("terrain in the scene settings, and the cook's checks of it") {
+    TestPackage pkg({}, R"({"body": {"shape": "bounded_area", "width": 3000, "length": 2000,
+                                     "seed": 7},
+                            "terrain": {"height_scale": 90, "wall": "fortification"}})");
+    midgard::Game game(pkg.dir);
+    REQUIRE(game.scene().settings.terrain.has_value());
+    CHECK(game.scene().settings.terrain->height_scale == 90.0);
+    CHECK(game.scene().settings.terrain->wall == midgard::WallLook::Fortification);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+
+    TestPackage bad({}, R"({"body": {"shape": "bounded_area", "width": 3000, "length": 2000},
+                            "terrain": {"octaves": 40}})");
+    const midgard::ValidationReport report = midgard::validate_package(bad.dir);
+    REQUIRE_FALSE(report.errors.empty());
+    CHECK(report.errors.front().find("octaves") != std::string::npos);
+
+    TestPackage no_body({}, R"({"terrain": {}})");
+    std::string all;
+    for (const std::string& w : midgard::validate_package(no_body.dir).warnings) all += w + "\n";
+    CHECK(all.find("no world shape") != std::string::npos);
+
+    TestPackage unreadable({}, R"({"terrain": {"wall": "hedge"}})");
+    CHECK_THROWS_WITH_AS(midgard::Game(unreadable.dir), doctest::Contains("wall"),
+                         midgard::SceneError);
+}
+
 TEST_CASE("above a planet the sky's horizon dips to where the ground's edge is") {
     TestPackage pkg({{"e1_sun", R"(NULL, '{"transform": {"rotation": [-50, 35, 0]},
                                       "light": {"type": "directional"}}')"}},

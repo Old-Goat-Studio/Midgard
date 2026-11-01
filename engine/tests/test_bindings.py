@@ -112,6 +112,8 @@ def check_bodies() -> None:
     fingerprint = json.loads((schema_dir / "tests" / "shape_fingerprint.json")
                              .read_text("utf-8"))["cases"][0]["fingerprint"]
     assert f"{_midgard.shape_fingerprint():016x}" == fingerprint
+    terrain = json.loads((schema_dir / "tests" / "terrain_chunks.json").read_text("utf-8"))
+    assert f"{_midgard.terrain_fingerprint():016x}" == terrain["fingerprint"]
 
     planet = _midgard.Body(json.dumps({"id": "p", "shape": "sphere_outside", "radius": 1000,
                                        "seed": 7, "origin": [10, 0, 0]}))

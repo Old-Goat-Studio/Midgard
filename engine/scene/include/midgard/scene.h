@@ -20,6 +20,7 @@
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
 #include "midgard/sunlight.h"
+#include "midgard/terrain.h"
 
 namespace midgard {
 
@@ -215,6 +216,8 @@ struct SceneSettings {
     // How day and night work on a planet (midgard/sunlight.h): Uniform (the calendar's daylight
     // everywhere) or Latitude (tilt and seasons, polar day and night).
     SunMode sun_mode = SunMode::Uniform;
+    // The world's ground (midgard/terrain.h), on its body: none, no terrain.
+    std::optional<TerrainSettings> terrain;
 };
 
 // The scene's sky: an entity with this component sets the scene's sky and ambient colours
