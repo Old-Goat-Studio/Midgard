@@ -7,8 +7,10 @@
 #include <cstdio>
 #include <exception>
 #include <numeric>
+#include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <nlohmann/json.hpp>
 
 #include "midgard/body.h"
 #include "midgard/det.h"
@@ -87,13 +89,35 @@ Check shapes_check() {
             format("planets, hollow worlds, cylinders: %016" PRIx64, got)};
 }
 
+// The terrain on this device: chunk hashes as on every other target, and a chunk made within
+// its budget (schema/budgets.json's terrain.chunk_mesh, 3 ms, plus the budgets' 25% margin).
+constexpr double kChunkBudgetMs = 3.0 * 1.25;
+
 Check terrain_check() {
     const std::uint64_t got = terrain_fingerprint();
     if (got != kTerrainFingerprint)
         return {
             "Terrain", Status::Fail,
             format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, kTerrainFingerprint)};
-    return {"Terrain", Status::Pass, format("chunk hashes on four shapes: %016" PRIx64, got)};
+    const Terrain terrain(body_from_json(nlohmann::json::parse(
+                              R"({"id": "a", "shape": "bounded_area", "width": 3000,
+                                  "length": 2000, "seed": 7})")),
+                          TerrainSettings{});
+    std::vector<double> times;
+    volatile std::size_t sink = 0;  // (so the work isn't optimised away)
+    for (int i = 0; i < 25; ++i) {
+        const auto start = std::chrono::steady_clock::now();
+        sink = sink + terrain.mesh({0, 2, i % 8, 3}).indices.size();
+        times.push_back(
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                .count());
+    }
+    std::sort(times.begin(), times.end());
+    const double median = times[times.size() / 2];
+    const std::string detail =
+        format("chunk hashes on four shapes: %016" PRIx64 "; a chunk in %.2f ms (budget %.2f)", got,
+               median, kChunkBudgetMs);
+    return {"Terrain", median <= kChunkBudgetMs ? Status::Pass : Status::Fail, detail};
 }
 
 // A missing Vulkan driver: skipped on PCs (CI machines have none), a failure on phones.

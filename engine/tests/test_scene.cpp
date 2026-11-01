@@ -1998,6 +1998,91 @@ TEST_CASE("terrain stamps: from the database, followed live, solid, and checked 
     CHECK(report.errors.front().find("strength") != std::string::npos);
 }
 
+TEST_CASE("terrain, the exit: across a bounded area, never through the ground") {
+    // 1.4 km over hills from one side of the land to the other (the player walks -Z, W held).
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [-200, 0.5, 700]},
+                                         "player": {"speed": 25}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [-200, 40, 706]},
+                                         "camera": {}}')"}},
+                    R"({"body": {"shape": "bounded_area", "width": 3000, "length": 3000,
+                                 "seed": 7},
+                        "terrain": {"height_scale": 25}})");
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity player = scene.find("e1_player");
+    const midgard::Terrain& t = game.terrain()->terrain();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (int i = 0; i < 60; ++i) game.update(actions, 1.0f / 60.0f);  // settle
+    actions.set("keyboard", "W", 1.0f);
+    const glm::dvec3 start = scene.world_position(player);
+    int frames = 0, off_ground = 0;
+    double lowest = 1e9;
+    while (start.z - scene.world_position(player).z < 1400.0 && frames < 8000) {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+        ++frames;
+        const double above = t.above_ground(scene.world_position(player));
+        lowest = std::min(lowest, above);
+        if (above > 3.0) ++off_ground;  // (a moment in the air over a crest is fine)
+    }
+    MESSAGE("across the bounded area in ", frames, " frames");
+    CHECK(start.z - scene.world_position(player).z >= 1400.0);
+    CHECK(lowest > -0.1);  // never through the ground
+    CHECK(off_ground < frames / 50);
+}
+
+TEST_CASE("terrain, the exit: all the way round a habitat, with spin gravity, no seams") {
+    // Inside a curved cylinder (radius 1 km): the player walks round the axis (+X at the
+    // bottom, W held), across the join where u = 0 meets u = 1, back to where it started.
+    constexpr double kRadius = 1000.0, kPi = 3.14159265358979;
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [0, 0.5, 0]},
+                                         "player": {"speed": 25}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [-6, 40, 0]},
+                                         "camera": {}}')"}},
+                    R"({"body": {"shape": "curved_cylinder", "radius": 1000, "length": 5000,
+                                 "seed": 9, "origin": [0, 1000, 0]},
+                        "terrain": {"height_scale": 20}})");
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity player = scene.find("e1_player");
+    const midgard::Terrain& t = game.terrain()->terrain();
+    const glm::dvec3 axis_point(0.0, kRadius, 0.0);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (int i = 0; i < 60; ++i) game.update(actions, 1.0f / 60.0f);  // settle
+    actions.set("keyboard", "W", 1.0f);
+    const auto angle = [&] {
+        const glm::dvec3 p = scene.world_position(player) - axis_point;
+        return std::atan2(p.x, -p.y);  // 0 at the bottom, increasing towards +X
+    };
+    double turned = 0.0, last = angle(), lowest = 1e9, worst_gravity = 0.0;
+    int frames = 0, crossings = 0;
+    while (std::abs(turned) < 2.0 * kPi && frames < 25000) {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+        ++frames;
+        const double now = angle();
+        double d = now - last;
+        if (d > kPi) d -= 2.0 * kPi;
+        if (d < -kPi) d += 2.0 * kPi;
+        if (std::abs(now - last) > kPi) ++crossings;  // across the join (u = 0 and 1)
+        turned += d;
+        last = now;
+        const glm::dvec3 p = scene.world_position(player);
+        lowest = std::min(lowest, t.above_ground(p));
+        // Spin gravity: g r / R, away from the axis.
+        const glm::dvec3 out(p.x - axis_point.x, p.y - axis_point.y, 0.0);
+        const double r = glm::length(out);
+        const glm::dvec3 want = out / r * (9.81 * r / kRadius);
+        worst_gravity =
+            std::max(worst_gravity, glm::length(game.physics().world().gravity(p) - want));
+    }
+    MESSAGE("round the habitat in ", frames, " frames");
+    CHECK(std::abs(turned) >= 2.0 * kPi);  // all the way round
+    CHECK(crossings >= 1);                 // over the join
+    CHECK(lowest > -0.1);                  // never through the ground, seams included
+    CHECK(worst_gravity < 1e-6);
+}
+
 TEST_CASE("above a planet the sky's horizon dips to where the ground's edge is") {
     TestPackage pkg({{"e1_sun", R"(NULL, '{"transform": {"rotation": [-50, 35, 0]},
                                       "light": {"type": "directional"}}')"}},
