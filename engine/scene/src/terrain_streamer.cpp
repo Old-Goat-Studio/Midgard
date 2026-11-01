@@ -75,6 +75,13 @@ render::MeshData wall(double w, double low, double high, float facing) {
 
 }  // namespace
 
+render::MeshData water_mesh_data(const ChunkMesh& mesh) {
+    render::MeshData out = chunk_mesh_data(mesh);
+    for (size_t i = 0; i < out.vertices.size(); ++i)  // the depth below, for the water shader
+        out.vertices[i].tangent[3] = float(mesh.heights[i]);
+    return out;
+}
+
 render::MeshData chunk_mesh_data(const ChunkMesh& mesh) {
     render::MeshData out;
     out.vertices.reserve(mesh.positions.size());
@@ -85,12 +92,19 @@ render::MeshData chunk_mesh_data(const ChunkMesh& mesh) {
     return out;
 }
 
+// A chunk's ground, and the water over it (if any of it is below the sea).
+struct ChunkMeshes {
+    render::MeshData ground;
+    std::optional<render::MeshData> water;
+};
+
 struct TerrainStreamer::Entry {
     TerrainLeaf leaf;
-    JobHandle job;                           // generating
-    std::shared_ptr<render::MeshData> made;  // written by the job, read once it is done
-    std::optional<render::MeshData> data;    // generated, not yet on the GPU
-    std::optional<render::MeshId> mesh;      // on the GPU
+    JobHandle job;                       // generating
+    std::shared_ptr<ChunkMeshes> made;   // written by the job, read once it is done
+    std::optional<ChunkMeshes> data;     // generated, not yet on the GPU
+    std::optional<render::MeshId> mesh;  // on the GPU
+    std::optional<render::MeshId> water;
     std::uint64_t last_wanted = 0;
     bool ready(bool gpu) const { return gpu ? mesh.has_value() : data.has_value() || mesh; }
 };
@@ -244,12 +258,14 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
               [](const auto& a, const auto& b) { return a.first < b.first; });
     for (const auto& [distance, e] : missing) {
         if (jobs_ && !wait && in_flight >= kMaxJobs) break;
-        e->made = std::make_shared<render::MeshData>();
+        e->made = std::make_shared<ChunkMeshes>();
         auto made = e->made;
         const Terrain* terrain = &terrain_;
         const TerrainLeaf l = e->leaf;
         auto make = [terrain, l, made] {
-            *made = chunk_mesh_data(terrain->mesh(l.key, l.coarser));
+            made->ground = chunk_mesh_data(terrain->mesh(l.key, l.coarser));
+            if (const auto water = terrain->water_mesh(l.key, l.coarser))
+                made->water = water_mesh_data(*water);
         };
         if (jobs_) {
             e->job = jobs_->submit([make](const JobContext&) { make(); });
@@ -277,7 +293,8 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
         }
         if (renderer && e->data && e->last_wanted == tick_ &&
             (wait || uploads < kUploadsPerUpdate)) {
-            e->mesh = renderer->upload_mesh(*e->data);
+            e->mesh = renderer->upload_mesh(e->data->ground);
+            if (e->data->water) e->water = renderer->upload_mesh(*e->data->water);
             e->data.reset();
             ++uploads;
         }
@@ -299,6 +316,7 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
             if (cache_.size() <= cache_limit_) break;
             Entry& e = *cache_.at(key);
             if (e.mesh && renderer) renderer->free_mesh(*e.mesh);
+            if (e.water && renderer) renderer->free_mesh(*e.water);
             cache_.erase(key);
         }
     }
@@ -319,6 +337,14 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
         d.color = ground;
         d.roughness = 0.95f;
         out.push_back(d);
+        if (it->second->water) {
+            render::DrawItem w;
+            w.mesh = *it->second->water;
+            w.model = d.model;
+            w.water = true;
+            w.casts_shadow = false;
+            out.push_back(w);
+        }
     }
     // The end walls (a flat-wrap cylinder's on either side of the camera too).
     const TerrainSettings& s = terrain_.settings();
@@ -368,11 +394,16 @@ TerrainStreamStats TerrainStreamer::stats() const {
 }
 
 void TerrainStreamer::release(render::Renderer& renderer) {
-    for (auto& [key, e] : cache_)
+    for (auto& [key, e] : cache_) {
+        if (e->water) {
+            renderer.free_mesh(*e->water);
+            e->water.reset();
+        }
         if (e->mesh) {
             renderer.free_mesh(*e->mesh);
             e->mesh.reset();
         }
+    }
     for (const Wall& w : walls_) renderer.free_mesh(w.mesh);
     walls_.clear();
     walls_uploaded_ = false;

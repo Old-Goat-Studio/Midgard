@@ -259,3 +259,19 @@ def test_the_running_game_colours_its_light_by_the_calendars_season(project, qtb
         assert winter[0] / winter[2] == pytest.approx(0.5 * summer[0] / summer[2], rel=0.02)
     finally:
         session.stop()
+
+
+def test_the_waters_look_is_in_the_environment_editor(dock, project):
+    names = [dock.curves.item(i).data(0x0100) for i in range(dock.curves.count())]
+    assert {"water_shallow", "water_deep", "water_clarity"} <= set(names)
+    choose(dock, "water_clarity")
+    dock.view.add_key(0.25, 6.0)
+    assert earth(project)["curves"]["water_clarity"] == [[0.25, 6.0]]
+    dock.settings["wave_strength"].setValue(0.3)
+    assert earth(project)["settings"]["wave_strength"] == 0.3
+
+
+@needs_engine
+def test_every_engine_curve_is_in_the_editor():
+    listed = {n for group in environments.GROUPS.values() for n in group}
+    assert {name for name, _width in engine.module().Environment.curve_names()} == listed

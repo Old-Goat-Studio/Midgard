@@ -18,6 +18,7 @@
 //              environment and the world's light model
 //   terrain_area, terrain_strip, terrain_habitat  streamed terrain: a bounded area and its
 //              ocean band, a flat-wrap cylinder's end wall, a habitat's far side overhead
+//   terrain_shore  low over the water by a coast: waves, the shallows and the shore
 #pragma once
 
 #include <memory>

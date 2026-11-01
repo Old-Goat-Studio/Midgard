@@ -22,7 +22,7 @@ mapping instead, from Phase 5).
 | `collider` | `{"shape": "box", "size": [x, y, z], "radius": 0.5, "height": 2, "offset": [x, y, z]}` | The entity's shape for physics, in its local units (its scale applies). `shape` is `box` (`size`, default 1 × 1 × 1), `sphere` (`radius`), `capsule` (`radius`, and `height` end to end along local Y, at least twice the radius), `convex` (wraps the entity's mesh, or the content id in `"mesh"`), `mesh` (the mesh's triangles; static or kinematic bodies only) or `heightfield` (`"samples"`: n, `"heights"`: n × n numbers row by row along X then Z, `"spacing"`: metres between them; static only). `offset` moves the shape within the entity. Without a `rigidbody` the entity is static scenery. |
 | `rigidbody` | `{"motion": "dynamic", "mass": 0, "layer": 0}` | How the entity moves in the physics world: `dynamic` (gravity, forces and collisions move it; the engine writes its transform), `kinematic` (the game or a script moves it, and it pushes dynamic bodies aside) or `static`. `mass` in kilograms (0: from the collider's volume at the density of water). `layer` is one of the project's collision layers (0 to 15, the `physics_layer` table). Needs a `collider`. |
 | `physics_material` | `{"friction": 0.5, "bounciness": 0}` | How the collider's surface behaves: friction from 0 (ice) up, bounciness from 0 (stops dead) to 1 (bounces back as fast as it came). Defaults when absent. |
-| `sky` | `{"color": [r, g, b], "ambient": [r, g, b], "environment": "env_earth"}` | The scene's sky colour and ambient light. The first entity with a sky sets them, and the scene settings below are only the fallback for scenes without one. Defaults as in the settings. With `environment` (an id in the environment table, migration 10: every project has the Earth-like `env_earth`), the world's look follows the clock instead: the sky, the sunlight's colour and strength, the ambient light and the fog are the environment's curves at the solar phase (curves it doesn't set come from an analytic Earth-like sky at the sun's height), and the scene's sun follows the clock (as with `follows_clock`). An environment that isn't in the package is a warning, and the sky stays flat. |
+| `sky` | `{"color": [r, g, b], "ambient": [r, g, b], "environment": "env_earth"}` | The scene's sky colour and ambient light. The first entity with a sky sets them, and the scene settings below are only the fallback for scenes without one. Defaults as in the settings. With `environment` (an id in the environment table, migration 10: every project has the Earth-like `env_earth`), the world's look follows the clock instead: the sky, the sunlight's colour and strength, the ambient light, the fog and the water's colour and clarity are the environment's curves at the solar phase (curves it doesn't set come from an analytic Earth-like sky at the sun's height), and the scene's sun follows the clock (as with `follows_clock`). An environment that isn't in the package is a warning, and the sky stays flat. |
 | `group` | `{}` | A group: its child entities are the parts of one thing. Unlike a folder it has its own `transform` (its centre; keep its scale even, the same on all three axes), so moving, turning or scaling it carries all its parts, scripts and components included. With a `dynamic` or `kinematic` `rigidbody`, its parts' colliders (descendants with a `collider`) make **one compound body** that moves as a whole; the parts' own rigid bodies are then ignored, and their triggers move with them. Such a group can't hold `mesh` or `heightfield` colliders (use `convex`). A static group, or one without a rigid body, leaves each part's collider as it is. |
 | `object` | `{"id": "obj_crate"}` | An instance of an object: a template in the package's `object` table (migration 6), made once and placed many times. The engine fills in the template's parts as this entity's children (ids `<entity id>/<n>`, not in the database), so a changed template changes every instance. It acts as a `group`: its `transform` places the whole, and with a `dynamic` or `kinematic` `rigidbody` the parts' colliders make one body. An unknown object is a warning and shows nothing. |
 | `folder` | `{}` | A folder in the editor's Scene panel that groups its child entities. The engine sees an entity with only a transform (the editor keeps it at the origin). |
@@ -39,6 +39,7 @@ editor creates one in every scene's World folder.
 | `sun_mode` | `"uniform"` or `"latitude"` | `"uniform"`. How day and night work on an outside sphere (`midgard/sunlight.h`): `uniform` shifts each place's time by its longitude (noon on one side, midnight on the other) and gives every place the calendar's daylight share; `latitude` tilts the planet by the calendar's tilt, so the sun's height and the day's length follow latitude and the time of year (polar day and night), with the start's latitude set by how high the sun is placed at noon. Other shapes: one sun crossing the sky (bounded areas, flat-wrap cylinders), or a central sun or sun-line with shades going round (inside spheres, curved cylinders), each place's time shifted by its angle round the axis, with low light from the side at its dawn and dusk. |
 | `ambient` | `[r, g, b]` | `[0.18, 0.2, 0.26]` |
 | `body` | `{"id": "world", "shape": "sphere_outside", "radius": 1000, "gravity": 9.81, "origin": [x, y, z]}` | none: flat ground, +Y up, gravity 9.81 m/s² down |
+| `terrain` | `{"seed": 1, "base": 8, "height_scale": 60, "feature_size": 500, "octaves": 6, "sea_level": 0, "ocean_band": 300, "ocean_depth": 30, "end_ramp": 150, "wall_height": 120, "wall": "cliff", "spacing": 2}` | none: no terrain. See below. |
 
 `body` is the scene's world shape (`midgard/body.h`): where "up" points and how gravity pulls.
 Shapes and their sizes in metres: `bounded_area` (`width`, `length`), `flat_cylinder`
@@ -49,6 +50,20 @@ World Shape… puts the surface through the scene's origin with "up" along +Y th
 centre at `[0, -radius, 0]`, a hollow world's or a cylinder's at `[0, radius, 0]`), and sizes must lie
 within the roadmap's limits (§7, "Size and precision"); the engine refuses others. Physics pulls
 every moving body along the shape's gravity where it is, and the sun's shadows use its "up".
+
+`terrain` gives a bounded area or a cylinder ground of hills and valleys (`midgard/terrain.h`;
+spheres have terrain from milestone 5.10). Heights come from noise at points on the shape's
+surface, so they are the same on every device and a cylinder's join is seamless: `base` plus
+`height_scale` times noise whose largest hills are `feature_size` metres across, with `octaves`
+layers of detail (1 to 12), from `seed` (default: the body's). A bounded area sinks to
+`ocean_depth` below the sea over `ocean_band` metres at its edges; a cylinder rises to
+`wall_height` over `end_ramp` metres at its ends, where walls close it (`wall`: `cliff`,
+`fortification` or `barrier`). `spacing` is the finest grid's spacing in metres (0.25 to 64).
+Chunks are streamed round the camera (finer near it) and are solid round the player (a player
+starting under the ground is lifted onto it). Water lies at `sea_level` wherever the ground is
+below it, in the look of the scene's environment (its `water_*` curves, `wave_strength` and
+`wave_size`) or a default one. The cook refuses settings outside these ranges, and warns about
+terrain without a `body`.
 
 ## Physics layers
 

@@ -317,6 +317,54 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
     return out;
 }
 
+std::optional<ChunkMesh> Terrain::water_mesh(const ChunkKey& k,
+                                             const std::array<bool, 4>& coarser) const {
+    constexpr int n = kChunkQuads;
+    const double sea = settings_.sea_level;
+    ChunkMesh out;
+    out.origin = chunk_origin(k);
+    std::vector<glm::dvec3> p(size_t(n + 1) * (n + 1));
+    out.heights.resize(p.size());
+    bool wet = false;
+    const glm::dvec2 size = body_.shape.face_size();
+    for (int j = 0; j <= n; ++j) {
+        const double v = v_at(k, j);
+        for (int i = 0; i <= n; ++i) {
+            const double u = u_at(k, i);
+            const size_t at = size_t(j) * (n + 1) + i;
+            out.heights[at] = sea - height(k.face, u, v);
+            wet = wet || out.heights[at] > 0.0;
+            p[at] = position(k.face, u, v, sea);
+            out.uvs.emplace_back(float(u * size.x / 16.0), float(v * size.y / 16.0));
+        }
+    }
+    if (!wet) return std::nullopt;
+    const auto stitch = [&](int i0, int j0, int di, int dj) {
+        for (int s = 1; s < n; s += 2) {
+            const size_t at = size_t(j0 + dj * s) * (n + 1) + (i0 + di * s);
+            const size_t lo = size_t(j0 + dj * (s - 1)) * (n + 1) + (i0 + di * (s - 1));
+            const size_t hi = size_t(j0 + dj * (s + 1)) * (n + 1) + (i0 + di * (s + 1));
+            p[at] = (p[lo] + p[hi]) * 0.5;
+            out.heights[at] = (out.heights[lo] + out.heights[hi]) * 0.5;
+        }
+    };
+    if (coarser[kWest]) stitch(0, 0, 0, 1);
+    if (coarser[kEast]) stitch(n, 0, 0, 1);
+    if (coarser[kSouth]) stitch(0, 0, 1, 0);
+    if (coarser[kNorth]) stitch(0, n, 1, 0);
+    for (const glm::dvec3& q : p) {
+        out.positions.push_back(glm::vec3(q - out.origin));
+        out.normals.push_back(glm::vec3(body_.up(q)));
+    }
+    for (int j = 0; j < n; ++j)
+        for (int i = 0; i < n; ++i) {
+            const std::uint32_t a = std::uint32_t(j * (n + 1) + i), b = a + (n + 1), c = a + 1,
+                                d = b + 1;
+            out.indices.insert(out.indices.end(), {a, b, d, a, d, c});
+        }
+    return out;
+}
+
 std::uint64_t Terrain::chunk_hash(const ChunkKey& k) const {
     constexpr int n = kChunkQuads;
     Fnv1a64 h;

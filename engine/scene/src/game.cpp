@@ -155,6 +155,7 @@ void Game::update(const Actions& actions, float dt) {
     const std::vector<TimeEvent>& passed = time_.update(dt);
     time_events_.insert(time_events_.end(), passed.begin(), passed.end());
     update_sun();
+    scene_.water_time += dt;
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
     physics_->set_player_intent(intent.walk, intent.jump);
     update_ground();               // solid ground under the player before it moves

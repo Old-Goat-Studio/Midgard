@@ -212,7 +212,7 @@
     },
     {
       "name": "terrain_area",
-      "_about": "Streamed terrain on a bounded area, seen from above: hills from deterministic noise, finer near the camera, sinking to the ocean band at the map's edge (milestone 5.9).",
+      "_about": "Streamed terrain on a bounded area, seen from above: hills from deterministic noise, finer near the camera, sinking to the ocean band at the map's edge, with water over the sea and the lakes (milestone 5.9).",
       "args": ["--size", "480x270", "--scene", "terrain_area"],
       "max_bad": 0.01
     },
@@ -226,6 +226,12 @@
       "name": "terrain_habitat",
       "_about": "Inside a habitat: the ground curving up on both sides into the far side overhead, softened by the inside-world haze, with the barrier closing its far end.",
       "args": ["--size", "480x270", "--scene", "terrain_habitat"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_shore",
+      "_about": "Low over the sea by a coast (milestone 5.9): water from the Earth-like environment's look, its waves reflecting the sky, the island beyond, and the shallows below showing the ground through foam.",
+      "args": ["--size", "480x270", "--scene", "terrain_shore"],
       "max_bad": 0.01
     }
   ]

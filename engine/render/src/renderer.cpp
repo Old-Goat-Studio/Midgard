@@ -33,6 +33,7 @@
 #include "sky_frag.h"
 #include "sky_vert.h"
 #include "tonemap_frag.h"
+#include "water_frag.h"
 
 namespace midgard::render {
 namespace {
@@ -185,8 +186,9 @@ struct Renderer::Impl {
     VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkPipeline sky_pipeline = VK_NULL_HANDLE;   // in the scene pass, after the opaque objects
-    VkPipeline line_pipeline = VK_NULL_HANDLE;  // debug lines, after the sky
+    VkPipeline sky_pipeline = VK_NULL_HANDLE;    // in the scene pass, after the opaque objects
+    VkPipeline water_pipeline = VK_NULL_HANDLE;  // after the sky: blended, no depth writes
+    VkPipeline line_pipeline = VK_NULL_HANDLE;   // debug lines, after the sky
     std::vector<DebugLine> debug_lines;
     Environment environment;
     VkPipelineLayout overlay_layout = VK_NULL_HANDLE;
@@ -874,6 +876,31 @@ struct Renderer::Impl {
         vkDestroyShaderModule(device, sky_f, nullptr);
         check(sky_result, "Creating the sky pipeline");
 
+        // Water: the meshes' vertices, blended over what's drawn (seen from above and below),
+        // tested against depth without writing it.
+        VkShaderModule water_v = shader(mesh_vert, sizeof(mesh_vert));
+        VkShaderModule water_f = shader(water_frag, sizeof(water_frag));
+        stages[0].module = water_v;
+        stages[1].module = water_f;
+        info.pVertexInputState = &vinput;
+        depth_state.depthCompareOp = VK_COMPARE_OP_LESS;
+        blend_att.blendEnable = VK_TRUE;
+        blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_att.colorBlendOp = VK_BLEND_OP_ADD;
+        blend_att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blend_att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend_att.alphaBlendOp = VK_BLEND_OP_ADD;
+        const VkResult water_result =
+            vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &water_pipeline);
+        vkDestroyShaderModule(device, water_v, nullptr);
+        vkDestroyShaderModule(device, water_f, nullptr);
+        check(water_result, "Creating the water pipeline");
+        blend_att = VkPipelineColorBlendAttachmentState{};
+        blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        depth_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
         // Debug lines: a line list of (position, colour), tested against depth but not writing
         // it, so what's in front hides them.
         VkShaderModule line_v = shader(line_vert, sizeof(line_vert));
@@ -1313,7 +1340,7 @@ struct Renderer::Impl {
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline);
             for (const DrawItem& d : draws) {
-                if (d.mesh >= meshes.size() || !d.casts_shadow) continue;
+                if (d.mesh >= meshes.size() || !d.casts_shadow || d.water) continue;
                 const GpuMesh& m = meshes[d.mesh];
                 if (m.index_count == 0) continue;
                 const glm::vec3 center(d.model * glm::vec4(m.center, 1.0f));
@@ -1672,8 +1699,13 @@ struct Renderer::Impl {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &set,
                                 0, nullptr);
         MaterialId bound = ~0u;
+        bool any_water = false;
         for (const DrawItem& d : draws) {
             if (d.mesh >= meshes.size()) continue;
+            if (d.water) {
+                any_water = true;
+                continue;
+            }
             const GpuMesh& m = meshes[d.mesh];
             if (m.index_count == 0) continue;
             const MaterialId material = d.material < materials.size() ? d.material : 0;
@@ -1696,6 +1728,29 @@ struct Renderer::Impl {
         if (environment.sky) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sky_pipeline);
             vkCmdDraw(cmd, 3, 1, 0, 0);
+        }
+        if (any_water) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, water_pipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1,
+                                    &set, 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1,
+                                    &materials[0], 0, nullptr);
+            const Water& w = environment.water;
+            for (const DrawItem& d : draws) {
+                if (!d.water || d.mesh >= meshes.size()) continue;
+                const GpuMesh& m = meshes[d.mesh];
+                if (m.index_count == 0) continue;
+                PushData push{d.model, glm::vec4(to_linear(w.shallow), w.clarity),
+                              glm::vec4(to_linear(w.deep), w.time),
+                              glm::vec4(w.wave_strength, w.wave_size, 0.0f, 0.0f)};
+                vkCmdPushConstants(cmd, pipeline_layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(push), &push);
+                VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
+                vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+            }
         }
         if (frame.line_vertices > 0) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, line_pipeline);
@@ -1771,6 +1826,7 @@ struct Renderer::Impl {
             if (command_pool) vkDestroyCommandPool(device, command_pool, nullptr);
             if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
             if (sky_pipeline) vkDestroyPipeline(device, sky_pipeline, nullptr);
+            if (water_pipeline) vkDestroyPipeline(device, water_pipeline, nullptr);
             if (line_pipeline) vkDestroyPipeline(device, line_pipeline, nullptr);
             if (shadow_pipeline) vkDestroyPipeline(device, shadow_pipeline, nullptr);
             if (shadow_layout) vkDestroyPipelineLayout(device, shadow_layout, nullptr);

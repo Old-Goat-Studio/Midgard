@@ -593,6 +593,7 @@ const EnvironmentDef* Scene::active_environment() const {
 
 render::Environment Scene::environment(const glm::dvec3& origin) const {
     render::Environment out;
+    out.water.time = float(std::fmod(water_time, 3600.0));  // (an hour, then the waves repeat)
     const EnvironmentDef* env = active_environment();
     if (!env || !solar_phase) {
         // A flat sky: the sky's colour everywhere, with the scene's sun as a small white disc in
@@ -617,6 +618,8 @@ render::Environment Scene::environment(const glm::dvec3& origin) const {
     out.sky = true;
     out.sky_colors = look.sky;
     out.horizon_dip = horizon_dip(origin);
+    out.water = look.water;
+    out.water.time = float(std::fmod(water_time, 3600.0));
     out.fog.density = look.fog_density;
     out.fog.height_falloff = env->fog_height_falloff;
     out.fog.sun_scatter = env->fog_sun_scatter;

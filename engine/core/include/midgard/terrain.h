@@ -125,6 +125,11 @@ public:
     glm::dvec3 chunk_origin(const ChunkKey& key) const;
     // grid: kChunkQuads + 1 points a side. coarser[edge]: the neighbour there is a level up.
     ChunkMesh mesh(const ChunkKey& key, const std::array<bool, 4>& coarser = {}) const;
+    // The water over a chunk: its grid at sea level (the same points, and the same stitching to
+    // coarser neighbours), with `heights` holding the water's depth at each point (negative
+    // where the ground is above the sea). None if the ground is above the sea everywhere in it.
+    std::optional<ChunkMesh> water_mesh(const ChunkKey& key,
+                                        const std::array<bool, 4>& coarser = {}) const;
     // A hash of the chunk's key and its generated heights (fnv1a64 over little-endian int32
     // face, level, x, y, then each height's 8 bytes, row by row).
     std::uint64_t chunk_hash(const ChunkKey& key) const;

@@ -128,3 +128,22 @@ TEST_CASE("season tints the cook refuses, and JSON that can't be read") {
     CHECK_THROWS(env(R"({"summer": {"moonlight": [1, 1, 1]}})"));
     CHECK_THROWS(env(R"({"winter": [1, 1, 1]})"));
 }
+
+TEST_CASE("water's look: curves over the day and wave settings, and those the cook refuses") {
+    const midgard::EnvironmentDef plain = midgard::environment_from_json("env_w", "W", "{}", "{}");
+    const midgard::EnvironmentLook a = midgard::evaluate(plain, 0.25, 0.9f);
+    CHECK(a.water.clarity == doctest::Approx(midgard::render::Water{}.clarity));
+    const midgard::EnvironmentDef set = midgard::environment_from_json(
+        "env_w", "W",
+        R"({"water_deep": [[0.0, [0.0, 0.1, 0.05]]], "water_clarity": [[0.0, 1.0], [0.5, 9.0]]})",
+        R"({"wave_strength": 0.3, "wave_size": 20})");
+    CHECK(midgard::environment_problems(set).empty());
+    const midgard::EnvironmentLook b = midgard::evaluate(set, 0.25, 0.9f);
+    CHECK(b.water.deep.y == doctest::Approx(0.1f));
+    CHECK(b.water.clarity == doctest::Approx(5.0f));  // halfway, eased
+    CHECK(b.water.wave_strength == doctest::Approx(0.3f));
+    CHECK(b.water.wave_size == doctest::Approx(20.0f));
+    const midgard::EnvironmentDef bad =
+        midgard::environment_from_json("env_w", "W", "{}", R"({"wave_size": 0.1})");
+    CHECK(midgard::environment_problems(bad).size() == 1);
+}

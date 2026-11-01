@@ -184,3 +184,24 @@ TEST_CASE("terrain settings from JSON, and those the cook refuses") {
         json::parse(R"({"id": "a", "shape": "bounded_area", "width": 3000, "length": 2000})"));
     CHECK(midgard::Terrain(b, fine).max_level() == midgard::Terrain(b, {}).max_level() + 2);
 }
+
+TEST_CASE("water over a chunk: at sea level, its depth at each point, none over dry land") {
+    const midgard::Terrain tr = area();
+    // At the map's edge the sea floor is 30 m down: water everywhere.
+    const auto sea = tr.water_mesh({0, 2, 0, 3});
+    REQUIRE(sea.has_value());
+    const midgard::ChunkMesh ground = tr.mesh({0, 2, 0, 3});
+    for (size_t i = 0; i < sea->positions.size(); ++i) {
+        const glm::dvec3 p = sea->origin + glm::dvec3(sea->positions[i]);
+        CHECK(p.y == doctest::Approx(0.0).epsilon(1e-6));  // the sea level
+        CHECK(sea->heights[i] == doctest::Approx(0.0 - ground.heights[i]));
+        CHECK(sea->normals[i].y == doctest::Approx(1.0f));
+    }
+    CHECK(sea->heights[0] == doctest::Approx(30.0));  // the corner: the ocean's depth
+    // Somewhere the ground is above the sea all over: no water.
+    midgard::TerrainSettings high;
+    high.base = 500.0;
+    high.ocean_band = 0.0;
+    const midgard::Terrain dry(area().body(), high);
+    CHECK_FALSE(dry.water_mesh({0, 2, 5, 3}).has_value());
+}

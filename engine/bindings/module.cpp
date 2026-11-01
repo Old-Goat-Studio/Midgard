@@ -303,6 +303,9 @@ PYBIND11_MODULE(_midgard, m) {
                 out["fog_density"] = look.fog_density;
                 out["fog_color"] = look.fog_color ? py::object(rgb(*look.fog_color)) : py::none();
                 out["ambient_tint"] = rgb(look.ambient_tint);
+                out["water_shallow"] = rgb(look.water.shallow);
+                out["water_deep"] = rgb(look.water.deep);
+                out["water_clarity"] = look.water.clarity;
                 return out;
             },
             py::arg("phase"), py::arg("sun_elevation"), py::arg("season") = 0.0,

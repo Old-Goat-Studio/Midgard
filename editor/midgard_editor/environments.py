@@ -39,6 +39,7 @@ GROUPS = {  # the curves, as the Environment editor lists them
             "glow_brightness", "sun_disc", "sun_disc_brightness"),
     "Light": ("sunlight", "sunlight_intensity", "ambient", "ambient_ground"),
     "Fog": ("fog_density", "fog_color"),
+    "Water": ("water_shallow", "water_deep", "water_clarity"),
 }
 LABELS = {
     "zenith": "Zenith", "horizon": "Horizon (sun's side)", "horizon_away": "Horizon (away)",
@@ -47,15 +48,18 @@ LABELS = {
     "sun_disc_brightness": "Disc brightness", "sunlight": "Sunlight colour",
     "sunlight_intensity": "Sunlight strength", "ambient": "Ambient light (sky)",
     "ambient_ground": "Ambient light (ground)", "fog_density": "Fog density",
-    "fog_color": "Fog colour",
+    "fog_color": "Fog colour", "water_shallow": "Water over shallows",
+    "water_deep": "Deep water", "water_clarity": "Water clarity (m)",
 }
 COLOURS = {"zenith", "horizon", "horizon_away", "ground", "glow", "sun_disc", "sunlight",
-           "ambient", "ambient_ground", "fog_color"}
+           "ambient", "ambient_ground", "fog_color", "water_shallow", "water_deep"}
 SETTINGS = {  # key: (label, default, low, high, step, decimals)
     "sun_size": ("Sun size (degrees)", 1.5, 0.1, 45.0, 0.1, 2),
     "glow_tightness": ("Glow tightness", 0.8, 0.0, 0.99, 0.01, 2),
     "fog_height_falloff": ("Fog thins upwards (per m)", 0.0, 0.0, 1.0, 0.001, 4),
     "fog_sun_scatter": ("Fog brighter towards the sun", 0.5, 0.0, 4.0, 0.05, 2),
+    "wave_strength": ("Wave strength", 0.12, 0.0, 1.0, 0.01, 2),
+    "wave_size": ("Longest waves (m)", 8.0, 0.5, 200.0, 0.5, 1),
 }
 # Season tints (settings "winter" and "summer"): the light and sky multiplied by these colours at
 # the depth of each season, none at the equinoxes; white (or not given) changes nothing.

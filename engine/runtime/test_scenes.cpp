@@ -558,10 +558,14 @@ class TerrainScene : public TestScene {
 public:
     explicit TerrainScene(const std::string& which) {
         nlohmann::json body, terrain = nlohmann::json::object();
-        if (which == "area") {
+        if (which == "area" || which == "shore") {
             body = {{"shape", "bounded_area"}, {"width", 3000}, {"length", 3000}, {"seed", 7}};
             eye_ = {-600.0, 160.0, -600.0};
             look_ = {-1000.0, 0.0, -1500.0};
+            if (which == "shore") {  // low over the sea by the coast, the shallows below
+                eye_ = {-1180.0, 4.0, -300.0};
+                look_ = {-1000.0, 0.0, -260.0};
+            }
         } else if (which == "strip") {
             body = {
                 {"shape", "flat_cylinder"}, {"circumference", 6000}, {"length", 5000}, {"seed", 8}};
@@ -640,7 +644,7 @@ std::vector<std::string> names() {
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
-    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat"})
+    for (const char* which : {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore"})
         out.push_back(which);
     return out;
 }
@@ -664,6 +668,7 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_area") return std::make_unique<TerrainScene>("area");
     if (name == "terrain_strip") return std::make_unique<TerrainScene>("strip");
     if (name == "terrain_habitat") return std::make_unique<TerrainScene>("habitat");
+    if (name == "terrain_shore") return std::make_unique<TerrainScene>("shore");
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             if (name == std::string("day_") + shape + "_" + time)

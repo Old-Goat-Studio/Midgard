@@ -301,6 +301,8 @@ public:
     // daylight share and noon, the axial tilt and the time of year. Its time comes from
     // solar_phase, at the scene's start.
     SunClock sun_clock;
+    // Seconds the water's waves have moved for (the game adds each frame's time).
+    double water_time = 0.0;
     // The sun as seen from `origin` (its light model, midgard/sunlight.h): none when it doesn't
     // follow the clock (or there is no clock, or no sun).
     std::optional<LocalSun> local_sun(const glm::dvec3& origin) const;

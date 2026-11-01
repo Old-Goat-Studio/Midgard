@@ -56,7 +56,9 @@ struct EnvironmentDef {
     float glow_tightness = 0.8f;      // 0 spreads its glow over the sky, 0.95 hugs the sun
     float fog_height_falloff = 0.0f;  // per metre: how fast fog thins upwards
     float fog_sun_scatter = 0.5f;     // how much brighter fog is towards the sun
-    SeasonTint winter, summer;        // white: no change
+    float wave_strength = render::Water{}.wave_strength;  // how much waves tilt the water
+    float wave_size = render::Water{}.wave_size;          // metres: the longest waves
+    SeasonTint winter, summer;                            // white: no change
 
     const Curve* curve(const std::string& curve_name) const;
 };
@@ -77,6 +79,7 @@ struct EnvironmentLook {
     float fog_density = 0.0f;
     std::optional<glm::vec3> fog_color;  // none: the sky's horizon
     glm::vec3 ambient_tint{1.0f};        // the season's, for the ambient light (whichever it is)
+    render::Water water;                 // the water's look (its time is the scene's)
 };
 // The season's tint: white blended towards the winter tint as season goes to -1, or the summer
 // tint as it goes to 1.

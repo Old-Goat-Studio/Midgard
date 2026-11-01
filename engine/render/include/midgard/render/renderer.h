@@ -99,6 +99,9 @@ struct DrawItem {
     float occlusion_strength = 1.0f;
     MaterialId material = 0;
     bool casts_shadow = true;  // false: lit and shadowed, but leaves no shadow of its own
+    // A water surface: drawn after everything solid, blended, in the environment's Water look
+    // (its colour and material are ignored). Its vertices' tangent w is the depth below them.
+    bool water = false;
 };
 
 // The textures of a material (kNoTexture: none, a neutral default).

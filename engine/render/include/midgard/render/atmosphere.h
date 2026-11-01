@@ -57,6 +57,17 @@ struct Fog {
 // optical depth: exp(-depth) of the light gets through. The shaders compute the same.
 float fog_depth(const Fog& fog, const glm::vec3& offset, const glm::vec3& up);
 
+// How water looks (DrawItem::water surfaces): its colour over shallows and over deep water,
+// how far down the ground shows through, and its waves.
+struct Water {
+    glm::vec3 shallow{0.10f, 0.42f, 0.40f};  // sRGB
+    glm::vec3 deep{0.02f, 0.10f, 0.16f};     // sRGB
+    float clarity = 3.0f;                    // metres: the ground fades to 1/e this deep
+    float wave_strength = 0.12f;             // how much the waves tilt the surface
+    float wave_size = 8.0f;                  // metres: the longest waves
+    float time = 0.0f;                       // seconds: where the waves are
+};
+
 struct Environment {
     bool sky = false;  // false: the frame's clear colour is the whole sky, flat
     SkyColors sky_colors;
@@ -64,6 +75,7 @@ struct Environment {
     // Radians: how far below level the visible horizon is, from a camera above a curved world
     // (a planet's ground falls away). The sky's horizon, and the sun setting behind it, are there.
     float horizon_dip = 0.0f;
+    Water water;
 };
 
 }  // namespace midgard::render

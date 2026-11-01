@@ -29,6 +29,11 @@ const std::vector<CurveName>& environment_curve_names() {
         // The fog.
         {"fog_density", 1},
         {"fog_color", 3},
+        // Water (milestone 5.9): its colour over shallows and deep water, and how far down the
+        // ground shows (metres).
+        {"water_shallow", 3},
+        {"water_deep", 3},
+        {"water_clarity", 1},
     };
     return names;
 }
@@ -103,6 +108,8 @@ EnvironmentDef environment_from_json(const std::string& id, const std::string& n
     env.glow_tightness = settings.value("glow_tightness", env.glow_tightness);
     env.fog_height_falloff = settings.value("fog_height_falloff", env.fog_height_falloff);
     env.fog_sun_scatter = settings.value("fog_sun_scatter", env.fog_sun_scatter);
+    env.wave_strength = settings.value("wave_strength", env.wave_strength);
+    env.wave_size = settings.value("wave_size", env.wave_size);
     for (const char* season : {"winter", "summer"}) {
         if (!settings.contains(season)) continue;
         const json& tints = settings.at(season);
@@ -157,6 +164,10 @@ std::vector<std::string> environment_problems(const EnvironmentDef& env) {
     if (env.glow_tightness < 0.0f || env.glow_tightness >= 1.0f)
         out.push_back(who + ": the glow's tightness is from 0 up to (not including) 1");
     if (env.fog_height_falloff < 0.0f) out.push_back(who + ": fog can't thicken upwards");
+    if (env.wave_strength < 0.0f || env.wave_strength > 1.0f)
+        out.push_back(who + ": the waves' strength is from 0 to 1");
+    if (env.wave_size < 0.5f || env.wave_size > 200.0f)
+        out.push_back(who + ": the waves' size is from 0.5 to 200 m");
     const auto negative = [](const SeasonTint& t) {
         for (const glm::vec3& c : {t.sunlight, t.ambient, t.sky})
             for (int i = 0; i < 3; ++i)
@@ -221,6 +232,11 @@ EnvironmentLook evaluate(const EnvironmentDef& env, double phase, float sun_elev
         colour("fog_color", c);
         look.fog_color = c;
     }
+    colour("water_shallow", look.water.shallow);
+    colour("water_deep", look.water.deep);
+    number("water_clarity", look.water.clarity);
+    look.water.wave_strength = env.wave_strength;
+    look.water.wave_size = env.wave_size;
     const SeasonTint tint = season_tint(env, season);
     look.sky.zenith *= tint.sky;
     look.sky.horizon *= tint.sky;

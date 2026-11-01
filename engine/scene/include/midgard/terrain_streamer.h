@@ -103,5 +103,7 @@ private:
 
 // A chunk's mesh for the renderer (uv: metres across the face, over 16).
 render::MeshData chunk_mesh_data(const ChunkMesh& mesh);
+// The water over a chunk for the renderer (tangent w: the depth below each point).
+render::MeshData water_mesh_data(const ChunkMesh& mesh);
 
 }  // namespace midgard
