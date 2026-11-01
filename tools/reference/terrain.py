@@ -66,6 +66,38 @@ def smooth01(t: float) -> float:
     return t * t * (3.0 - 2.0 * t)
 
 
+# Stamps on spheres (milestone 5.10), as midgard/terrain.cpp's helpers, operation for operation.
+def dot3(a, b) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def cross3(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def unit3(a):
+    length = det.sqrt(dot3(a, a))
+    return (a[0] / length, a[1] / length, a[2] / length)
+
+
+def stroke_weight(points, radius: float, q) -> float:
+    """How much a stroke through 3D points applies at q (straight-line distances)."""
+    if not points or not radius > 0.0:
+        return 0.0
+    a = (points[0][0] - q[0], points[0][1] - q[1], points[0][2] - q[2])
+    best = dot3(a, a)
+    for p in points[1:]:
+        b = (p[0] - q[0], p[1] - q[1], p[2] - q[2])
+        e = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+        len2 = dot3(e, e)
+        t = -dot3(a, e) / len2 if len2 > 0.0 else 0.0
+        t = min(max(t, 0.0), 1.0)
+        c = (a[0] + e[0] * t, a[1] + e[1] * t, a[2] + e[2] * t)
+        best = min(best, dot3(c, c))
+        a = b
+    return smooth01(1.0 - det.sqrt(best) / radius)
+
+
 class Terrain:
     def __init__(self, body: dict, settings: dict | None = None,
                  stamps: list[dict] | None = None):
@@ -90,6 +122,35 @@ class Terrain:
                and root / (float(1 << self.max_level) * CHUNK_QUADS) > spacing):
             self.max_level += 1
 
+    def sphere(self) -> bool:
+        return self.shape.kind in (shapes.SPHERE_OUTSIDE, shapes.SPHERE_INSIDE)
+
+    def stroke_points(self, s: dict):
+        return [self.shape.position(s["face"], p[0], p[1], 0.0) for p in s["points"]]
+
+    def noise_height(self, q) -> float:
+        t = self.settings
+        f = t["feature_size"]
+        n = det.fbm(self.seed, q[0] / f, q[1] / f, q[2] / f, t["octaves"])
+        return t["base"] + t["height_scale"] * (float(n) / 65536.0)
+
+    def smooth_average(self, q, step: float) -> float:
+        """smooth's average on a sphere: four points along a frame from q's direction."""
+        r = unit3(q)
+        radius = self.shape.size_u
+        axis = (0.0, 1.0, 0.0) if abs(r[1]) < 0.9 else (1.0, 0.0, 0.0)
+        east = unit3(cross3(axis, r))
+        north = cross3(r, east)
+        steps = [(east[0] * step, east[1] * step, east[2] * step),
+                 (-(east[0] * step), -(east[1] * step), -(east[2] * step)),
+                 (north[0] * step, north[1] * step, north[2] * step),
+                 (-(north[0] * step), -(north[1] * step), -(north[2] * step))]
+        total = 0.0
+        for d in steps:
+            p = unit3((q[0] + d[0], q[1] + d[1], q[2] + d[2]))
+            total = total + self.noise_height((p[0] * radius, p[1] * radius, p[2] * radius))
+        return total * 0.25
+
     def wraps(self) -> bool:
         return self.shape.kind in (shapes.FLAT_CYLINDER, shapes.CURVED_CYLINDER)
 
@@ -103,6 +164,9 @@ class Terrain:
 
     def stamp_weight(self, s: dict, face: int, u: float, v: float) -> float:
         """How much a stamp applies at (u, v): 1 on its line, falling to 0 at its radius."""
+        if self.sphere():
+            return stroke_weight(self.stroke_points(s), s["radius"],
+                                 self.noise_position(face, u, v))
         if s["face"] != face or not s["points"] or not s["radius"] > 0.0:
             return 0.0
         su, sv = face_size(self.shape)
@@ -131,10 +195,15 @@ class Terrain:
         """With the stamps (sculpting), in order."""
         h = self.base_height(face, u, v)
         su, sv = face_size(self.shape)
+        round_ = self.sphere() and bool(self.stamps)
+        q = self.noise_position(face, u, v) if round_ else None
         for s in self.stamps:
-            if s["tool"] == "paint" or s["face"] != face:
+            if s["tool"] == "paint" or (not round_ and s["face"] != face):
                 continue
-            w = self.stamp_weight(s, face, u, v)
+            if round_:  # a sphere: by 3D distance, across face edges too
+                w = stroke_weight(self.stroke_points(s), s["radius"], q)
+            else:
+                w = self.stamp_weight(s, face, u, v)
             if w <= 0.0:
                 continue
             if s["tool"] == "raise":
@@ -143,6 +212,8 @@ class Terrain:
                 h = h - s["strength"] * w
             elif s["tool"] == "flatten":
                 h = h + (s["height"] - h) * (w * s["strength"])
+            elif s["tool"] == "smooth" and round_:
+                h = h + (self.smooth_average(q, 0.5 * s["radius"]) - h) * (w * s["strength"])
             elif s["tool"] == "smooth":
                 du, dv = 0.5 * s["radius"] / su, 0.5 * s["radius"] / sv
                 average = (self.base_height(face, u + du, v) + self.base_height(face, u - du, v)
@@ -154,10 +225,7 @@ class Terrain:
     def base_height(self, face: int, u: float, v: float) -> float:
         """As generated."""
         t = self.settings
-        q = self.noise_position(face, u, v)
-        f = t["feature_size"]
-        n = det.fbm(self.seed, q[0] / f, q[1] / f, q[2] / f, t["octaves"])
-        h = t["base"] + t["height_scale"] * (float(n) / 65536.0)
+        h = self.noise_height(self.noise_position(face, u, v))
         su, sv = face_size(self.shape)
         if self.shape.kind == shapes.BOUNDED_AREA:
             if t["ocean_band"] > 0.0:
@@ -291,11 +359,54 @@ def make_sphere_table() -> dict:
             "cases": cases}
 
 
+# Strokes on the 3 km planet "world" across the edge between faces 0 (+X) and 5 (-Z): face 0's
+# u = 1 edge is face 5's u = 0 edge (shapes.cube_link(0, 1)). Points past u = 1 run on in face 0's
+# terms (cube_face_point), as the editor records a stroke that crosses an edge.
+SPHERE_STAMPS = [
+    {"tool": "raise", "radius": 60.0, "strength": 25.0, "face": 0,
+     "points": [[0.97, 0.40], [0.995, 0.41], [1.02, 0.42], [1.05, 0.43]]},
+    {"tool": "lower", "radius": 30.0, "strength": 8.0, "face": 5, "points": [[0.008, 0.52]]},
+    {"tool": "flatten", "radius": 45.0, "strength": 0.8, "height": 20.0, "face": 0,
+     "points": [[0.99, 0.60], [1.01, 0.61]]},
+    {"tool": "smooth", "radius": 50.0, "strength": 0.9, "face": 0,
+     "points": [[0.985, 0.45], [1.01, 0.46]]},
+]
+
+
+def make_sphere_stamp_table() -> dict:
+    """The shared table schema/tests/terrain_sphere_stamps.json (made once, then fixed):
+    heights on both sides of a face edge that strokes cross, and chunk hashes either side."""
+    body = SPHERES["world"]
+    t = Terrain(body, {}, SPHERE_STAMPS)
+    cases = []
+    for face, u, v in ((0, 1.0, 0.41), (0, 0.995, 0.41), (0, 0.99, 0.52), (0, 0.99, 0.605),
+                       (0, 0.985, 0.455), (0, 0.5, 0.5), (0, 1.0, 0.6)):
+        cases.append({"face": face, "u": u, "v": v, "height": t.height(face, u, v)})
+        g, gu, gv = shapes.cube_across(face, u + 0.004, v) if u >= 0.996 else (face, u, v)
+        if g != face:
+            cases.append({"face": g, "u": gu, "v": gv, "height": t.height(g, gu, gv)})
+    level = 2
+    across = t.roots_u << level
+    for v in (0.41, 0.6):
+        key = (0, level, across - 1, int(v * across))
+        cases.append({"key": list(key), "hash": f"{t.chunk_hash(key):016x}"})
+        n = shapes.cube_link(0, 1)  # the chunk across the edge
+        along = key[3] if not n[2] else across - 1 - key[3]
+        inside = 0 if n[1] % 2 == 0 else across - 1
+        other = (n[0], level, inside, along) if n[1] < 2 else (n[0], level, along, inside)
+        cases.append({"key": list(other), "hash": f"{t.chunk_hash(other):016x}"})
+    return {"_about": "Cube-sphere sculpting: strokes across a face edge, heights either side "
+                      "and chunk hashes (tools/reference/terrain.py).",
+            "body": body, "stamps": SPHERE_STAMPS, "cases": cases}
+
+
 if __name__ == "__main__":
     import sys
     which = sys.argv[1] if len(sys.argv) > 1 else "chunks"
     if which == "stamps":
         out, table = TABLES / "terrain_stamps.json", make_stamp_table()
+    elif which == "sphere_stamps":
+        out, table = TABLES / "terrain_sphere_stamps.json", make_sphere_stamp_table()
     elif which == "spheres":
         out, table = TABLES / "terrain_spheres.json", make_sphere_table()
     else:

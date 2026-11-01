@@ -278,13 +278,23 @@ std::optional<Viewport::TerrainGround> Viewport::terrain_ground(const glm::dvec3
 
 std::optional<Viewport::TerrainHit> Viewport::terrain_hit(const glm::dvec3& origin,
                                                           const glm::dvec3& direction,
-                                                          double distance) const {
+                                                          double distance,
+                                                          std::optional<int> face) const {
     if (!scene_.settings.body || !scene_.settings.terrain) return std::nullopt;
     const Terrain own(*scene_.settings.body, *scene_.settings.terrain, stamps_);
     const Terrain& t = terrain_ ? terrain_->terrain() : own;
     const std::optional<glm::dvec3> p = t.raycast(origin, direction, distance);
     if (!p) return std::nullopt;
-    const SurfacePoint s = t.body().surface(*p);
+    SurfacePoint s = t.body().surface(*p);
+    const Shape::Kind kind = t.body().shape.kind();
+    if (face && *face != s.face && *face >= 0 && *face < 6 &&
+        (kind == Shape::Kind::SphereOutside || kind == Shape::Kind::SphereInside)) {
+        if (const auto on = cube_face_point(*face, *p - t.body().origin)) {
+            s.face = *face;
+            s.u = on->x;
+            s.v = on->y;
+        }
+    }
     return TerrainHit{s.face, s.u, s.v, *p, s.height};
 }
 

@@ -584,3 +584,105 @@ TEST_CASE("finest chunks share their edge points to the bit, as floats from thei
     same(flat, {0, flat.max_level(), 40, 30}, midgard::kEast);
     same(flat, {0, flat.max_level(), 40, 30}, midgard::kNorth);
 }
+
+namespace {
+
+midgard::Terrain sculpted_planet(const json& extra = json::array()) {
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "terrain_sphere_stamps.json");
+    REQUIRE(in);
+    const json t = json::parse(in);
+    json b = t.at("body");
+    b["id"] = "world";
+    std::vector<midgard::TerrainStamp> stamps;
+    for (const json& s : t.at("stamps")) stamps.push_back(midgard::stamp_from_json(s));
+    for (const json& s : extra) stamps.push_back(midgard::stamp_from_json(s));
+    return midgard::Terrain(midgard::body_from_json(b), {}, stamps);
+}
+
+}  // namespace
+
+TEST_CASE("cube-sphere sculpting: heights and chunk hashes match the shared table") {
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "terrain_sphere_stamps.json");
+    REQUIRE(in);
+    const json t = json::parse(in);
+    const midgard::Terrain tr = sculpted_planet();
+    int heights = 0, hashes = 0;
+    for (const json& c : t.at("cases")) {
+        CAPTURE(c.dump());
+        if (c.contains("hash")) {
+            const json& k = c.at("key");
+            CHECK(hex(tr.chunk_hash({k[0].get<int>(), k[1].get<int>(), k[2].get<int>(),
+                                     k[3].get<int>()})) == c.at("hash").get<std::string>());
+            ++hashes;
+        } else {
+            CHECK(tr.height(c.at("face").get<int>(), c.at("u").get<double>(),
+                            c.at("v").get<double>()) == c.at("height").get<double>());
+            ++heights;
+        }
+    }
+    CHECK(heights == 9);
+    CHECK(hashes == 4);
+}
+
+TEST_CASE("cube-sphere sculpting: strokes reach across a face edge, which stays exact") {
+    // The table's strokes cross the edge between faces 0 and 5, plus paint across it.
+    const midgard::Terrain plain = sphere(sphere_table(), "world");
+    const midgard::Terrain tr = sculpted_planet(json::parse(
+        R"([{"tool": "paint", "paint": "rock", "radius": 40, "strength": 1, "face": 0,
+             "points": [[0.99, 0.5], [1.012, 0.5]]}])"));
+    // The raise along face 0's v = 0.41 reaches over onto face 5: higher there than as
+    // generated, by most of its strength right by the edge.
+    const midgard::SurfacePoint across = midgard::cube_across({0, 1.004, 0.41, 0.0});
+    REQUIRE(across.face == 5);
+    CHECK(tr.height(5, across.u, across.v) > plain.height(5, across.u, across.v) + 15.0);
+    // The painted rock shows on face 5 too.
+    const midgard::SurfacePoint painted = midgard::cube_across({0, 1.004, 0.5, 0.0});
+    CHECK(tr.biome_at(painted.face, painted.u, painted.v).z > 0.9f);
+    // Chunks either side of the edge, at every level, still share their edge points exactly.
+    const midgard::CubeLink link = midgard::cube_link(0, midgard::kEast);
+    for (int level = tr.min_level(); level <= tr.max_level(); ++level) {
+        CAPTURE(level);
+        const int across_n = int(tr.chunks_u(level));
+        for (const double v : {0.41, 0.46, 0.5, 0.52, 0.605}) {
+            const midgard::ChunkKey k{0, level, across_n - 1, int(v * across_n)};
+            if (v == 0.41) CHECK(tr.touches(k, tr.stamps().front()));  // under the raise
+            const std::optional<midgard::ChunkKey> n = tr.neighbour(k, midgard::kEast);
+            REQUIRE(n.has_value());
+            const midgard::ChunkMesh m = tr.mesh(k), o = tr.mesh(*n);
+            for (int s = 0; s <= kN; ++s) {
+                const auto [i, j] = edge_point(midgard::kEast, s);
+                const auto [oi, oj] = edge_point(link.edge, link.reversed ? kN - s : s);
+                CHECK(m.heights[at(i, j)] == o.heights[at(oi, oj)]);
+                CHECK(m.biome[at(i, j)] == o.biome[at(oi, oj)]);
+            }
+        }
+    }
+    // A stroke on face 0 touches the chunk across the edge on face 5 (it is made again).
+    const int level = tr.max_level();
+    const int last = int(tr.chunks_u(level)) - 1;
+    const midgard::ChunkKey by_edge{0, level, last, int(0.41 * (last + 1))};
+    CHECK(tr.touches(*tr.neighbour(by_edge, midgard::kEast), tr.stamps().front()));
+    CHECK_FALSE(tr.touches({0, level, 0, 0}, tr.stamps().front()));  // far away
+}
+
+TEST_CASE("a direction in a face's terms, carried on past its edges") {
+    for (int f = 0; f < 6; ++f) {
+        CAPTURE(f);
+        for (const double u : {-0.3, -0.02, 0.0, 0.25, 0.5, 1.0, 1.04, 1.3})
+            for (const double v : {-0.1, 0.4, 1.0, 1.2}) {
+                CAPTURE(u);
+                CAPTURE(v);
+                const glm::dvec3 d = midgard::cube_direction(f, u, v);
+                const std::optional<glm::dvec2> back = midgard::cube_face_point(f, d);
+                REQUIRE(back.has_value());
+                CHECK(back->x == doctest::Approx(u).epsilon(1e-12));
+                CHECK(back->y == doctest::Approx(v).epsilon(1e-12));
+            }
+        // Inside the face it is cube_surface's answer; behind it, none.
+        const glm::dvec3 d = midgard::cube_direction(f, 0.3, 0.7);
+        const midgard::SurfacePoint s = midgard::cube_surface(d);
+        CHECK(s.face == f);
+        CHECK(midgard::cube_face_point(f, d)->x == doctest::Approx(s.u));
+        CHECK_FALSE(midgard::cube_face_point(f, -d).has_value());
+    }
+}

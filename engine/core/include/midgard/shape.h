@@ -22,6 +22,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include <glm/glm.hpp>
 
@@ -99,5 +100,10 @@ CubeLink cube_link(int face, int edge);
 // point on the face across that edge: exact for points on a power-of-two grid, so a grid point
 // found either way is bit-identical. Points inside the face come back as they are.
 SurfacePoint cube_across(const SurfacePoint& s);
+// A direction as a point in `face`'s u and v, carried on past the face's edges (u or v outside
+// 0 to 1) for directions less than 90 degrees from the face's middle (none otherwise): the
+// inverse of cube_direction there. A brush stroke that begins on one face carries on across an
+// edge in that face's terms.
+std::optional<glm::dvec2> cube_face_point(int face, const glm::dvec3& direction);
 
 }  // namespace midgard

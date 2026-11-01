@@ -65,8 +65,12 @@ public:
         glm::dvec3 ground, up;
     };
     std::optional<TerrainGround> terrain_ground(const glm::dvec3& point) const;
+    // Where a ray first meets the terrain (the editor's sculpt and paint brushes), or none. On a
+    // sphere, `face` gives u and v in that face's terms, carried on past its edges (a stroke
+    // that began on it and crosses an edge), where it can.
     std::optional<TerrainHit> terrain_hit(const glm::dvec3& origin, const glm::dvec3& direction,
-                                          double distance) const;
+                                          double distance,
+                                          std::optional<int> face = std::nullopt) const;
     // The time of day for suns that follow the clock (the Calendar dock's scrubber), or none.
     void set_solar_phase(std::optional<double> phase) { scene_.solar_phase = phase; }
     std::optional<double> solar_phase() const { return scene_.solar_phase; }

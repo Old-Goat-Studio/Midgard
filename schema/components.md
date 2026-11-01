@@ -68,8 +68,11 @@ Sculpting and painting are stored as terrain stamps (the `terrain_stamp` table, 
 each row one brush stroke along points on the face, applied in order on top of the generated
 ground: `raise` or `lower` (by `strength` metres along the stroke's line), `smooth`, `flatten`
 (to `height`) or `paint` (`lush`, `dry`, `sand`, `rock` or `clear`), each falling off to nothing
-at `radius` metres. The editor's Terrain dock draws them in the viewport; the cook refuses
-strokes without points, a radius outside 0 to 2000 m, or a strength out of range.
+at `radius` metres. On a sphere (a planet or a hollow world) a stroke reaches across the cube's
+face edges: its fall-off is measured in 3D, and its points may run a little past its `face`'s
+edges (`u` or `v` outside 0 to 1, in that face's terms), as the viewport records a stroke dragged
+across one. The editor's Terrain dock draws them in the viewport; the cook refuses strokes
+without points, a radius outside 0 to 2000 m, or a strength out of range.
 Chunks are streamed round the camera (finer near it) and are solid round the player (a player
 starting under the ground is lifted onto it). Water lies at `sea_level` wherever the ground is
 below it, in the look of the scene's environment (its `water_*` curves, `wave_strength` and

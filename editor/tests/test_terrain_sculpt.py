@@ -76,7 +76,7 @@ class FakeView:
     def __init__(self):
         self.sent = []
 
-    def terrain_hit(self, origin, direction, distance):
+    def terrain_hit(self, origin, direction, distance, face=None):
         t = -origin[1] / direction[1]  # the plane y = 0
         x, z = origin[0] + direction[0] * t, origin[2] + direction[2] * t
         return 0, x / 3000 + 0.5, z / 3000 + 0.5, (x, 0.0, z), 0.0
@@ -130,6 +130,35 @@ def test_the_engine_view_finds_the_terrain_and_takes_stamps():
     with pytest.raises(ValueError):
         view.set_terrain_stamps(json.dumps([{"tool": "dig", "points": [[0, 0]]}]))
     assert engine.module().stamp_problems(json.dumps({**MOUND, "radius": 0}))
+
+
+@needs_engine
+def test_on_a_planet_a_stroke_carries_on_across_a_face_edge():
+    """Milestone 5.10: past a face's edge the hit can be put in the stroke's first face's terms
+    (u past 1), and the stroke raises the ground on both faces."""
+    view = engine.module().Viewport()
+    planet = {"id": "world", "shape": "sphere_outside", "radius": 3000, "seed": 11,
+              "origin": [0, -3000, 0]}
+    view.set_settings(json.dumps({"body": planet, "terrain": {}}))
+    centre = [0.0, -3000.0, 0.0]
+
+    def down_at(direction, face=None):  # from 500 m up, straight down to the ground there
+        n = sum(c * c for c in direction) ** 0.5
+        d = [c / n for c in direction]
+        origin = [centre[i] + d[i] * 3500.0 for i in range(3)]
+        return view.terrain_hit(origin, [-c for c in d], 1000.0, face)
+
+    # Face 0 (+X) meets face 5 (-Z) where x = -z. Just across, on face 5:
+    across = [1.0, 0.1, -1.004]
+    face, u, v, point, height = down_at(across)
+    assert face == 5
+    face0 = down_at(across, 0)
+    assert face0[0] == 0 and face0[1] > 1.0  # in face 0's terms, past its edge
+    assert face0[3] == pytest.approx(point)
+    stroke = {"tool": "raise", "radius": 60.0, "strength": 20.0, "face": 0,
+              "points": [[0.99, face0[2]], [face0[1], face0[2]]]}
+    view.set_terrain_stamps(json.dumps([stroke]))
+    assert down_at(across)[4] > height + 15.0  # raised on face 5 too
 
 
 @needs_scripting

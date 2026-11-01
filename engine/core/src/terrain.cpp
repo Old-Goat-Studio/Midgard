@@ -50,6 +50,38 @@ glm::dvec3 on_grid(const glm::dvec3& p) {
             std::round(p.z * kGrid) / kGrid};
 }
 
+// 3D helpers for stamps on spheres, in a fixed order of operations (tools/reference/terrain.py
+// does the same, so both give the same results to the bit).
+double dot3(const glm::dvec3& a, const glm::dvec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+glm::dvec3 cross3(const glm::dvec3& a, const glm::dvec3& b) {
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+glm::dvec3 unit3(const glm::dvec3& a) {
+    const double l = det::sqrt(dot3(a, a));
+    return {a.x / l, a.y / l, a.z / l};
+}
+
+// How much a stroke through `points` (3D) applies at q: 1 on its line, falling to 0 at
+// `radius` metres (straight-line distances: a sphere's strokes are short beside its size).
+double stroke_weight(const std::vector<glm::dvec3>& points, double radius, const glm::dvec3& q) {
+    if (points.empty() || !(radius > 0.0)) return 0.0;
+    glm::dvec3 a = points[0] - q;
+    double best = dot3(a, a);
+    for (size_t i = 1; i < points.size(); ++i) {
+        const glm::dvec3 b = points[i] - q;
+        const glm::dvec3 e = b - a;
+        const double len2 = dot3(e, e);
+        double t = len2 > 0.0 ? -dot3(a, e) / len2 : 0.0;
+        t = std::min(std::max(t, 0.0), 1.0);
+        const glm::dvec3 c(a.x + e.x * t, a.y + e.y * t, a.z + e.z * t);
+        best = std::min(best, dot3(c, c));
+        a = b;
+    }
+    return smooth01(1.0 - det::sqrt(best) / radius);
+}
+
 int sphere_roots(double size) {
     constexpr double kSqrt2 = 1.4142135623730951;
     int roots = 1;
@@ -276,7 +308,16 @@ Terrain::Terrain(const Body& body, const TerrainSettings& settings,
     while (max_level_ < kMaxTerrainLevel &&
            root / (double(std::int64_t(1) << max_level_) * kChunkQuads) > spacing)
         ++max_level_;
-    for (const TerrainStamp& s : stamps_) bounds_.push_back(stamp_bounds(s));
+    for (const TerrainStamp& s : stamps_) {
+        bounds_.push_back(stamp_bounds(s));
+        if (sphere(body_.shape.kind())) {
+            strokes_.push_back(stroke_points(s));
+            double reach = 0.0;
+            for (const glm::dvec3& q : strokes_.back())
+                reach = std::max(reach, glm::length(q - strokes_.back().front()));
+            reach_.push_back(reach + s.radius);
+        }
+    }
 }
 
 std::int64_t Terrain::chunks_u(int level) const {
@@ -361,6 +402,44 @@ glm::dvec3 Terrain::noise_position(int face, double u, double v) const {
     return s.position({face, u, v, 0.0});
 }
 
+std::vector<glm::dvec3> Terrain::stroke_points(const TerrainStamp& s) const {
+    // On the sphere at height 0 (the noise positions' frame), from the stamp's face's u and v,
+    // which may run a little past its edges for a stroke that crosses one.
+    std::vector<glm::dvec3> out;
+    out.reserve(s.points.size());
+    for (const glm::dvec2& p : s.points)
+        out.push_back(body_.shape.position({s.face, p.x, p.y, 0.0}));
+    return out;
+}
+
+double Terrain::noise_height(const glm::dvec3& q) const {
+    const TerrainSettings& t = settings_;
+    const double f = t.feature_size;
+    const det::Fixed n = det::fbm(seed_, q.x / f, q.y / f, q.z / f, t.octaves);
+    return t.base + t.height_scale * (double(n) / 65536.0);
+}
+
+double Terrain::smooth_average(const glm::dvec3& q, double step) const {
+    // Four points `step` metres away along a frame from q's direction alone (not its face's
+    // u and v, which turn at an edge), back on the sphere: the same from every face.
+    const glm::dvec3 r = unit3(q);
+    const double radius = body_.shape.radius();
+    const glm::dvec3 axis =
+        std::abs(r.y) < 0.9 ? glm::dvec3(0.0, 1.0, 0.0) : glm::dvec3(1.0, 0.0, 0.0);
+    const glm::dvec3 east = unit3(cross3(axis, r));
+    const glm::dvec3 north = cross3(r, east);
+    const glm::dvec3 steps[4] = {{east.x * step, east.y * step, east.z * step},
+                                 {-(east.x * step), -(east.y * step), -(east.z * step)},
+                                 {north.x * step, north.y * step, north.z * step},
+                                 {-(north.x * step), -(north.y * step), -(north.z * step)}};
+    double sum = 0.0;
+    for (const glm::dvec3& d : steps) {
+        const glm::dvec3 p = unit3(glm::dvec3(q.x + d.x, q.y + d.y, q.z + d.z));
+        sum = sum + noise_height(glm::dvec3(p.x * radius, p.y * radius, p.z * radius));
+    }
+    return sum * 0.25;
+}
+
 Terrain::StampBounds Terrain::stamp_bounds(const TerrainStamp& s) const {
     const glm::dvec2 size = body_.shape.face_size();
     StampBounds b{1e300, -1e300, 1e300, -1e300};
@@ -383,6 +462,17 @@ Terrain::StampBounds Terrain::stamp_bounds(const TerrainStamp& s) const {
 }
 
 bool Terrain::touches(const ChunkKey& k, const TerrainStamp& s) const {
+    if (sphere(body_.shape.kind())) {  // by distance: a stroke can reach across face edges
+        const std::vector<glm::dvec3> points = stroke_points(s);
+        if (points.empty()) return false;
+        double reach = s.radius;
+        for (const glm::dvec3& q : points)
+            reach = std::max(reach, glm::length(q - points.front()) + s.radius);
+        const glm::dvec3 middle =
+            noise_position(k.face, u_at(k, kChunkQuads / 2), v_at(k, kChunkQuads / 2));
+        const double side = body_.shape.face_size().x / double(chunks_u(k.level));
+        return glm::length(middle - points.front()) <= reach + side;  // (a corner: 0.71 sides)
+    }
     if (s.face != k.face) return false;
     const StampBounds b = stamp_bounds(s);
     const double u0 = u_at(k, -1), u1 = u_at(k, kChunkQuads + 1);
@@ -391,6 +481,8 @@ bool Terrain::touches(const ChunkKey& k, const TerrainStamp& s) const {
 }
 
 double Terrain::stamp_weight(const TerrainStamp& s, int face, double u, double v) const {
+    if (sphere(body_.shape.kind()))
+        return stroke_weight(stroke_points(s), s.radius, noise_position(face, u, v));
     if (s.face != face || s.points.empty() || !(s.radius > 0.0)) return 0.0;
     const glm::dvec2 size = body_.shape.face_size();
     const bool round = wraps(body_.shape.kind());
@@ -417,13 +509,23 @@ double Terrain::stamp_weight(const TerrainStamp& s, int face, double u, double v
 
 double Terrain::height(int face, double u, double v) const {
     double h = base_height(face, u, v);
+    const bool round = !strokes_.empty();  // a sphere with stamps
+    const glm::dvec3 q = round ? noise_position(face, u, v) : glm::dvec3(0.0);
     for (size_t i = 0; i < stamps_.size(); ++i) {
         const TerrainStamp& s = stamps_[i];
-        const StampBounds& b = bounds_[i];
-        if (s.tool == StampTool::Paint || s.face != face || u < b.u0 || u > b.u1 || v < b.v0 ||
-            v > b.v1)
-            continue;
-        const double w = stamp_weight(s, face, u, v);
+        double w = 0.0;
+        if (round) {  // by 3D distance, across face edges too
+            if (s.tool == StampTool::Paint || s.points.empty()) continue;
+            const glm::dvec3 d = q - strokes_[i].front();
+            if (dot3(d, d) > reach_[i] * reach_[i]) continue;
+            w = stroke_weight(strokes_[i], s.radius, q);
+        } else {
+            const StampBounds& b = bounds_[i];
+            if (s.tool == StampTool::Paint || s.face != face || u < b.u0 || u > b.u1 || v < b.v0 ||
+                v > b.v1)
+                continue;
+            w = stamp_weight(s, face, u, v);
+        }
         if (w <= 0.0) continue;
         switch (s.tool) {
             case StampTool::Raise:
@@ -436,6 +538,10 @@ double Terrain::height(int face, double u, double v) const {
                 h = h + (s.height - h) * (w * s.strength);
                 break;
             case StampTool::Smooth: {
+                if (round) {
+                    h = h + (smooth_average(q, 0.5 * s.radius) - h) * (w * s.strength);
+                    break;
+                }
                 const glm::dvec2 size = body_.shape.face_size();
                 const double du = 0.5 * s.radius / size.x, dv = 0.5 * s.radius / size.y;
                 const double average =
@@ -474,10 +580,7 @@ std::optional<glm::dvec3> Terrain::raycast(const glm::dvec3& origin, const glm::
 
 double Terrain::base_height(int face, double u, double v) const {
     const TerrainSettings& t = settings_;
-    const glm::dvec3 q = noise_position(face, u, v);
-    const double f = t.feature_size;
-    const det::Fixed n = det::fbm(seed_, q.x / f, q.y / f, q.z / f, t.octaves);
-    double h = t.base + t.height_scale * (double(n) / 65536.0);
+    double h = noise_height(noise_position(face, u, v));
     const Shape::Kind kind = body_.shape.kind();
     const glm::dvec2 size = body_.shape.face_size();
     if (kind == Shape::Kind::BoundedArea) {
@@ -541,11 +644,20 @@ glm::vec3 Terrain::biome_at(int face, double u, double v) const {
     double moisture = natural, ground = 0.0;
     for (size_t i = 0; i < stamps_.size(); ++i) {
         const TerrainStamp& s = stamps_[i];
-        const StampBounds& b = bounds_[i];
-        if (s.tool != StampTool::Paint || s.face != face || u < b.u0 || u > b.u1 || v < b.v0 ||
-            v > b.v1)
-            continue;
-        const double w = stamp_weight(s, face, u, v) * std::clamp(s.strength, 0.0, 1.0);
+        double w = 0.0;
+        if (!strokes_.empty()) {  // a sphere: by 3D distance, across face edges too
+            if (s.tool != StampTool::Paint || s.points.empty()) continue;
+            const glm::dvec3 d = q - strokes_[i].front();
+            if (dot3(d, d) > reach_[i] * reach_[i]) continue;
+            w = stroke_weight(strokes_[i], s.radius, q);
+        } else {
+            const StampBounds& b = bounds_[i];
+            if (s.tool != StampTool::Paint || s.face != face || u < b.u0 || u > b.u1 || v < b.v0 ||
+                v > b.v1)
+                continue;
+            w = stamp_weight(s, face, u, v);
+        }
+        w = w * std::clamp(s.strength, 0.0, 1.0);
         if (w <= 0.0) continue;
         switch (s.paint) {
             case PaintLayer::Lush:

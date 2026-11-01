@@ -1,0 +1,171 @@
+{
+ "_about": "Cube-sphere sculpting: strokes across a face edge, heights either side and chunk hashes (tools/reference/terrain.py).",
+ "body": {
+  "shape": "sphere_outside",
+  "radius": 3000,
+  "seed": 11
+ },
+ "stamps": [
+  {
+   "tool": "raise",
+   "radius": 60.0,
+   "strength": 25.0,
+   "face": 0,
+   "points": [
+    [
+     0.97,
+     0.4
+    ],
+    [
+     0.995,
+     0.41
+    ],
+    [
+     1.02,
+     0.42
+    ],
+    [
+     1.05,
+     0.43
+    ]
+   ]
+  },
+  {
+   "tool": "lower",
+   "radius": 30.0,
+   "strength": 8.0,
+   "face": 5,
+   "points": [
+    [
+     0.008,
+     0.52
+    ]
+   ]
+  },
+  {
+   "tool": "flatten",
+   "radius": 45.0,
+   "strength": 0.8,
+   "height": 20.0,
+   "face": 0,
+   "points": [
+    [
+     0.99,
+     0.6
+    ],
+    [
+     1.01,
+     0.61
+    ]
+   ]
+  },
+  {
+   "tool": "smooth",
+   "radius": 50.0,
+   "strength": 0.9,
+   "face": 0,
+   "points": [
+    [
+     0.985,
+     0.45
+    ],
+    [
+     1.01,
+     0.46
+    ]
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "face": 0,
+   "u": 1.0,
+   "v": 0.41,
+   "height": 18.81405572938122
+  },
+  {
+   "face": 5,
+   "u": 0.0040000000000000036,
+   "v": 0.41,
+   "height": 12.254745727155626
+  },
+  {
+   "face": 0,
+   "u": 0.995,
+   "v": 0.41,
+   "height": 19.75140380859375
+  },
+  {
+   "face": 0,
+   "u": 0.99,
+   "v": 0.52,
+   "height": 20.96112060546875
+  },
+  {
+   "face": 0,
+   "u": 0.99,
+   "v": 0.605,
+   "height": 3.1156918618317953
+  },
+  {
+   "face": 0,
+   "u": 0.985,
+   "v": 0.455,
+   "height": 17.449829116459266
+  },
+  {
+   "face": 0,
+   "u": 0.5,
+   "v": 0.5,
+   "height": 8.0
+  },
+  {
+   "face": 0,
+   "u": 1.0,
+   "v": 0.6,
+   "height": 4.570244960626269
+  },
+  {
+   "face": 5,
+   "u": 0.0040000000000000036,
+   "v": 0.6,
+   "height": 3.55632028476456
+  },
+  {
+   "key": [
+    0,
+    2,
+    15,
+    6
+   ],
+   "hash": "51fd431a42b4ce2a"
+  },
+  {
+   "key": [
+    5,
+    2,
+    0,
+    6
+   ],
+   "hash": "a6fab3894ec44de7"
+  },
+  {
+   "key": [
+    0,
+    2,
+    15,
+    9
+   ],
+   "hash": "db7680876a43e0a9"
+  },
+  {
+   "key": [
+    5,
+    2,
+    0,
+    9
+   ],
+   "hash": "c9ffb225eb2f737c"
+  }
+ ]
+}

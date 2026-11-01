@@ -71,7 +71,10 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t);
 
 // Sculpting and painting (milestone 5.9): a stamp is one stroke of a brush along points on a
 // face, `radius` metres wide, applied in order on top of the generated ground. A stroke counts
-// once wherever it passes (its strength falls off with the distance to the stroke's line):
+// once wherever it passes (its strength falls off with the distance to the stroke's line). On a
+// sphere (5.10) that distance is measured in 3D, so a stroke reaches across face edges; its
+// points may run a little past its face's edges (u or v outside 0 to 1, cube_face_point), and
+// smooth averages round each point along a frame of its own, the same from every face:
 //   raise, lower  by `strength` metres along the line
 //   smooth        towards the average round each point, by `strength` (0 to 1)
 //   flatten       towards `height` metres, by `strength` (0 to 1)
@@ -199,6 +202,11 @@ private:
     // Whether the grid's u then v turn the other way to a flat map's, seen from above (the
     // outside of a sphere): normals and triangles are turned over to face up.
     bool flipped(const ChunkKey& key) const;
+    // Spheres' stamps: a stroke's points in 3D, the generated height at a 3D noise position,
+    // and smooth's average round a point (along a frame from its direction, not its face).
+    std::vector<glm::dvec3> stroke_points(const TerrainStamp& s) const;
+    double noise_height(const glm::dvec3& q) const;
+    double smooth_average(const glm::dvec3& q, double step) const;
     double u_at(const ChunkKey& key, int i) const;
     double v_at(const ChunkKey& key, int j) const;
 
@@ -206,6 +214,8 @@ private:
     TerrainSettings settings_;
     std::vector<TerrainStamp> stamps_;
     std::vector<StampBounds> bounds_;
+    std::vector<std::vector<glm::dvec3>> strokes_;  // spheres: each stamp's stroke_points
+    std::vector<double> reach_;  // spheres: how far each stamp reaches from its first point
     std::uint64_t seed_;
     int roots_u_ = 1, roots_v_ = 1, min_level_ = 0, max_level_ = 0;
 };

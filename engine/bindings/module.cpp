@@ -505,18 +505,20 @@ PYBIND11_MODULE(_midgard, m) {
         .def(
             "terrain_hit",
             [](const Viewport& v, const std::array<double, 3>& origin,
-               const std::array<double, 3>& direction,
-               double distance) -> std::optional<py::tuple> {
+               const std::array<double, 3>& direction, double distance,
+               std::optional<int> face) -> std::optional<py::tuple> {
                 const auto hit =
                     v.terrain_hit({origin[0], origin[1], origin[2]},
-                                  {direction[0], direction[1], direction[2]}, distance);
+                                  {direction[0], direction[1], direction[2]}, distance, face);
                 if (!hit) return std::nullopt;
                 return py::make_tuple(hit->face, hit->u, hit->v,
                                       py::make_tuple(hit->point.x, hit->point.y, hit->point.z),
                                       hit->height);
             },
             py::arg("origin"), py::arg("direction"), py::arg("distance") = 5000.0,
-            "Where a ray first meets the terrain: (face, u, v, (x, y, z), height), or None.")
+            py::arg("face") = py::none(),
+            "Where a ray first meets the terrain: (face, u, v, (x, y, z), height), or None. On "
+            "a sphere, `face` gives u and v in that face's terms, carried on past its edges.")
         .def_property("season", &Viewport::season, &Viewport::set_season,
                       "How far into summer (1) or winter (-1), for the environment's season "
                       "tints.")

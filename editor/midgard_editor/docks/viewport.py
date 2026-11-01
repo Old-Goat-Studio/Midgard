@@ -384,11 +384,12 @@ class ViewportPanel(QWidget):
     def stroking(self) -> bool:
         return self._stroke is not None
 
-    def _terrain_at(self, x: float, y: float, width: int, height: int):
+    def _terrain_at(self, x: float, y: float, width: int, height: int,
+                    face: int | None = None):
         if self.view is None or not hasattr(self.view, "terrain_hit"):
             return None
         origin, direction = self.camera.ray(x, y, width, height)
-        return self.view.terrain_hit(origin, direction, 20000.0)
+        return self.view.terrain_hit(origin, direction, 20000.0, face)
 
     def begin_stroke(self, x: float, y: float, width: int, height: int) -> bool:
         """Starts a stroke where the pointer meets the terrain (False: it doesn't)."""
@@ -408,13 +409,14 @@ class ViewportPanel(QWidget):
     def extend_stroke(self, x: float, y: float, width: int, height: int) -> None:
         if self._stroke is None:
             return
-        hit = self._terrain_at(x, y, width, height)
+        # On a sphere a stroke carries on across face edges, in its first face's terms.
+        hit = self._terrain_at(x, y, width, height, self._stroke["face"])
         if hit is None:
             return
         face, u, v, point, _ground = hit
         moved = math.sqrt(sum((point[i] - self._stroke_at[i]) ** 2 for i in range(3)))
         if face != self._stroke["face"] or moved < self._stroke["radius"] * 0.25:
-            return  # a point every quarter radius is plenty
+            return  # (another shape's face, or too far round) a point every quarter radius
         self._stroke["points"].append([u, v])
         self._stroke_at = point
         self.send_terrain(self._stroke)

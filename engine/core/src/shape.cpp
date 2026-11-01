@@ -120,6 +120,18 @@ CubeLink cube_link(int face, int edge) {
     return link;
 }
 
+std::optional<glm::dvec2> cube_face_point(int face, const glm::dvec3& d) {
+    if (face < 0 || face > 5) throw std::out_of_range("cube faces are 0 to 5");
+    const Face& f = kFaces[face];
+    const double scale = d[f.n.axis] * f.n.sign;
+    if (!(scale > 1e-9 * det::sqrt(d.x * d.x + d.y * d.y + d.z * d.z))) return std::nullopt;
+    const double wu = d[f.t.axis] * f.t.sign / scale;
+    const double wv = d[f.b.axis] * f.b.sign / scale;
+    // As unwarp, without stopping at the edges.
+    return glm::dvec2((det::atan(wu) * kFourOverPi + 1.0) * 0.5,
+                      (det::atan(wv) * kFourOverPi + 1.0) * 0.5);
+}
+
 SurfacePoint cube_across(const SurfacePoint& s) {
     int edge = -1;
     double past = 0.0, along = 0.0;  // how far past the edge, and where along it
