@@ -250,6 +250,17 @@ PYBIND11_MODULE(_midgard, m) {
         },
         py::arg("settings_json"),
         "What the cook refuses in a scene's terrain settings (midgard/terrain.h).");
+    m.def(
+        "stamp_problems",
+        [](const std::string& stamp_json) {
+            try {
+                return midgard::stamp_problems(
+                    midgard::stamp_from_json(nlohmann::json::parse(stamp_json)));
+            } catch (const std::exception& e) {
+                return std::vector<std::string>{e.what()};
+            }
+        },
+        py::arg("stamp_json"), "What the cook refuses in a terrain stamp (midgard/terrain.h).");
     m.def("terrain_fingerprint", &midgard::terrain_fingerprint,
           "The terrain's fingerprint (equal to schema/tests/terrain_chunks.json everywhere).");
 
@@ -469,6 +480,43 @@ PYBIND11_MODULE(_midgard, m) {
             "solar_phase", &Viewport::solar_phase, &Viewport::set_solar_phase,
             "The time of day for suns that follow the clock (0 sunrise, 0.25 noon, 0.5 sunset), "
             "or None: suns stay where they were placed.")
+        .def(
+            "set_terrain_stamps",
+            [](Viewport& v, const std::string& stamps_json) {
+                try {
+                    v.set_terrain_stamps(stamps_json);
+                } catch (const std::exception& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("stamps_json"), "The terrain's sculpting and painting: a JSON list of stamps.")
+        .def(
+            "terrain_ground",
+            [](const Viewport& v, const std::array<double, 3>& p) -> std::optional<py::tuple> {
+                const auto g = v.terrain_ground({p[0], p[1], p[2]});
+                if (!g) return std::nullopt;
+                return py::make_tuple(g->above,
+                                      py::make_tuple(g->ground.x, g->ground.y, g->ground.z),
+                                      py::make_tuple(g->up.x, g->up.y, g->up.z));
+            },
+            py::arg("point"),
+            "The terrain at a point: (metres above the ground, the ground under it, up there), or "
+            "None without terrain.")
+        .def(
+            "terrain_hit",
+            [](const Viewport& v, const std::array<double, 3>& origin,
+               const std::array<double, 3>& direction,
+               double distance) -> std::optional<py::tuple> {
+                const auto hit =
+                    v.terrain_hit({origin[0], origin[1], origin[2]},
+                                  {direction[0], direction[1], direction[2]}, distance);
+                if (!hit) return std::nullopt;
+                return py::make_tuple(hit->face, hit->u, hit->v,
+                                      py::make_tuple(hit->point.x, hit->point.y, hit->point.z),
+                                      hit->height);
+            },
+            py::arg("origin"), py::arg("direction"), py::arg("distance") = 5000.0,
+            "Where a ray first meets the terrain: (face, u, v, (x, y, z), height), or None.")
         .def_property("season", &Viewport::season, &Viewport::set_season,
                       "How far into summer (1) or winter (-1), for the environment's season "
                       "tints.")

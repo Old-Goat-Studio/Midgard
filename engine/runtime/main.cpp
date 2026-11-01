@@ -438,6 +438,20 @@ public:
             acknowledge("applied environment.put " + id);
             return;
         }
+        if (type == "terrain.stamps") {  // sculpting and painting in the editor
+            std::vector<midgard::TerrainStamp> stamps;
+            try {
+                for (const nlohmann::json& s : message.at("stamps"))
+                    stamps.push_back(midgard::stamp_from_json(s));
+            } catch (const std::exception& ex) {
+                warn("live link: terrain stamps: %s\n", ex.what());
+                return;
+            }
+            const size_t count = stamps.size();
+            game_.set_terrain_stamps(std::move(stamps));
+            acknowledge("applied terrain.stamps " + std::to_string(count));
+            return;
+        }
         if (type == "time.set") {  // the Calendar dock's scrubber
             game_.set_time(message.value("time", std::int64_t(0)));
             return;

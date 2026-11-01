@@ -293,3 +293,14 @@ def test_autumn_is_a_quarter_year_from_summer():
                 assert abs(s * s + a * a - 1.0) < 1e-12
             else:
                 assert a == 0.0
+
+
+def test_terrain_stamps_match_their_table():
+    from reference import terrain
+    data = json.loads((TABLES / "terrain_stamps.json").read_text("utf-8"))
+    for c in data["cases"]:
+        t = terrain.Terrain(data["bodies"][c["body"]], {}, data["stamps"])
+        if "hash" in c:
+            assert f"{t.chunk_hash(tuple(c['key'])):016x}" == c["hash"], c
+        else:
+            assert t.height(0, c["u"], c["v"]) == c["height"], c

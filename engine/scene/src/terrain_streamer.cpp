@@ -75,16 +75,26 @@ render::MeshData wall(double w, double low, double high, float facing) {
 
 }  // namespace
 
+glm::vec2 octahedral(const glm::vec3& n) {
+    const float sum = std::abs(n.x) + std::abs(n.y) + std::abs(n.z);
+    glm::vec2 p = glm::vec2(n.x, n.y) / std::max(sum, 1e-20f);
+    if (n.z < 0.0f) {
+        const glm::vec2 s(p.x >= 0.0f ? 1.0f : -1.0f, p.y >= 0.0f ? 1.0f : -1.0f);
+        p = (glm::vec2(1.0f) - glm::abs(glm::vec2(p.y, p.x))) * s;
+    }
+    return p;
+}
+
 render::MeshData ground_mesh_data(const ChunkMesh& mesh) {
     render::MeshData out;
     out.vertices.reserve(mesh.positions.size());
     for (size_t i = 0; i < mesh.positions.size(); ++i) {
-        render::Vertex v = vertex(mesh.positions[i], mesh.normals[i],
-                                  i < mesh.biome.size() ? mesh.biome[i] : glm::vec2(0.5f, 0.0f));
-        const glm::vec3 up = i < mesh.ups.size() ? mesh.ups[i] : glm::vec3(0.0f, 1.0f, 0.0f);
+        const glm::vec3 b = i < mesh.biome.size() ? mesh.biome[i] : glm::vec3(0.5f, 0.0f, 0.0f);
+        render::Vertex v = vertex(mesh.positions[i], mesh.normals[i], glm::vec2(b.x, b.y));
+        const glm::vec2 up = octahedral(i < mesh.ups.size() ? mesh.ups[i] : glm::vec3(0, 1, 0));
         v.tangent[0] = up.x;
         v.tangent[1] = up.y;
-        v.tangent[2] = up.z;
+        v.tangent[2] = b.z;  // painted ground: -1 sand to 1 rock
         v.tangent[3] = float(mesh.heights[i]);
         out.vertices.push_back(v);
     }
@@ -122,6 +132,7 @@ struct TerrainStreamer::Entry {
     std::optional<ChunkMeshes> data;     // generated, not yet on the GPU
     std::optional<render::MeshId> mesh;  // on the GPU
     std::optional<render::MeshId> water;
+    bool stale = false;  // the stamps changed it: made again, its old meshes drawn till then
     std::uint64_t last_wanted = 0;
     bool ready(bool gpu) const { return gpu ? mesh.has_value() : data.has_value() || mesh; }
 };
@@ -266,7 +277,7 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
             e->leaf = leaf;
         }
         e->last_wanted = tick_;
-        if (e->job || e->data || e->mesh) continue;
+        if (e->job || (!e->stale && (e->data || e->mesh))) continue;
         const glm::dvec3 at =
             terrain_.chunk_origin(leaf.key) + glm::dvec3(leaf.wrap * circumference, 0.0, 0.0);
         missing.emplace_back(glm::length(at - camera), e.get());
@@ -307,9 +318,13 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
             e->job.reset();
             e->data = std::move(*e->made);
             e->made.reset();
+            e->stale = false;
         }
         if (renderer && e->data && e->last_wanted == tick_ &&
             (wait || uploads < kUploadsPerUpdate)) {
+            if (e->mesh) renderer->free_mesh(*e->mesh);  // made again (the stamps changed)
+            if (e->water) renderer->free_mesh(*e->water);
+            e->water.reset();
             e->mesh = renderer->upload_mesh(e->data->ground);
             if (e->data->water) e->water = renderer->upload_mesh(*e->data->water);
             e->data.reset();
@@ -420,6 +435,30 @@ TerrainStreamStats TerrainStreamer::stats() const {
                                 return a.key == b.key && a.coarser == b.coarser && a.wrap == b.wrap;
                             });
     return s;
+}
+
+void TerrainStreamer::set_stamps(std::vector<TerrainStamp> stamps) {
+    const std::vector<TerrainStamp>& old = terrain_.stamps();
+    size_t same = 0;
+    while (same < old.size() && same < stamps.size() && old[same] == stamps[same]) ++same;
+    if (same == old.size() && same == stamps.size()) return;
+    // The stamps from the first that differs on change the ground (order matters).
+    std::vector<TerrainStamp> changed(old.begin() + std::ptrdiff_t(same), old.end());
+    changed.insert(changed.end(), stamps.begin() + std::ptrdiff_t(same), stamps.end());
+    for (auto& [key, e] : cache_)  // jobs read the terrain being replaced
+        if (e->job && jobs_) {
+            jobs_->wait(e->job);
+            e->job.reset();
+            e->made.reset();
+        }
+    terrain_ = Terrain(terrain_.body(), terrain_.settings(), std::move(stamps));
+    for (auto& [key, e] : cache_) {
+        bool touched = false;
+        for (const TerrainStamp& s : changed) touched = touched || terrain_.touches(e->leaf.key, s);
+        if (!touched) continue;
+        e->stale = true;
+        e->data.reset();
+    }
 }
 
 void TerrainStreamer::release(render::Renderer& renderer) {

@@ -80,6 +80,9 @@ public:
     void stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait = false);
     const TerrainStreamer* terrain() const { return terrain_.get(); }
     const TerrainCollision* ground() const { return ground_.get(); }
+    // New sculpting and painting (the editor's live link): the ground drawn and the solid ground
+    // follow.
+    void set_terrain_stamps(std::vector<TerrainStamp> stamps);
 
     // One draw per entity with a mesh, and the terrain's chunks.
     // What to draw, relative to the camera's origin (camera-relative rendering).

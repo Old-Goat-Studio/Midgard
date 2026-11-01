@@ -218,9 +218,110 @@ TEST_CASE("a chunk's material data: up at each point, moisture and detail in ran
         CHECK(std::abs(m.biome[i].y) <= 1.0f);
     }
     // The same point from two chunks: the same biome (it comes from the surface position).
-    const glm::vec2 a = habitat().biome_at(0, 0.0, 0.4), b = habitat().biome_at(0, 1.0, 0.4);
+    const glm::vec3 a = habitat().biome_at(0, 0.0, 0.4), b = habitat().biome_at(0, 1.0, 0.4);
     CHECK(a == b);
     midgard::TerrainSettings t;
     t.snow_line = 40.0;
     CHECK(midgard::terrain_from_json(midgard::terrain_to_json(t)).snow_line == 40.0);
+}
+
+TEST_CASE("terrain stamps match the shared table") {
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "terrain_stamps.json");
+    REQUIRE(in);
+    const json t = json::parse(in);
+    std::vector<midgard::TerrainStamp> stamps;
+    for (const json& s : t.at("stamps")) stamps.push_back(midgard::stamp_from_json(s));
+    int checked = 0;
+    for (const json& c : t.at("cases")) {
+        CAPTURE(c.dump());
+        json b = t.at("bodies").at(c.at("body").get<std::string>());
+        b["id"] = c.at("body");
+        const midgard::Terrain tr(midgard::body_from_json(b), {}, stamps);
+        if (c.contains("hash")) {
+            const json& k = c.at("key");
+            CHECK(hex(tr.chunk_hash({k[0].get<int>(), k[1].get<int>(), k[2].get<int>(),
+                                     k[3].get<int>()})) == c.at("hash").get<std::string>());
+        } else {
+            CHECK(tr.height(0, c.at("u").get<double>(), c.at("v").get<double>()) ==
+                  c.at("height").get<double>());
+        }
+        ++checked;
+    }
+    CHECK(checked == 30);
+}
+
+TEST_CASE("sculpting: raise, lower, flatten, smooth and paint, and the strokes' reach") {
+    const midgard::Terrain plain = area();
+    const auto with = [&](const char* text) {
+        return midgard::Terrain(plain.body(), plain.settings(),
+                                {midgard::stamp_from_json(json::parse(text))});
+    };
+    const double u = 0.4, v = 0.45, base = plain.height(0, u, v);
+    // Raise: the full height on the stroke's line, nothing beyond its radius (3000 m wide: 20 m
+    // is 0.00667 of u).
+    const auto raised = with(R"({"tool": "raise", "radius": 20, "strength": 5,
+                                 "points": [[0.4, 0.45]]})");
+    CHECK(raised.height(0, u, v) == doctest::Approx(base + 5.0));
+    CHECK(raised.height(0, u + 0.008, v) == plain.height(0, u + 0.008, v));
+    CHECK(raised.height(0, u + 0.003, v) > plain.height(0, u + 0.003, v));
+    // Lower, along a line: the same depth anywhere on it.
+    const auto ditch = with(R"({"tool": "lower", "radius": 10, "strength": 3,
+                                "points": [[0.3, 0.5], [0.35, 0.5]]})");
+    for (double x : {0.3, 0.31, 0.33, 0.35})
+        CHECK(ditch.height(0, x, 0.5) == doctest::Approx(plain.height(0, x, 0.5) - 3.0));
+    // Flatten: all the way to its height at full strength.
+    const auto flat = with(R"({"tool": "flatten", "radius": 30, "strength": 1, "height": 12,
+                               "points": [[0.4, 0.45]]})");
+    CHECK(flat.height(0, u, v) == doctest::Approx(12.0));
+    // Smooth: closer to the average round it.
+    const auto smooth = with(R"({"tool": "smooth", "radius": 40, "strength": 1,
+                                 "points": [[0.4, 0.45]]})");
+    const double du = 20.0 / 3000.0, dv = 20.0 / 2000.0;  // (3000 m wide, 2000 long)
+    const double average = (plain.height(0, u + du, v) + plain.height(0, u - du, v) +
+                            plain.height(0, u, v + dv) + plain.height(0, u, v - dv)) /
+                           4.0;
+    CHECK(smooth.height(0, u, v) == doctest::Approx(average));
+    // Paint: rock and lush where it's painted, the heights left alone.
+    const auto rock = with(R"({"tool": "paint", "paint": "rock", "radius": 10, "strength": 1,
+                               "points": [[0.4, 0.45]]})");
+    CHECK(rock.height(0, u, v) == base);
+    CHECK(rock.biome_at(0, u, v).z == doctest::Approx(1.0f));
+    CHECK(plain.biome_at(0, u, v).z == 0.0f);
+    const auto lush = with(R"({"tool": "paint", "paint": "lush", "radius": 10, "strength": 1,
+                               "points": [[0.4, 0.45]]})");
+    CHECK(lush.biome_at(0, u, v).x == doctest::Approx(1.0f));
+    // A stroke across a cylinder's join reaches both sides.
+    const midgard::Terrain h = habitat();
+    const midgard::Terrain hs(h.body(), h.settings(),
+                              {midgard::stamp_from_json(json::parse(
+                                  R"({"tool": "raise", "radius": 30, "strength": 4,
+                                      "points": [[0.999, 0.4], [0.001, 0.4]]})"))});
+    CHECK(hs.height(0, 0.0, 0.4) == doctest::Approx(h.height(0, 0.0, 0.4) + 4.0));
+    CHECK(hs.height(0, 0.9995, 0.4) == doctest::Approx(h.height(0, 0.9995, 0.4) + 4.0));
+}
+
+TEST_CASE("terrain stamps: JSON, what the cook refuses, chunks they touch, and rays") {
+    const midgard::TerrainStamp s = midgard::stamp_from_json(json::parse(
+        R"({"tool": "flatten", "radius": 8, "strength": 0.5, "height": 3, "face": 0,
+            "points": [[0.1, 0.2], [0.11, 0.2]]})"));
+    CHECK(midgard::stamp_problems(s).empty());
+    CHECK(midgard::stamp_from_json(midgard::stamp_to_json(s)) == s);
+    CHECK_THROWS(midgard::stamp_from_json(json::parse(R"({"tool": "dig", "points": [[0, 0]]})")));
+    CHECK_THROWS(midgard::stamp_from_json(json::parse(R"({"tool": "raise"})")));
+    midgard::TerrainStamp bad = s;
+    bad.radius = 0.0;
+    bad.strength = 2.0;  // flatten is 0 to 1
+    bad.points.clear();
+    CHECK(midgard::stamp_problems(bad).size() == 3);
+    // Which chunks a stroke touches.
+    const midgard::Terrain t = area();
+    CHECK(t.touches({0, 0, 0, 0}, s));
+    CHECK_FALSE(t.touches({0, 0, 2, 1}, s));
+    // A ray from above hits the ground under it.
+    const glm::dvec3 g = t.ground({100.0, 0.0, -50.0});
+    const auto hit =
+        t.raycast(g + glm::dvec3(10.0, 200.0, 0.0), glm::dvec3(-10.0, -200.0, 0.0), 1000.0);
+    REQUIRE(hit.has_value());
+    CHECK(glm::length(*hit - g) < 0.05);
+    CHECK_FALSE(t.raycast(g + glm::dvec3(0, 50, 0), {0, 1, 0}, 1000.0).has_value());  // upwards
 }

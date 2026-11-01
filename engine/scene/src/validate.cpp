@@ -97,6 +97,9 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                 report.warnings.push_back(
                     "the scene has terrain settings but no world shape; there is no terrain");
         }
+        for (const TerrainStamp& stamp : scene.terrain_stamps)
+            for (std::string& problem : stamp_problems(stamp))
+                report.errors.push_back(std::move(problem));
         for (const auto& [id, env] : scene.environments)
             for (std::string& problem : environment_problems(env))
                 report.errors.push_back(std::move(problem));

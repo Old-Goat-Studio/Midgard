@@ -64,6 +64,12 @@ that varies over kilometres, sand on beaches and under shallow water, rock where
 snow above `snow_line` metres. The calendar's seasons change it: the snow line comes down to the
 shore in deep winter, grass dries in high summer and turns golden-brown in autumn (on a tilted
 planet in Latitude mode, by hemisphere).
+Sculpting and painting are stored as terrain stamps (the `terrain_stamp` table, migration 11):
+each row one brush stroke along points on the face, applied in order on top of the generated
+ground: `raise` or `lower` (by `strength` metres along the stroke's line), `smooth`, `flatten`
+(to `height`) or `paint` (`lush`, `dry`, `sand`, `rock` or `clear`), each falling off to nothing
+at `radius` metres. The editor's Terrain dock draws them in the viewport; the cook refuses
+strokes without points, a radius outside 0 to 2000 m, or a strength out of range.
 Chunks are streamed round the camera (finer near it) and are solid round the player (a player
 starting under the ground is lifted onto it). Water lies at `sea_level` wherever the ground is
 below it, in the look of the scene's environment (its `water_*` curves, `wave_strength` and

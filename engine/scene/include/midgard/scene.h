@@ -261,6 +261,8 @@ public:
     std::unordered_map<std::string, std::string> objects;
     // The environments by id (the environment table, migration 10).
     std::unordered_map<std::string, EnvironmentDef> environments;
+    // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
+    std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.
     const EnvironmentDef* active_environment() const;
     // The sky and fog for the renderer, seen from `origin` (the camera): the active environment

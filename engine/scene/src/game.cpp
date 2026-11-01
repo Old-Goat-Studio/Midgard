@@ -333,6 +333,7 @@ void Game::rebuild_terrain() {
     if (!jobs_) jobs_ = std::make_unique<JobSystem>();
     terrain_ = std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain,
                                                  jobs_.get());
+    terrain_->set_stamps(scene_.terrain_stamps);
     // Solid ground. A player who starts below it is lifted onto it.
     if (ground_) ground_->clear(physics_->world());
     ground_ = std::make_unique<TerrainCollision>(terrain_->terrain());
@@ -376,6 +377,16 @@ void Game::update_ground() {
     std::vector<glm::dvec3> around{at};
     if (has_player) around.push_back(scene_.world_position(player));
     ground_->update(physics_->world(), around);
+}
+
+void Game::set_terrain_stamps(std::vector<TerrainStamp> stamps) {
+    scene_.terrain_stamps = stamps;
+    if (!terrain_) return;
+    terrain_->set_stamps(std::move(stamps));
+    // The solid ground follows: made again round the player.
+    if (ground_) ground_->clear(physics_->world());
+    ground_ = std::make_unique<TerrainCollision>(terrain_->terrain());
+    update_ground();
 }
 
 void Game::stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait) {

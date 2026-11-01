@@ -30,7 +30,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
-from .. import engine, environments, textures
+from .. import engine, environments, terrain_stamps, textures
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
@@ -70,6 +70,28 @@ class OrbitCamera:
     def zoom(self, steps: float) -> None:
         self.distance = max(0.2, min(5000.0, self.distance * 0.85 ** steps))
 
+    def ray(self, x: float, y: float, width: int, height: int) -> tuple[list[float], list[float]]:
+        """The ray from the eye through pixel (x, y) of a view width x height: origin and
+        direction (unit)."""
+        eye = self.eye()
+        forward = [self.target[i] - eye[i] for i in range(3)]
+        n = math.sqrt(sum(c * c for c in forward)) or 1.0
+        forward = [c / n for c in forward]
+        right = [forward[1] * 0.0 - forward[2] * 1.0, forward[2] * 0.0 - forward[0] * 0.0,
+                 forward[0] * 1.0 - forward[1] * 0.0]  # forward x (0, 1, 0)
+        n = math.sqrt(sum(c * c for c in right)) or 1.0
+        right = [c / n for c in right]
+        up = [right[1] * forward[2] - right[2] * forward[1],
+              right[2] * forward[0] - right[0] * forward[2],
+              right[0] * forward[1] - right[1] * forward[0]]
+        t = math.tan(math.radians(self.fov) / 2)
+        aspect = width / max(height, 1)
+        sx = (2.0 * (x + 0.5) / max(width, 1) - 1.0) * t * aspect
+        sy = (1.0 - 2.0 * (y + 0.5) / max(height, 1)) * t
+        d = [forward[i] + right[i] * sx + up[i] * sy for i in range(3)]
+        n = math.sqrt(sum(c * c for c in d)) or 1.0
+        return eye, [c / n for c in d]
+
     def pan(self, dx: float, dy: float, height: int) -> None:
         """Moves the target with the mouse: dx, dy in pixels of a view `height` pixels tall."""
         scale = 2 * self.distance * math.tan(math.radians(self.fov) / 2) / max(height, 1)
@@ -78,6 +100,20 @@ class OrbitCamera:
         up = (-math.sin(pitch) * math.sin(yaw), math.cos(pitch), -math.sin(pitch) * math.cos(yaw))
         for i in range(3):
             self.target[i] += (-dx * right[i] + dy * up[i]) * scale
+
+
+def drag_action(buttons, modifiers, sculpting: bool) -> str | None:
+    """What a drag in the view does: "pan" (the middle button, or Shift with the left), "stroke"
+    (the left button while sculpting), "orbit" (the left or right button), or None."""
+    left = bool(buttons & Qt.MouseButton.LeftButton)
+    if buttons & Qt.MouseButton.MiddleButton or (
+            left and modifiers & Qt.KeyboardModifier.ShiftModifier):
+        return "pan"
+    if left and sculpting:
+        return "stroke"
+    if left or buttons & Qt.MouseButton.RightButton:
+        return "orbit"
+    return None
 
 
 class ViewportWindow(QWindow):
@@ -104,20 +140,29 @@ class ViewportWindow(QWindow):
 
     def mousePressEvent(self, e: QMouseEvent) -> None:
         self._last = e.position().toPoint()
+        if drag_action(e.button(), e.modifiers(), self.panel.sculpting()) == "stroke":
+            pos = e.position()  # a stroke on the terrain, not an orbit
+            self.panel.begin_stroke(pos.x(), pos.y(), self.width(), self.height())
 
     def mouseReleaseEvent(self, _e: QMouseEvent) -> None:
         self._last = None
+        self.panel.end_stroke()
 
     def mouseMoveEvent(self, e: QMouseEvent) -> None:
         if self._last is None:
+            return
+        if self.panel.stroking() and e.buttons() & Qt.MouseButton.LeftButton:
+            pos = e.position()
+            self.panel.extend_stroke(pos.x(), pos.y(), self.width(), self.height())
             return
         pos = e.position().toPoint()
         dx, dy = pos.x() - self._last.x(), pos.y() - self._last.y()
         self._last = pos
         self.panel.set_preview(None)  # the designer takes the view back
-        if e.buttons() & Qt.MouseButton.MiddleButton:
+        action = drag_action(e.buttons(), e.modifiers(), False)
+        if action == "pan":
             self.panel.camera.pan(dx, dy, self.height())
-        elif e.buttons() & (Qt.MouseButton.LeftButton | Qt.MouseButton.RightButton):
+        elif action == "orbit":
             self.panel.camera.orbit(dx, dy)
         self.panel.camera_changed()
 
@@ -163,6 +208,11 @@ class ViewportPanel(QWidget):
                                       "controls in the view's top-right corner")
         self.toolbar.addAction(self.gizmos_action)
         self.selected: str | None = None
+        # Sculpting (the Terrain dock): a callable giving the brush ({"tool", "radius", ...}),
+        # or None while sculpting is off; and the stroke being drawn.
+        self.brush = None
+        self._stroke: dict | None = None
+        self._stroke_at: list[float] = [0.0, 0.0, 0.0]
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -203,7 +253,7 @@ class ViewportPanel(QWidget):
             container = QWidget.createWindowContainer(self.window, view_area)
             container.setMinimumSize(160, 120)
             container.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-            self.setToolTip("Drag to orbit, middle-drag to pan, wheel to zoom")
+            self.setToolTip("Drag to orbit, middle-drag or Shift + drag to pan, wheel to zoom")
             self.stack.addWidget(container)
             self.stack.setCurrentWidget(container)
             self.window.screenChanged.connect(lambda _s: self.window_resized())
@@ -225,6 +275,7 @@ class ViewportPanel(QWidget):
             self.project.scene_settings_changed.disconnect(self._settings_changed)
             self.project.objects_changed.disconnect(self._objects_changed)
             self.project.environments_changed.disconnect(self._environments_changed)
+            self.project.terrain_changed.disconnect(self._terrain_changed)
             self.project.files_changed.disconnect(self._files_changed)
         self.project = project
         self.preview_view = None  # (the Camera editors close with the old project)
@@ -235,6 +286,7 @@ class ViewportPanel(QWidget):
             project.scene_settings_changed.connect(self._settings_changed)
             project.objects_changed.connect(self._objects_changed)
             project.environments_changed.connect(self._environments_changed)
+            project.terrain_changed.connect(self._terrain_changed)
             project.files_changed.connect(self._files_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
@@ -303,9 +355,77 @@ class ViewportPanel(QWidget):
             # The fallback for a scene without a Sky entity, as in the game.
             self.view.set_settings(json.dumps(self.project.scene_settings(MAIN_SCENE)))
             self.send_environments()
+            self.send_terrain()
             for entity in parents_first(self.project.entities()):
                 self._put(entity)
         self.camera_changed()
+
+    # ---- terrain: sculpting and painting ---------------------------------------------------
+    def send_terrain(self, extra: dict | None = None) -> None:
+        """The scene's terrain stamps (and the stroke being drawn, as a preview)."""
+        if self.view is None or self.project is None or \
+                not hasattr(self.view, "set_terrain_stamps"):
+            return
+        stamps = terrain_stamps.stamps(self.project, MAIN_SCENE)
+        if extra is not None:
+            stamps.append(extra)
+        try:
+            self.view.set_terrain_stamps(json.dumps(stamps))
+        except ValueError as e:
+            log.warning("Viewport: terrain stamps: %s", e)
+
+    def _terrain_changed(self, _scene: str) -> None:
+        self.send_terrain()
+        self.request_render()
+
+    def sculpting(self) -> bool:
+        return self.brush is not None and self.brush() is not None
+
+    def stroking(self) -> bool:
+        return self._stroke is not None
+
+    def _terrain_at(self, x: float, y: float, width: int, height: int):
+        if self.view is None or not hasattr(self.view, "terrain_hit"):
+            return None
+        origin, direction = self.camera.ray(x, y, width, height)
+        return self.view.terrain_hit(origin, direction, 20000.0)
+
+    def begin_stroke(self, x: float, y: float, width: int, height: int) -> bool:
+        """Starts a stroke where the pointer meets the terrain (False: it doesn't)."""
+        brush = self.brush() if self.brush is not None else None
+        hit = self._terrain_at(x, y, width, height) if brush is not None else None
+        if hit is None:
+            return False
+        face, u, v, point, ground = hit
+        self._stroke = {**brush, "face": face, "points": [[u, v]]}
+        if self._stroke["tool"] == "flatten":
+            self._stroke["height"] = round(ground, 3)  # flat at where the stroke began
+        self._stroke_at = point
+        self.send_terrain(self._stroke)
+        self.request_render()
+        return True
+
+    def extend_stroke(self, x: float, y: float, width: int, height: int) -> None:
+        if self._stroke is None:
+            return
+        hit = self._terrain_at(x, y, width, height)
+        if hit is None:
+            return
+        face, u, v, point, _ground = hit
+        moved = math.sqrt(sum((point[i] - self._stroke_at[i]) ** 2 for i in range(3)))
+        if face != self._stroke["face"] or moved < self._stroke["radius"] * 0.25:
+            return  # a point every quarter radius is plenty
+        self._stroke["points"].append([u, v])
+        self._stroke_at = point
+        self.send_terrain(self._stroke)
+        self.request_render()
+
+    def end_stroke(self) -> None:
+        """The stroke becomes a terrain stamp (one undoable step)."""
+        stroke, self._stroke = self._stroke, None
+        if stroke is None or self.project is None:
+            return
+        self.project.undo_stack.push(terrain_stamps.StampCommand(self.project, stroke))
 
     def _environments_changed(self, _environment_id: str) -> None:
         self.send_environments()
@@ -446,7 +566,22 @@ class ViewportPanel(QWidget):
             self.view.resize(*self._pixels())
             self.request_render()
 
+    def keep_above_ground(self) -> None:
+        """With terrain, the view stays above it: what it looks at at least half a metre up, and
+        the eye at least a metre (the terrain is only drawn from above)."""
+        if self.view is None or not hasattr(self.view, "terrain_ground"):
+            return
+        for point, clearance in ((self.camera.target, 0.5), (self.camera.eye(), 1.0)):
+            at = self.view.terrain_ground(point)
+            if at is None:
+                return
+            above, _ground, up = at
+            if above < clearance:  # lift the whole view (it keeps looking the same way)
+                for i in range(3):
+                    self.camera.target[i] += up[i] * (clearance - above)
+
     def camera_changed(self) -> None:
+        self.keep_above_ground()
         self.gizmos.refresh()  # the axes as the camera now sees them
         if self.view is not None:
             if not self._show_preview():

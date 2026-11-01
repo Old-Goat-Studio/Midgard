@@ -128,8 +128,117 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
     return out;
 }
 
-Terrain::Terrain(const Body& body, const TerrainSettings& settings)
-    : body_(body), settings_(settings), seed_(settings.seed.value_or(body.seed)) {
+const char* stamp_tool_name(StampTool tool) {
+    switch (tool) {
+        case StampTool::Raise:
+            return "raise";
+        case StampTool::Lower:
+            return "lower";
+        case StampTool::Smooth:
+            return "smooth";
+        case StampTool::Flatten:
+            return "flatten";
+        case StampTool::Paint:
+            return "paint";
+    }
+    return "raise";
+}
+
+const char* paint_layer_name(PaintLayer layer) {
+    switch (layer) {
+        case PaintLayer::Clear:
+            return "clear";
+        case PaintLayer::Lush:
+            return "lush";
+        case PaintLayer::Dry:
+            return "dry";
+        case PaintLayer::Sand:
+            return "sand";
+        case PaintLayer::Rock:
+            return "rock";
+    }
+    return "clear";
+}
+
+TerrainStamp stamp_from_json(const nlohmann::json& j) {
+    if (!j.is_object()) throw std::runtime_error("a terrain stamp is a JSON object");
+    TerrainStamp s;
+    const std::string tool = j.value("tool", std::string("raise"));
+    bool known = false;
+    for (StampTool t : {StampTool::Raise, StampTool::Lower, StampTool::Smooth, StampTool::Flatten,
+                        StampTool::Paint})
+        if (tool == stamp_tool_name(t)) {
+            s.tool = t;
+            known = true;
+        }
+    if (!known) throw std::runtime_error("terrain stamp: no tool '" + tool + "'");
+    const std::string paint = j.value("paint", std::string("lush"));
+    known = false;
+    for (PaintLayer l :
+         {PaintLayer::Clear, PaintLayer::Lush, PaintLayer::Dry, PaintLayer::Sand, PaintLayer::Rock})
+        if (paint == paint_layer_name(l)) {
+            s.paint = l;
+            known = true;
+        }
+    if (!known) throw std::runtime_error("terrain stamp: no paint '" + paint + "'");
+    const auto number = [&](const char* key, double& into) {
+        if (!j.contains(key)) return;
+        if (!j.at(key).is_number())
+            throw std::runtime_error(std::string("terrain stamp: '") + key + "' is a number");
+        into = j.at(key).get<double>();
+    };
+    number("radius", s.radius);
+    number("strength", s.strength);
+    number("height", s.height);
+    s.face = j.value("face", 0);
+    if (!j.contains("points") || !j.at("points").is_array())
+        throw std::runtime_error("terrain stamp: 'points' is a list of [u, v]");
+    for (const nlohmann::json& p : j.at("points")) {
+        if (!p.is_array() || p.size() != 2 || !p[0].is_number() || !p[1].is_number())
+            throw std::runtime_error("terrain stamp: a point is [u, v]");
+        s.points.emplace_back(p[0].get<double>(), p[1].get<double>());
+    }
+    return s;
+}
+
+nlohmann::json stamp_to_json(const TerrainStamp& s) {
+    nlohmann::json points = nlohmann::json::array();
+    for (const glm::dvec2& p : s.points) points.push_back({p.x, p.y});
+    nlohmann::json j{{"tool", stamp_tool_name(s.tool)},
+                     {"radius", s.radius},
+                     {"strength", s.strength},
+                     {"face", s.face},
+                     {"points", points}};
+    if (s.tool == StampTool::Paint) j["paint"] = paint_layer_name(s.paint);
+    if (s.tool == StampTool::Flatten) j["height"] = s.height;
+    return j;
+}
+
+std::vector<std::string> stamp_problems(const TerrainStamp& s) {
+    std::vector<std::string> out;
+    if (!(s.radius > 0.0 && s.radius <= 2000.0))
+        out.push_back("terrain stamp: the radius is above 0 and at most 2000 m");
+    const bool metres = s.tool == StampTool::Raise || s.tool == StampTool::Lower;
+    if (metres ? !(s.strength >= 0.0 && s.strength <= 1000.0)
+               : !(s.strength >= 0.0 && s.strength <= 1.0))
+        out.push_back(metres ? "terrain stamp: raising and lowering is 0 to 1000 m"
+                             : "terrain stamp: the strength is 0 to 1");
+    if (s.points.empty()) out.push_back("terrain stamp: a stroke has a point at least");
+    for (const glm::dvec2& p : s.points)
+        if (!std::isfinite(p.x) || !std::isfinite(p.y)) {
+            out.push_back("terrain stamp: points are numbers");
+            break;
+        }
+    if (!std::isfinite(s.height)) out.push_back("terrain stamp: the height is a number");
+    return out;
+}
+
+Terrain::Terrain(const Body& body, const TerrainSettings& settings,
+                 std::vector<TerrainStamp> stamps)
+    : body_(body),
+      settings_(settings),
+      stamps_(std::move(stamps)),
+      seed_(settings.seed.value_or(body.seed)) {
     const glm::dvec2 size = body_.shape.face_size();
     roots_u_ = roots_along(size.x);
     roots_v_ = roots_along(size.y);
@@ -138,6 +247,7 @@ Terrain::Terrain(const Body& body, const TerrainSettings& settings)
     while (max_level_ < kMaxTerrainLevel &&
            root / (double(std::int64_t(1) << max_level_) * kChunkQuads) > spacing)
         ++max_level_;
+    for (const TerrainStamp& s : stamps_) bounds_.push_back(stamp_bounds(s));
 }
 
 std::int64_t Terrain::points_u(int level) const {
@@ -201,7 +311,118 @@ glm::dvec3 Terrain::noise_position(int face, double u, double v) const {
     return s.position({face, u, v, 0.0});
 }
 
+Terrain::StampBounds Terrain::stamp_bounds(const TerrainStamp& s) const {
+    const glm::dvec2 size = body_.shape.face_size();
+    StampBounds b{1e300, -1e300, 1e300, -1e300};
+    for (const glm::dvec2& p : s.points) {
+        b.u0 = std::min(b.u0, p.x);
+        b.u1 = std::max(b.u1, p.x);
+        b.v0 = std::min(b.v0, p.y);
+        b.v1 = std::max(b.v1, p.y);
+    }
+    const double ru = s.radius / size.x, rv = s.radius / size.y;
+    b.u0 -= ru;
+    b.u1 += ru;
+    b.v0 -= rv;
+    b.v1 += rv;
+    if (wraps(body_.shape.kind())) {  // round the cylinder: any u
+        b.u0 = -1e300;
+        b.u1 = 1e300;
+    }
+    return b;
+}
+
+bool Terrain::touches(const ChunkKey& k, const TerrainStamp& s) const {
+    if (s.face != k.face) return false;
+    const StampBounds b = stamp_bounds(s);
+    const double u0 = u_at(k, -1), u1 = u_at(k, kChunkQuads + 1);
+    const double v0 = v_at(k, -1), v1 = v_at(k, kChunkQuads + 1);
+    return b.u0 <= u1 && b.u1 >= u0 && b.v0 <= v1 && b.v1 >= v0;
+}
+
+double Terrain::stamp_weight(const TerrainStamp& s, int face, double u, double v) const {
+    if (s.face != face || s.points.empty() || !(s.radius > 0.0)) return 0.0;
+    const glm::dvec2 size = body_.shape.face_size();
+    const bool round = wraps(body_.shape.kind());
+    // The stroke's points in metres from (u, v) (round a cylinder, the nearer way).
+    const auto metres = [&](const glm::dvec2& p) {
+        double du = p.x - u;
+        if (round) du = du - std::floor(du + 0.5);
+        return glm::dvec2(du * size.x, (p.y - v) * size.y);
+    };
+    glm::dvec2 a = metres(s.points[0]);
+    double best = a.x * a.x + a.y * a.y;  // the distance squared to the stroke's line
+    for (size_t i = 1; i < s.points.size(); ++i) {
+        const glm::dvec2 b = metres(s.points[i]);
+        const double ex = b.x - a.x, ey = b.y - a.y;
+        const double len2 = ex * ex + ey * ey;
+        double t = len2 > 0.0 ? -(a.x * ex + a.y * ey) / len2 : 0.0;
+        t = std::min(std::max(t, 0.0), 1.0);
+        const double cx = a.x + ex * t, cy = a.y + ey * t;
+        best = std::min(best, cx * cx + cy * cy);
+        a = b;
+    }
+    return smooth01(1.0 - det::sqrt(best) / s.radius);
+}
+
 double Terrain::height(int face, double u, double v) const {
+    double h = base_height(face, u, v);
+    for (size_t i = 0; i < stamps_.size(); ++i) {
+        const TerrainStamp& s = stamps_[i];
+        const StampBounds& b = bounds_[i];
+        if (s.tool == StampTool::Paint || s.face != face || u < b.u0 || u > b.u1 || v < b.v0 ||
+            v > b.v1)
+            continue;
+        const double w = stamp_weight(s, face, u, v);
+        if (w <= 0.0) continue;
+        switch (s.tool) {
+            case StampTool::Raise:
+                h = h + s.strength * w;
+                break;
+            case StampTool::Lower:
+                h = h - s.strength * w;
+                break;
+            case StampTool::Flatten:
+                h = h + (s.height - h) * (w * s.strength);
+                break;
+            case StampTool::Smooth: {
+                const glm::dvec2 size = body_.shape.face_size();
+                const double du = 0.5 * s.radius / size.x, dv = 0.5 * s.radius / size.y;
+                const double average =
+                    (base_height(face, u + du, v) + base_height(face, u - du, v) +
+                     base_height(face, u, v + dv) + base_height(face, u, v - dv)) *
+                    0.25;
+                h = h + (average - h) * (w * s.strength);
+                break;
+            }
+            case StampTool::Paint:
+                break;
+        }
+    }
+    return h;
+}
+
+std::optional<glm::dvec3> Terrain::raycast(const glm::dvec3& origin, const glm::dvec3& direction,
+                                           double distance) const {
+    const glm::dvec3 d = glm::normalize(direction);
+    if (above_ground(origin) < 0.0) return std::nullopt;  // starting under the ground
+    double t = 0.0;
+    while (t < distance) {
+        const double next = std::min(t + std::max(0.5, t * 0.01), distance);
+        if (above_ground(origin + d * next) < 0.0) {  // crossed: narrow it down
+            double lo = t, hi = next;
+            for (int i = 0; i < 30; ++i) {
+                const double mid = 0.5 * (lo + hi);
+                (above_ground(origin + d * mid) < 0.0 ? hi : lo) = mid;
+            }
+            return origin + d * hi;
+        }
+        t = next;
+    }
+    return std::nullopt;
+}
+
+double Terrain::base_height(int face, double u, double v) const {
     const TerrainSettings& t = settings_;
     const glm::dvec3 q = noise_position(face, u, v);
     const double f = t.feature_size;
@@ -258,7 +479,7 @@ double Terrain::v_at(const ChunkKey& k, int j) const {
     return double(std::int64_t(k.y) * kChunkQuads + j) / double(points_v(k.level));
 }
 
-glm::vec2 Terrain::biome_at(int face, double u, double v) const {
+glm::vec3 Terrain::biome_at(int face, double u, double v) const {
     const glm::dvec3 q = noise_position(face, u, v);
     const double moist = double(det::fbm(seed_ ^ det::tag("moisture"), q.x / 1500.0, q.y / 1500.0,
                                          q.z / 1500.0, 4)) /
@@ -266,7 +487,36 @@ glm::vec2 Terrain::biome_at(int face, double u, double v) const {
     const double detail =
         double(det::gradient_noise(seed_ ^ det::tag("detail"), q.x / 7.0, q.y / 7.0, q.z / 7.0)) /
         65536.0;
-    return {float(std::clamp(0.5 + 0.7 * moist, 0.0, 1.0)), float(std::clamp(detail, -1.0, 1.0))};
+    const double natural = std::clamp(0.5 + 0.7 * moist, 0.0, 1.0);
+    double moisture = natural, ground = 0.0;
+    for (size_t i = 0; i < stamps_.size(); ++i) {
+        const TerrainStamp& s = stamps_[i];
+        const StampBounds& b = bounds_[i];
+        if (s.tool != StampTool::Paint || s.face != face || u < b.u0 || u > b.u1 || v < b.v0 ||
+            v > b.v1)
+            continue;
+        const double w = stamp_weight(s, face, u, v) * std::clamp(s.strength, 0.0, 1.0);
+        if (w <= 0.0) continue;
+        switch (s.paint) {
+            case PaintLayer::Lush:
+                moisture += (1.0 - moisture) * w;
+                break;
+            case PaintLayer::Dry:
+                moisture -= moisture * w;
+                break;
+            case PaintLayer::Sand:
+                ground += (-1.0 - ground) * w;
+                break;
+            case PaintLayer::Rock:
+                ground += (1.0 - ground) * w;
+                break;
+            case PaintLayer::Clear:
+                moisture += (natural - moisture) * w;
+                ground -= ground * w;
+                break;
+        }
+    }
+    return {float(moisture), float(std::clamp(detail, -1.0, 1.0)), float(ground)};
 }
 
 glm::dvec3 Terrain::chunk_origin(const ChunkKey& k) const {

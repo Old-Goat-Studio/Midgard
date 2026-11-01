@@ -49,6 +49,24 @@ public:
     void set_environment(const std::string& id, const std::string& name,
                          const std::string& curves_json, const std::string& settings_json);
     void set_camera(const glm::vec3& eye, const glm::vec3& target, float fov_degrees);
+    // The terrain's sculpting and painting (a JSON list of stamps, in order).
+    void set_terrain_stamps(const std::string& stamps_json);
+    // Where a ray first meets the terrain: (face, u, v) on it and the point, or none.
+    struct TerrainHit {
+        int face;
+        double u, v;
+        glm::dvec3 point;
+        double height;  // along up, as the terrain's heights are
+    };
+    // The terrain at a point: how high the point is above it, the ground under it, and "up"
+    // there; none without terrain.
+    struct TerrainGround {
+        double above;
+        glm::dvec3 ground, up;
+    };
+    std::optional<TerrainGround> terrain_ground(const glm::dvec3& point) const;
+    std::optional<TerrainHit> terrain_hit(const glm::dvec3& origin, const glm::dvec3& direction,
+                                          double distance) const;
     // The time of day for suns that follow the clock (the Calendar dock's scrubber), or none.
     void set_solar_phase(std::optional<double> phase) { scene_.solar_phase = phase; }
     std::optional<double> solar_phase() const { return scene_.solar_phase; }
@@ -101,6 +119,7 @@ private:
     // Terrain (midgard/terrain_streamer.h), on the current renderer: made when first drawn,
     // and again when the world shape or terrain settings change.
     std::string terrain_json_;
+    std::vector<TerrainStamp> stamps_;
     std::unique_ptr<JobSystem> jobs_;
     std::unique_ptr<TerrainStreamer> terrain_;
     void drop_terrain();

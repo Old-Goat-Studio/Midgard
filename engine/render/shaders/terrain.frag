@@ -26,11 +26,20 @@ layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadow_map;
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;      // x moisture (0 dry, 1 lush), y detail (-1 to 1)
-layout(location = 3) in vec4 v_tangent;  // xyz: up here, w: the height (metres)
+layout(location = 3) in vec4 v_tangent;  // xy: up here (octahedral), z: painted ground (-1 sand
+                                         // to 1 rock), w: the height (metres)
 
 layout(location = 0) out vec4 out_color;
 
 vec3 linear(vec3 srgb) { return pow(srgb, vec3(2.2)); }
+
+vec3 from_octahedral(vec2 e) {
+    vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
+    const float t = max(-n.z, 0.0);
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
+    return normalize(n);
+}
 
 float sun_shadow(vec3 position, vec3 normal, vec3 sun) {
     const int count = int(frame.shadow_params.x);
@@ -70,7 +79,8 @@ vec3 turn(vec3 v, vec3 from, vec3 to) {
 
 void main() {
     const vec3 n = normalize(v_normal);
-    const vec3 up = normalize(v_tangent.xyz);
+    const vec3 up = from_octahedral(v_tangent.xy);
+    const float painted = clamp(v_tangent.z, -1.0, 1.0);
     const float slope = 1.0 - clamp(dot(n, up), 0.0, 1.0);  // 0 flat, 1 a wall
     const float height = v_tangent.w - pc.levels.y;           // above the sea
     const float moisture = clamp(v_uv.x, 0.0, 1.0);
@@ -88,6 +98,9 @@ void main() {
     // Rock where it's steep.
     const vec3 rock = linear(vec3(0.42, 0.40, 0.37)) * (1.0 + detail * 0.15);
     albedo = mix(albedo, rock, smoothstep(0.22, 0.38, slope + detail * 0.04));
+    // Painted sand and rock (sculpt and paint).
+    albedo = mix(albedo, sand, smoothstep(0.0, 0.6, -painted + detail * 0.05));
+    albedo = mix(albedo, rock, smoothstep(0.0, 0.6, painted + detail * 0.05));
     // Snow above the snow line, which comes down to the shore in deep winter; it doesn't lie
     // on the steepest rock.
     const float line = mix(pc.levels.x, pc.levels.y + 2.0, clamp(pc.season.x, 0.0, 1.0));

@@ -29,7 +29,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
-from . import environments
+from . import environments, terrain_stamps
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .objects import ObjectError, object_content
 from .project import Project
@@ -125,6 +125,7 @@ class PlaySession(QObject):
         project.entities_changed.connect(self._entities_changed)
         project.objects_changed.connect(self._objects_changed)
         project.environments_changed.connect(self._environments_changed)
+        project.terrain_changed.connect(self._terrain_changed)
         project.files_changed.connect(self._files_changed)
 
     # ---- control ------------------------------------------------------------------------
@@ -378,6 +379,12 @@ class PlaySession(QObject):
         for object_id, parts in changed.items():
             self.send({"type": "object.put", "object": object_id, "parts": json.loads(parts)})
             self._game_objects[object_id] = parts
+
+    def _terrain_changed(self, scene: str) -> None:
+        """Sculpting and painting: the running game's ground follows at once."""
+        if self.socket is None:
+            return
+        self.send({"type": "terrain.stamps", "stamps": terrain_stamps.stamps(self.project, scene)})
 
     def _environments_changed(self, environment_id: str) -> None:
         """An environment edited in the Environment editor: the running game follows at once.

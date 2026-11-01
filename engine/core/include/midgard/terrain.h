@@ -69,6 +69,36 @@ TerrainSettings terrain_from_json(const nlohmann::json& j);
 nlohmann::json terrain_to_json(const TerrainSettings& t);
 std::vector<std::string> terrain_problems(const TerrainSettings& t);
 
+// Sculpting and painting (milestone 5.9): a stamp is one stroke of a brush along points on a
+// face, `radius` metres wide, applied in order on top of the generated ground. A stroke counts
+// once wherever it passes (its strength falls off with the distance to the stroke's line):
+//   raise, lower  by `strength` metres along the line
+//   smooth        towards the average round each point, by `strength` (0 to 1)
+//   flatten       towards `height` metres, by `strength` (0 to 1)
+//   paint         the ground's material: lush or dry (its moisture), sand or rock, or clear
+//                 (back to as generated), by `strength` (0 to 1)
+// World types will place stamps too, and players' changes will use the same mechanism.
+enum class StampTool { Raise, Lower, Smooth, Flatten, Paint };
+enum class PaintLayer { Clear, Lush, Dry, Sand, Rock };
+const char* stamp_tool_name(StampTool tool);     // "raise", "lower", "smooth", "flatten", "paint"
+const char* paint_layer_name(PaintLayer layer);  // "clear", "lush", "dry", "sand", "rock"
+
+struct TerrainStamp {
+    StampTool tool = StampTool::Raise;
+    PaintLayer paint = PaintLayer::Lush;
+    double radius = 10.0;   // metres
+    double strength = 2.0;  // raise and lower: metres; the others: 0 to 1
+    double height = 0.0;    // flatten: to this height (metres)
+    int face = 0;
+    std::vector<glm::dvec2> points;  // (u, v) on the face, along the stroke
+    bool operator==(const TerrainStamp&) const = default;
+};
+// {"tool", "paint", "radius", "strength", "height", "face", "points": [[u, v], ...]}. Throws
+// std::runtime_error naming what's wrong with JSON that can't be read.
+TerrainStamp stamp_from_json(const nlohmann::json& j);
+nlohmann::json stamp_to_json(const TerrainStamp& s);
+std::vector<std::string> stamp_problems(const TerrainStamp& s);
+
 struct ChunkKey {
     int face = 0, level = 0, x = 0, y = 0;  // x along u, y along v, at that level
     bool operator==(const ChunkKey&) const = default;
@@ -85,9 +115,10 @@ struct ChunkMesh {
     std::vector<std::uint32_t> indices;
     std::vector<double> heights;  // as generated (before edges were matched)
     // For the terrain's material: "up" at each point, and its biome: x moisture (0 dry to 1
-    // lush, over kilometres), y fine detail (-1 to 1, over metres).
+    // lush, over kilometres), y fine detail (-1 to 1, over metres), z painted ground (-1 sand,
+    // 0 as generated, 1 rock).
     std::vector<glm::vec3> ups;
-    std::vector<glm::vec2> biome;
+    std::vector<glm::vec3> biome;
 };
 
 // Edges of a chunk, for ChunkMesh's coarser neighbours.
@@ -95,7 +126,15 @@ enum ChunkEdge { kWest = 0, kEast = 1, kSouth = 2, kNorth = 3 };  // -u, +u, -v,
 
 class Terrain {
 public:
-    Terrain(const Body& body, const TerrainSettings& settings);
+    Terrain(const Body& body, const TerrainSettings& settings,
+            std::vector<TerrainStamp> stamps = {});
+    const std::vector<TerrainStamp>& stamps() const { return stamps_; }
+    // The part of a face a stamp can change: u and v ranges (any u on a cylinder, which wraps).
+    struct StampBounds {
+        double u0, u1, v0, v1;
+    };
+    StampBounds stamp_bounds(const TerrainStamp& s) const;
+    bool touches(const ChunkKey& key, const TerrainStamp& s) const;
 
     const Body& body() const { return body_; }
     const TerrainSettings& settings() const { return settings_; }
@@ -117,7 +156,13 @@ public:
     std::optional<ChunkKey> neighbour(const ChunkKey& key, ChunkEdge edge) const;
 
     glm::dvec3 noise_position(int face, double u, double v) const;  // relative to the body
-    double height(int face, double u, double v) const;
+    double height(int face, double u, double v) const;              // with the stamps
+    double base_height(int face, double u, double v) const;         // as generated
+    // How much a stamp applies at a point: 1 on its line, falling to 0 at its radius.
+    double stamp_weight(const TerrainStamp& s, int face, double u, double v) const;
+    // Where a ray first meets the ground (within `distance` metres), or none.
+    std::optional<glm::dvec3> raycast(const glm::dvec3& origin, const glm::dvec3& direction,
+                                      double distance) const;
     // The ground under (or over) a point: on the terrain at the point's place, and how high the
     // point is above it along up (negative: below the ground).
     glm::dvec3 ground(const glm::dvec3& p) const;
@@ -126,8 +171,9 @@ public:
     // chunk at its east edge lies past it (streaming draws it again a circumference over).
     glm::dvec3 position(int face, double u, double v, double h) const;
 
-    // The biome at a point: x moisture (0 dry to 1 lush), y fine detail (-1 to 1).
-    glm::vec2 biome_at(int face, double u, double v) const;
+    // The biome at a point: x moisture (0 dry to 1 lush), y fine detail (-1 to 1), z painted
+    // ground (-1 sand to 1 rock), with the paint stamps.
+    glm::vec3 biome_at(int face, double u, double v) const;
     // Where a chunk's mesh is placed: its middle, on the ground at height 0.
     glm::dvec3 chunk_origin(const ChunkKey& key) const;
     // grid: kChunkQuads + 1 points a side. coarser[edge]: the neighbour there is a level up.
@@ -147,6 +193,8 @@ private:
 
     Body body_;
     TerrainSettings settings_;
+    std::vector<TerrainStamp> stamps_;
+    std::vector<StampBounds> bounds_;
     std::uint64_t seed_;
     int roots_u_ = 1, roots_v_ = 1, max_level_ = 0;
 };

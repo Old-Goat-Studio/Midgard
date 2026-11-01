@@ -71,6 +71,9 @@ public:
     // (renderer: none keeps them on the CPU, for tests) and frees chunks long unwanted.
     // wait: finishes every chunk wanted now (a game's first frame, screenshots).
     void update(const glm::dvec3& camera, render::Renderer* renderer, bool wait = false);
+    // New sculpting and painting (midgard/terrain.h's stamps): the chunks they touch are made
+    // again (each drawn as it was until its new mesh is ready).
+    void set_stamps(std::vector<TerrainStamp> stamps);
     // The season the ground shows (calendar.h's summer_on and autumn_on, or LocalSun's): snow
     // in winter, dry grass in summer, turning leaves in autumn.
     void set_season(double summer, double autumn) {
@@ -108,8 +111,9 @@ private:
     bool walls_uploaded_ = false;
 };
 
-// A chunk's ground for the renderer's terrain material (uv: moisture and detail; tangent: up, and
-// the height).
+// A chunk's ground for the renderer's terrain material (uv: moisture and detail; tangent: up
+// as an octahedral direction in xy, the painted ground in z, the height in w).
+glm::vec2 octahedral(const glm::vec3& unit);
 render::MeshData ground_mesh_data(const ChunkMesh& mesh);
 // A chunk's mesh for the renderer (uv: metres across the face, over 16).
 render::MeshData chunk_mesh_data(const ChunkMesh& mesh);

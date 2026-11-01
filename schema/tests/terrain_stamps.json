@@ -1,0 +1,312 @@
+{
+ "_about": "Terrain sculpting: heights and a chunk hash with stamps (tools/reference/terrain.py).",
+ "bodies": {
+  "area": {
+   "shape": "bounded_area",
+   "width": 3000,
+   "length": 2000,
+   "seed": 7
+  },
+  "strip": {
+   "shape": "flat_cylinder",
+   "circumference": 6000,
+   "length": 5000,
+   "seed": 8
+  },
+  "habitat": {
+   "shape": "curved_cylinder",
+   "radius": 1000,
+   "length": 5000,
+   "seed": 9
+  },
+  "planet": {
+   "shape": "sphere_outside",
+   "radius": 1000,
+   "seed": 10
+  }
+ },
+ "stamps": [
+  {
+   "tool": "raise",
+   "radius": 40.0,
+   "strength": 12.0,
+   "points": [
+    [
+     0.4,
+     0.45
+    ],
+    [
+     0.43,
+     0.47
+    ],
+    [
+     0.47,
+     0.46
+    ]
+   ]
+  },
+  {
+   "tool": "lower",
+   "radius": 25.0,
+   "strength": 6.0,
+   "points": [
+    [
+     0.52,
+     0.5
+    ]
+   ]
+  },
+  {
+   "tool": "flatten",
+   "radius": 30.0,
+   "strength": 0.9,
+   "height": 15.0,
+   "points": [
+    [
+     0.45,
+     0.55
+    ],
+    [
+     0.5,
+     0.56
+    ]
+   ]
+  },
+  {
+   "tool": "smooth",
+   "radius": 35.0,
+   "strength": 0.7,
+   "points": [
+    [
+     0.55,
+     0.48
+    ],
+    [
+     0.58,
+     0.44
+    ]
+   ]
+  },
+  {
+   "tool": "paint",
+   "paint": "rock",
+   "radius": 20.0,
+   "strength": 1.0,
+   "points": [
+    [
+     0.4,
+     0.4
+    ]
+   ]
+  },
+  {
+   "tool": "raise",
+   "radius": 60.0,
+   "strength": 20.0,
+   "points": [
+    [
+     0.999,
+     0.3
+    ],
+    [
+     0.002,
+     0.31
+    ]
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "body": "area",
+   "u": 0.43,
+   "v": 0.47,
+   "height": -2.62542724609375
+  },
+  {
+   "body": "area",
+   "u": 0.41,
+   "v": 0.455,
+   "height": 1.332902337749795
+  },
+  {
+   "body": "area",
+   "u": 0.52,
+   "v": 0.5,
+   "height": 12.02044677734375
+  },
+  {
+   "body": "area",
+   "u": 0.47,
+   "v": 0.555,
+   "height": 11.908209986076411
+  },
+  {
+   "body": "area",
+   "u": 0.565,
+   "v": 0.46,
+   "height": 33.10364532470703
+  },
+  {
+   "body": "area",
+   "u": 0.0,
+   "v": 0.305,
+   "height": -11.972959460111497
+  },
+  {
+   "body": "area",
+   "u": 0.9995,
+   "v": 0.3,
+   "height": -10.036875000000009
+  },
+  {
+   "body": "area",
+   "u": 0.3,
+   "v": 0.3,
+   "height": 36.41319902861332
+  },
+  {
+   "body": "area",
+   "u": 0.4,
+   "v": 0.4,
+   "height": -27.69732666015625
+  },
+  {
+   "body": "area",
+   "key": [
+    0,
+    2,
+    5,
+    3
+   ],
+   "hash": "3adb078abbfc49b6"
+  },
+  {
+   "body": "strip",
+   "u": 0.43,
+   "v": 0.47,
+   "height": 12.49176025390625
+  },
+  {
+   "body": "strip",
+   "u": 0.41,
+   "v": 0.455,
+   "height": 24.32786893766761
+  },
+  {
+   "body": "strip",
+   "u": 0.52,
+   "v": 0.5,
+   "height": -12.56878662109375
+  },
+  {
+   "body": "strip",
+   "u": 0.47,
+   "v": 0.555,
+   "height": 9.964370131301742
+  },
+  {
+   "body": "strip",
+   "u": 0.565,
+   "v": 0.46,
+   "height": -40.25291442871094
+  },
+  {
+   "body": "strip",
+   "u": 0.0,
+   "v": 0.305,
+   "height": 9.540685848029696
+  },
+  {
+   "body": "strip",
+   "u": 0.9995,
+   "v": 0.3,
+   "height": 10.738195613654668
+  },
+  {
+   "body": "strip",
+   "u": 0.3,
+   "v": 0.3,
+   "height": 8.34515380859375
+  },
+  {
+   "body": "strip",
+   "u": 0.4,
+   "v": 0.4,
+   "height": 18.52764892578125
+  },
+  {
+   "body": "strip",
+   "key": [
+    0,
+    2,
+    10,
+    9
+   ],
+   "hash": "dd2ad0ea11528878"
+  },
+  {
+   "body": "habitat",
+   "u": 0.43,
+   "v": 0.47,
+   "height": 26.82525634765625
+  },
+  {
+   "body": "habitat",
+   "u": 0.41,
+   "v": 0.455,
+   "height": 31.60300705387257
+  },
+  {
+   "body": "habitat",
+   "u": 0.52,
+   "v": 0.5,
+   "height": 7.9051513671875
+  },
+  {
+   "body": "habitat",
+   "u": 0.47,
+   "v": 0.555,
+   "height": 17.48272666744503
+  },
+  {
+   "body": "habitat",
+   "u": 0.565,
+   "v": 0.46,
+   "height": 16.443634033203125
+  },
+  {
+   "body": "habitat",
+   "u": 0.0,
+   "v": 0.305,
+   "height": 27.928428899751243
+  },
+  {
+   "body": "habitat",
+   "u": 0.9995,
+   "v": 0.3,
+   "height": 27.477073919282464
+  },
+  {
+   "body": "habitat",
+   "u": 0.3,
+   "v": 0.3,
+   "height": 0.5347900390625
+  },
+  {
+   "body": "habitat",
+   "u": 0.4,
+   "v": 0.4,
+   "height": -14.93121337890625
+  },
+  {
+   "body": "habitat",
+   "key": [
+    0,
+    2,
+    10,
+    9
+   ],
+   "hash": "0382a816bbf66d54"
+  }
+ ]
+}

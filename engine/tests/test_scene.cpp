@@ -1960,6 +1960,44 @@ TEST_CASE("terrain is solid: the player starting under it is lifted, stands and 
     CHECK(t.above_ground(scene.world_position(player)) < 1.5);
 }
 
+TEST_CASE("terrain stamps: from the database, followed live, solid, and checked by the cook") {
+    TestPackage pkg({}, R"({"body": {"shape": "bounded_area", "width": 3000, "length": 3000,
+                                     "seed": 7},
+                            "terrain": {}})");
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    // A 30 m mound in the middle of the map.
+    exec(db, R"(INSERT INTO terrain_stamp (scene, stamp) VALUES ('scn_main',
+        '{"tool": "raise", "radius": 40, "strength": 30, "points": [[0.5, 0.5]]}'))");
+    sqlite3_close(db);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+    midgard::Game game(pkg.dir);
+    REQUIRE(game.scene().terrain_stamps.size() == 1);
+    const midgard::Terrain& t = game.terrain()->terrain();
+    const double mound = t.height(0, 0.5, 0.5);
+    CHECK(mound == doctest::Approx(t.base_height(0, 0.5, 0.5) + 30.0));
+    // The solid ground has the mound (the ground is built round the player, or the origin).
+    const auto top = game.physics().world().raycast({0.0, 200.0, 0.0}, {0, -1, 0}, 400.0);
+    REQUIRE(top.has_value());
+    CHECK(top->point.y == doctest::Approx(mound).epsilon(0.01));
+    // The editor takes it away (the live link): drawn and solid ground follow.
+    game.set_terrain_stamps({});
+    const double flat = game.terrain()->terrain().height(0, 0.5, 0.5);
+    CHECK(flat == doctest::Approx(mound - 30.0));
+    const auto ground = game.physics().world().raycast({0.0, 200.0, 0.0}, {0, -1, 0}, 400.0);
+    REQUIRE(ground.has_value());
+    CHECK(ground->point.y == doctest::Approx(flat).epsilon(0.01));
+
+    // A stamp the cook refuses.
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO terrain_stamp (scene, stamp) VALUES ('scn_main',
+        '{"tool": "smooth", "radius": 10, "strength": 3, "points": [[0.5, 0.5]]}'))");
+    sqlite3_close(db);
+    const midgard::ValidationReport report = midgard::validate_package(pkg.dir);
+    REQUIRE_FALSE(report.errors.empty());
+    CHECK(report.errors.front().find("strength") != std::string::npos);
+}
+
 TEST_CASE("above a planet the sky's horizon dips to where the ground's edge is") {
     TestPackage pkg({{"e1_sun", R"(NULL, '{"transform": {"rotation": [-50, 35, 0]},
                                       "light": {"type": "directional"}}')"}},

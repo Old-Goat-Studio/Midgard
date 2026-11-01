@@ -260,6 +260,34 @@ void Viewport::attach_offscreen(uint32_t width, uint32_t height) {
     upload_meshes();
 }
 
+void Viewport::set_terrain_stamps(const std::string& stamps_json) {
+    std::vector<TerrainStamp> stamps;
+    for (const nlohmann::json& s : nlohmann::json::parse(stamps_json))
+        stamps.push_back(stamp_from_json(s));  // throws on a malformed stamp
+    stamps_ = stamps;
+    scene_.terrain_stamps = stamps;
+    if (terrain_) terrain_->set_stamps(std::move(stamps));
+}
+
+std::optional<Viewport::TerrainGround> Viewport::terrain_ground(const glm::dvec3& point) const {
+    if (!scene_.settings.body || !scene_.settings.terrain) return std::nullopt;
+    const Terrain own(*scene_.settings.body, *scene_.settings.terrain, stamps_);
+    const Terrain& t = terrain_ ? terrain_->terrain() : own;
+    return TerrainGround{t.above_ground(point), t.ground(point), t.body().up(point)};
+}
+
+std::optional<Viewport::TerrainHit> Viewport::terrain_hit(const glm::dvec3& origin,
+                                                          const glm::dvec3& direction,
+                                                          double distance) const {
+    if (!scene_.settings.body || !scene_.settings.terrain) return std::nullopt;
+    const Terrain own(*scene_.settings.body, *scene_.settings.terrain, stamps_);
+    const Terrain& t = terrain_ ? terrain_->terrain() : own;
+    const std::optional<glm::dvec3> p = t.raycast(origin, direction, distance);
+    if (!p) return std::nullopt;
+    const SurfacePoint s = t.body().surface(*p);
+    return TerrainHit{s.face, s.u, s.v, *p, s.height};
+}
+
 void Viewport::drop_terrain() {
     if (terrain_ && renderer_) terrain_->release(*renderer_);
     terrain_.reset();
@@ -345,6 +373,7 @@ bool Viewport::render() {
             if (!jobs_) jobs_ = std::make_unique<JobSystem>();
             terrain_ = std::make_unique<TerrainStreamer>(*scene_.settings.body,
                                                          *scene_.settings.terrain, jobs_.get());
+            terrain_->set_stamps(stamps_);
         }
         terrain_->update(camera.origin, renderer_.get(), true);
         const std::optional<LocalSun> sun = scene_.local_sun(camera.origin);

@@ -356,6 +356,19 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
             }
         }
     }
+    // Terrain stamps (migration 11): the scene's sculpting and painting, in order.
+    if (has_column(db.get(), "terrain_stamp", "stamp")) {
+        Stmt st = prepare(db.get(), "SELECT stamp FROM terrain_stamp WHERE scene = ? ORDER BY id");
+        sqlite3_bind_text(st.get(), 1, scene_id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(st.get()) == SQLITE_ROW) {
+            try {
+                scene.terrain_stamps.push_back(
+                    stamp_from_json(json::parse(column_text(st.get(), 0))));
+            } catch (const std::exception& ex) {
+                throw SceneError(std::string("terrain stamp: ") + ex.what());
+            }
+        }
+    }
     // Object templates (migration 6), then every instance filled in.
     if (has_column(db.get(), "object", "parts")) {
         Stmt o = prepare(db.get(), "SELECT id, parts FROM object ORDER BY id");
