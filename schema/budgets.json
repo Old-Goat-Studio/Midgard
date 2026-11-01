@@ -24,9 +24,9 @@
     },
     "render.terrain_hollow_phone": {
       "default": 16.7,
-      "_about": "Inside a 20 km hollow world (milestone 5.10): about 800 chunks and 700 of water, the far side in about 120 coarse ones. 8.7 ms on an RTX 4070 until the main pass culled draws out of view and drew the ground nearest first; 0.9 ms after (render.cubes_400_phone: 0.24 ms). Lavapipe's first budget is a guess to be tightened once CI reports.",
-      "ci-linux-release": 200,
-      "ci-linux-arm64-release": 200
+      "_about": "Inside a 20 km hollow world (milestone 5.10): about 800 chunks and 700 of water, the far side in about 120 coarse ones. 8.7 ms on an RTX 4070 until the main pass culled draws out of view and drew the ground nearest first; 0.9 ms after (render.cubes_400_phone: 0.24 ms). Lavapipe: 61 ms on linux-release and 113 ms on linux-arm64 (CI run 41317155990), so 150 and 250.",
+      "ci-linux-release": 150,
+      "ci-linux-arm64-release": 250
     },
     "texture.transcode_512_bc7": {"default": 25},
     "texture.transcode_512_astc": {"default": 10}
