@@ -32,6 +32,7 @@
 #include "midgard/terrain.h"
 #include "midgard/terrain_streamer.h"
 #include "midgard/version.h"
+#include "midgard/worldgen.h"
 
 namespace {
 
@@ -138,6 +139,31 @@ std::vector<Benchmark> benchmarks() {
                             g_sink = g_sink + m.indices.size();
                         };
                     }});
+    // World generation graphs (milestone 5.11): a 35 x 35 chunk's worth of points, for the
+    // 5.9 ground as a graph and for one using every node (two filters: smooth and erode).
+    for (const auto& [name, which] : {std::pair{"worldgen.classic_35x35", "classic"},
+                                      std::pair{"worldgen.everything_35x35", "everything"}}) {
+        const std::string graph =
+            which == std::string("classic")
+                ? R"({"output": "height", "nodes": {"hills": {"op": "noise", "size": 500, "octaves": 6}, "scaled": {"op": "multiply", "in": [60, "hills"]}, "height": {"op": "add", "in": [8, "scaled"]}}})"
+                : R"({"output": "out", "nodes": {"n": {"op": "noise", "size": 300, "octaves": 4, "salt": "base"}, "r": {"op": "ridged", "size": 900, "octaves": 3, "salt": "ridges"}, "lat": {"op": "input", "name": "latitude"}, "edge": {"op": "input", "name": "edge_distance"}, "end": {"op": "input", "name": "end_distance"}, "near_edge": {"op": "smoothstep", "in": ["edge"], "from": 0, "to": 400}, "near_end": {"op": "smoothstep", "in": ["end"], "from": 0, "to": 300}, "cold": {"op": "curve", "in": ["abs_lat"], "points": [[0, 0], [45, 10], [90, 40]]}, "abs_lat": {"op": "abs", "in": ["lat"]}, "land": {"op": "lerp", "in": ["n", "r", 0.4]}, "scaled": {"op": "multiply", "in": [50, "land", "near_edge", "near_end"]}, "stepped": {"op": "terrace", "in": ["scaled"], "step": 6, "sharpness": 0.7}, "smoothed": {"op": "smooth", "in": ["stepped"], "radius": 12}, "worn": {"op": "erode", "in": ["smoothed"], "radius": 20, "strength": 0.6}, "sum": {"op": "add", "in": ["worn", "cold", 3]}, "low": {"op": "min", "in": ["sum", 70]}, "high": {"op": "max", "in": ["low", -25]}, "clamped": {"op": "clamp", "in": ["high"], "min": -20, "max": 65}, "diff": {"op": "subtract", "in": ["clamped", "n"]}, "out": {"op": "divide", "in": ["diff", 1.5]}}})";
+        list.push_back(
+            {name,
+             std::string("a world graph (") + which +
+                 ") at 35 x 35 points on a bounded area (one thread)",
+             30, [graph](std::string&) -> std::function<void()> {
+                 auto g = std::make_shared<midgard::WorldGraph>(
+                     midgard::WorldGraph::from_json(nlohmann::json::parse(graph)));
+                 return [g] {
+                     const midgard::Shape area = midgard::Shape::bounded_area(3000.0, 2000.0, 9.81);
+                     double sum = 0.0;
+                     for (int j = 0; j < 35; ++j)
+                         for (int i = 0; i < 35; ++i)
+                             sum += g->evaluate(area, 7, {0, 0.4 + i * 1e-3, 0.4 + j * 1e-3});
+                     g_sink = g_sink + std::size_t(sum);
+                 };
+             }});
+    }
     list.push_back({"shape.sphere_64x64_positions",
                     "positions and up for a 64 x 64 grid on all 6 faces of a planet", 30,
                     [](std::string&) -> std::function<void()> {

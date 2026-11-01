@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/world_type.h"
 
+#include "midgard/worldgen.h"
+
 #include <cmath>
 #include <stdexcept>
 
@@ -65,6 +67,7 @@ WorldRecipe recipe_from_json(const nlohmann::json& j) {
     };
     text("atmosphere", r.atmosphere);
     text("calendar", r.calendar);
+    if (j.contains("graph") && !j.at("graph").is_null()) r.graph = j.at("graph").dump();
     if (j.contains("terrain")) {
         if (j.at("terrain").is_object() && j.at("terrain").contains("seed"))
             throw std::runtime_error("world type: the seed is the world's, not the recipe's");
@@ -84,6 +87,7 @@ nlohmann::json recipe_to_json(const WorldRecipe& r) {
     if (!r.atmosphere.empty()) j["atmosphere"] = r.atmosphere;
     if (!r.calendar.empty()) j["calendar"] = r.calendar;
     j["terrain"] = terrain_to_json(r.terrain);
+    if (!r.graph.empty()) j["graph"] = nlohmann::json::parse(r.graph);
     return j;
 }
 
@@ -95,6 +99,9 @@ std::vector<std::string> recipe_problems(const WorldRecipe& r) {
     if (r.gravity && !(*r.gravity > 0.0 && *r.gravity <= 100.0))
         out.push_back("world type: gravity is above 0 and at most 100 m/s^2");
     for (std::string& p : terrain_problems(r.terrain)) out.push_back(std::move(p));
+    if (!r.graph.empty())
+        for (const std::string& p : graph_problems(nlohmann::json::parse(r.graph)))
+            out.push_back("world type's graph: " + p);
     return out;
 }
 

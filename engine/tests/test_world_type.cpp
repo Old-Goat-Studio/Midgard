@@ -90,3 +90,17 @@ TEST_CASE("a world type suits some shapes and sizes") {
     CHECK(midgard::world_size(body(R"({"id": "h", "shape": "sphere_inside",
                                        "radius": 2500})")) == 2500.0);
 }
+
+TEST_CASE("a recipe carries its graph, and the cook checks it") {
+    const midgard::WorldRecipe r = midgard::recipe_from_json(json::parse(
+        R"({"graph": {"output": "h", "nodes": {"h": {"op": "constant", "value": 3}}}})"));
+    CHECK_FALSE(r.graph.empty());
+    CHECK(midgard::recipe_problems(r).empty());
+    CHECK(midgard::recipe_from_json(midgard::recipe_to_json(r)) == r);
+    const midgard::WorldRecipe bad = midgard::recipe_from_json(
+        json::parse(R"({"graph": {"output": "h", "nodes": {"h": {"op": "magic"}}}})"));
+    REQUIRE(midgard::recipe_problems(bad).size() == 1);
+    CHECK(midgard::recipe_problems(bad)[0].find("graph") != std::string::npos);
+    // None: the terrain settings' hills, as in milestone 5.9.
+    CHECK(midgard::recipe_from_json(json::object()).graph.empty());
+}

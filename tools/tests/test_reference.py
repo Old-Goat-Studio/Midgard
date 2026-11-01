@@ -326,3 +326,30 @@ def test_terrain_stamps_match_their_table():
             assert f"{t.chunk_hash(tuple(c['key'])):016x}" == c["hash"], c
         else:
             assert t.height(0, c["u"], c["v"]) == c["height"], c
+
+
+# ---- world generation graphs (midgard/worldgen.h) -----------------------------------------------
+def test_world_graphs_match_their_table():
+    from reference import worldgen
+    data = json.loads((TABLES / "worldgen_cases.json").read_text("utf-8"))
+    for c in data["cases"]:
+        graph = worldgen.Graph(data["graphs"][c["graph"]])
+        shape = worldgen.make_shape(data["bodies"][c["body"]])
+        assert graph.evaluate(shape, data["seed"], tuple(c["place"])) == c["height"], c
+    assert f"{worldgen.fingerprint():016x}" == data["fingerprint"]
+
+
+def test_world_graph_nodes_by_hand():
+    from reference import shapes, worldgen
+    area = shapes.Shape(shapes.BOUNDED_AREA, 3000.0, 2000.0, 9.81)
+
+    def one(node):
+        return worldgen.Graph({"output": "x", "nodes": {"x": node}}).evaluate(area, 7,
+                                                                             (0, 0.5, 0.5))
+    assert one({"op": "add", "in": [1, 2, 3.5]}) == 6.5
+    assert one({"op": "divide", "in": [10, 0]}) == 0.0
+    assert one({"op": "lerp", "in": [2, 10, 0.25]}) == 4.0
+    assert one({"op": "smoothstep", "in": [2.5], "from": 0, "to": 10}) == 0.15625
+    assert one({"op": "curve", "in": [20], "points": [[0, 0], [10, 20], [30, 25]]}) == 22.5
+    assert one({"op": "input", "name": "edge_distance"}) == 1000.0
+    assert one({"op": "smooth", "in": [7], "radius": 30}) == 7.0
