@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
+#include <tuple>
 
 namespace midgard {
 
@@ -18,6 +20,40 @@ std::vector<TerrainCollision::Placed> TerrainCollision::chunks_near(const glm::d
     const glm::dvec2 size = body.shape.face_size();
     const double chunk_u = size.x / double(across_u), chunk_v = size.y / double(across_v);
     const SurfacePoint s = body.surface(p);
+    if (kind == Shape::Kind::SphereOutside || kind == Shape::Kind::SphereInside) {
+        // A sphere: out from the chunk under the point through its neighbours, across face
+        // edges too, keeping those that reach within the radius.
+        const double half = 0.75 * std::max(chunk_u, chunk_v);  // middle to corner, and more
+        const auto within = [&](const ChunkKey& k) {
+            return glm::length(t.chunk_origin(k) - p) - half <= radius + std::abs(s.height);
+        };
+        const auto clamp = [](std::int64_t i, std::int64_t n) {
+            return int(std::clamp<std::int64_t>(i, 0, n - 1));
+        };
+        const ChunkKey start{s.face, level,
+                             clamp(std::int64_t(std::floor(s.u * across_u)), across_u),
+                             clamp(std::int64_t(std::floor(s.v * across_v)), across_v)};
+        const auto less = [](const ChunkKey& a, const ChunkKey& b) {
+            return std::tie(a.face, a.x, a.y) < std::tie(b.face, b.x, b.y);
+        };
+        std::set<ChunkKey, decltype(less)> seen(less);
+        std::vector<ChunkKey> todo{start};
+        seen.insert(start);
+        std::vector<Placed> out;
+        while (!todo.empty()) {
+            const ChunkKey k = todo.back();
+            todo.pop_back();
+            out.push_back({k, 0});
+            for (int e = 0; e < 4; ++e) {
+                const std::optional<ChunkKey> n = t.neighbour(k, ChunkEdge(e));
+                if (n && !seen.contains(*n) && within(*n)) {
+                    seen.insert(*n);
+                    todo.push_back(*n);
+                }
+            }
+        }
+        return out;
+    }
     // A flat-wrap cylinder: which copy along x the point is in.
     int wrap = 0;
     if (kind == Shape::Kind::FlatCylinder)

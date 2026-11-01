@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Terrain collision (milestone 5.9): solid ground for the finest chunks round each player.
 //
-// Jolt's heightfield can't follow a curved surface, so a curved cylinder's chunks are mesh
-// shapes; a bounded area's and a flat-wrap cylinder's are heightfields (both split each square
-// along the same diagonal as the drawn chunks, so what the player walks on is what is drawn).
-// Chunks are built as the player comes near and removed once they are well behind.
+// Jolt's heightfield can't follow a curved surface, so a curved cylinder's and a sphere's chunks
+// are mesh shapes; a bounded area's and a flat-wrap cylinder's are heightfields (both split each
+// square along the same diagonal as the drawn chunks, so what the player walks on is what is
+// drawn). Chunks are built as the player comes near and removed once they are well behind; on a
+// sphere they are gathered through chunk neighbours, so those across a face edge come too.
 #pragma once
 
 #include <cstdint>

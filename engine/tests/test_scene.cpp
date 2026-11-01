@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 
 #include <miniz.h>
 #include <sqlite3.h>
@@ -2106,4 +2108,126 @@ TEST_CASE("above a planet the sky's horizon dips to where the ground's edge is")
     TestPackage flat({{"e1_sun", R"(NULL, '{"light": {"type": "directional"}}')"}});
     midgard::Game level(flat.dir);
     CHECK(level.scene().horizon_dip(glm::dvec3(0.0, 50.0, 0.0)) == 0.0f);
+}
+
+namespace {
+
+// The player walks (W held) from `from` (a direction from the sphere's centre) heading along
+// `heading` (along the ground there), all the way round the sphere and back. It stays on the
+// ground, crosses face edges, passes cube corners when its path goes through them, and gravity
+// points down all the way.
+struct SphereWalk {
+    double turned = 0.0, lowest = 1e9, worst_gravity_angle = 0.0, nearest_corner = 1e9;
+    int frames = 0, faces_crossed = 0;
+};
+
+SphereWalk walk_round_sphere(const char* shape, const glm::dvec3& from, const glm::dvec3& heading) {
+    constexpr double kRadius = 1000.0, kPi = 3.14159265358979;
+    const bool outside = std::string(shape) == "sphere_outside";
+    const glm::dvec3 centre(0.0, outside ? -kRadius : kRadius, 0.0);
+    const std::string body_json = std::string(R"({"shape": ")") + shape +
+                                  R"(", "radius": 1000, "seed": 13, "origin": [0, )" +
+                                  (outside ? "-1000" : "1000") + ", 0]}";
+    const std::string settings =
+        R"({"body": )" + body_json + R"(, "terrain": {"height_scale": 20}})";
+    // Where to start: just above the ground there, and the camera behind and above.
+    json body = json::parse(body_json);
+    body["id"] = "b";
+    const midgard::Terrain terrain(midgard::body_from_json(body),
+                                   midgard::terrain_from_json(json{{"height_scale", 20}}));
+    const glm::dvec3 d = glm::normalize(from);
+    const glm::dvec3 ground = terrain.ground(centre + d * kRadius);
+    const glm::dvec3 up = terrain.body().up(ground);
+    const glm::dvec3 ahead = glm::normalize(heading - up * glm::dot(heading, up));
+    const glm::dvec3 at = ground + up * 1.0;
+    const glm::dvec3 camera = at - ahead * 6.0 + up * 40.0;
+    const auto vec = [](const glm::dvec3& p) {
+        return "[" + std::to_string(p.x) + ", " + std::to_string(p.y) + ", " + std::to_string(p.z) +
+               "]";
+    };
+    TestPackage pkg({{"e1_player", "NULL, '{\"transform\": {\"position\": " + vec(at) +
+                                       "}, \"player\": {\"speed\": 40}}'"},
+                     {"e2_camera", "NULL, '{\"transform\": {\"position\": " + vec(camera) +
+                                       "}, \"camera\": {}}'"}},
+                    settings);
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity player = scene.find("e1_player");
+    const midgard::Terrain& t = game.terrain()->terrain();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (int i = 0; i < 60; ++i) game.update(actions, 1.0f / 60.0f);  // settle
+    actions.set("keyboard", "W", 1.0f);
+    // Angle round the path's great circle (from `from` towards `heading`).
+    const glm::dvec3 e0 = d, e1 = glm::normalize(ahead - d * glm::dot(ahead, d));
+    const auto angle = [&] {
+        const glm::dvec3 q = scene.world_position(player) - centre;
+        return std::atan2(glm::dot(q, e1), glm::dot(q, e0));
+    };
+    SphereWalk w;
+    double last = angle();
+    int face = t.body().surface(scene.world_position(player)).face;
+    while (std::abs(w.turned) < 2.0 * kPi && w.frames < 16000) {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+        ++w.frames;
+        const double now = angle();
+        double step = now - last;
+        if (step > kPi) step -= 2.0 * kPi;
+        if (step < -kPi) step += 2.0 * kPi;
+        w.turned += step;
+        last = now;
+        const glm::dvec3 p = scene.world_position(player);
+        w.lowest = std::min(w.lowest, t.above_ground(p));
+        const int f = t.body().surface(p).face;
+        if (f != face) ++w.faces_crossed;
+        face = f;
+        const glm::dvec3 g = game.physics().world().gravity(p);
+        const double cosine = glm::dot(glm::normalize(g), -t.body().up(p));
+        w.worst_gravity_angle = std::max(w.worst_gravity_angle, std::acos(std::min(cosine, 1.0)));
+        const glm::dvec3 q = glm::normalize(p - centre);
+        for (const double x : {-1.0, 1.0})
+            for (const double y : {-1.0, 1.0})
+                for (const double z : {-1.0, 1.0})
+                    w.nearest_corner = std::min(
+                        w.nearest_corner,
+                        kRadius * std::acos(std::min(
+                                      glm::dot(q, glm::normalize(glm::dvec3(x, y, z))), 1.0)));
+    }
+    return w;
+}
+
+}  // namespace
+
+TEST_CASE("terrain, the exit: all the way round a planet, by three paths, no seams") {
+    struct Path {
+        const char* name;
+        glm::dvec3 from, heading;
+        bool corners;
+    };
+    for (const Path& path : {Path{"the equator", {1, 0, 0}, {0, 0, 1}, false},
+                             Path{"over both poles", {0, 1, 0}, {0, 0, -1}, false},
+                             Path{"diagonally through corners", {0, 1, 0}, {1, 0, 1}, true}}) {
+        CAPTURE(path.name);
+        const SphereWalk w = walk_round_sphere("sphere_outside", path.from, path.heading);
+        MESSAGE("round the planet (", path.name, ") in ", w.frames, " frames");
+        CHECK(std::abs(w.turned) >= 2.0 * 3.14159265358979);  // all the way round
+        CHECK(w.faces_crossed >= 4);                          // over face edges
+        CHECK(w.lowest > -0.1);                               // never through the ground
+        CHECK(w.worst_gravity_angle < 1e-6);                  // down, to the centre
+        if (path.corners) CHECK(w.nearest_corner < 25.0);     // through cube corners
+    }
+}
+
+TEST_CASE("terrain, the exit: all the way round inside a hollow world, no seams") {
+    for (const auto& [from, heading, corners] :
+         {std::tuple{glm::dvec3(1, 0, 0), glm::dvec3(0, 0, 1), false},
+          std::tuple{glm::dvec3(0, -1, 0), glm::dvec3(1, 0, 1), true}}) {
+        const SphereWalk w = walk_round_sphere("sphere_inside", from, heading);
+        MESSAGE("round inside the hollow world in ", w.frames, " frames");
+        CHECK(std::abs(w.turned) >= 2.0 * 3.14159265358979);
+        CHECK(w.faces_crossed >= 4);
+        CHECK(w.lowest > -0.1);
+        CHECK(w.worst_gravity_angle < 1e-6);  // outwards, away from the centre
+        if (corners) CHECK(w.nearest_corner < 25.0);
+    }
 }

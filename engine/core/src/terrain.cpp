@@ -41,6 +41,15 @@ int roots_along(double size) {
 // A sphere's faces have a power of two of roots a side, the nearest to kRootSize metres each
 // (in proportion), so every grid point is a power-of-two fraction of the face and the points on
 // face edges come out bit-identical from both faces.
+// Positions on a grid of 2^-16 m: a chunk's points less than 256 m from its middle (also on
+// it) are then exactly floats relative to it, so a point that two chunks share comes out the
+// same from both, to the bit (no hairline gaps for rays or the player along chunk edges).
+glm::dvec3 on_grid(const glm::dvec3& p) {
+    constexpr double kGrid = 65536.0;
+    return {std::round(p.x * kGrid) / kGrid, std::round(p.y * kGrid) / kGrid,
+            std::round(p.z * kGrid) / kGrid};
+}
+
 int sphere_roots(double size) {
     constexpr double kSqrt2 = 1.4142135623730951;
     int roots = 1;
@@ -560,7 +569,7 @@ bool Terrain::flipped(const ChunkKey& k) const {
 }
 
 glm::dvec3 Terrain::chunk_origin(const ChunkKey& k) const {
-    return position(k.face, u_at(k, kChunkQuads / 2), v_at(k, kChunkQuads / 2), 0.0);
+    return on_grid(position(k.face, u_at(k, kChunkQuads / 2), v_at(k, kChunkQuads / 2), 0.0));
 }
 
 ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) const {
@@ -614,7 +623,7 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
     out.normals.reserve(size_t(n + 1) * (n + 1));
     for (int j = 0; j <= n; ++j)
         for (int i = 0; i <= n; ++i) {
-            out.positions.push_back(glm::vec3(at(i, j) - out.origin));
+            out.positions.push_back(glm::vec3(on_grid(at(i, j)) - out.origin));
             out.normals.push_back(glm::vec3(normal[size_t(j) * (n + 1) + i]));
             out.ups.push_back(glm::vec3(body_.up(at(i, j))));
             out.biome.push_back(biome_at(k.face, u_at(k, i), v_at(k, j)));
@@ -672,7 +681,7 @@ std::optional<ChunkMesh> Terrain::water_mesh(const ChunkKey& k,
     if (coarser[kSouth]) stitch(0, 0, 1, 0);
     if (coarser[kNorth]) stitch(0, n, 1, 0);
     for (const glm::dvec3& q : p) {
-        out.positions.push_back(glm::vec3(q - out.origin));
+        out.positions.push_back(glm::vec3(on_grid(q) - out.origin));
         out.normals.push_back(glm::vec3(body_.up(q)));
     }
     for (int j = 0; j < n; ++j)

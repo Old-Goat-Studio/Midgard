@@ -106,6 +106,36 @@ TEST_CASE("terrain collision: a curved cylinder's mesh is the drawn ground") {
     check_matches(t, t.ground({-5.0, 0.2, 300.0}));     // across u's join (u = 0 and 1)
 }
 
+TEST_CASE("terrain collision: a sphere's meshes, across face edges and at a cube corner") {
+    for (const char* text : {R"({"id": "w", "shape": "sphere_outside", "radius": 3000, "seed": 11,
+              "origin": [0, -3000, 0]})",
+                             R"({"id": "h", "shape": "sphere_inside", "radius": 2500, "seed": 12,
+              "origin": [0, 2500, 0]})"}) {
+        CAPTURE(text);
+        const midgard::Terrain t(body(text), {});
+        const glm::dvec3 c = t.body().origin;
+        const double r = t.body().shape.radius();
+        const auto on = [&](const glm::dvec3& d) { return t.ground(c + glm::normalize(d) * r); };
+        check_matches(t, on({0.0, 1.0, 0.0}));  // a face's middle
+        // (Near an edge and a corner, not exactly on them: a ray straight down an edge shared by
+        // two bodies can slip past both in Jolt's own rounding. The spiral of points round each
+        // place crosses the edges.)
+        check_matches(t, on({1.0, 0.9995, 0.004}));   // by the edge between +X and +Y
+        check_matches(t, on({1.0, 0.99, -0.995}));    // by the corner of +X, +Y and -Z
+        check_matches(t, on({-1.0, -0.997, 1.002}));  // by another corner
+        // By a corner, the ground round it comes from all three faces.
+        midgard::physics::World world(t.body());
+        midgard::TerrainCollision ground(t);
+        const glm::dvec3 corner = on({1.0, 1.0, 1.0});
+        ground.update(world, {corner + t.body().up(corner) * 1.5});
+        for (const glm::dvec3 d : {glm::dvec3(1.0, 0.98, 0.98), glm::dvec3(0.98, 1.0, 0.98),
+                                   glm::dvec3(0.98, 0.98, 1.0)}) {
+            const glm::dvec3 above = on(d) + t.body().up(on(d)) * 20.0;
+            CHECK(world.raycast(above, glm::vec3(-t.body().up(above)), 60.0).has_value());
+        }
+    }
+}
+
 TEST_CASE("terrain collision follows the player, and old ground goes") {
     const midgard::Terrain t(body(R"({"id": "a", "shape": "bounded_area", "width": 6000,
                                       "length": 6000, "seed": 7})"),

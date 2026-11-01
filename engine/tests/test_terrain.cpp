@@ -5,12 +5,14 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <cinttypes>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -543,4 +545,42 @@ TEST_CASE("cube-sphere terrain: normals and triangles face up on every face, out
             }
         }
     }
+}
+
+TEST_CASE("finest chunks share their edge points to the bit, as floats from their middles") {
+    // What the physics world collides with (origin + float offset, in double) must leave no
+    // hairline gap a ray could pass through, so shared points are the same in both chunks.
+    const json t = sphere_table();
+    const midgard::Terrain world = sphere(t, "world");
+    const midgard::Terrain flat = area();
+    const auto same = [](const midgard::Terrain& tr, const midgard::ChunkKey& k, int e) {
+        const std::optional<midgard::ChunkKey> n = tr.neighbour(k, midgard::ChunkEdge(e));
+        REQUIRE(n.has_value());
+        int back = -1;
+        for (int f = 0; f < 4; ++f)
+            if (tr.neighbour(*n, midgard::ChunkEdge(f)) == k) back = f;
+        REQUIRE(back >= 0);
+        const midgard::ChunkMesh m = tr.mesh(k), o = tr.mesh(*n);
+        std::set<std::array<double, 3>> mine, theirs;
+        for (int s = 0; s <= kN; ++s) {
+            const auto [i, j] = edge_point(e, s);
+            const auto [oi, oj] = edge_point(back, s);
+            const glm::dvec3 a = m.origin + glm::dvec3(m.positions[at(i, j)]);
+            const glm::dvec3 b = o.origin + glm::dvec3(o.positions[at(oi, oj)]);
+            mine.insert({a.x, a.y, a.z});
+            theirs.insert({b.x, b.y, b.z});
+        }
+        CHECK(mine == theirs);
+    };
+    const int level = world.max_level();
+    const int last = (world.roots_u() << level) - 1;
+    for (int f = 0; f < 6; ++f) {
+        CAPTURE(f);
+        same(world, {f, level, last / 2, last / 2}, midgard::kEast);  // inside a face
+        same(world, {f, level, last / 2, last / 2}, midgard::kNorth);
+        same(world, {f, level, last, 7}, midgard::kEast);  // across face edges
+        same(world, {f, level, 9, 0}, midgard::kSouth);
+    }
+    same(flat, {0, flat.max_level(), 40, 30}, midgard::kEast);
+    same(flat, {0, flat.max_level(), 40, 30}, midgard::kNorth);
 }

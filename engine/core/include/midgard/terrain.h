@@ -105,7 +105,9 @@ struct ChunkKey {
 };
 
 // A chunk's grid, ready to draw: positions and normals relative to `origin` (the chunk's middle,
-// on the ground at height 0), row by row along v, (kChunkQuads + 1)^2 points.
+// on the ground at height 0), row by row along v, (kChunkQuads + 1)^2 points. The origin and
+// the points are on a grid of 2^-16 m, so within 256 m of the origin (every chunk at the finest
+// levels) origin + position is exact, and a point two chunks share is the same in both.
 struct ChunkMesh {
     glm::dvec3 origin{0.0};
     std::vector<glm::vec3> positions, normals;
