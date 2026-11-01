@@ -150,3 +150,37 @@ def cube_surface(d: tuple[float, float, float]) -> tuple[int, float, float]:
     wu = d[ta] * ts / scale
     wv = d[ba] * bs / scale
     return face, (unwarp(wu) + 1.0) * 0.5, (unwarp(wv) + 1.0) * 0.5
+
+
+def cube_link(face: int, edge: int) -> tuple[int, int, bool]:
+    """Across a face's edge (0 u = 0, 1 u = 1, 2 v = 0, 3 v = 1): (the face there, its edge
+    there, whether the coordinate along the edge runs the other way). midgard/shape.h's twin."""
+    (na, ns), t, b = FACES[face]
+    across, along = (t, b) if edge < 2 else (b, t)
+    side = -across[1] if edge % 2 == 0 else across[1]
+    g = next(i for i, f in enumerate(FACES) if f[0] == (across[0], side))
+    _gn, gt, gb = FACES[g]
+    if gt[0] == na:
+        g_edge, g_along = (1 if gt[1] == ns else 0), gb
+    else:
+        g_edge, g_along = (3 if gb[1] == ns else 2), gt
+    return g, g_edge, g_along[1] != along[1]
+
+
+def cube_across(face: int, u: float, v: float) -> tuple[int, float, float]:
+    """A face point just past one edge, as the same point on the face across it."""
+    if u < 0.0:
+        edge, past, along = 0, -u, v
+    elif u > 1.0:
+        edge, past, along = 1, u - 1.0, v
+    elif v < 0.0:
+        edge, past, along = 2, -v, u
+    elif v > 1.0:
+        edge, past, along = 3, v - 1.0, u
+    else:
+        return face, u, v
+    g, g_edge, reversed_ = cube_link(face, edge)
+    if reversed_:
+        along = 1.0 - along
+    inside = past if g_edge % 2 == 0 else 1.0 - past
+    return (g, inside, along) if g_edge < 2 else (g, along, inside)

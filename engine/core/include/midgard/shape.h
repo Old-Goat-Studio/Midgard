@@ -85,4 +85,19 @@ inline constexpr std::uint64_t kShapeFingerprint = 0xca94b76690b1e465ULL;
 glm::dvec3 cube_direction(int face, double u, double v);
 SurfacePoint cube_surface(const glm::dvec3& direction);  // height 0
 
+// How the cube's faces join. A face's edges are numbered 0 (u = 0), 1 (u = 1), 2 (v = 0) and
+// 3 (v = 1). Across an edge lies `face`, joined there by its edge `edge`; the coordinate along
+// the shared edge (v for edges 0 and 1, u for 2 and 3) runs the other way on that face if
+// `reversed`, so a point at t along one is at 1 - t along the other.
+struct CubeLink {
+    int face = 0;
+    int edge = 0;
+    bool reversed = false;
+};
+CubeLink cube_link(int face, int edge);
+// A face point just past one of its edges (u or v a little outside 0..1, not both), as the same
+// point on the face across that edge: exact for points on a power-of-two grid, so a grid point
+// found either way is bit-identical. Points inside the face come back as they are.
+SurfacePoint cube_across(const SurfacePoint& s);
+
 }  // namespace midgard

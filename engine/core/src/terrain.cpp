@@ -30,8 +30,22 @@ bool wraps(Shape::Kind kind) {
     return kind == Shape::Kind::FlatCylinder || kind == Shape::Kind::CurvedCylinder;
 }
 
+bool sphere(Shape::Kind kind) {
+    return kind == Shape::Kind::SphereOutside || kind == Shape::Kind::SphereInside;
+}
+
 int roots_along(double size) {
     return std::max(1, int(std::lround(size / kRootSize)));
+}
+
+// A sphere's faces have a power of two of roots a side, the nearest to kRootSize metres each
+// (in proportion), so every grid point is a power-of-two fraction of the face and the points on
+// face edges come out bit-identical from both faces.
+int sphere_roots(double size) {
+    constexpr double kSqrt2 = 1.4142135623730951;
+    int roots = 1;
+    while (roots < (1 << 16) && 2.0 * roots <= size / kRootSize * kSqrt2) roots *= 2;
+    return roots;
 }
 
 }  // namespace
@@ -240,8 +254,12 @@ Terrain::Terrain(const Body& body, const TerrainSettings& settings,
       stamps_(std::move(stamps)),
       seed_(settings.seed.value_or(body.seed)) {
     const glm::dvec2 size = body_.shape.face_size();
-    roots_u_ = roots_along(size.x);
-    roots_v_ = roots_along(size.y);
+    if (sphere(body_.shape.kind())) {
+        roots_u_ = roots_v_ = sphere_roots(size.x);
+    } else {
+        roots_u_ = roots_along(size.x);
+        roots_v_ = roots_along(size.y);
+    }
     const double root = std::max(size.x / roots_u_, size.y / roots_v_);
     const double spacing = std::max(settings_.spacing, 0.25);
     while (max_level_ < kMaxTerrainLevel &&
@@ -290,6 +308,18 @@ std::optional<ChunkKey> Terrain::neighbour(const ChunkKey& k, ChunkEdge edge) co
         case kNorth:
             n.y += 1;
             break;
+    }
+    const bool off = n.x < 0 || n.x >= across_u || n.y < 0 || n.y >= across_v;
+    if (off && sphere(body_.shape.kind())) {
+        // Onto the face across that edge (square faces: across_u == across_v).
+        const CubeLink link = cube_link(k.face, int(edge));
+        int along = edge < kSouth ? k.y : k.x;
+        if (link.reversed) along = across_u - 1 - along;
+        const int in = link.edge % 2 == 0 ? 0 : across_u - 1;
+        n.face = link.face;
+        n.x = link.edge < kSouth ? in : along;
+        n.y = link.edge < kSouth ? along : in;
+        return n;
     }
     if (n.x < 0 || n.x >= across_u) {
         if (!wraps(body_.shape.kind())) return std::nullopt;
@@ -529,12 +559,17 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
     std::vector<glm::dvec3> p(size_t(g) * g);
     ChunkMesh out;
     out.heights.resize(size_t(n + 1) * (n + 1));
+    const bool round = sphere(body_.shape.kind());
     for (int j = -1; j <= n + 1; ++j) {
         const double v = v_at(k, j);
         for (int i = -1; i <= n + 1; ++i) {
             const double u = u_at(k, i);
-            const double h = height(k.face, u, v);
-            p[size_t(j + 1) * g + size_t(i + 1)] = position(k.face, u, v, h);
+            // On a sphere, the border past a face's edge is the face across it (the same grid
+            // points, so normals match there). A cube corner's border point is never used.
+            SurfacePoint s{k.face, u, v, 0.0};
+            if (round && (u < 0.0 || u > 1.0) != (v < 0.0 || v > 1.0)) s = cube_across(s);
+            const double h = height(s.face, s.u, s.v);
+            p[size_t(j + 1) * g + size_t(i + 1)] = position(s.face, s.u, s.v, h);
             if (i >= 0 && i <= n && j >= 0 && j <= n) out.heights[size_t(j) * (n + 1) + i] = h;
         }
     }

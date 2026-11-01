@@ -1,0 +1,1805 @@
+{
+ "_about": "Cube-sphere terrain: heights and chunk hashes on every face (tools/reference/terrain.py).",
+ "bodies": {
+  "world": {
+   "shape": "sphere_outside",
+   "radius": 3000,
+   "seed": 11
+  },
+  "hollow": {
+   "shape": "sphere_inside",
+   "radius": 2500,
+   "seed": 12
+  }
+ },
+ "layout": {
+  "world": [
+   4,
+   4,
+   5
+  ],
+  "hollow": [
+   4,
+   4,
+   4
+  ]
+ },
+ "cases": [
+  {
+   "body": "world",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "50816b38cde7ae5e"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    0,
+    3,
+    3
+   ],
+   "hash": "464fb981d4e62eb2"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    0,
+    1,
+    0
+   ],
+   "hash": "a6bcf904b758445a"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "hash": "c60547a129913e47"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    1,
+    0,
+    0
+   ],
+   "hash": "640dfbf4f327f696"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    1,
+    7,
+    7
+   ],
+   "hash": "2f389aa3414d3f35"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    1,
+    3,
+    0
+   ],
+   "hash": "fd053b1c65acf1bf"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    1,
+    0,
+    3
+   ],
+   "hash": "1b8721ac0d952416"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    3,
+    0,
+    0
+   ],
+   "hash": "3eee2d9d729558c7"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    3,
+    31,
+    31
+   ],
+   "hash": "0ee31f4dc38320b8"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    3,
+    15,
+    0
+   ],
+   "hash": "ae02c76e1e65654b"
+  },
+  {
+   "body": "world",
+   "key": [
+    0,
+    3,
+    0,
+    15
+   ],
+   "hash": "2ac1cfe0e1d1fbb3"
+  },
+  {
+   "body": "world",
+   "face": 0,
+   "u": 0.0,
+   "v": 0.0,
+   "height": -9.22930908203125
+  },
+  {
+   "body": "world",
+   "face": 0,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 33.7904052734375
+  },
+  {
+   "body": "world",
+   "face": 0,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 25.07550048828125
+  },
+  {
+   "body": "world",
+   "face": 0,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 28.31280517578125
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "hash": "af066b36c7c41be4"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    0,
+    3,
+    3
+   ],
+   "hash": "543abeeac8a6e8b3"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    0,
+    1,
+    0
+   ],
+   "hash": "60fb502545fc1963"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    0,
+    0,
+    1
+   ],
+   "hash": "6cc4ff06587205d8"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    1,
+    0,
+    0
+   ],
+   "hash": "c6656ceb18793bb6"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    1,
+    7,
+    7
+   ],
+   "hash": "e7b5937fcda30866"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    1,
+    3,
+    0
+   ],
+   "hash": "2fde70da4bc1eea7"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    1,
+    0,
+    3
+   ],
+   "hash": "4a9715d345e2a539"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    3,
+    0,
+    0
+   ],
+   "hash": "fba03c44204fa76f"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    3,
+    31,
+    31
+   ],
+   "hash": "bf91e4677b24c6df"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    3,
+    15,
+    0
+   ],
+   "hash": "2bcd9bd09e10736a"
+  },
+  {
+   "body": "world",
+   "key": [
+    1,
+    3,
+    0,
+    15
+   ],
+   "hash": "99fdfbee348b5be7"
+  },
+  {
+   "body": "world",
+   "face": 1,
+   "u": 0.0,
+   "v": 0.0,
+   "height": -3.9439697265625
+  },
+  {
+   "body": "world",
+   "face": 1,
+   "u": 1.0,
+   "v": 0.5,
+   "height": -19.4896240234375
+  },
+  {
+   "body": "world",
+   "face": 1,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 24.61224365234375
+  },
+  {
+   "body": "world",
+   "face": 1,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 7.89288330078125
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    0,
+    0,
+    0
+   ],
+   "hash": "c4099dd6af9ec658"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    0,
+    3,
+    3
+   ],
+   "hash": "34b77a9d54663ca3"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    0,
+    1,
+    0
+   ],
+   "hash": "41747a055baa8847"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    0,
+    0,
+    1
+   ],
+   "hash": "c7442359ef6e2742"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    1,
+    0,
+    0
+   ],
+   "hash": "b47efecbd10b1721"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    1,
+    7,
+    7
+   ],
+   "hash": "a3acc24ddb1ab43c"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    1,
+    3,
+    0
+   ],
+   "hash": "0b600beb8bf4f9f6"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    1,
+    0,
+    3
+   ],
+   "hash": "2598eb877c7bcaaf"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    3,
+    0,
+    0
+   ],
+   "hash": "f2551b2fb71de190"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    3,
+    31,
+    31
+   ],
+   "hash": "7d2c93bca14705ca"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    3,
+    15,
+    0
+   ],
+   "hash": "40925b3c5a6520f7"
+  },
+  {
+   "body": "world",
+   "key": [
+    2,
+    3,
+    0,
+    15
+   ],
+   "hash": "0a6001e9589f7376"
+  },
+  {
+   "body": "world",
+   "face": 2,
+   "u": 0.0,
+   "v": 0.0,
+   "height": 14.04522705078125
+  },
+  {
+   "body": "world",
+   "face": 2,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 25.07550048828125
+  },
+  {
+   "body": "world",
+   "face": 2,
+   "u": 0.5,
+   "v": 1.0,
+   "height": -13.77490234375
+  },
+  {
+   "body": "world",
+   "face": 2,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 33.4095458984375
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    0,
+    0,
+    0
+   ],
+   "hash": "43f7feebb136a50e"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    0,
+    3,
+    3
+   ],
+   "hash": "df3c062b20558b28"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    0,
+    1,
+    0
+   ],
+   "hash": "213aa086beeb25fa"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    0,
+    0,
+    1
+   ],
+   "hash": "a9edf24a608959d3"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    1,
+    0,
+    0
+   ],
+   "hash": "23e5a496b13f98e5"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    1,
+    7,
+    7
+   ],
+   "hash": "ef8a587eee4258f9"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    1,
+    3,
+    0
+   ],
+   "hash": "8702069469e2c6ed"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    1,
+    0,
+    3
+   ],
+   "hash": "8e295f8e6acfdda4"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    3,
+    0,
+    0
+   ],
+   "hash": "1623bc06ccbf75ec"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    3,
+    31,
+    31
+   ],
+   "hash": "fb5512f67d20000b"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    3,
+    15,
+    0
+   ],
+   "hash": "f60812be8afb35d5"
+  },
+  {
+   "body": "world",
+   "key": [
+    3,
+    3,
+    0,
+    15
+   ],
+   "hash": "97bb22ce369afda6"
+  },
+  {
+   "body": "world",
+   "face": 3,
+   "u": 0.0,
+   "v": 0.0,
+   "height": -3.9439697265625
+  },
+  {
+   "body": "world",
+   "face": 3,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 18.55419921875
+  },
+  {
+   "body": "world",
+   "face": 3,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 32.90509033203125
+  },
+  {
+   "body": "world",
+   "face": 3,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 1.8037109375
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "hash": "17b078be0ac4b00f"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    0,
+    3,
+    3
+   ],
+   "hash": "7dd4f016fdb81bf5"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    0,
+    1,
+    0
+   ],
+   "hash": "2b3cfa744f85ce60"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    0,
+    0,
+    1
+   ],
+   "hash": "9c049996d1d7b543"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    1,
+    0,
+    0
+   ],
+   "hash": "2c4e7d37a8440ff7"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    1,
+    7,
+    7
+   ],
+   "hash": "125c0d2eab900f08"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    1,
+    3,
+    0
+   ],
+   "hash": "5cb047bb2a7d8114"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    1,
+    0,
+    3
+   ],
+   "hash": "b35e721f04be1412"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    3,
+    0,
+    0
+   ],
+   "hash": "e563c5ec209283a1"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    3,
+    31,
+    31
+   ],
+   "hash": "997f63fd9f9baf43"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    3,
+    15,
+    0
+   ],
+   "hash": "f2678adfff908469"
+  },
+  {
+   "body": "world",
+   "key": [
+    4,
+    3,
+    0,
+    15
+   ],
+   "hash": "f72626cdf3993bef"
+  },
+  {
+   "body": "world",
+   "face": 4,
+   "u": 0.0,
+   "v": 0.0,
+   "height": 21.16070556640625
+  },
+  {
+   "body": "world",
+   "face": 4,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 32.407958984375
+  },
+  {
+   "body": "world",
+   "face": 4,
+   "u": 0.5,
+   "v": 1.0,
+   "height": -28.6815185546875
+  },
+  {
+   "body": "world",
+   "face": 4,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 21.0810546875
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    0,
+    0,
+    0
+   ],
+   "hash": "b2257f88d26c22e1"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    0,
+    3,
+    3
+   ],
+   "hash": "25a27c5f08c16290"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    0,
+    1,
+    0
+   ],
+   "hash": "cbcd1fc9900983a7"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    0,
+    0,
+    1
+   ],
+   "hash": "46b5c1ab0b899ba9"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    1,
+    0,
+    0
+   ],
+   "hash": "a333d3afbfdab7ed"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    1,
+    7,
+    7
+   ],
+   "hash": "3709fe49ee6e281a"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    1,
+    3,
+    0
+   ],
+   "hash": "b7abe4520790ba9f"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    1,
+    0,
+    3
+   ],
+   "hash": "41c5326a9d4508fd"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    3,
+    0,
+    0
+   ],
+   "hash": "0d60a67ce4027132"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    3,
+    31,
+    31
+   ],
+   "hash": "7563447cf5da43ee"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    3,
+    15,
+    0
+   ],
+   "hash": "0da89aa25b5b4645"
+  },
+  {
+   "body": "world",
+   "key": [
+    5,
+    3,
+    0,
+    15
+   ],
+   "hash": "7de94d3084d1a0d3"
+  },
+  {
+   "body": "world",
+   "face": 5,
+   "u": 0.0,
+   "v": 0.0,
+   "height": -2.447998046875
+  },
+  {
+   "body": "world",
+   "face": 5,
+   "u": 1.0,
+   "v": 0.5,
+   "height": -7.57769775390625
+  },
+  {
+   "body": "world",
+   "face": 5,
+   "u": 0.5,
+   "v": 1.0,
+   "height": -13.77490234375
+  },
+  {
+   "body": "world",
+   "face": 5,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 19.48345947265625
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hash": "5fa921e216d7f007"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    0,
+    3,
+    3
+   ],
+   "hash": "25b4d4240b0874c8"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    0,
+    1,
+    0
+   ],
+   "hash": "bbf9a7e11369ecf9"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "hash": "e857811a883fccc3"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    1,
+    0,
+    0
+   ],
+   "hash": "0946167840893bae"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    1,
+    7,
+    7
+   ],
+   "hash": "ea44ddee5b671491"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    1,
+    3,
+    0
+   ],
+   "hash": "5998a0611ff9a19f"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    1,
+    0,
+    3
+   ],
+   "hash": "3f7ddc3e41c95dd4"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    3,
+    0,
+    0
+   ],
+   "hash": "d7db5bc69758ac85"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    3,
+    31,
+    31
+   ],
+   "hash": "b1353d34c41921fa"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    3,
+    15,
+    0
+   ],
+   "hash": "ac3457ce44884de7"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    0,
+    3,
+    0,
+    15
+   ],
+   "hash": "fc1746e0cf5b63da"
+  },
+  {
+   "body": "hollow",
+   "face": 0,
+   "u": 0.0,
+   "v": 0.0,
+   "height": -1.75860595703125
+  },
+  {
+   "body": "hollow",
+   "face": 0,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 7.110107421875
+  },
+  {
+   "body": "hollow",
+   "face": 0,
+   "u": 0.5,
+   "v": 1.0,
+   "height": -12.32012939453125
+  },
+  {
+   "body": "hollow",
+   "face": 0,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 9.20025634765625
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "hash": "008891b53d98c96b"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    0,
+    3,
+    3
+   ],
+   "hash": "590df191e432052f"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    0,
+    1,
+    0
+   ],
+   "hash": "31c1aba4b1008ae9"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    0,
+    0,
+    1
+   ],
+   "hash": "a542f80baf18cc5c"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    1,
+    0,
+    0
+   ],
+   "hash": "fe4c7d374ff371a4"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    1,
+    7,
+    7
+   ],
+   "hash": "8a03558dfc83af2c"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    1,
+    3,
+    0
+   ],
+   "hash": "3278ff61ea63c423"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    1,
+    0,
+    3
+   ],
+   "hash": "d2fddbd2015633b7"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    3,
+    0,
+    0
+   ],
+   "hash": "1c32691b516b765d"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    3,
+    31,
+    31
+   ],
+   "hash": "2f28271d0e27ca5a"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    3,
+    15,
+    0
+   ],
+   "hash": "ae3daed036dc0495"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    1,
+    3,
+    0,
+    15
+   ],
+   "hash": "4788af770152ad5a"
+  },
+  {
+   "body": "hollow",
+   "face": 1,
+   "u": 0.0,
+   "v": 0.0,
+   "height": 25.2650146484375
+  },
+  {
+   "body": "hollow",
+   "face": 1,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 12.74334716796875
+  },
+  {
+   "body": "hollow",
+   "face": 1,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 29.943359375
+  },
+  {
+   "body": "hollow",
+   "face": 1,
+   "u": 0.37,
+   "v": 0.61,
+   "height": -9.4169921875
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    0,
+    0,
+    0
+   ],
+   "hash": "67a9f3229b28e9bb"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    0,
+    3,
+    3
+   ],
+   "hash": "32afefb47b1f079e"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    0,
+    1,
+    0
+   ],
+   "hash": "79909b386e68b6e1"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    0,
+    0,
+    1
+   ],
+   "hash": "06a6577e080032d0"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    1,
+    0,
+    0
+   ],
+   "hash": "c182199c26aa4c80"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    1,
+    7,
+    7
+   ],
+   "hash": "2f96027b8d0d810d"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    1,
+    3,
+    0
+   ],
+   "hash": "ca560b4e9818f25f"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    1,
+    0,
+    3
+   ],
+   "hash": "a77b5ef87dd9bec1"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    3,
+    0,
+    0
+   ],
+   "hash": "60ebe6eb72d34c08"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    3,
+    31,
+    31
+   ],
+   "hash": "434c7f110b315ec9"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    3,
+    15,
+    0
+   ],
+   "hash": "7f702aacf8e5251c"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    2,
+    3,
+    0,
+    15
+   ],
+   "hash": "70ce143ca34c14f4"
+  },
+  {
+   "body": "hollow",
+   "face": 2,
+   "u": 0.0,
+   "v": 0.0,
+   "height": -11.44122314453125
+  },
+  {
+   "body": "hollow",
+   "face": 2,
+   "u": 1.0,
+   "v": 0.5,
+   "height": -12.32012939453125
+  },
+  {
+   "body": "hollow",
+   "face": 2,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 48.81512451171875
+  },
+  {
+   "body": "hollow",
+   "face": 2,
+   "u": 0.37,
+   "v": 0.61,
+   "height": -4.8192138671875
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    0,
+    0,
+    0
+   ],
+   "hash": "fe4aa2e0821ea891"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    0,
+    3,
+    3
+   ],
+   "hash": "f46bb849e2716ee1"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    0,
+    1,
+    0
+   ],
+   "hash": "9c093740bf79ed7c"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    0,
+    0,
+    1
+   ],
+   "hash": "a71b5e8c33f2111b"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    1,
+    0,
+    0
+   ],
+   "hash": "13b34c981b680863"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    1,
+    7,
+    7
+   ],
+   "hash": "2c1b39a340e2b910"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    1,
+    3,
+    0
+   ],
+   "hash": "db0d8bc3fe183b12"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    1,
+    0,
+    3
+   ],
+   "hash": "4f3c5e26ecf47cbe"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    3,
+    0,
+    0
+   ],
+   "hash": "f4079f7a72ceba8b"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    3,
+    31,
+    31
+   ],
+   "hash": "e7b89a1b651e7da8"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    3,
+    15,
+    0
+   ],
+   "hash": "8d5bf488507eeebe"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    3,
+    3,
+    0,
+    15
+   ],
+   "hash": "ba11a105cc4d06fe"
+  },
+  {
+   "body": "hollow",
+   "face": 3,
+   "u": 0.0,
+   "v": 0.0,
+   "height": 25.2650146484375
+  },
+  {
+   "body": "hollow",
+   "face": 3,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 11.0340576171875
+  },
+  {
+   "body": "hollow",
+   "face": 3,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 33.1348876953125
+  },
+  {
+   "body": "hollow",
+   "face": 3,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 15.23907470703125
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "hash": "2cd5559085f1e2ce"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    0,
+    3,
+    3
+   ],
+   "hash": "249fcd1d7a88a939"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    0,
+    1,
+    0
+   ],
+   "hash": "ce6fe5a2bf819ee4"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    0,
+    0,
+    1
+   ],
+   "hash": "f588a10143b8105c"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    1,
+    0,
+    0
+   ],
+   "hash": "4f46d2e123eedd54"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    1,
+    7,
+    7
+   ],
+   "hash": "b3bd68cd32f85aa6"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    1,
+    3,
+    0
+   ],
+   "hash": "4366d52dd0571220"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    1,
+    0,
+    3
+   ],
+   "hash": "f33bcd8b4fe020da"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    3,
+    0,
+    0
+   ],
+   "hash": "b6edea05d6096ec6"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    3,
+    31,
+    31
+   ],
+   "hash": "9bc16f7bb439e990"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    3,
+    15,
+    0
+   ],
+   "hash": "e8e763238c040b78"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    4,
+    3,
+    0,
+    15
+   ],
+   "hash": "c3702b371399bdb5"
+  },
+  {
+   "body": "hollow",
+   "face": 4,
+   "u": 0.0,
+   "v": 0.0,
+   "height": 22.04693603515625
+  },
+  {
+   "body": "hollow",
+   "face": 4,
+   "u": 1.0,
+   "v": 0.5,
+   "height": -3.95953369140625
+  },
+  {
+   "body": "hollow",
+   "face": 4,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 33.24566650390625
+  },
+  {
+   "body": "hollow",
+   "face": 4,
+   "u": 0.37,
+   "v": 0.61,
+   "height": 7.3353271484375
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    0,
+    0,
+    0
+   ],
+   "hash": "93d07c4952287bc6"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    0,
+    3,
+    3
+   ],
+   "hash": "0eeb463e4a521787"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    0,
+    1,
+    0
+   ],
+   "hash": "8a41981b2d2bc22d"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    0,
+    0,
+    1
+   ],
+   "hash": "57dd96e7dacf44cb"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    1,
+    0,
+    0
+   ],
+   "hash": "2ce342edc22b43e8"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    1,
+    7,
+    7
+   ],
+   "hash": "d150cbc5b5cd167a"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    1,
+    3,
+    0
+   ],
+   "hash": "e8cb0b1d2b659023"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    1,
+    0,
+    3
+   ],
+   "hash": "a1d880c9091df506"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    3,
+    0,
+    0
+   ],
+   "hash": "abf11047cf5fb9fe"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    3,
+    31,
+    31
+   ],
+   "hash": "22db6064e5e632d6"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    3,
+    15,
+    0
+   ],
+   "hash": "9bba9da30e4ef472"
+  },
+  {
+   "body": "hollow",
+   "key": [
+    5,
+    3,
+    0,
+    15
+   ],
+   "hash": "9de99576937423a5"
+  },
+  {
+   "body": "hollow",
+   "face": 5,
+   "u": 0.0,
+   "v": 0.0,
+   "height": 15.06329345703125
+  },
+  {
+   "body": "hollow",
+   "face": 5,
+   "u": 1.0,
+   "v": 0.5,
+   "height": 14.51397705078125
+  },
+  {
+   "body": "hollow",
+   "face": 5,
+   "u": 0.5,
+   "v": 1.0,
+   "height": 48.81512451171875
+  },
+  {
+   "body": "hollow",
+   "face": 5,
+   "u": 0.37,
+   "v": 0.61,
+   "height": -13.6632080078125
+  }
+ ]
+}

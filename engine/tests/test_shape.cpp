@@ -109,6 +109,74 @@ TEST_CASE("cube-sphere seams are exact on power-of-two grids") {
     }
 }
 
+TEST_CASE("cube faces' links: each edge leads to its twin, and points just past it map exactly") {
+    // A point at t along a face's edge (in that face's increasing u or v).
+    const auto on_edge = [](int edge, double t) {
+        return edge == 0   ? glm::dvec2(0.0, t)
+               : edge == 1 ? glm::dvec2(1.0, t)
+               : edge == 2 ? glm::dvec2(t, 0.0)
+                           : glm::dvec2(t, 1.0);
+    };
+    std::map<std::pair<int, int>, int> seen;
+    for (int f = 0; f < 6; ++f)
+        for (int e = 0; e < 4; ++e) {
+            CAPTURE(f);
+            CAPTURE(e);
+            const midgard::CubeLink link = midgard::cube_link(f, e);
+            CHECK(link.face != f);
+            const midgard::CubeLink back = midgard::cube_link(link.face, link.edge);
+            CHECK(back.face == f);
+            CHECK(back.edge == e);
+            CHECK(back.reversed == link.reversed);
+            ++seen[{std::min(f, link.face), std::max(f, link.face)}];
+            constexpr int N = 256;
+            for (int i = 0; i <= N; ++i) {
+                const double t = double(i) / N;
+                const glm::dvec2 a = on_edge(e, t),
+                                 b = on_edge(link.edge, link.reversed ? 1 - t : t);
+                // (Equal values: a raw direction may keep -0 where the other face has +0;
+                // positions clear the sign, and the seam test above holds them to the bit.)
+                CHECK(midgard::cube_direction(f, a.x, a.y) ==
+                      midgard::cube_direction(link.face, b.x, b.y));
+                // A grid point a few steps past the edge is the same as on the face across it.
+                if (i == 0 || i == N) continue;
+                for (int past = 1; past <= 2; ++past) {
+                    const double d = double(past) / N;
+                    glm::dvec2 out = a;
+                    if (e == 0) out.x = -d;
+                    if (e == 1) out.x = 1.0 + d;
+                    if (e == 2) out.y = -d;
+                    if (e == 3) out.y = 1.0 + d;
+                    const midgard::SurfacePoint s = midgard::cube_across({f, out.x, out.y, 0.0});
+                    CHECK(s.face == link.face);
+                    CHECK(s.u >= 0.0);
+                    CHECK(s.u <= 1.0);
+                    CHECK(s.v >= 0.0);
+                    CHECK(s.v <= 1.0);
+                    // The same step away from the edge on the other face: d inside it.
+                    const midgard::SurfacePoint expect = [&] {
+                        glm::dvec2 q = on_edge(link.edge, link.reversed ? 1 - t : t);
+                        if (link.edge == 0) q.x = d;
+                        if (link.edge == 1) q.x = 1.0 - d;
+                        if (link.edge == 2) q.y = d;
+                        if (link.edge == 3) q.y = 1.0 - d;
+                        return midgard::SurfacePoint{link.face, q.x, q.y, 0.0};
+                    }();
+                    CHECK(s.u == expect.u);
+                    CHECK(s.v == expect.v);
+                }
+            }
+        }
+    CHECK(seen.size() == 12);  // 12 edges, each found from both sides
+    for (const auto& [pair, count] : seen) CHECK(count == 2);
+    // Inside the face, a point stays.
+    const midgard::SurfacePoint inside = midgard::cube_across({3, 0.25, 0.75, 4.0});
+    CHECK(inside.face == 3);
+    CHECK(inside.u == 0.25);
+    CHECK(inside.v == 0.75);
+    CHECK(inside.height == 4.0);
+}
+
 TEST_CASE("the cylinder's join is exact") {
     for (const Shape& c : {named("curved_cylinder"), named("flat_cylinder")})
         for (int j = 0; j <= 16; ++j) {

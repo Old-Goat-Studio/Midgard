@@ -9,7 +9,11 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -324,4 +328,197 @@ TEST_CASE("terrain stamps: JSON, what the cook refuses, chunks they touch, and r
     REQUIRE(hit.has_value());
     CHECK(glm::length(*hit - g) < 0.05);
     CHECK_FALSE(t.raycast(g + glm::dvec3(0, 50, 0), {0, 1, 0}, 1000.0).has_value());  // upwards
+}
+
+namespace {
+
+json sphere_table() {
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "terrain_spheres.json");
+    REQUIRE(in);
+    return json::parse(in);
+}
+
+midgard::Terrain sphere(const json& t, const std::string& name) {
+    json b = t.at("bodies").at(name);
+    b["id"] = name;
+    return midgard::Terrain(midgard::body_from_json(b), {});
+}
+
+// The grid point at s (0..n) along a chunk's edge, in the face's increasing u or v.
+std::pair<int, int> edge_point(int edge, int s) {
+    switch (edge) {
+        case midgard::kWest:
+            return {0, s};
+        case midgard::kEast:
+            return {kN, s};
+        case midgard::kSouth:
+            return {s, 0};
+        default:
+            return {s, kN};
+    }
+}
+
+size_t at(int i, int j) {
+    return size_t(j) * (kN + 1) + size_t(i);
+}
+
+}  // namespace
+
+TEST_CASE("cube-sphere terrain: heights and chunk hashes on every face match the shared table") {
+    const json t = sphere_table();
+    for (const auto& [name, layout] : t.at("layout").items()) {
+        const midgard::Terrain tr = sphere(t, name);
+        CHECK(tr.roots_u() == layout[0].get<int>());
+        CHECK(tr.roots_v() == layout[1].get<int>());
+        CHECK(tr.max_level() == layout[2].get<int>());
+    }
+    int hashes = 0, heights = 0;
+    for (const json& c : t.at("cases")) {
+        CAPTURE(c.dump());
+        const midgard::Terrain tr = sphere(t, c.at("body").get<std::string>());
+        if (c.contains("hash")) {
+            const json& k = c.at("key");
+            const midgard::ChunkKey key{k[0].get<int>(), k[1].get<int>(), k[2].get<int>(),
+                                        k[3].get<int>()};
+            CHECK(tr.valid(key));
+            CHECK(hex(tr.chunk_hash(key)) == c.at("hash").get<std::string>());
+            ++hashes;
+        } else {
+            CHECK(tr.height(c.at("face").get<int>(), c.at("u").get<double>(),
+                            c.at("v").get<double>()) == c.at("height").get<double>());
+            ++heights;
+        }
+    }
+    CHECK(hashes == 144);
+    CHECK(heights == 48);
+}
+
+TEST_CASE("cube-sphere terrain: no cracks on any of the 12 face edges, at every level") {
+    const json t = sphere_table();
+    for (const std::string name : {"world", "hollow"}) {
+        CAPTURE(name);
+        const midgard::Terrain tr = sphere(t, name);
+        int checked = 0;
+        for (int level = 0; level <= tr.max_level(); ++level) {
+            const int across = tr.roots_u() << level;
+            // Every chunk along the edge up to level 2; then the first, a middle one, the last.
+            std::vector<int> along;
+            if (level <= 2) {
+                for (int a = 0; a < across; ++a) along.push_back(a);
+            } else {
+                along = {0, across / 2 - 1, across - 1};
+            }
+            for (int f = 0; f < 6; ++f)
+                for (int e = 0; e < 4; ++e) {
+                    const midgard::CubeLink link = midgard::cube_link(f, e);
+                    for (const int a : along) {
+                        CAPTURE(level);
+                        CAPTURE(f);
+                        CAPTURE(e);
+                        CAPTURE(a);
+                        const int in = e % 2 == 0 ? 0 : across - 1;
+                        const midgard::ChunkKey k = e < 2 ? midgard::ChunkKey{f, level, in, a}
+                                                          : midgard::ChunkKey{f, level, a, in};
+                        const std::optional<midgard::ChunkKey> n =
+                            tr.neighbour(k, midgard::ChunkEdge(e));
+                        REQUIRE(n.has_value());
+                        CHECK(n->face == link.face);
+                        CHECK(n->level == level);
+                        REQUIRE(tr.valid(*n));
+                        CHECK(tr.neighbour(*n, midgard::ChunkEdge(link.edge)) == k);  // and back
+                        const midgard::ChunkMesh m = tr.mesh(k), o = tr.mesh(*n);
+                        for (int s = 0; s <= kN; ++s) {
+                            const auto [i, j] = edge_point(e, s);
+                            const auto [oi, oj] = edge_point(link.edge, link.reversed ? kN - s : s);
+                            CHECK(m.heights[at(i, j)] == o.heights[at(oi, oj)]);
+                            CHECK(glm::length(world(m, i, j) - world(o, oi, oj)) < 1e-3);
+                            CHECK(glm::length(glm::dvec3(m.normals[at(i, j)] -
+                                                         o.normals[at(oi, oj)])) < 1e-4);
+                        }
+                        ++checked;
+                    }
+                }
+        }
+        CHECK(checked > 24 * 3);
+    }
+}
+
+TEST_CASE("cube-sphere terrain: the 8 corners are one point from all three faces") {
+    const json t = sphere_table();
+    for (const std::string name : {"world", "hollow"}) {
+        CAPTURE(name);
+        const midgard::Terrain tr = sphere(t, name);
+        for (int level = 0; level <= tr.max_level(); ++level) {
+            CAPTURE(level);
+            const int last = (tr.roots_u() << level) - 1;
+            // Corner points (rounded to 10 cm, to group them) and the heights found there.
+            std::map<std::vector<long long>, std::vector<double>> corners;
+            std::map<std::vector<long long>, std::vector<glm::dvec3>> points;
+            for (int f = 0; f < 6; ++f)
+                for (const auto& [cx, cy] :
+                     {std::pair{0, 0}, std::pair{1, 0}, std::pair{0, 1}, std::pair{1, 1}}) {
+                    const midgard::ChunkMesh m = tr.mesh({f, level, cx * last, cy * last});
+                    const int i = cx * kN, j = cy * kN;
+                    const glm::dvec3 p = world(m, i, j);
+                    const std::vector<long long> key{std::llround(p.x * 10.0),
+                                                     std::llround(p.y * 10.0),
+                                                     std::llround(p.z * 10.0)};
+                    corners[key].push_back(m.heights[at(i, j)]);
+                    points[key].push_back(p);
+                }
+            CHECK(corners.size() == 8);
+            for (const auto& [where, heights] : corners) {
+                CHECK(heights.size() == 3);
+                for (const double h : heights) CHECK(h == heights.front());
+                for (const glm::dvec3& p : points[where])
+                    CHECK(glm::length(p - points[where].front()) < 1e-3);
+            }
+        }
+    }
+}
+
+TEST_CASE("cube-sphere terrain: a fine chunk meets a coarse one across a face edge") {
+    const json t = sphere_table();
+    for (const std::string name : {"world", "hollow"}) {
+        const midgard::Terrain tr = sphere(t, name);
+        const int across = tr.roots_u() << 2;  // chunks a side at level 2
+        // Every face's four edges: a fine chunk (level 2) by the edge, and across it a coarse
+        // one (level 1).
+        for (int f = 0; f < 6; ++f)
+            for (int e = 0; e < 4; ++e) {
+                CAPTURE(name);
+                CAPTURE(f);
+                CAPTURE(e);
+                const int in = e % 2 == 0 ? 0 : across - 1;
+                const midgard::ChunkKey fine =
+                    e < 2 ? midgard::ChunkKey{f, 2, in, 5} : midgard::ChunkKey{f, 2, 6, in};
+                const midgard::ChunkKey coarse =
+                    tr.parent(*tr.neighbour(fine, midgard::ChunkEdge(e)));
+                const midgard::CubeLink link = midgard::cube_link(f, e);
+                std::array<bool, 4> flags{};
+                flags[size_t(e)] = true;
+                const midgard::ChunkMesh m = tr.mesh(fine, flags), c = tr.mesh(coarse);
+                // Positions along the shared edge in level-2 grid steps from the face's start.
+                const int total = across * kN;
+                const int fine_start = (e < 2 ? fine.y : fine.x) * kN;
+                const int coarse_start = (link.edge < 2 ? coarse.y : coarse.x) * 2 * kN;
+                const auto coarse_point = [&](int ci) {
+                    const auto [i, j] = edge_point(link.edge, ci);
+                    return world(c, i, j);
+                };
+                for (int s = 0; s <= kN; ++s) {
+                    CAPTURE(s);
+                    const int p = fine_start + s;
+                    const int local = (link.reversed ? total - p : p) - coarse_start;
+                    REQUIRE(local >= 0);
+                    REQUIRE(local <= 2 * kN);
+                    const glm::dvec3 on_edge =
+                        local % 2 == 0
+                            ? coarse_point(local / 2)
+                            : (coarse_point(local / 2) + coarse_point(local / 2 + 1)) * 0.5;
+                    const auto [i, j] = edge_point(e, s);
+                    CHECK(glm::length(world(m, i, j) - on_edge) < 1e-3);
+                }
+            }
+    }
 }

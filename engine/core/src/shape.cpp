@@ -94,6 +94,59 @@ SurfacePoint cube_surface(const glm::dvec3& d) {
     return {face, (unwarp(wu) + 1.0) * 0.5, (unwarp(wv) + 1.0) * 0.5, 0.0};
 }
 
+CubeLink cube_link(int face, int edge) {
+    if (face < 0 || face > 5) throw std::out_of_range("cube faces are 0 to 5");
+    if (edge < 0 || edge > 3) throw std::out_of_range("a face's edges are 0 to 3");
+    const Face& f = kFaces[face];
+    // Past the edge is the face whose normal points that way; the edge runs along f's other
+    // in-plane direction.
+    const AxisSign across = edge < 2 ? f.t : f.b;
+    const AxisSign along = edge < 2 ? f.b : f.t;
+    const double side = edge % 2 == 0 ? -across.sign : across.sign;
+    CubeLink link;
+    for (int g = 0; g < 6; ++g)
+        if (kFaces[g].n.axis == across.axis && kFaces[g].n.sign == side) link.face = g;
+    const Face& g = kFaces[link.face];
+    // On g, f's normal is the direction towards the shared edge.
+    AxisSign g_along{};
+    if (g.t.axis == f.n.axis) {
+        link.edge = g.t.sign == f.n.sign ? 1 : 0;
+        g_along = g.b;
+    } else {
+        link.edge = g.b.sign == f.n.sign ? 3 : 2;
+        g_along = g.t;
+    }
+    link.reversed = g_along.sign != along.sign;
+    return link;
+}
+
+SurfacePoint cube_across(const SurfacePoint& s) {
+    int edge = -1;
+    double past = 0.0, along = 0.0;  // how far past the edge, and where along it
+    if (s.u < 0.0) {
+        edge = 0, past = -s.u, along = s.v;
+    } else if (s.u > 1.0) {
+        edge = 1, past = s.u - 1.0, along = s.v;
+    } else if (s.v < 0.0) {
+        edge = 2, past = -s.v, along = s.u;
+    } else if (s.v > 1.0) {
+        edge = 3, past = s.v - 1.0, along = s.u;
+    }
+    if (edge < 0) return s;
+    const CubeLink link = cube_link(s.face, edge);
+    if (link.reversed) along = 1.0 - along;
+    SurfacePoint out{link.face, 0.0, 0.0, s.height};
+    const double in = link.edge % 2 == 0 ? past : 1.0 - past;
+    if (link.edge < 2) {
+        out.u = in;
+        out.v = along;
+    } else {
+        out.u = along;
+        out.v = in;
+    }
+    return out;
+}
+
 Shape Shape::bounded_area(double width, double length, double gravity) {
     return {Kind::BoundedArea, width, length, gravity};
 }

@@ -74,8 +74,15 @@ class Terrain:
         self.stamps = [stamp_from_json(s) for s in (stamps or [])]
         self.seed = self.settings.get("seed", body.get("seed", 0))
         su, sv = face_size(self.shape)
-        self.roots_u = max(1, int(math.floor(su / ROOT_SIZE + 0.5)))
-        self.roots_v = max(1, int(math.floor(sv / ROOT_SIZE + 0.5)))
+        if self.shape.kind in (shapes.SPHERE_OUTSIDE, shapes.SPHERE_INSIDE):
+            # A power of two a side, so face-edge grid points are bit-identical from both faces.
+            roots = 1
+            while roots < (1 << 16) and 2.0 * roots <= su / ROOT_SIZE * 1.4142135623730951:
+                roots *= 2
+            self.roots_u = self.roots_v = roots
+        else:
+            self.roots_u = max(1, int(math.floor(su / ROOT_SIZE + 0.5)))
+            self.roots_v = max(1, int(math.floor(sv / ROOT_SIZE + 0.5)))
         root = max(su / self.roots_u, sv / self.roots_v)
         spacing = max(self.settings["spacing"], 0.25)
         self.max_level = 0
@@ -254,11 +261,43 @@ def make_table() -> dict:
             "fingerprint": f"{fingerprint():016x}", "cases": cases}
 
 
+SPHERES = {  # the cube-sphere's terrains (terrain_spheres.json)
+    "world": {"shape": "sphere_outside", "radius": 3000, "seed": 11},
+    "hollow": {"shape": "sphere_inside", "radius": 2500, "seed": 12},
+}
+
+
+def make_sphere_table() -> dict:
+    """The shared table schema/tests/terrain_spheres.json (made once, then fixed): chunk
+    hashes on every face, at the face's corners, edges and middle, at three levels."""
+    cases = []
+    for name, body in SPHERES.items():
+        t = Terrain(body)
+        for face in range(6):
+            for level in (0, 1, 3):
+                last = (t.roots_u << level) - 1
+                for x, y in ((0, 0), (last, last), (last // 2, 0), (0, last // 2)):
+                    key = (face, level, x, y)
+                    cases.append({"body": name, "key": list(key),
+                                  "hash": f"{t.chunk_hash(key):016x}"})
+            for u, v in ((0.0, 0.0), (1.0, 0.5), (0.5, 1.0), (0.37, 0.61)):
+                cases.append({"body": name, "face": face, "u": u, "v": v,
+                              "height": t.height(face, u, v)})
+    return {"_about": "Cube-sphere terrain: heights and chunk hashes on every face "
+                      "(tools/reference/terrain.py).",
+            "bodies": SPHERES,
+            "layout": {name: [Terrain(b).roots_u, Terrain(b).roots_v, Terrain(b).max_level]
+                       for name, b in SPHERES.items()},
+            "cases": cases}
+
+
 if __name__ == "__main__":
     import sys
     which = sys.argv[1] if len(sys.argv) > 1 else "chunks"
     if which == "stamps":
         out, table = TABLES / "terrain_stamps.json", make_stamp_table()
+    elif which == "spheres":
+        out, table = TABLES / "terrain_spheres.json", make_sphere_table()
     else:
         out, table = TABLES / "terrain_chunks.json", make_table()
     out.write_text(json.dumps(table, indent=1) + "\n", encoding="utf-8", newline="\n")
