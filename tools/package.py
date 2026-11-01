@@ -4,8 +4,10 @@
     python tools/package.py                 bump the build number, build the engine and the editor
     python tools/package.py --skip-engine   editor only (the About box then says "Engine not found")
     python tools/package.py --no-bump       keep the current build number (CI)
+    python tools/package.py --installer     also make a Windows installer (Inno Setup 6)
 
-The result is build/dist/Midgard/. The build number is bumped first; if anything fails, the
+The result is build/dist/Midgard/; --installer adds build/installer/Midgard-Setup-<version>.exe
+from midgard.iss. The build number is bumped first; if anything fails, the
 previous editor/midgard_editor/version.py is put back, so a failed build never uses up a number.
 One-folder mode keeps the Qt libraries as separate files, as the LGPL requires.
 """
@@ -101,11 +103,43 @@ def build_editor() -> None:
         "--out", APP / "THIRD_PARTY_NOTICES.txt")
 
 
+def find_iscc() -> Path:
+    found = shutil.which("ISCC")
+    if found:
+        return Path(found)
+    for base in (os.environ.get("LOCALAPPDATA", ""), os.environ.get("PROGRAMFILES(X86)", ""),
+                 os.environ.get("PROGRAMFILES", "")):
+        for sub in ("Programs/Inno Setup 6", "Inno Setup 6"):
+            candidate = Path(base) / sub / "ISCC.exe"
+            if base and candidate.is_file():
+                return candidate
+    sys.exit("The installer needs Inno Setup 6 (ISCC.exe): https://jrsoftware.org/isinfo.php")
+
+
+def build_installer() -> Path:
+    """build/installer/Midgard-Setup-<version>.<build>.exe from midgard.iss."""
+    if os.name != "nt":
+        sys.exit("--installer makes a Windows installer: run it on Windows.")
+    iscc = find_iscc()
+    from PIL import Image  # PyInstaller's own icon conversion needs Pillow too
+
+    Image.open(ROOT / "midgard512.png").save(
+        ROOT / "build" / "midgard.ico",
+        sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    version: dict = {}
+    exec(VERSION_PY.read_text(encoding="utf-8"), version)
+    run(iscc, f"/DAppVersion={version['VERSION']}", f"/DAppBuild={version['BUILD']}",
+        ROOT / "midgard.iss")
+    name = f"Midgard-Setup-{version['VERSION']}.{version['BUILD']}.exe"
+    return ROOT / "build" / "installer" / name
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skip-engine", action="store_true")
     parser.add_argument("--no-bump", action="store_true")
+    parser.add_argument("--installer", action="store_true")
     args = parser.parse_args()
 
     backup = VERSION_PY.with_name("version.py.bak")
@@ -117,12 +151,16 @@ def main() -> int:
         if not args.skip_engine:
             build_engine()
         build_editor()
+        if args.installer:
+            installer = build_installer()
     except BaseException:
         if backup.exists():
             shutil.move(backup, VERSION_PY)  # a failed build never uses up a build number
         raise
     backup.unlink(missing_ok=True)
     print(f"Packaged editor: {APP / ('Midgard' + EXE)}")
+    if args.installer:
+        print(f"Installer: {installer}")
     return 0
 
 
