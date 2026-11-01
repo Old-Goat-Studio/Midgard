@@ -77,6 +77,24 @@ struct Light {
     std::vector<LocalLight> local;
 };
 
+// The terrain's look (midgard/terrain.h's Climate and Biome, as the renderer takes them).
+inline constexpr int kMaxTerrainBiomes = 8;
+struct TerrainBiome {
+    float temperature_min = -100.0f, temperature_max = 100.0f;  // degrees Celsius
+    float moisture_min = 0.0f, moisture_max = 1.0f;
+    glm::vec3 color{0.27f, 0.42f, 0.16f};      // sRGB, lush
+    glm::vec3 dry_color{0.55f, 0.50f, 0.28f};  // sRGB, dry
+};
+struct TerrainLook {
+    // The world's shape, for "up" at each point: 0 flat (+Y), 1 a curved cylinder (towards its
+    // axis, along Z through `center`), 2 a sphere's outside (away from `center`), 3 its inside.
+    int shape = 0;
+    glm::dvec3 center{0.0};
+    bool climate = false;              // snow where the temperature is below freezing
+    float season_offset = 0.0f;        // degrees Celsius added by the season (summer warmer)
+    std::vector<TerrainBiome> biomes;  // none: the 5.9 grass
+};
+
 // A line drawn into the scene for debugging (collider outlines and the like): its ends relative
 // to the camera's origin, like everything drawn, and its colour (sRGB, unlit). Things in front
 // of it hide it.
@@ -169,6 +187,10 @@ public:
     // The sky and fog for every frame from now on (render/atmosphere.h). The default is a flat
     // sky in each frame's clear colour and no fog.
     void set_environment(const Environment& environment);
+
+    // The terrain's look, for every frame from now on (shaders/terrain.frag): the world's shape
+    // (the terrain works out "up" at each point from it) and its climate and biomes.
+    void set_terrain_look(const TerrainLook& look);
 
     // Brightness before tone mapping (1 = as lit); the environment will drive it later.
     void set_exposure(float exposure);

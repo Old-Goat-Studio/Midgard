@@ -470,6 +470,10 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
     return out;
 }
 
+render::TerrainLook Game::terrain_look() const {
+    return terrain_ ? terrain_->look() : render::TerrainLook{};
+}
+
 std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const {
     return collider_outlines(scene_, origin, [this](const std::string& asset) {
         auto it = outline_meshes_.find(asset);

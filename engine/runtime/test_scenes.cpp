@@ -569,6 +569,26 @@ public:
                 eye_ = {-1180.0, 4.0, -300.0};
                 look_ = {-1000.0, 0.0, -260.0};
             }
+        } else if (which == "planet_biomes") {
+            // A 3 km planet with a climate and four biomes, from 5 km up: desert and savanna
+            // round the equator, forest between, tundra towards the poles, ice where it is
+            // below freezing (milestone 5.11).
+            body = {{"shape", "sphere_outside"},
+                    {"radius", 3000},
+                    {"seed", 11},
+                    {"origin", {0, -3000, 0}}};
+            terrain = nlohmann::json::parse(R"({"height_scale": 90,
+                "climate": {"temperature": 30, "latitude_cooling": 55, "lapse_rate": 30,
+                            "variation": 3, "season_swing": 10},
+                "biomes": [
+                  {"name": "Desert", "temperature": [24, 80], "moisture": [0, 0.5],
+                   "color": [0.80, 0.68, 0.42], "dry_color": [0.86, 0.74, 0.50]},
+                  {"name": "Savanna", "temperature": [20, 80], "moisture": [0.5, 1],
+                   "color": [0.50, 0.55, 0.22], "dry_color": [0.66, 0.60, 0.30]},
+                  {"name": "Forest", "temperature": [6, 20], "moisture": [0, 1],
+                   "color": [0.13, 0.30, 0.12], "dry_color": [0.30, 0.38, 0.17]},
+                  {"name": "Tundra", "temperature": [-60, 6], "moisture": [0, 1],
+                   "color": [0.45, 0.47, 0.40], "dry_color": [0.55, 0.52, 0.45]}]})");
         } else if (which == "planet" || which == "planet_low") {
             // A 3 km planet: from low orbit over a cube corner, where three faces meet; or
             // low over the ground by the edge between faces +X and +Y, looking across it.
@@ -630,7 +650,7 @@ public:
             look_ = t.ground({0.0, 0.0, -60.0});
         }
         if (which == "planet" || which == "planet_low" || which == "hollow" ||
-            which == "hollow_far") {
+            which == "hollow_far" || which == "planet_biomes") {
             const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
             // A point on the ground (in a direction from the centre) and a height above it.
             const auto above = [&](const glm::dvec3& direction, double height) {
@@ -638,7 +658,10 @@ public:
                     t.ground(t.body().origin + glm::normalize(direction) * t.body().shape.radius());
                 return g + glm::dvec3(t.body().up(g)) * height;
             };
-            if (which == "planet") {
+            if (which == "planet_biomes") {
+                eye_ = above({1.0, 0.35, -0.3}, 5000.0);
+                look_ = t.body().origin + glm::dvec3(0.0, 400.0, 0.0);
+            } else if (which == "planet") {
                 eye_ = above({1.0, 1.25, -0.55}, 1400.0);
                 look_ = above({1.0, 1.0, -1.0}, 0.0);
             } else if (which == "planet_low") {
@@ -677,7 +700,7 @@ public:
         streamer_ =
             std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain);
         up_ = glm::vec3(scene_.settings.body->up(eye_));
-        if (which == "hollow_far") far_ = 20000.0f;
+        if (which == "hollow_far" || which == "planet_biomes") far_ = 20000.0f;
     }
     void upload(render::Renderer& renderer) override { light_.upload(renderer); }
     void stream(render::Renderer& renderer, const glm::dvec3& origin) override {
@@ -699,6 +722,7 @@ public:
     render::Light light(const glm::dvec3& origin) const override { return scene_.light(origin); }
     glm::vec4 sky() const override { return {scene_.settings.sky, 1.0f}; }
     render::Environment environment() const override { return scene_.environment(eye_); }
+    render::TerrainLook terrain_look() const override { return streamer_->look(); }
 
 private:
     Scene scene_;
@@ -726,7 +750,8 @@ std::vector<std::string> names() {
     for (const char* which :
          {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore", "terrain_planet",
           "terrain_planet_low", "terrain_hollow", "terrain_hollow_far", "terrain_habitat_ground",
-          "terrain_habitat_rod", "terrain_hollow_light", "terrain_winter", "terrain_autumn"})
+          "terrain_habitat_rod", "terrain_hollow_light", "terrain_planet_biomes", "terrain_winter",
+          "terrain_autumn"})
         out.push_back(which);
     return out;
 }
@@ -758,6 +783,7 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_habitat_ground") return std::make_unique<TerrainScene>("habitat_ground");
     if (name == "terrain_habitat_rod") return std::make_unique<TerrainScene>("habitat_rod");
     if (name == "terrain_hollow_light") return std::make_unique<TerrainScene>("hollow_light");
+    if (name == "terrain_planet_biomes") return std::make_unique<TerrainScene>("planet_biomes");
     if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
     if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
     for (const char* shape : kDayShapes)

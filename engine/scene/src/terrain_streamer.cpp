@@ -77,40 +77,15 @@ render::MeshData wall(double w, double low, double high, float facing) {
 
 }  // namespace
 
-glm::vec2 octahedral(const glm::vec3& n) {
-    const float sum = std::abs(n.x) + std::abs(n.y) + std::abs(n.z);
-    glm::vec2 p = glm::vec2(n.x, n.y) / std::max(sum, 1e-20f);
-    if (n.z < 0.0f) {
-        const glm::vec2 s(p.x >= 0.0f ? 1.0f : -1.0f, p.y >= 0.0f ? 1.0f : -1.0f);
-        p = (glm::vec2(1.0f) - glm::abs(glm::vec2(p.y, p.x))) * s;
-    }
-    return p;
-}
-
-int up_frame(const glm::dvec3& up) {
-    int axis = 0;
-    for (int a = 1; a < 3; ++a)
-        if (std::abs(up[a]) > std::abs(up[axis])) axis = a;
-    return axis * 2 + (up[axis] < 0.0 ? 1 : 0);
-}
-
-glm::vec3 in_up_frame(const glm::vec3& v, int frame) {
-    if (frame < 0) return v;
-    const int axis = frame / 2;
-    const float sign = frame % 2 == 1 ? -1.0f : 1.0f;
-    return {v[(axis + 1) % 3], v[(axis + 2) % 3], sign * v[axis]};
-}
-
-render::MeshData ground_mesh_data(const ChunkMesh& mesh, int frame) {
+render::MeshData ground_mesh_data(const ChunkMesh& mesh) {
     render::MeshData out;
     out.vertices.reserve(mesh.positions.size());
     for (size_t i = 0; i < mesh.positions.size(); ++i) {
         const glm::vec3 b = i < mesh.biome.size() ? mesh.biome[i] : glm::vec3(0.5f, 0.0f, 0.0f);
         render::Vertex v = vertex(mesh.positions[i], mesh.normals[i], glm::vec2(b.x, b.y));
-        const glm::vec2 up =
-            octahedral(in_up_frame(i < mesh.ups.size() ? mesh.ups[i] : glm::vec3(0, 1, 0), frame));
-        v.tangent[0] = up.x;
-        v.tangent[1] = up.y;
+        // ("Up" the shader works out from the world's shape: TerrainLook.)
+        v.tangent[0] = i < mesh.temperatures.size() ? mesh.temperatures[i] : 0.0f;
+        v.tangent[1] = 0.0f;
         v.tangent[2] = b.z;  // painted ground: -1 sand to 1 rock
         v.tangent[3] = float(mesh.heights[i]);
         out.vertices.push_back(v);
@@ -180,6 +155,35 @@ TerrainStreamer::MeshKey TerrainStreamer::mesh_key(const TerrainLeaf& l) {
     return (std::uint64_t(l.key.face) << 60) | (std::uint64_t(l.key.level + 16) << 54) |
            (std::uint64_t(std::uint32_t(l.key.x)) << 31) |
            (std::uint64_t(std::uint32_t(l.key.y)) << 4) | flags;
+}
+
+render::TerrainLook TerrainStreamer::look() const {
+    render::TerrainLook out;
+    const Body& body = terrain_.body();
+    switch (body.shape.kind()) {
+        case Shape::Kind::CurvedCylinder:
+            out.shape = 1;
+            break;
+        case Shape::Kind::SphereOutside:
+            out.shape = 2;
+            break;
+        case Shape::Kind::SphereInside:
+            out.shape = 3;
+            break;
+        default:
+            break;
+    }
+    out.center = body.origin;
+    const TerrainSettings& t = terrain_.settings();
+    if (t.climate) {
+        out.climate = true;
+        // Summer warmer, winter colder: half the swing either way.
+        out.season_offset = float(std::clamp(summer_, -1.0, 1.0) * t.climate->season_swing * 0.5);
+    }
+    for (const Biome& b : t.biomes)
+        out.biomes.push_back({float(b.temperature_min), float(b.temperature_max),
+                              float(b.moisture_min), float(b.moisture_max), b.color, b.dry_color});
+    return out;
 }
 
 bool TerrainStreamer::casts_shadow(const ChunkKey& key, const glm::dvec3& camera) const {
@@ -334,9 +338,8 @@ void TerrainStreamer::update(const glm::dvec3& camera, render::Renderer* rendere
         const Terrain* terrain = &terrain_;
         const TerrainLeaf l = e->leaf;
         const bool round = sphere();
-        const int frame = round ? up_frame(terrain_.body().up(terrain_.chunk_origin(l.key))) : -1;
-        auto make = [terrain, l, made, round, frame] {
-            made->ground = ground_mesh_data(terrain->mesh(l.key, l.coarser), frame);
+        auto make = [terrain, l, made, round] {
+            made->ground = ground_mesh_data(terrain->mesh(l.key, l.coarser));
             if (const auto water = terrain->water_mesh(l.key, l.coarser))
                 made->water = water_mesh_data(*water, round);
         };
@@ -429,8 +432,6 @@ std::vector<render::DrawItem> TerrainStreamer::draws(const glm::dvec3& origin) c
         d.model = glm::translate(glm::mat4(1.0f), glm::vec3(at));
         d.terrain = true;
         d.color = look;
-        if (round)  // up in the frame of its own axis (ground_mesh_data's frame)
-            d.color.w = float(2 + up_frame(terrain_.body().up(terrain_.chunk_origin(leaf.key))));
         d.emissive = levels;
         d.casts_shadow = casts_shadow(leaf.key, origin);
         ground.emplace_back(distance, d);

@@ -49,6 +49,34 @@ inline constexpr int kMaxTerrainLevel = 12;
 enum class WallLook { Cliff, Fortification, Barrier };
 const char* wall_look_name(WallLook look);  // "cliff", "fortification", "barrier"
 
+// A world's climate (milestone 5.11): the temperature at a point, in degrees Celsius, is
+//   temperature - latitude_cooling * |latitude| / 90   (a sphere's latitude; 0 on other shapes)
+//               - lapse_rate * max(height, 0) / 1000
+//               + variation * fbm(seed ^ tag("temperature"), q / 3000, 3) / 65536
+// and, with the seasons, it swings season_swing degrees between deep winter and high summer.
+// Snow lies where it is below freezing (in place of the snow line).
+struct Climate {
+    double temperature = 14.0;       // at sea level (on a planet, at the equator)
+    double latitude_cooling = 40.0;  // how much colder the poles are
+    double lapse_rate = 6.5;         // degrees colder each kilometre up
+    double variation = 3.0;          // the noise's swing either way
+    double season_swing = 12.0;      // from deep winter to high summer
+    bool operator==(const Climate&) const = default;
+};
+
+// A biome: ground of its own colours where the temperature and moisture are in its ranges
+// (blended a little across its edges with its neighbours'); dry_color where the moisture is
+// low, color where it is high. Sand, rock and snow still come by their own rules.
+inline constexpr int kMaxBiomes = 8;
+struct Biome {
+    std::string name;
+    double temperature_min = -100.0, temperature_max = 100.0;  // degrees Celsius
+    double moisture_min = 0.0, moisture_max = 1.0;             // 0 dry to 1 lush
+    glm::vec3 color{0.27f, 0.42f, 0.16f};                      // sRGB, lush
+    glm::vec3 dry_color{0.55f, 0.50f, 0.28f};                  // sRGB, dry
+    bool operator==(const Biome&) const = default;
+};
+
 struct TerrainSettings {
     std::optional<std::uint64_t> seed;  // none: the body's
     double base = 8.0;                  // metres: the height where the noise is 0
@@ -66,6 +94,9 @@ struct TerrainSettings {
     // How the ground's height is made, a world type's graph (midgard/worldgen.h) as JSON: in
     // place of base + height_scale * noise. Empty: those (the 5.9 hills).
     std::string graph;
+    // Its climate and biomes (milestone 5.11); none: the 5.9 grass and snow line.
+    std::optional<Climate> climate;
+    std::vector<Biome> biomes;
     bool operator==(const TerrainSettings&) const = default;
 };
 
@@ -130,6 +161,7 @@ struct ChunkMesh {
     // 0 as generated, 1 rock).
     std::vector<glm::vec3> ups;
     std::vector<glm::vec3> biome;
+    std::vector<float> temperatures;  // degrees Celsius at each point (with a climate only)
 };
 
 // Edges of a chunk, for ChunkMesh's coarser neighbours.
@@ -191,6 +223,9 @@ public:
     // The biome at a point: x moisture (0 dry to 1 lush), y fine detail (-1 to 1), z painted
     // ground (-1 sand to 1 rock), with the paint stamps.
     glm::vec3 biome_at(int face, double u, double v) const;
+    // The temperature (degrees Celsius, before the seasons) at a point `height` metres up, from
+    // the climate; 0 without one.
+    double temperature_at(int face, double u, double v, double height) const;
     // Where a chunk's mesh is placed: its middle, on the ground at height 0.
     glm::dvec3 chunk_origin(const ChunkKey& key) const;
     // grid: kChunkQuads + 1 points a side. coarser[edge]: the neighbour there is a level up.

@@ -44,6 +44,8 @@ public:
     virtual glm::vec4 sky() const = 0;
     // The sky and fog; by default a flat sky (sky()) and no fog.
     virtual render::Environment environment() const { return {}; }
+    // The terrain's look (its world's shape, climate and biomes); by default flat.
+    virtual render::TerrainLook terrain_look() const { return {}; }
     // Debug lines (shown with --debug-physics); by default none.
     virtual std::vector<render::DebugLine> debug_lines(const glm::dvec3&) const { return {}; }
 };

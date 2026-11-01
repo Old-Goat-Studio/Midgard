@@ -65,7 +65,18 @@ cylinder's ends, arithmetic, curves, terraces, and the smooth and erode filters,
 nested); without one, the ground is `base` plus `height_scale` times noise as below. Either way
 the shape's edges then shape it (the ocean band, the ramps to a cylinder's walls). Filters make a
 ground about five times the work: the cook warns when one costs more than four times the plain
-ground, which streams more slowly than a chunk's budget. Migration 12 made each scene's terrain settings into its own Custom world
+ground, which streams more slowly than a chunk's budget.
+
+A recipe's ground can also have a `climate` and `biomes` (milestone 5.11):
+`"climate": {"temperature": 14, "latitude_cooling": 40, "lapse_rate": 6.5, "variation": 3,
+"season_swing": 12}` gives each point a temperature in degrees Celsius (`temperature` at sea
+level, less `latitude_cooling` towards a planet's poles and `lapse_rate` a kilometre up, give or
+take `variation`), warmer in summer and colder in winter by half the `season_swing`; snow then
+lies where it is below freezing, in place of the snow line. Up to 8 `biomes`,
+`{"name", "temperature": [lowest, highest], "moisture": [0 to 1, 0 to 1], "color": [r, g, b],
+"dry_color": [r, g, b]}` (sRGB, lush and dry), colour the ground where both are in range,
+blended across their edges; sand on beaches, rock on slopes and snow still come by their own
+rules. Without them, the ground is the 5.9 grass. Migration 12 made each scene's terrain settings into its own Custom world
 type, with the same ground.
 
 The ground is hills and valleys on any shape (`midgard/terrain.h`; spheres from milestone

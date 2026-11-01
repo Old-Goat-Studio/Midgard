@@ -247,6 +247,12 @@
       "max_bad": 0.01
     },
     {
+      "name": "terrain_planet_biomes",
+      "_about": "A 3 km planet with a climate and four biomes, from 5 km up (milestone 5.11): tan desert and savanna round the equator, green forest between, grey tundra towards the pole and ice where it is below freezing; the seas dark beneath. Up comes from the world's shape in the shader.",
+      "args": ["--size", "480x270", "--scene", "terrain_planet_biomes"],
+      "max_bad": 0.01
+    },
+    {
       "name": "terrain_shore",
       "_about": "Low over the sea by a coast (milestone 5.9): water from the Earth-like environment's look, its waves reflecting the sky, the island beyond, and the shallows below showing the ground through foam.",
       "args": ["--size", "480x270", "--scene", "terrain_shore"],

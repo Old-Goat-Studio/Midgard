@@ -35,4 +35,13 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 sky_params;         // x: cos of the disc's soft outer edge; y: sin of the horizon's dip
     vec4 fog_color;          // linear rgb, w: how much brighter towards the sun
     vec4 fog_params;         // x: density, y: height falloff, z: camera height, w: sky distance
+    // The terrain's look (TerrainLook): xyz the world's centre (camera-relative), w its shape
+    // (0 flat, 1 curved cylinder, 2 sphere outside, 3 inside); x biomes, y the season's
+    // temperature offset, z 1 with a climate; each biome's ranges (temperature min, max,
+    // moisture min, max) and colours (linear, lush and dry).
+    vec4 terrain_body;
+    vec4 terrain_climate;
+    vec4 biome_range[8];
+    vec4 biome_color[8];
+    vec4 biome_dry[8];
 } frame;

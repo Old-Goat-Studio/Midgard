@@ -77,6 +77,13 @@ struct FrameData {
     glm::vec4 sky_params;  // x: cos of the disc's soft outer edge; y: sin of the horizon's dip
     glm::vec4 fog_color;   // w: sun scatter
     glm::vec4 fog_params;  // density, height falloff, camera height, sky distance
+    // The terrain's look: xyz the world's centre (camera-relative), w its shape; x biomes,
+    // y the season's temperature offset, z 1 with a climate; each biome's ranges and colours.
+    glm::vec4 terrain_body;
+    glm::vec4 terrain_climate;
+    glm::vec4 biome_range[kMaxTerrainBiomes];  // temperature min, max; moisture min, max
+    glm::vec4 biome_color[kMaxTerrainBiomes];  // linear rgb, lush
+    glm::vec4 biome_dry[kMaxTerrainBiomes];    // linear rgb, dry
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -193,6 +200,7 @@ struct Renderer::Impl {
     VkPipeline line_pipeline = VK_NULL_HANDLE;     // debug lines, after the sky
     std::vector<DebugLine> debug_lines;
     Environment environment;
+    TerrainLook terrain_look;
     VkPipelineLayout overlay_layout = VK_NULL_HANDLE;
     VkPipeline overlay_pipeline = VK_NULL_HANDLE;
     std::vector<OverlayLine> overlay_lines;
@@ -2112,6 +2120,21 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
     data.fog_color = glm::vec4(fog_color, std::max(fog.sun_scatter, 0.0f));
     data.fog_params = glm::vec4(std::max(fog.density, 0.0f), std::max(fog.height_falloff, 0.0f),
                                 fog.camera_height, std::max(fog.sky_distance, 0.0f));
+    // The terrain's look.
+    {
+        const TerrainLook& t = r.terrain_look;
+        data.terrain_body = glm::vec4(glm::vec3(t.center - camera.origin), float(t.shape));
+        const int count = std::min(int(t.biomes.size()), kMaxTerrainBiomes);
+        data.terrain_climate =
+            glm::vec4(float(count), t.season_offset, t.climate ? 1.0f : 0.0f, 0.0f);
+        for (int i = 0; i < count; ++i) {
+            const TerrainBiome& b = t.biomes[size_t(i)];
+            data.biome_range[i] =
+                glm::vec4(b.temperature_min, b.temperature_max, b.moisture_min, b.moisture_max);
+            data.biome_color[i] = glm::vec4(to_linear(b.color), 1.0f);
+            data.biome_dry[i] = glm::vec4(to_linear(b.dry_color), 1.0f);
+        }
+    }
     std::memcpy(f.ubo.mapped, &data, sizeof(data));
     vmaFlushAllocation(r.allocator, f.ubo.allocation, 0, VK_WHOLE_SIZE);
 
@@ -2158,6 +2181,10 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
 
 const std::vector<std::string>& Renderer::validation_messages() const {
     return impl_->validation_messages;
+}
+
+void Renderer::set_terrain_look(const TerrainLook& look) {
+    impl_->terrain_look = look;
 }
 
 void Renderer::set_environment(const Environment& environment) {

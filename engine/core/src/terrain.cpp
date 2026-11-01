@@ -149,6 +149,52 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
             throw std::runtime_error("terrain: \"graph\" is a world graph (an object)");
         t.graph = j.at("graph").dump();
     }
+    if (j.contains("climate") && !j.at("climate").is_null()) {
+        const nlohmann::json& c = j.at("climate");
+        if (!c.is_object()) throw std::runtime_error("terrain: \"climate\" is an object");
+        Climate climate;
+        const auto get = [&](const char* key, double& into) {
+            if (!c.contains(key)) return;
+            if (!c.at(key).is_number())
+                throw std::runtime_error(std::string("climate: \"") + key + "\" is a number");
+            into = c.at(key).get<double>();
+        };
+        get("temperature", climate.temperature);
+        get("latitude_cooling", climate.latitude_cooling);
+        get("lapse_rate", climate.lapse_rate);
+        get("variation", climate.variation);
+        get("season_swing", climate.season_swing);
+        t.climate = climate;
+    }
+    if (j.contains("biomes")) {
+        if (!j.at("biomes").is_array()) throw std::runtime_error("terrain: \"biomes\" is a list");
+        for (const nlohmann::json& b : j.at("biomes")) {
+            if (!b.is_object()) throw std::runtime_error("biomes: each is an object");
+            Biome biome;
+            biome.name = b.value("name", std::string());
+            const auto range = [&](const char* key, double& lo, double& hi) {
+                if (!b.contains(key)) return;
+                const nlohmann::json& r = b.at(key);
+                if (!r.is_array() || r.size() != 2 || !r[0].is_number() || !r[1].is_number())
+                    throw std::runtime_error(std::string("biome: \"") + key +
+                                             "\" is [lowest, highest]");
+                lo = r[0].get<double>();
+                hi = r[1].get<double>();
+            };
+            range("temperature", biome.temperature_min, biome.temperature_max);
+            range("moisture", biome.moisture_min, biome.moisture_max);
+            const auto colour = [&](const char* key, glm::vec3& into) {
+                if (!b.contains(key)) return;
+                const nlohmann::json& r = b.at(key);
+                if (!r.is_array() || r.size() != 3)
+                    throw std::runtime_error(std::string("biome: \"") + key + "\" is [r, g, b]");
+                into = {r[0].get<float>(), r[1].get<float>(), r[2].get<float>()};
+            };
+            colour("color", biome.color);
+            colour("dry_color", biome.dry_color);
+            t.biomes.push_back(biome);
+        }
+    }
     return t;
 }
 
@@ -167,6 +213,21 @@ nlohmann::json terrain_to_json(const TerrainSettings& t) {
                      {"snow_line", t.snow_line}};
     if (t.seed) j["seed"] = *t.seed;
     if (!t.graph.empty()) j["graph"] = nlohmann::json::parse(t.graph);
+    if (t.climate)
+        j["climate"] = {{"temperature", t.climate->temperature},
+                        {"latitude_cooling", t.climate->latitude_cooling},
+                        {"lapse_rate", t.climate->lapse_rate},
+                        {"variation", t.climate->variation},
+                        {"season_swing", t.climate->season_swing}};
+    if (!t.biomes.empty()) {
+        j["biomes"] = nlohmann::json::array();
+        for (const Biome& b : t.biomes)
+            j["biomes"].push_back({{"name", b.name},
+                                   {"temperature", {b.temperature_min, b.temperature_max}},
+                                   {"moisture", {b.moisture_min, b.moisture_max}},
+                                   {"color", {b.color.r, b.color.g, b.color.b}},
+                                   {"dry_color", {b.dry_color.r, b.dry_color.g, b.dry_color.b}}});
+    }
     return j;
 }
 
@@ -189,6 +250,33 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
     if (!t.graph.empty())
         for (const std::string& p : graph_problems(nlohmann::json::parse(t.graph)))
             out.push_back("terrain's graph: " + p);
+    if (t.climate) {
+        const Climate& c = *t.climate;
+        if (!(c.temperature >= -150.0 && c.temperature <= 150.0))
+            out.push_back("climate: the temperature is from -150 to 150 degrees");
+        if (!(c.latitude_cooling >= 0.0 && c.latitude_cooling <= 200.0))
+            out.push_back("climate: the poles' cooling is from 0 to 200 degrees");
+        if (!(c.lapse_rate >= 0.0 && c.lapse_rate <= 50.0))
+            out.push_back("climate: the cooling with height is from 0 to 50 degrees a km");
+        if (!(c.variation >= 0.0 && c.variation <= 50.0))
+            out.push_back("climate: the variation is from 0 to 50 degrees");
+        if (!(c.season_swing >= 0.0 && c.season_swing <= 100.0))
+            out.push_back("climate: the seasons' swing is from 0 to 100 degrees");
+    }
+    if (int(t.biomes.size()) > kMaxBiomes)
+        out.push_back("biomes: at most " + std::to_string(kMaxBiomes));
+    for (const Biome& b : t.biomes) {
+        const std::string who = "biome '" + b.name + "': ";
+        if (!(b.temperature_min <= b.temperature_max))
+            out.push_back(who + "its temperatures run from lowest to highest");
+        if (!(b.moisture_min <= b.moisture_max && b.moisture_min >= 0.0 && b.moisture_max <= 1.0))
+            out.push_back(who + "its moisture runs from lowest to highest, within 0 to 1");
+        for (const glm::vec3 c : {b.color, b.dry_color})
+            if (!(c.r >= 0 && c.r <= 1 && c.g >= 0 && c.g <= 1 && c.b >= 0 && c.b <= 1)) {
+                out.push_back(who + "colours are 0 to 1");
+                break;
+            }
+    }
     return out;
 }
 
@@ -646,6 +734,22 @@ double Terrain::v_at(const ChunkKey& k, int j) const {
     return double(std::int64_t(k.y) * kChunkQuads + j) / double(points_v(k.level));
 }
 
+double Terrain::temperature_at(int face, double u, double v, double height) const {
+    if (!settings_.climate) return 0.0;
+    const Climate& c = *settings_.climate;
+    double latitude = 0.0;  // degrees
+    if (sphere(body_.shape.kind())) {
+        const glm::dvec3 d = cube_direction(face, u, v);
+        latitude = std::abs(det::atan2(d.y, det::sqrt(d.x * d.x + d.z * d.z))) * 57.29577951308232;
+    }
+    const glm::dvec3 q = noise_position(face, u, v);
+    const double noise = double(det::fbm(seed_ ^ det::tag("temperature"), q.x / 3000.0,
+                                         q.y / 3000.0, q.z / 3000.0, 3)) /
+                         65536.0;
+    return c.temperature - c.latitude_cooling * latitude / 90.0 -
+           c.lapse_rate * std::max(height, 0.0) / 1000.0 + c.variation * noise;
+}
+
 glm::vec3 Terrain::biome_at(int face, double u, double v) const {
     const glm::dvec3 q = noise_position(face, u, v);
     const double moist = double(det::fbm(seed_ ^ det::tag("moisture"), q.x / 1500.0, q.y / 1500.0,
@@ -764,6 +868,9 @@ ChunkMesh Terrain::mesh(const ChunkKey& k, const std::array<bool, 4>& coarser) c
             out.normals.push_back(glm::vec3(normal[size_t(j) * (n + 1) + i]));
             out.ups.push_back(glm::vec3(body_.up(at(i, j))));
             out.biome.push_back(biome_at(k.face, u_at(k, i), v_at(k, j)));
+            if (settings_.climate)
+                out.temperatures.push_back(float(temperature_at(
+                    k.face, u_at(k, i), v_at(k, j), out.heights[size_t(j) * (n + 1) + i])));
             const glm::dvec2 size = body_.shape.face_size();
             out.uvs.emplace_back(float(u_at(k, i) * size.x / 16.0),
                                  float(v_at(k, j) * size.y / 16.0));

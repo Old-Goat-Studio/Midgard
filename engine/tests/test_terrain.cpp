@@ -689,3 +689,54 @@ TEST_CASE("a direction in a face's terms, carried on past its edges") {
         CHECK_FALSE(midgard::cube_face_point(f, -d).has_value());
     }
 }
+
+TEST_CASE("a climate and biomes: from JSON and back, what the cook refuses, and temperatures") {
+    const json j = json::parse(R"({"climate": {"temperature": 20, "latitude_cooling": 45,
+        "lapse_rate": 6, "variation": 0, "season_swing": 10},
+        "biomes": [{"name": "Desert", "temperature": [24, 60], "moisture": [0, 0.4],
+                    "color": [0.8, 0.7, 0.4], "dry_color": [0.85, 0.75, 0.5]},
+                   {"name": "Tundra", "temperature": [-40, 3]}]})");
+    const midgard::TerrainSettings t = midgard::terrain_from_json(j);
+    REQUIRE(t.climate.has_value());
+    CHECK(t.climate->latitude_cooling == 45.0);
+    REQUIRE(t.biomes.size() == 2);
+    CHECK(t.biomes[0].moisture_max == 0.4);
+    CHECK(t.biomes[1].color == midgard::Biome{}.color);  // the default colours
+    CHECK(midgard::terrain_from_json(midgard::terrain_to_json(t)) == t);
+    CHECK(midgard::terrain_problems(t).empty());
+    // What the cook refuses.
+    for (const char* bad :
+         {R"({"climate": {"lapse_rate": -1}})", R"({"climate": {"season_swing": 500}})",
+          R"({"biomes": [{"name": "b", "temperature": [10, 0]}]})",
+          R"({"biomes": [{"name": "b", "moisture": [0.2, 1.5]}]})",
+          R"({"biomes": [{"name": "b", "color": [2, 0, 0]}]})"}) {
+        CAPTURE(bad);
+        CHECK_FALSE(
+            midgard::terrain_problems(midgard::terrain_from_json(json::parse(bad))).empty());
+    }
+    json nine = json::object();
+    nine["biomes"] = json::array();
+    for (int i = 0; i < 9; ++i) nine["biomes"].push_back({{"name", std::to_string(i)}});
+    CHECK_FALSE(midgard::terrain_problems(midgard::terrain_from_json(nine)).empty());
+
+    // Temperatures by hand (no variation): colder with height, and towards a planet's poles.
+    const midgard::Terrain flat(midgard::body_from_json(json::parse(
+                                    R"({"id": "a", "shape": "bounded_area", "width": 3000,
+                                        "length": 2000})")),
+                                t);
+    CHECK(flat.temperature_at(0, 0.5, 0.5, 0.0) == doctest::Approx(20.0));
+    CHECK(flat.temperature_at(0, 0.5, 0.5, 500.0) == doctest::Approx(17.0));  // 6 a km
+    CHECK(flat.temperature_at(0, 0.5, 0.5, -40.0) == doctest::Approx(20.0));  // under the sea
+    const midgard::Terrain planet(
+        midgard::body_from_json(json::parse(R"({"id": "p", "shape": "sphere_outside",
+                                                "radius": 3000})")),
+        t);
+    CHECK(planet.temperature_at(0, 0.5, 0.5, 0.0) == doctest::Approx(20.0));   // the equator
+    CHECK(planet.temperature_at(2, 0.5, 0.5, 0.0) == doctest::Approx(-25.0));  // a pole
+    // A chunk's mesh carries its points' temperatures only with a climate.
+    const midgard::ChunkMesh m = flat.mesh({0, 2, 5, 3});
+    REQUIRE(m.temperatures.size() == m.positions.size());
+    CHECK(m.temperatures[0] ==
+          doctest::Approx(flat.temperature_at(0, 5.0 / 12.0, 3.0 / 8.0, m.heights[0])));
+    CHECK(area().mesh({0, 2, 5, 3}).temperatures.empty());
+}

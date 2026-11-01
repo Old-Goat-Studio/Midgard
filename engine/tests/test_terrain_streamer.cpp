@@ -271,27 +271,6 @@ TEST_CASE("terrain chunks as drawn meet with no cracks, on every shape") {
         {glm::dvec3(1.0, 1.0, -1.0), glm::dvec3(1.0, 0.86, 0.12)});
 }
 
-TEST_CASE("a sphere chunk's up is encoded in its axis's frame, clear of the octahedral fold") {
-    for (const char* text :
-         {R"({"id": "w", "shape": "sphere_outside", "radius": 3000, "seed": 11})",
-          R"({"id": "h", "shape": "sphere_inside", "radius": 2500, "seed": 12})"}) {
-        CAPTURE(text);
-        const midgard::Terrain t(body(text), {});
-        for (int f = 0; f < 6; ++f)
-            for (int y = 0; y < t.roots_v(); ++y)
-                for (int x = 0; x < t.roots_u(); ++x) {
-                    const midgard::ChunkKey k{f, 0, x, y};
-                    const int frame = midgard::up_frame(t.body().up(t.chunk_origin(k)));
-                    const midgard::ChunkMesh m = t.mesh(k);
-                    for (const glm::vec3& up : m.ups) {
-                        const glm::vec3 local = midgard::in_up_frame(up, frame);
-                        CHECK(local.z > 0.5f);  // the upper half: no fold anywhere in the chunk
-                        CHECK(glm::length(local) == doctest::Approx(1.0f));
-                    }
-                }
-    }
-}
-
 TEST_CASE("the far side of a hollow world comes in a few coarse chunks, at every size") {
     for (const double radius : {1000.0, 2500.0, 8000.0, 20000.0}) {
         CAPTURE(radius);
@@ -347,4 +326,34 @@ TEST_CASE("on a curved world only the ground round about casts shadows (not the 
     midgard::TerrainStreamer flat(body(kArea), {});
     for (const midgard::TerrainLeaf& l : flat.choose({0.0, 20.0, 0.0}))
         CHECK(flat.casts_shadow(l.key, {2900.0, 20.0, 1900.0}));
+}
+
+TEST_CASE("the terrain's look: the world's shape, its climate with the season, its biomes") {
+    midgard::TerrainSettings t = midgard::terrain_from_json(json::parse(
+        R"({"climate": {"season_swing": 12}, "biomes": [{"name": "Moor",
+            "temperature": [0, 12], "moisture": [0.3, 0.9]}]})"));
+    midgard::TerrainStreamer planet(body(R"({"id": "p", "shape": "sphere_outside", "radius": 3000,
+                                             "origin": [0, -3000, 0]})"),
+                                    t);
+    planet.set_season(1.0, 0.0);  // high summer
+    const midgard::render::TerrainLook look = planet.look();
+    CHECK(look.shape == 2);
+    CHECK(look.center == glm::dvec3(0.0, -3000.0, 0.0));
+    CHECK(look.climate);
+    CHECK(look.season_offset == doctest::Approx(6.0f));  // half the swing, warmer
+    REQUIRE(look.biomes.size() == 1);
+    CHECK(look.biomes[0].moisture_min == doctest::Approx(0.3f));
+    planet.set_season(-1.0, 0.0);
+    CHECK(planet.look().season_offset == doctest::Approx(-6.0f));
+    // Other shapes; and without a climate, the 5.9 look.
+    CHECK(midgard::TerrainStreamer(body(kHabitat), {}).look().shape == 1);
+    CHECK(midgard::TerrainStreamer(body(R"({"id": "h", "shape": "sphere_inside",
+                                            "radius": 2500})"),
+                                   {})
+              .look()
+              .shape == 3);
+    const midgard::render::TerrainLook plain = midgard::TerrainStreamer(body(kArea), {}).look();
+    CHECK(plain.shape == 0);
+    CHECK_FALSE(plain.climate);
+    CHECK(plain.biomes.empty());
 }

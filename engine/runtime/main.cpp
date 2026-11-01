@@ -225,6 +225,7 @@ public:
     virtual glm::vec4 sky() const = 0;
     // The sky and fog (by default: a flat sky in sky()'s colour, no fog).
     virtual render::Environment environment(const glm::dvec3&) const { return {}; }
+    virtual render::TerrainLook terrain_look() const { return {}; }
     virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
     virtual void update(const midgard::Actions&, float) {}
     virtual bool wants_mouse_look() const { return false; }
@@ -300,6 +301,7 @@ public:
     render::Environment environment(const glm::dvec3&) const override {
         return scene_->environment();
     }
+    render::TerrainLook terrain_look() const override { return scene_->terrain_look(); }
     std::vector<render::DebugLine> debug_lines(const glm::dvec3& origin) const override {
         return scene_->debug_lines(origin);
     }
@@ -359,6 +361,7 @@ public:
     render::Environment environment(const glm::dvec3& origin) const override {
         return game_.scene().environment(origin);
     }
+    render::TerrainLook terrain_look() const override { return game_.terrain_look(); }
     render::Light light(const glm::dvec3& origin) const override {
         return game_.scene().light(origin);
     }
@@ -768,6 +771,7 @@ int run_screenshot(const Options& opt, Source& source) {
     source.stream(renderer, camera.origin, true);
     renderer.set_environment(source.environment(camera.origin));
     const auto draws = source.draws(0.6f, camera.origin);
+    renderer.set_terrain_look(source.terrain_look());  // (after draws: the season is set)
     if (opt.debug_physics) renderer.set_debug_lines(source.debug_lines(camera.origin));
     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
     // With MIDGARD_VULKAN_VALIDATION set, anything the validation layer reports fails the run
@@ -1063,6 +1067,7 @@ int run_window(const Options& opt, Source& source) {
             {
                 MIDGARD_PROFILE_SCOPE("render");
                 renderer.set_environment(source.environment(camera.origin));
+                renderer.set_terrain_look(source.terrain_look());
                 renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
                                                       : std::vector<render::DebugLine>{});
                 drawn =

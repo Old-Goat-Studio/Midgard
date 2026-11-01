@@ -125,3 +125,20 @@ def test_the_cook_takes_a_scenes_world_type_and_refuses_one_for_other_shapes(pro
     project.set_scene_settings(settings)
     with pytest.raises(CookError, match="isn't for a curved_cylinder"):
         cook(project, tmp_path / "bad")
+
+
+def test_the_dialog_keeps_a_world_types_climate_and_biomes(qtbot, project):
+    climate = {"temperature": 25, "season_swing": 8}
+    biomes = [{"name": "Desert", "temperature": [24, 60]}]
+    project.undo_stack.push(world_types.SaveRecipeCommand(
+        project, "wt_hot", {"terrain": {"climate": climate, "biomes": biomes}}, "Hot"))
+    dialog = WorldShapeDialog(project)
+    qtbot.addWidget(dialog)
+    dialog.shape.setCurrentIndex(dialog.shape.findData("curved_cylinder"))
+    dialog.terrain.setChecked(True)
+    dialog.world_type.setCurrentIndex(dialog.world_type.findData("wt_hot"))
+    dialog.terrain_fields["height_scale"].setValue(33)
+    dialog.accept()
+    ground = world_types.recipe(project, "wt_hot")["terrain"]
+    assert ground["height_scale"] == 33
+    assert ground["climate"] == climate and ground["biomes"] == biomes

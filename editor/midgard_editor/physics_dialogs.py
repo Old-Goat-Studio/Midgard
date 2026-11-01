@@ -297,7 +297,9 @@ class WorldShapeDialog(QDialog):
             # shipped); the scene names it, and keeps its own seed.
             chosen = self.world_type.currentData() or world_types.new_id(self.project, "Custom")
             old = world_types.recipe(self.project, chosen) or {}
-            ground = {k: v for k, v in terrain.items() if k != "seed"}
+            # (The dialog's fields over the recipe's ground: its climate and biomes are kept.)
+            ground = {**old.get("terrain", {}),
+                      **{k: v for k, v in terrain.items() if k != "seed"}}
             version = None
             if old.get("terrain") != ground or not self.world_type.currentData():
                 save = world_types.SaveRecipeCommand(

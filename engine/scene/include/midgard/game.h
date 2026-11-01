@@ -88,6 +88,9 @@ public:
     // One draw per entity with a mesh, and the terrain's chunks.
     // What to draw, relative to the camera's origin (camera-relative rendering).
     std::vector<render::DrawItem> draws(const glm::dvec3& origin) const;
+    // The terrain's look for the renderer (its world's shape, climate and biomes; the season
+    // as draws() last set it), or a flat one without terrain.
+    render::TerrainLook terrain_look() const;
 
     // Outlines of the scene's colliders, triggers and player for debug drawing, relative to the
     // camera's origin (midgard/collider_outlines.h).

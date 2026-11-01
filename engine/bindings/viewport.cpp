@@ -402,6 +402,7 @@ bool Viewport::render() {
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
     camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, far_plane);
     renderer_->set_environment(scene_.environment(camera.origin));
+    renderer_->set_terrain_look(terrain_ ? terrain_->look() : render::TerrainLook{});
     return renderer_->render_frame(camera, scene_.light(camera.origin), draws,
                                    glm::vec4(scene_.settings.sky, 1.0f));
 }
