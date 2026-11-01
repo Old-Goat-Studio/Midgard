@@ -21,7 +21,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 2 Engine core and the vertical slice | **Done** (14 October): a cube placed in the editor runs on Windows, Linux and Android, all exported from one editor host. |
 | 3 Live link and engine bindings | **Done** (14 October): Play, Pause and Stop, hot reload, the `_midgard` module, the embedded Vulkan viewport. |
 | 4 Scripting | **Done** (14 October): games embed CPython 3.14 (Android too), the `midgard` API v1, the Script editor, Assistant v1. |
-| 5 World building | **In progress:** milestones 5.0–5.7 are done (below). |
+| 5 World building | **In progress:** milestones 5.0–5.8 are done (below). |
 | 6–9 | Not started. |
 
 **Phase 5 milestones**
@@ -36,7 +36,8 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 5.5 Object editor and asset pipeline | **Done** | glTF import, objects as templates placed as instances, the Objects panel (Object editor), the Material editor, re-import on change, live objects in the running game, content-hashed cooking, Save Group as Object, and the first CC0 model (Avocado) with an import corpus test. The exit check runs as a test with the real game. |
 | 5.6 Cameras | **Done** | One camera with first-person, third-person (orbit or over the shoulder) and top-down views, switched with V and blended; a sphere swept through physics keeps it out of walls; "up" from the world's shape; shakes and scripted looks (`midgard.camera`); the player's last view in their profile; the Camera editor with a live preview in the viewport. The exit check walks a planet in every view past walls, as a test with the real game. |
 | 5.7 Calendar and time | **Done** | Calendar templates (migration 9) with the standard calendar, checked by the cook; `TimeService`: the universal clock with no drift, time scale, solar phase, and signals fired exactly once (big skips too); body calendars rolled from the seed, identical on every target; the clock saved with the world (`world.json`, `world.db`); `midgard.time`; the Calendar dock with the year strip, day bar and time-of-day scrubber, which moves the viewport's sun and the running game's clock; suns that follow the clock (`follows_clock`). The exit check sweeps a 20-hour day with 70% daylight (sunrise 03:00, sunset 17:00) in the editor and the running game, as tests. |
-| 5.8–5.18 | Not started | Next is 5.8 Environment and light per shape (stage 3 in `Phase5_Roadmap.md` §5). |
+| 5.8 Environment and light per shape | **Done** | Environments (migration 10) with the Earth-like one: the sky's colours, the sunlight, the ambient light and the fog as curves over solar phase, with the analytic sky behind curves not set; the Sky entity links to one. Light models per world shape (`midgard/sunlight.h`): one moving sun on bounded areas and flat-wrap cylinders; on planets the phase shifted by longitude, in Uniform or Latitude mode (axial tilt, polar day and night); a stylised sun with shades inside spheres and curved cylinders; the sun setting behind a planet's ground. The Environment editor (curves, presets including the inside-world atmosphere, a time-of-day preview, undo, live link). Season tints for the light and sky, following each hemisphere on a tilted planet. The exit check sweeps every shape's day with the scrubber in the editor, and image tests show each shape at dawn, noon, dusk and midnight. Water moved to 5.9. |
+| 5.9–5.18 | Not started | Next is 5.9 Terrain, step 1: rectangular grids. |
 
 **Also built along the way** (asked for while using the editor): **groups** (complex objects made of primitives, moved as one, and one compound physics body when they move), **viewport gizmos** (move, rotate and scale in the view's corner, following the dock onto any monitor), a viewport toolbar (Colliders, Gizmos), **cylinder and wedge** primitives, layouts saved as they change (tab order included), delete by key and right-click, **Git from the editor** (put a project under Git, commit, change markers in the Script editor), the **Project Page** (tagline, description, logo and the game's icon), opening the last project on start, picture buttons for Play, Pause and Stop, and **running** (the player's Running speed, a multiplier held on Left Shift, a rebindable `run` action).
 
@@ -559,7 +560,7 @@ Today, when a listen-server host quits, the session ends. **Host migration** mea
 | Script editor + snippets | **Built (Phase 4):** code editor dock (`QPlainTextEdit` + highlighter) with line numbers, completion from the `midgard` stubs, error markers from the running game and Git change markers. Snippets in a `snippet` table with tags; a project-level and a user-level library. | Embedded CPython, hot reload over the live link | Ship a starter snippet set: "give item", "start quest", "on trigger enter"… |
 | Menu editor | WYSIWYG canvas with the widgets from the plan (text entry, buttons, drop boxes, lists, trees, radio buttons, checkboxes, panels, tabs, progress bars) and window controls; the HUD layout; screen templates; previews at desktop and phone sizes, live in the running game (see §8, *Menus, HUD and player stats*) | RmlUi documents generated at cook time; data binding; `midgard.ui` | Window move, resize, minimize and close are behaviours of a `MenuWindow` element; player-chosen sizes and positions go in the save DB. Trees need a custom RmlUi element. **Phase 6.0.** |
 | Player stats and HUD | Stats editor (health, stamina and the designer's own), counters, HUD widgets in the Menu editor (see §8) | Stats per character with regeneration, counters, the HUD's bars, numbers, prompts, notifications, crosshair, compass and minimap; `midgard.stats` | One set of stats for combat, survival, food, progression and scripts. Host-decided in co-op. **Phase 6.0.** |
-| World environment | Skybox, sun/moon, lighting, fog, water panels with live preview | Sky, fog and water passes | **Sky and fog are built** (5.3); the Environment editor is 5.8, water comes with terrain in 5.9. |
+| World environment | Skybox, sun/moon, lighting, fog, water panels with live preview | Sky, fog and water passes | **Sky and fog are built** (5.3), and the Environment editor (5.8); water comes with terrain in 5.9. |
 | Physics editor | Body/shape/material inspector, collision layers matrix | Jolt | **Built (5.4):** collider, rigid body and physics material rows in the Inspector, *World ▸ Physics Layers* and *World ▸ World Shape*, collider outlines in the viewport and the game (F4). |
 | Vulkan shaders + texture generation | GLSL editor first, node graph later; texture generator (noise, gradients, tiling) | shaderc → SPIR-V; generators in C++, called via `_midgard` | One generator implementation for editor preview and runtime. Image textures (KTX2) are built (5.3, 5.5); shaders and generators are 5.17. |
 | Terrain | Procedural parameters (FastNoise2 graph) + sculpt/paint brushes | Chunked heightmaps, clipmap LOD, splat materials | Sculpting needs the embedded viewport, so it comes late. |
@@ -1672,7 +1673,7 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 **Status: done** (14 October 2026).
 
 ### Phase 5: World building
-**Status: in progress.** 5.0–5.7 are done (§0 lists what each milestone brought).
+**Status: in progress.** 5.0–5.8 are done (§0 lists what each milestone brought).
 
 **The detailed plan is in [`Phase5_Roadmap.md`](Phase5_Roadmap.md)** (approved 15 October 2026):
 19 milestones (5.0–5.18), foundation first (test tooling, deterministic maths and world
@@ -1682,10 +1683,10 @@ Survival status effects, clothing stats, the HUD gauge, weather's effect on AI a
 moved to Phase 6 (see there); Phase 5 builds their foundations.
 
 - ~~Object editor (primitives, glTF import).~~ Built in 5.5, with objects as templates, the Material editor and groups.
-- ~~**Calendar core** (§6): calendar templates and the standard calendar, per-body calendars generated from the seed, `TimeService`, solar phase, **seasons** (daylight, temperature, visuals), time scale, save/restore of `game_time`.~~ Built in 5.7 (seasonal visuals come with 5.8).
+- ~~**Calendar core** (§6): calendar templates and the standard calendar, per-body calendars generated from the seed, `TimeService`, solar phase, **seasons** (daylight, temperature, visuals), time scale, save/restore of `game_time`.~~ Built in 5.7 (seasonal visuals in 5.8).
 - **Weather** (§6): weather types and tables per season and biome, regional weather with fronts, forecasts (script API), controlled and scripted weather, visuals. (Effects on AI perception, forecast devices and space weather are in Phase 6.)
 - **Survival foundation** (§6): feels-like temperature, wetness, shelter checks and heat sources, readable from scripts. (Status effects, clothing stats, placeable campfires and heaters, the HUD gauge and `survival_scale` from the difficulty are in Phase 6.)
-- Environment editor (sky, lighting, fog, water), with lighting curves authored over **solar phase** and previewed with the Calendar's time scrubber.
+- ~~Environment editor (sky, lighting, fog), with lighting curves authored over **solar phase** and previewed with the Calendar's time scrubber.~~ Built in 5.8 (water comes with terrain in 5.9).
 - ~~Physics editor (Jolt).~~ Built in 5.4.
 - ~~Cameras (§8): first-person, third-person and top-down views, the Camera editor, collision and shape-aware "up".~~ Built in 5.6.
 - **Character animation** (§8): glTF import, humanoid retargeting, the Animation editor (state machines, blend spaces, layers, events), foot IK on every world shape, first-person arms.
@@ -1696,7 +1697,7 @@ moved to Phase 6 (see there); Phase 5 builds their foundations.
 - Terrain in two steps. First **rectangular grids**: bounded area, then cylinder (flat wrap, then curved), with edges and cylinder ends. Then **cube-sphere** for the outside and inside of spheres. Sculpt/paint in the viewport works on all shapes.
 - **World Type editor** v1 (§7): seed + node graph with shape-aware inputs, recipe versioning, run-time generation in the game, chunk streaming, and the cross-target check (identical chunk hashes on x86_64, arm64 and Android in CI), plus generation-time budgets measured on a phone and a Raspberry Pi.
 - **Rooms:** the room manager and room changes. A planet's atmosphere ceiling, habitat docks and hollow-world exit sites lead to a **system-space** room with a procedural sky.
-- **Light models per shape** (§6, *Day and night on each world shape*), plus the inside-world atmosphere preset.
+- ~~**Light models per shape** (§6, *Day and night on each world shape*), plus the inside-world atmosphere preset.~~ Built in 5.8.
 - Per-chunk navigation meshes linked across chunk edges, cylinder joins and cube-sphere faces; map projections per shape as images (the in-game map screen is in Phase 6).
 - Testing foundation: image tests on software Vulkan in CI, cross-target generation hashes, performance budgets, and a self-test APK for phone checks. *Built in 5.0 and 5.1.*
 

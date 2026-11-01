@@ -89,6 +89,126 @@
     {
       "name": "overlay",
       "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
+    },
+    {
+      "name": "day_area_dawn",
+      "_about": "A day on a bounded area, at dawn: the sun rising ahead. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_area_dawn"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_area_noon",
+      "_about": "A day on a bounded area, at noon. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_area_noon"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_area_dusk",
+      "_about": "A day on a bounded area, at dusk: the light from behind. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_area_dusk"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_area_midnight",
+      "_about": "A day on a bounded area, at midnight. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_area_midnight"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_flat_cylinder_dawn",
+      "_about": "A day on a flat-wrap cylinder, at dawn: the sun rising ahead. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_flat_cylinder_dawn"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_flat_cylinder_noon",
+      "_about": "A day on a flat-wrap cylinder, at noon. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_flat_cylinder_noon"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_flat_cylinder_dusk",
+      "_about": "A day on a flat-wrap cylinder, at dusk: the light from behind. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_flat_cylinder_dusk"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_flat_cylinder_midnight",
+      "_about": "A day on a flat-wrap cylinder, at midnight. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_flat_cylinder_midnight"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_planet_dawn",
+      "_about": "A day on a planet (outside a sphere; its ground curves away), at dawn: the sun rising ahead. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_planet_dawn"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_planet_noon",
+      "_about": "A day on a planet (outside a sphere; its ground curves away), at noon. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_planet_noon"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_planet_dusk",
+      "_about": "A day on a planet (outside a sphere; its ground curves away), at dusk: the light from behind. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_planet_dusk"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_planet_midnight",
+      "_about": "A day on a planet (outside a sphere; its ground curves away), at midnight. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_planet_midnight"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_hollow_dawn",
+      "_about": "A day on a hollow world (inside a sphere; the stylised sun, overhead at noon), at dawn: the sun rising ahead. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_hollow_dawn"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_hollow_noon",
+      "_about": "A day on a hollow world (inside a sphere; the stylised sun, overhead at noon), at noon. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_hollow_noon"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_hollow_dusk",
+      "_about": "A day on a hollow world (inside a sphere; the stylised sun, overhead at noon), at dusk: the light from behind. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_hollow_dusk"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_hollow_midnight",
+      "_about": "A day on a hollow world (inside a sphere; the stylised sun, overhead at noon), at midnight. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_hollow_midnight"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_habitat_dawn",
+      "_about": "A day on a habitat (inside a curved cylinder; the stylised sun-line), at dawn: the sun rising ahead. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_habitat_dawn"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_habitat_noon",
+      "_about": "A day on a habitat (inside a curved cylinder; the stylised sun-line), at noon. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_habitat_noon"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_habitat_dusk",
+      "_about": "A day on a habitat (inside a curved cylinder; the stylised sun-line), at dusk: the light from behind. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_habitat_dusk"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "day_habitat_midnight",
+      "_about": "A day on a habitat (inside a curved cylinder; the stylised sun-line), at midnight. The Earth-like environment and the world's light model, through the scene (milestone 5.8).",
+      "args": ["--size", "320x180", "--scene", "day_habitat_midnight"],
+      "max_bad": 0.01
     }
   ]
 }

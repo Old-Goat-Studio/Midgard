@@ -13,6 +13,9 @@
 //   sky_sunset the sun on the horizon: its disc and glow, and low fog lying on the ground
 //   colliders  one of each kind of physics body, a trigger and the player, for
 //              --debug-physics (collider outlines)
+//   day_<shape>_<time>  a day on each world shape (area, flat_cylinder, planet, hollow,
+//              habitat) at dawn, noon, dusk or midnight: the sky and sun from the scene's
+//              environment and the world's light model
 #pragma once
 
 #include <memory>

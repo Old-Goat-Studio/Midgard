@@ -431,3 +431,51 @@ def test_exit_check_the_scrubber_sweeps_a_20_hour_day_in_the_running_game(dock, 
         assert not [m for m in received if m.get("level") in ("warn", "error")], received
     finally:
         session.stop()
+
+
+# ---- the exit check (milestone 5.8) -------------------------------------------------------------
+WORLD_SHAPES = {
+    "bounded_area": {"shape": "bounded_area"},
+    "flat_cylinder": {"shape": "flat_cylinder"},
+    "planet": {"shape": "sphere_outside", "radius": 1000, "origin": [0, -1000, 0]},
+    "hollow": {"shape": "sphere_inside", "radius": 1000, "origin": [0, 1000, 0]},
+    "habitat": {"shape": "curved_cylinder", "radius": 1000, "origin": [0, 1000, 0]},
+}
+
+
+@needs_engine
+@pytest.mark.parametrize("shape", list(WORLD_SHAPES))
+def test_exit_check_each_world_shape_has_a_day_and_night_in_the_editor(dock, project, shape):
+    """Milestone 5.8's exit: on each world shape, with the Sky linked to the Earth-like
+    environment, the scrubber takes the viewport through a day: light from sunrise to sunset,
+    brightest about noon, and dark at night."""
+    import json
+
+    from midgard_editor import environments
+
+    settings = project.scene_settings()
+    settings["body"] = {"id": shape, **WORLD_SHAPES[shape]}
+    project.set_scene_settings(settings)
+    sky = project.entity("e000005")
+    sky.components["sky"]["environment"] = "env_earth"
+    project.put_entity(sky)
+    view = offscreen_view(project)
+    if view is None:
+        pytest.skip("no offscreen rendering here")
+    for env in environments.load_all(project):
+        view.set_environment(env["id"], env["name"], json.dumps(env["curves"]),
+                             json.dumps(env["settings"]))
+
+    scrubbed = []
+    dock.time_scrubbed.connect(lambda t, phase: scrubbed.append(phase))
+    seen = []
+    for hour in range(24):
+        dock.scrub(hour * HOUR + 1800)
+        view.solar_phase = scrubbed[-1]  # as the main window passes it to the Viewport dock
+        seen.append((scrubbed[-1], brightness(view)))
+    day = [b for p, b in seen if 0.04 < p < 0.46]
+    night = [b for p, b in seen if 0.56 < p < 0.94]
+    assert day and night
+    assert min(day) > max(night) + 0.02, (shape, seen)
+    brightest = max(seen, key=lambda s: s[1])[0]
+    assert abs(brightest - 0.25) < 0.12, (shape, seen)  # about noon

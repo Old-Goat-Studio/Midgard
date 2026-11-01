@@ -6,15 +6,18 @@
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
+#include <utility>
 
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <nlohmann/json.hpp>
 
 #include "midgard/collider_outlines.h"
+#include "midgard/environment.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
 #include "midgard/scene.h"
+#include "midgard/sunlight.h"
 
 namespace midgard::test_scenes {
 
@@ -456,11 +459,111 @@ private:
     std::unordered_map<std::string, render::MeshId> meshes_;
 };
 
+// A day on each world shape (milestone 5.8): a scene built from components like a game's, its
+// Sky linked to an empty environment (the analytic sky), its sun moved by the world's light
+// model to a time of day. The camera stands at the world's origin looking towards the dawn sun,
+// a little up, so dawn shows the sun rising ahead, noon the sky lit from above, dusk the light
+// going behind and midnight the night.
+class Day : public TestScene {
+public:
+    Day(const std::string& shape, double phase) {
+        nlohmann::json body;
+        if (shape == "area")
+            body = {{"shape", "bounded_area"}, {"width", 4000}, {"length", 4000}};
+        else if (shape == "flat_cylinder")
+            body = {{"shape", "flat_cylinder"}, {"circumference", 6000}, {"length", 6000}};
+        else if (shape == "planet")
+            body = {{"shape", "sphere_outside"}, {"radius", 1000}, {"origin", {0, -1000, 0}}};
+        else if (shape == "hollow")
+            body = {{"shape", "sphere_inside"}, {"radius", 1000}, {"origin", {0, 1000, 0}}};
+        else
+            body = {{"shape", "curved_cylinder"},
+                    {"radius", 1000},
+                    {"length", 5000},
+                    {"origin", {0, 1000, 0}}};
+        body["id"] = shape;
+        planet_ = shape == "planet";
+        scene_.settings.body = body_from_json(body);
+        scene_.environments.emplace("env_earth",
+                                    environment_from_json("env_earth", "Earth-like", "{}", "{}"));
+        scene_.put_entity("e_sky", "Sky", "",
+                          nlohmann::json::parse(R"({"sky": {"environment": "env_earth"}})"));
+        // As placed, the sun stands 50 degrees up towards +z (a little to +x) at noon.
+        scene_.put_entity("e_sun", "Sun", "", nlohmann::json::parse(R"({"transform":
+            {"rotation": [-50, 20, 0]}, "light": {"type": "directional"}})"));
+
+        // The camera: at eye height, looking towards where the sun rises, 8 degrees up.
+        up_ = glm::vec3(scene_.settings.body->up(glm::dvec3(0.0)));
+        eye_ = up_ * 1.7f;
+        scene_.solar_phase = 0.03;
+        const glm::vec3 to_dawn = glm::vec3(scene_.local_sun(glm::dvec3(eye_))->to_sun);
+        glm::vec3 ahead = to_dawn - up_ * glm::dot(to_dawn, up_);
+        ahead = glm::length(ahead) > 1e-4f ? glm::normalize(ahead) : glm::vec3(0, 0, -1);
+        ahead_ = ahead;
+        const float pitch = glm::radians(8.0f);
+        forward_ = std::cos(pitch) * ahead + std::sin(pitch) * up_;
+        scene_.solar_phase = phase;
+    }
+    void upload(render::Renderer& r) override {
+        cube_ = r.upload_mesh(render::make_cube());
+        sphere_ = r.upload_mesh(render::make_sphere());
+        if (planet_) ground_ = r.upload_mesh(render::make_sphere(128, 256));
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        std::vector<DrawItem> out;
+        const glm::vec4 grass(0.45f, 0.5f, 0.35f, 1);
+        if (planet_)
+            out.push_back({ground_, at({0, -1000, 0}, glm::vec3(2000.0f)), grass});
+        else
+            out.push_back({cube_, at({0, -0.05f, 0}, {800, 0.1f, 800}), grass});
+        // Pillars ahead and to the sides, and a pale ball, to catch the light and cast shadows.
+        const glm::vec3 side = glm::normalize(glm::cross(ahead_, up_));
+        const float distances[] = {6, 14, 30, 60};
+        for (int i = 0; i < 4; ++i) {
+            const float d = distances[i];
+            const glm::vec3 p = ahead_ * d + side * ((i % 2 ? 1.0f : -1.0f) * (2.0f + d * 0.25f));
+            out.push_back(
+                {cube_, at(p + up_ * (1.0f + d * 0.02f), glm::vec3(0.8f, 2.0f + d * 0.04f, 0.8f)),
+                 glm::vec4(0.75f, 0.45f, 0.3f, 1)});
+        }
+        out.push_back({sphere_, at(ahead_ * 4.0f + side * 0.8f + up_ * 0.5f),
+                       glm::vec4(0.8f, 0.8f, 0.8f, 1)});
+        return relative(out, origin);
+    }
+    render::Camera camera(float aspect) const override {
+        render::Camera c;
+        c.origin = glm::dvec3(eye_);
+        c.view = glm::lookAt(glm::vec3(0.0f), forward_, up_);
+        c.projection = render::perspective(glm::radians(70.0f), aspect, 0.1f, 3000.0f);
+        return c;
+    }
+    render::Light light(const glm::dvec3& origin) const override { return scene_.light(origin); }
+    glm::vec4 sky() const override { return {scene_.settings.sky, 1.0f}; }
+    render::Environment environment() const override {
+        return scene_.environment(glm::dvec3(eye_));
+    }
+
+private:
+    Scene scene_;
+    bool planet_ = false;
+    glm::vec3 up_{0, 1, 0}, eye_{0, 1.7f, 0}, ahead_{0, 0, -1}, forward_{0, 0, -1};
+    render::MeshId cube_ = 0, sphere_ = 0, ground_ = 0;
+};
+
+const char* const kDayShapes[] = {"area", "flat_cylinder", "planet", "hollow", "habitat"};
+const std::pair<const char*, double> kDayTimes[] = {
+    {"dawn", 0.02}, {"noon", 0.25}, {"dusk", 0.48}, {"midnight", 0.75}};
+
 }  // namespace
 
 std::vector<std::string> names() {
-    return {"materials",      "textures", "compressed", "lights",   "shadows",
-            "shadows_curved", "sky_day",  "sky_sunset", "colliders"};
+    std::vector<std::string> out = {"materials", "textures",   "compressed",
+                                    "lights",    "shadows",    "shadows_curved",
+                                    "sky_day",   "sky_sunset", "colliders"};
+    for (const char* shape : kDayShapes)
+        for (const auto& [time, phase] : kDayTimes)
+            out.push_back(std::string("day_") + shape + "_" + time);
+    return out;
 }
 
 std::unique_ptr<TestScene> make(const std::string& name) {
@@ -479,6 +582,10 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "sky_sunset")
         return std::make_unique<Sky>(
             Sky::Setup{3.0f, -15.0f, 0.02f, 0.6f, {0, 3.0f, 0}, {0, 2.2f, -20}});
+    for (const char* shape : kDayShapes)
+        for (const auto& [time, phase] : kDayTimes)
+            if (name == std::string("day_") + shape + "_" + time)
+                return std::make_unique<Day>(shape, phase);
     return nullptr;
 }
 
