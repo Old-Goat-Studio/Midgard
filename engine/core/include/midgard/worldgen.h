@@ -45,7 +45,13 @@
 namespace midgard {
 
 inline constexpr int kMaxGraphNodes = 256;
-inline constexpr int kMaxFilterDepth = 3;  // smooth and erode nested at most this deep
+// Smooth and erode can't be nested (one on any path): each re-evaluates what is under it at
+// four more points, so a graph costs at most about five times its noise.
+inline constexpr int kMaxFilterDepth = 1;
+// What a world type's ground may cost, in 5.9 grounds (6 octaves of noise a point): over this
+// a chunk takes longer than its budget (schema/budgets.json's terrain.chunk_mesh), and the
+// cook warns.
+inline constexpr double kGraphCostBudget = 4.0;
 
 // A point on a world's surface, where a graph is evaluated.
 struct GraphPlace {
@@ -61,6 +67,9 @@ public:
     double evaluate(const Shape& shape, std::uint64_t seed, const GraphPlace& place) const;
     int node_count() const { return int(nodes_.size()); }
     bool uses_neighbours() const;  // a smooth or erode node: four times the work per point
+    // An estimate of the work per point, in 5.9 grounds (6 octaves of noise): each noise
+    // node's octaves, five times over under a filter, over 6.
+    double cost() const;
 
     enum class Op {
         Noise,
@@ -114,6 +123,6 @@ GraphPlace graph_offset(const Shape& shape, const GraphPlace& place, double east
 // A graph's value at a fixed set of places on five test shapes (those of
 // schema/tests/worldgen_cases.json's fingerprint): kWorldGraphFingerprint on every target.
 std::uint64_t worldgen_fingerprint();
-inline constexpr std::uint64_t kWorldGraphFingerprint = 0xf33aae197ab72bc2ULL;
+inline constexpr std::uint64_t kWorldGraphFingerprint = 0x297c1b9e93c4efddULL;
 
 }  // namespace midgard

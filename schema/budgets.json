@@ -28,6 +28,7 @@
       "ci-linux-release": 150,
       "ci-linux-arm64-release": 250
     },
+    "terrain.chunk_mesh_eroded": {"default": 10, "_about": "A chunk from a world graph with one erode over 6-octave noise (cost 5 in 5.9 grounds, over kGraphCostBudget's 4, so the cook warns about such a ground): 3.7 ms on the development PC against the plain chunk's 1.1."},
     "worldgen.classic_35x35": {"default": 3, "_about": "The 5.9 ground as a world graph, a chunk's worth of points: 0.62 ms on the development PC (about the terrain's own noise)."},
     "worldgen.everything_35x35": {"default": 60, "_about": "Every node, two of them neighbourhood filters (erode of smooth): each point evaluates the noise 21 times, 17 ms on the development PC. Too slow for a chunk's 3 ms as it is; step 3 of 5.11 samples filters from the chunk's own grid instead."},
     "texture.transcode_512_bc7": {"default": 25},

@@ -199,8 +199,9 @@ GRAPHS = {
         "scaled": {"op": "multiply", "in": [50, "land", "near_edge", "near_end"]},
         "stepped": {"op": "terrace", "in": ["scaled"], "step": 6, "sharpness": 0.7},
         "smoothed": {"op": "smooth", "in": ["stepped"], "radius": 12},
-        "worn": {"op": "erode", "in": ["smoothed"], "radius": 20, "strength": 0.6},
-        "sum": {"op": "add", "in": ["worn", "cold", 3]},
+        "worn": {"op": "erode", "in": ["scaled"], "radius": 20, "strength": 0.6},
+        "blend": {"op": "lerp", "in": ["smoothed", "worn", 0.5]},
+        "sum": {"op": "add", "in": ["blend", "cold", 3]},
         "low": {"op": "min", "in": ["sum", 70]},
         "high": {"op": "max", "in": ["low", -25]},
         "clamped": {"op": "clamp", "in": ["high"], "min": -20, "max": 65},
@@ -242,8 +243,21 @@ def make_table() -> dict:
             for place in places_for(name):
                 cases.append({"graph": gname, "body": name, "place": list(place),
                               "height": graph.evaluate(shape, SEED, place)})
+    # Terrain made from a graph (its chunk hashes): the 5.9 ground as a graph is the same as
+    # the 5.9 ground itself.
+    from .terrain import Terrain
+    chunks = []
+    for name in ("area", "habitat", "planet"):
+        body = {**BODIES[name], "seed": SEED}
+        for gname in GRAPHS:
+            key = (0, 2, 3, 1)
+            made = Terrain(body, {"graph": GRAPHS[gname]})
+            chunks.append({"body": name, "graph": gname, "key": list(key),
+                           "hash": f"{made.chunk_hash(key):016x}"})
+        chunks.append({"body": name, "graph": None, "key": [0, 2, 3, 1],
+                       "hash": f"{Terrain(body).chunk_hash((0, 2, 3, 1)):016x}"})
     return {"_about": "World generation graphs' heights (tools/reference/worldgen.py).",
-            "seed": SEED, "bodies": BODIES, "graphs": GRAPHS, "cases": cases,
+            "seed": SEED, "bodies": BODIES, "graphs": GRAPHS, "cases": cases, "chunks": chunks,
             "fingerprint": f"{fingerprint():016x}"}
 
 

@@ -136,8 +136,9 @@ struct Builder {
         node.op = op->second;
         const bool filter = node.op == Op::Smooth || node.op == Op::Erode;
         if (filter && depth >= kMaxFilterDepth)
-            problems.push_back("node '" + id + "': smooth and erode nest at most " +
-                               std::to_string(kMaxFilterDepth) + " deep");
+            problems.push_back("node '" + id +
+                               "': smooth and erode can't be inside another smooth or erode "
+                               "(each makes everything under it five times the work)");
         // Inputs first (so they come before the node).
         const json in = n.contains("in") ? n.at("in") : json::array();
         if (!in.is_array()) {
@@ -293,6 +294,22 @@ WorldGraph WorldGraph::from_json(const json& j) {
     return g;
 }
 
+double WorldGraph::cost() const {
+    // Which nodes are under a filter (evaluated at four more points for it).
+    std::vector<char> under(nodes_.size(), 0);
+    for (size_t i = nodes_.size(); i-- > 0;) {
+        const Node& n = nodes_[i];
+        const bool filter = n.op == Op::Smooth || n.op == Op::Erode;
+        for (const int k : n.in)
+            if (k >= 0 && (filter || under[i])) under[size_t(k)] = 1;
+    }
+    double octaves = 0.0;
+    for (size_t i = 0; i < nodes_.size(); ++i)
+        if (nodes_[i].op == Op::Noise || nodes_[i].op == Op::Ridged)
+            octaves += nodes_[i].octaves * (under[i] ? 5.0 : 1.0);
+    return octaves / 6.0;
+}
+
 bool WorldGraph::uses_neighbours() const {
     for (const Node& n : nodes_)
         if (n.op == Op::Smooth || n.op == Op::Erode) return true;
@@ -440,7 +457,7 @@ double WorldGraph::eval(int i, const Shape& shape, std::uint64_t seed, const Gra
 std::uint64_t worldgen_fingerprint() {
     // tools/reference/worldgen.py's fingerprint(): its "everything" graph, bodies and places.
     const WorldGraph graph = WorldGraph::from_json(json::parse(
-        R"({"output": "out", "nodes": {"n": {"op": "noise", "size": 300, "octaves": 4, "salt": "base"}, "r": {"op": "ridged", "size": 900, "octaves": 3, "salt": "ridges"}, "lat": {"op": "input", "name": "latitude"}, "edge": {"op": "input", "name": "edge_distance"}, "end": {"op": "input", "name": "end_distance"}, "near_edge": {"op": "smoothstep", "in": ["edge"], "from": 0, "to": 400}, "near_end": {"op": "smoothstep", "in": ["end"], "from": 0, "to": 300}, "cold": {"op": "curve", "in": ["abs_lat"], "points": [[0, 0], [45, 10], [90, 40]]}, "abs_lat": {"op": "abs", "in": ["lat"]}, "land": {"op": "lerp", "in": ["n", "r", 0.4]}, "scaled": {"op": "multiply", "in": [50, "land", "near_edge", "near_end"]}, "stepped": {"op": "terrace", "in": ["scaled"], "step": 6, "sharpness": 0.7}, "smoothed": {"op": "smooth", "in": ["stepped"], "radius": 12}, "worn": {"op": "erode", "in": ["smoothed"], "radius": 20, "strength": 0.6}, "sum": {"op": "add", "in": ["worn", "cold", 3]}, "low": {"op": "min", "in": ["sum", 70]}, "high": {"op": "max", "in": ["low", -25]}, "clamped": {"op": "clamp", "in": ["high"], "min": -20, "max": 65}, "diff": {"op": "subtract", "in": ["clamped", "n"]}, "out": {"op": "divide", "in": ["diff", 1.5]}}})"));
+        R"({"output": "out", "nodes": {"n": {"op": "noise", "size": 300, "octaves": 4, "salt": "base"}, "r": {"op": "ridged", "size": 900, "octaves": 3, "salt": "ridges"}, "lat": {"op": "input", "name": "latitude"}, "edge": {"op": "input", "name": "edge_distance"}, "end": {"op": "input", "name": "end_distance"}, "near_edge": {"op": "smoothstep", "in": ["edge"], "from": 0, "to": 400}, "near_end": {"op": "smoothstep", "in": ["end"], "from": 0, "to": 300}, "cold": {"op": "curve", "in": ["abs_lat"], "points": [[0, 0], [45, 10], [90, 40]]}, "abs_lat": {"op": "abs", "in": ["lat"]}, "land": {"op": "lerp", "in": ["n", "r", 0.4]}, "scaled": {"op": "multiply", "in": [50, "land", "near_edge", "near_end"]}, "stepped": {"op": "terrace", "in": ["scaled"], "step": 6, "sharpness": 0.7}, "smoothed": {"op": "smooth", "in": ["stepped"], "radius": 12}, "worn": {"op": "erode", "in": ["scaled"], "radius": 20, "strength": 0.6}, "blend": {"op": "lerp", "in": ["smoothed", "worn", 0.5]}, "sum": {"op": "add", "in": ["blend", "cold", 3]}, "low": {"op": "min", "in": ["sum", 70]}, "high": {"op": "max", "in": ["low", -25]}, "clamped": {"op": "clamp", "in": ["high"], "min": -20, "max": 65}, "diff": {"op": "subtract", "in": ["clamped", "n"]}, "out": {"op": "divide", "in": ["diff", 1.5]}}})"));
     const Shape shapes[] = {
         Shape::bounded_area(3000.0, 2000.0, 9.81), Shape::flat_cylinder(6000.0, 5000.0, 9.81),
         Shape::curved_cylinder(1000.0, 5000.0, 9.81), Shape::sphere_outside(3000.0, 9.81),

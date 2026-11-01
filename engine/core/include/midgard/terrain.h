@@ -29,6 +29,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -37,6 +38,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "midgard/body.h"
+#include "midgard/worldgen.h"
 
 namespace midgard {
 
@@ -61,6 +63,9 @@ struct TerrainSettings {
     WallLook wall = WallLook::Cliff;
     double snow_line = 90.0;  // metres: snow lies above this all year (lower in winter)
     double spacing = 2.0;     // metres between grid points at the finest level, at most
+    // How the ground's height is made, a world type's graph (midgard/worldgen.h) as JSON: in
+    // place of base + height_scale * noise. Empty: those (the 5.9 hills).
+    std::string graph;
     bool operator==(const TerrainSettings&) const = default;
 };
 
@@ -200,6 +205,7 @@ public:
     std::uint64_t chunk_hash(const ChunkKey& key) const;
 
 private:
+    std::shared_ptr<const WorldGraph> graph_;  // settings_.graph, compiled
     // Whether the grid's u then v turn the other way to a flat map's, seen from above (the
     // outside of a sphere): normals and triangles are turned over to face up.
     bool flipped(const ChunkKey& key) const;

@@ -66,6 +66,8 @@ def resolved_settings(project: Project, settings: dict[str, Any]) -> dict[str, A
         out.pop("terrain")  # (the cook names it)
         return out
     out["terrain"] = dict(found.get("terrain", {}))
+    if found.get("graph"):
+        out["terrain"]["graph"] = found["graph"]  # how the ground's height is made
     if "seed" in terrain:
         out["terrain"]["seed"] = terrain["seed"]
     return out

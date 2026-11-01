@@ -2,6 +2,7 @@
 #include "midgard/validate.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <memory>
@@ -101,6 +102,23 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
         if (scene.settings.terrain) {
             for (std::string& problem : terrain_problems(*scene.settings.terrain))
                 report.errors.push_back(std::move(problem));
+            // A ground slower to make than a chunk's budget allows.
+            if (!scene.settings.terrain->graph.empty()) {
+                try {
+                    const double cost =
+                        WorldGraph::from_json(nlohmann::json::parse(scene.settings.terrain->graph))
+                            .cost();
+                    if (cost > kGraphCostBudget) {
+                        char text[160];
+                        std::snprintf(text, sizeof(text),
+                                      "the world type's ground costs %.1f times the 5.9 ground, "
+                                      "over the %.0f a chunk's budget allows: it streams slowly",
+                                      cost, kGraphCostBudget);
+                        report.warnings.emplace_back(text);
+                    }
+                } catch (const std::exception&) {  // (its problems are reported above)
+                }
+            }
             if (!scene.settings.body)
                 report.warnings.push_back(
                     "the scene has terrain settings but no world shape; there is no terrain");

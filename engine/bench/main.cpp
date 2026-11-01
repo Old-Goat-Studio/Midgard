@@ -146,7 +146,7 @@ std::vector<Benchmark> benchmarks() {
         const std::string graph =
             which == std::string("classic")
                 ? R"({"output": "height", "nodes": {"hills": {"op": "noise", "size": 500, "octaves": 6}, "scaled": {"op": "multiply", "in": [60, "hills"]}, "height": {"op": "add", "in": [8, "scaled"]}}})"
-                : R"({"output": "out", "nodes": {"n": {"op": "noise", "size": 300, "octaves": 4, "salt": "base"}, "r": {"op": "ridged", "size": 900, "octaves": 3, "salt": "ridges"}, "lat": {"op": "input", "name": "latitude"}, "edge": {"op": "input", "name": "edge_distance"}, "end": {"op": "input", "name": "end_distance"}, "near_edge": {"op": "smoothstep", "in": ["edge"], "from": 0, "to": 400}, "near_end": {"op": "smoothstep", "in": ["end"], "from": 0, "to": 300}, "cold": {"op": "curve", "in": ["abs_lat"], "points": [[0, 0], [45, 10], [90, 40]]}, "abs_lat": {"op": "abs", "in": ["lat"]}, "land": {"op": "lerp", "in": ["n", "r", 0.4]}, "scaled": {"op": "multiply", "in": [50, "land", "near_edge", "near_end"]}, "stepped": {"op": "terrace", "in": ["scaled"], "step": 6, "sharpness": 0.7}, "smoothed": {"op": "smooth", "in": ["stepped"], "radius": 12}, "worn": {"op": "erode", "in": ["smoothed"], "radius": 20, "strength": 0.6}, "sum": {"op": "add", "in": ["worn", "cold", 3]}, "low": {"op": "min", "in": ["sum", 70]}, "high": {"op": "max", "in": ["low", -25]}, "clamped": {"op": "clamp", "in": ["high"], "min": -20, "max": 65}, "diff": {"op": "subtract", "in": ["clamped", "n"]}, "out": {"op": "divide", "in": ["diff", 1.5]}}})";
+                : R"({"output": "out", "nodes": {"n": {"op": "noise", "size": 300, "octaves": 4, "salt": "base"}, "r": {"op": "ridged", "size": 900, "octaves": 3, "salt": "ridges"}, "lat": {"op": "input", "name": "latitude"}, "edge": {"op": "input", "name": "edge_distance"}, "end": {"op": "input", "name": "end_distance"}, "near_edge": {"op": "smoothstep", "in": ["edge"], "from": 0, "to": 400}, "near_end": {"op": "smoothstep", "in": ["end"], "from": 0, "to": 300}, "cold": {"op": "curve", "in": ["abs_lat"], "points": [[0, 0], [45, 10], [90, 40]]}, "abs_lat": {"op": "abs", "in": ["lat"]}, "land": {"op": "lerp", "in": ["n", "r", 0.4]}, "scaled": {"op": "multiply", "in": [50, "land", "near_edge", "near_end"]}, "stepped": {"op": "terrace", "in": ["scaled"], "step": 6, "sharpness": 0.7}, "smoothed": {"op": "smooth", "in": ["stepped"], "radius": 12}, "worn": {"op": "erode", "in": ["scaled"], "radius": 20, "strength": 0.6}, "blend": {"op": "lerp", "in": ["smoothed", "worn", 0.5]}, "sum": {"op": "add", "in": ["blend", "cold", 3]}, "low": {"op": "min", "in": ["sum", 70]}, "high": {"op": "max", "in": ["low", -25]}, "clamped": {"op": "clamp", "in": ["high"], "min": -20, "max": 65}, "diff": {"op": "subtract", "in": ["clamped", "n"]}, "out": {"op": "divide", "in": ["diff", 1.5]}}})";
         list.push_back(
             {name,
              std::string("a world graph (") + which +
@@ -164,6 +164,26 @@ std::vector<Benchmark> benchmarks() {
                  };
              }});
     }
+    list.push_back({"terrain.chunk_mesh_eroded",
+                    "one terrain chunk's mesh from a world graph: 6-octave noise worn by erode "
+                    "(five times the noise; one thread)",
+                    30, [](std::string&) -> std::function<void()> {
+                        midgard::TerrainSettings settings;
+                        settings.graph = R"({"output": "h", "nodes": {
+                            "n": {"op": "noise", "size": 500, "octaves": 6},
+                            "s": {"op": "multiply", "in": [60, "n"]},
+                            "w": {"op": "erode", "in": ["s"], "radius": 12, "strength": 0.6},
+                            "h": {"op": "add", "in": [8, "w"]}}})";
+                        const auto terrain = std::make_shared<midgard::Terrain>(
+                            midgard::body_from_json(nlohmann::json::parse(
+                                R"({"id": "a", "shape": "bounded_area", "width": 3000,
+                                    "length": 2000, "seed": 7})")),
+                            settings);
+                        return [terrain] {
+                            const midgard::ChunkMesh m = terrain->mesh({0, 2, 5, 3});
+                            g_sink = g_sink + m.indices.size();
+                        };
+                    }});
     list.push_back({"shape.sphere_64x64_positions",
                     "positions and up for a 64 x 64 grid on all 6 faces of a planet", 30,
                     [](std::string&) -> std::function<void()> {

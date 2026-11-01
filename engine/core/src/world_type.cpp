@@ -201,6 +201,7 @@ std::vector<std::string> world_type_problems(const std::vector<WorldTypeVersion>
 TerrainSettings world_terrain(const WorldRecipe& recipe, const WorldRef& world) {
     TerrainSettings t = recipe.terrain;
     t.seed = world.seed;
+    if (!recipe.graph.empty()) t.graph = recipe.graph;
     return t;
 }
 

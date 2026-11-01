@@ -74,6 +74,12 @@ def test_resolved_settings_give_the_viewport_the_ground_itself(project):
     settings = {"body": HABITAT, "terrain": {"world_type": "wt_hills", "version": 1, "seed": 5}}
     assert world_types.resolved_settings(project, settings)["terrain"] == {
         "height_scale": 90, "seed": 5}
+    graph = {"output": "h", "nodes": {"h": {"op": "constant", "value": 3}}}
+    project.undo_stack.push(world_types.SaveRecipeCommand(
+        project, "wt_flat", {"graph": graph, "terrain": {"sea_level": 1}}, "Flat"))
+    flat = {"body": HABITAT, "terrain": {"world_type": "wt_flat", "version": 1}}
+    assert world_types.resolved_settings(project, flat)["terrain"] == {"sea_level": 1,
+                                                                       "graph": graph}
     missing = {"body": HABITAT, "terrain": {"world_type": "wt_nope", "version": 1}}
     assert "terrain" not in world_types.resolved_settings(project, missing)
 

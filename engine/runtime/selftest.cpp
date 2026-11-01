@@ -100,6 +100,11 @@ Check terrain_check() {
         return {
             "Terrain", Status::Fail,
             format("fingerprint %016" PRIx64 ", expected %016" PRIx64, got, kTerrainFingerprint)};
+    const std::uint64_t graphs = worldgen_fingerprint();
+    if (graphs != kWorldGraphFingerprint)
+        return {"Terrain", Status::Fail,
+                format("world graphs' fingerprint %016" PRIx64 ", expected %016" PRIx64, graphs,
+                       kWorldGraphFingerprint)};
     const std::uint64_t spheres = sphere_terrain_fingerprint();
     if (spheres != kSphereTerrainFingerprint)
         return {"Terrain", Status::Fail,
@@ -120,10 +125,10 @@ Check terrain_check() {
     }
     std::sort(times.begin(), times.end());
     const double median = times[times.size() / 2];
-    const std::string detail =
-        format("chunk hashes on four shapes: %016" PRIx64
-               ", on planets and hollow worlds: %016" PRIx64 "; a chunk in %.2f ms (budget %.2f)",
-               got, spheres, median, kChunkBudgetMs);
+    const std::string detail = format(
+        "chunk hashes on four shapes: %016" PRIx64 ", on planets and hollow worlds: %016" PRIx64
+        ", world graphs: %016" PRIx64 "; a chunk in %.2f ms (budget %.2f)",
+        got, spheres, graphs, median, kChunkBudgetMs);
     return {"Terrain", median <= kChunkBudgetMs ? Status::Pass : Status::Fail, detail};
 }
 

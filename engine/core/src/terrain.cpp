@@ -144,6 +144,11 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
             throw std::runtime_error(
                 "terrain: \"wall\" is \"cliff\", \"fortification\" or \"barrier\"");
     }
+    if (j.contains("graph") && !j.at("graph").is_null()) {
+        if (!j.at("graph").is_object())
+            throw std::runtime_error("terrain: \"graph\" is a world graph (an object)");
+        t.graph = j.at("graph").dump();
+    }
     return t;
 }
 
@@ -161,6 +166,7 @@ nlohmann::json terrain_to_json(const TerrainSettings& t) {
                      {"spacing", t.spacing},
                      {"snow_line", t.snow_line}};
     if (t.seed) j["seed"] = *t.seed;
+    if (!t.graph.empty()) j["graph"] = nlohmann::json::parse(t.graph);
     return j;
 }
 
@@ -180,6 +186,9 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
     if (!(t.end_ramp >= 0.0)) out.push_back("terrain: the end ramp can't be negative");
     if (!(t.spacing >= 0.25 && t.spacing <= 64.0))
         out.push_back("terrain: the grid spacing is from 0.25 to 64 m");
+    if (!t.graph.empty())
+        for (const std::string& p : graph_problems(nlohmann::json::parse(t.graph)))
+            out.push_back("terrain's graph: " + p);
     return out;
 }
 
@@ -294,6 +303,9 @@ Terrain::Terrain(const Body& body, const TerrainSettings& settings,
       settings_(settings),
       stamps_(std::move(stamps)),
       seed_(settings.seed.value_or(body.seed)) {
+    if (!settings_.graph.empty())
+        graph_ = std::make_shared<const WorldGraph>(
+            WorldGraph::from_json(nlohmann::json::parse(settings_.graph)));
     const glm::dvec2 size = body_.shape.face_size();
     if (sphere(body_.shape.kind())) {
         roots_u_ = roots_v_ = sphere_roots(size.x);
@@ -580,7 +592,9 @@ std::optional<glm::dvec3> Terrain::raycast(const glm::dvec3& origin, const glm::
 
 double Terrain::base_height(int face, double u, double v) const {
     const TerrainSettings& t = settings_;
-    double h = noise_height(noise_position(face, u, v));
+    // A world type's graph, or the 5.9 hills; then the shape's edges shape it.
+    double h = graph_ ? graph_->evaluate(body_.shape, seed_, {face, u, v})
+                      : noise_height(noise_position(face, u, v));
     const Shape::Kind kind = body_.shape.kind();
     const glm::dvec2 size = body_.shape.face_size();
     if (kind == Shape::Kind::BoundedArea) {

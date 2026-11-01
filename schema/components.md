@@ -58,8 +58,14 @@ scenes use) can't be changed or deleted; editing it saves a new version. A recip
 `{"shapes": [...], "size": [smallest, largest], "gravity", "atmosphere", "calendar",
 "terrain": {"base": 8, "height_scale": 60, "feature_size": 500, "octaves": 6, "sea_level": 0,
 "ocean_band": 300, "ocean_depth": 30, "end_ramp": 150, "wall_height": 120, "wall": "cliff",
-"spacing": 2, "snow_line": 90}}`; the cook refuses a world type made for other shapes or sizes
-than the scene's. Migration 12 made each scene's terrain settings into its own Custom world
+"spacing": 2, "snow_line": 90}, "graph": {...}}`; the cook refuses a world type made for other
+shapes or sizes than the scene's. A recipe's `graph` (`midgard/worldgen.h`) makes the ground's
+height from nodes (noise, ridged noise, constants, latitude and distances from an area's edge or a
+cylinder's ends, arithmetic, curves, terraces, and the smooth and erode filters, which can't be
+nested); without one, the ground is `base` plus `height_scale` times noise as below. Either way
+the shape's edges then shape it (the ocean band, the ramps to a cylinder's walls). Filters make a
+ground about five times the work: the cook warns when one costs more than four times the plain
+ground, which streams more slowly than a chunk's budget. Migration 12 made each scene's terrain settings into its own Custom world
 type, with the same ground.
 
 The ground is hills and valleys on any shape (`midgard/terrain.h`; spheres from milestone

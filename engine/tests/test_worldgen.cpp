@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include "midgard/det.h"
+#include "midgard/terrain.h"
 #include "midgard/worldgen.h"
 
 namespace fs = std::filesystem;
@@ -171,12 +172,10 @@ TEST_CASE("what the cook refuses in a graph") {
           R"({"output": "a", "nodes": {"a": {"op": "erode", "in": [1], "radius": 5,
                                                 "strength": 2}}})",
           R"({"output": "a", "nodes": {"a": {"op": "terrace", "in": [1], "step": 0}}})",
-          // Smooth inside smooth inside smooth inside smooth: too much work per point.
+          // A filter inside a filter: five times five the work per point.
           R"({"output": "a", "nodes": {
-                 "a": {"op": "smooth", "in": ["b"], "radius": 5},
-                 "b": {"op": "smooth", "in": ["c"], "radius": 5},
-                 "c": {"op": "smooth", "in": ["d"], "radius": 5},
-                 "d": {"op": "smooth", "in": [1], "radius": 5}}})"}) {
+                 "a": {"op": "erode", "in": ["b"], "radius": 5},
+                 "b": {"op": "smooth", "in": [1], "radius": 5}}})"}) {
         CAPTURE(bad);
         CHECK_FALSE(problems(bad).empty());
         CHECK_THROWS(midgard::WorldGraph::from_json(json::parse(bad)));
@@ -206,4 +205,44 @@ TEST_CASE("a smoothed graph is the same on a cube face's edge from both faces") 
                 CHECK(g.evaluate(planet, 99, {f, a.x, a.y}) ==
                       g.evaluate(planet, 99, {link.face, b.x, b.y}));
             }
+}
+
+TEST_CASE("a graph's cost, in 5.9 grounds") {
+    const json t = table();
+    CHECK(midgard::WorldGraph::from_json(t.at("graphs").at("classic")).cost() == 1.0);
+    // Noise of 4 and 3 octaves, both also under a filter (smooth and erode of what uses them):
+    // (4 + 3) * 5 / 6.
+    const midgard::WorldGraph everything =
+        midgard::WorldGraph::from_json(t.at("graphs").at("everything"));
+    CHECK(everything.cost() == doctest::Approx((5.0 * 4 + 5.0 * 3) / 6.0));
+    CHECK(everything.uses_neighbours());
+}
+
+TEST_CASE("terrain made from a graph: the table's chunk hashes, and the 5.9 ground unchanged") {
+    const json t = table();
+    const std::uint64_t seed = t.at("seed").get<std::uint64_t>();
+    int checked = 0;
+    for (const json& c : t.at("chunks")) {
+        CAPTURE(c.dump());
+        json b = t.at("bodies").at(c.at("body").get<std::string>());
+        b["id"] = c.at("body");
+        b["seed"] = seed;
+        midgard::TerrainSettings settings;
+        if (!c.at("graph").is_null())
+            settings.graph = t.at("graphs").at(c.at("graph").get<std::string>()).dump();
+        const midgard::Terrain terrain(midgard::body_from_json(b), settings);
+        const json& k = c.at("key");
+        CHECK(hex(terrain.chunk_hash({k[0].get<int>(), k[1].get<int>(), k[2].get<int>(),
+                                      k[3].get<int>()})) == c.at("hash").get<std::string>());
+        ++checked;
+    }
+    CHECK(checked == 9);
+    // The settings carry the graph, and the cook checks it with them.
+    midgard::TerrainSettings s =
+        midgard::terrain_from_json(json{{"graph", t.at("graphs").at("classic")}});
+    CHECK_FALSE(s.graph.empty());
+    CHECK(midgard::terrain_problems(s).empty());
+    CHECK(midgard::terrain_from_json(midgard::terrain_to_json(s)) == s);
+    s.graph = R"({"output": "a", "nodes": {"a": {"op": "magic"}}})";
+    CHECK(midgard::terrain_problems(s).size() == 1);
 }

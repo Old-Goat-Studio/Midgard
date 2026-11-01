@@ -2337,3 +2337,31 @@ TEST_CASE("a scene's terrain from a world type: the same ground, and what the co
     CHECK(all.find("isn't for a curved_cylinder") != std::string::npos);
     CHECK(all.find("version 2") != std::string::npos);
 }
+
+TEST_CASE("a world type's graph makes the game's ground, and the cook weighs its cost") {
+    const char* body = R"("body": {"shape": "bounded_area", "width": 3000, "length": 3000,
+                                   "seed": 9})";
+    TestPackage pkg(
+        {}, std::string("{") + body + R"(, "terrain": {"world_type": "wt_flat", "version": 1}})");
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, "INSERT INTO world_type (id, name, version) VALUES ('wt_flat', 'Flat', 1)");
+    // Level ground 12 m up, everywhere (before the ocean band round the edge).
+    exec(db, R"(INSERT INTO world_type_version (world_type, version, recipe) VALUES ('wt_flat', 1,
+        '{"graph": {"output": "h", "nodes": {"h": {"op": "constant", "value": 12}}}}'))");
+    sqlite3_close(db);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+    midgard::Game game(pkg.dir);
+    REQUIRE(game.terrain() != nullptr);
+    CHECK(game.terrain()->terrain().height(0, 0.5, 0.5) == doctest::Approx(12.0));
+    CHECK(game.terrain()->terrain().height(0, 0.31, 0.62) == doctest::Approx(12.0));
+    // A costly ground: the cook warns it streams slowly (noise of 12 octaves under a filter).
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(UPDATE world_type_version SET recipe = '{"graph": {"output": "h", "nodes": {
+        "n": {"op": "noise", "size": 400, "octaves": 12},
+        "h": {"op": "erode", "in": ["n"], "radius": 8}}}}')");
+    sqlite3_close(db);
+    std::string all;
+    for (const std::string& w : midgard::validate_package(pkg.dir).warnings) all += w + "\n";
+    CHECK(all.find("streams slowly") != std::string::npos);
+}

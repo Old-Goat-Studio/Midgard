@@ -223,9 +223,15 @@ class Terrain:
         return h
 
     def base_height(self, face: int, u: float, v: float) -> float:
-        """As generated."""
+        """As generated: a world type's graph, or the 5.9 hills; then the shape's edges."""
         t = self.settings
-        h = self.noise_height(self.noise_position(face, u, v))
+        if t.get("graph"):
+            from .worldgen import Graph  # (worldgen uses this module's helpers)
+            if getattr(self, "_graph", None) is None:
+                self._graph = Graph(t["graph"])
+            h = self._graph.evaluate(self.shape, self.seed, (face, u, v))
+        else:
+            h = self.noise_height(self.noise_position(face, u, v))
         su, sv = face_size(self.shape)
         if self.shape.kind == shapes.BOUNDED_AREA:
             if t["ocean_band"] > 0.0:

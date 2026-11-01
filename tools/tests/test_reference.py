@@ -339,6 +339,21 @@ def test_world_graphs_match_their_table():
     assert f"{worldgen.fingerprint():016x}" == data["fingerprint"]
 
 
+def test_terrain_from_a_world_graph_matches_the_table():
+    """Chunk hashes of terrain made from graphs; the 5.9 ground as a graph is unchanged."""
+    from reference import terrain, worldgen
+    data = json.loads((TABLES / "worldgen_cases.json").read_text("utf-8"))
+    by_body = {}
+    for c in data["chunks"]:
+        body = {**data["bodies"][c["body"]], "seed": data["seed"]}
+        settings = {"graph": data["graphs"][c["graph"]]} if c["graph"] else {}
+        assert f"{terrain.Terrain(body, settings).chunk_hash(tuple(c['key'])):016x}" == c["hash"]
+        by_body.setdefault(c["body"], {})[c["graph"]] = c["hash"]
+    for hashes in by_body.values():
+        assert hashes["classic"] == hashes[None]
+    assert worldgen  # (the twin the table came from)
+
+
 def test_world_graph_nodes_by_hand():
     from reference import shapes, worldgen
     area = shapes.Shape(shapes.BOUNDED_AREA, 3000.0, 2000.0, 9.81)
