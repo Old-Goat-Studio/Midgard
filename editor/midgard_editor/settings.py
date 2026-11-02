@@ -20,6 +20,7 @@ DEFAULTS: dict[str, Any] = {
     "backup_minutes": 10,        # minutes between automatic backups while editing
     "use_x11": False,            # Linux: start under XWayland for full multi-monitor support
     "last_project_dir": "",
+    "projects_dir": "",          # where projects are made ("": Documents/Midgard Projects)
     "open_last_project": True,   # start with the project worked on last (if it's still there)
     "export_dir": "",            # last Build ▸ Export output folder
     "snippets": [],              # the user's own Script editor snippets
@@ -28,6 +29,18 @@ DEFAULTS: dict[str, Any] = {
     "assistant_model": "claude-opus-5-5",
     "assistant_effort": "medium",
 }
+
+
+def default_projects_dir() -> Path:
+    documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+    return Path(documents or Path.home()) / "Midgard Projects"
+
+
+def projects_dir(settings: "Settings") -> Path:
+    """The folder projects are made in (Edit ▸ Preferences ▸ Projects folder): each project is a
+    folder inside it, its Asset Library with it."""
+    chosen = settings.get("projects_dir")
+    return Path(chosen) if chosen else default_projects_dir()
 
 
 def default_dir() -> Path:

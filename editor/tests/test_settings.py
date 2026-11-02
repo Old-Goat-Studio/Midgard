@@ -71,3 +71,30 @@ def test_the_last_project_opens_on_starting_unless_turned_off(qapp, settings, tm
     dialog._save()
     assert settings.get("open_last_project") is False
     assert startup_project(settings, None) is None
+
+
+def test_projects_are_made_in_the_projects_folder(qapp, qtbot, settings, tmp_path):
+    from midgard_editor.dialogs import NewProjectDialog, PreferencesDialog
+    from midgard_editor.settings import default_projects_dir, projects_dir
+
+    assert projects_dir(settings) == default_projects_dir()  # Documents/Midgard Projects
+    assert default_projects_dir().name == "Midgard Projects"
+    chosen = tmp_path / "Games" / "Midgard"
+    preferences = PreferencesDialog(settings)
+    qtbot.addWidget(preferences)
+    preferences.projects.setText(str(chosen))
+    preferences._save()
+    assert chosen.is_dir()  # (made)
+    assert projects_dir(settings) == chosen
+    dialog = NewProjectDialog(settings)
+    qtbot.addWidget(dialog)
+    assert dialog.location.text() == str(chosen) and dialog.location.isReadOnly()
+    dialog.git.setChecked(False)
+    dialog.name.setText("Skyhold")
+    dialog._create()
+    assert dialog.project is not None and dialog.project.root == chosen / "Skyhold"
+    # Saved unchanged: nothing made or changed.
+    again = PreferencesDialog(settings)
+    qtbot.addWidget(again)
+    again._save()
+    assert projects_dir(settings) == chosen

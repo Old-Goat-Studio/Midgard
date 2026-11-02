@@ -56,11 +56,11 @@ def test_the_ignore_file_keeps_editor_files_out(project, git_identity):
 def test_new_project_can_start_in_git(qtbot, settings, tmp_path, git_identity):
     from midgard_editor.dialogs import NewProjectDialog
 
+    settings.set("projects_dir", str(tmp_path / "projects"))
     dialog = NewProjectDialog(settings)
     qtbot.addWidget(dialog)
     assert dialog.git.isChecked()  # on by default when Git is installed
     dialog.name.setText("Northreach")
-    dialog.location.setText(str(tmp_path / "projects"))
     dialog._create()
     assert dialog.project is not None
     assert vcs.repository_root(dialog.project.root) is not None
@@ -70,7 +70,6 @@ def test_new_project_can_start_in_git(qtbot, settings, tmp_path, git_identity):
     qtbot.addWidget(dialog)
     dialog.git.setChecked(False)
     dialog.name.setText("Southreach")
-    dialog.location.setText(str(tmp_path / "other"))
     dialog._create()
     assert vcs.repository_root(dialog.project.root) is None
     assert NewProjectDialog(settings).git.isChecked() is False  # the choice is remembered

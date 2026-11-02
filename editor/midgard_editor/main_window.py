@@ -58,7 +58,7 @@ from .export_dialog import ExportDialog
 from .live_link import LinkError, PlaySession, State
 from .physics_dialogs import PhysicsLayersDialog, WorldShapeDialog
 from .project import Project, ProjectError
-from .settings import Settings
+from .settings import Settings, projects_dir
 from .themes import QSS_PREFIX, THEMES, ThemeApplier, qss_themes, theme_title
 from .watch import ContentWatcher
 
@@ -566,7 +566,7 @@ class MainWindow(QMainWindow):
 
     def open_project_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Project", self.settings.get("last_project_dir") or str(Path.home()),
+            self, "Open Project", str(projects_dir(self.settings)),
             "Midgard projects (*.config)")
         if path:
             self.open_project(Path(path))

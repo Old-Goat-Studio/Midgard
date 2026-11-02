@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from . import vcs
 from .project import NAME_PATTERN, WORLD_MODES, Project, ProjectError
-from .settings import Settings
+from .settings import Settings, projects_dir
 from .vcs import Identity
 
 log = logging.getLogger("midgard")
@@ -42,12 +42,13 @@ class NewProjectDialog(QDialog):
         self.name.setPlaceholderText("MyGame")
         self.title = QLineEdit()
         self.title.setPlaceholderText("The title players see (can be changed later)")
-        self.location = QLineEdit(settings.get("last_project_dir") or str(Path.home()))
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._browse)
-        row = QHBoxLayout()
-        row.addWidget(self.location)
-        row.addWidget(browse)
+        # Every project is made in the projects folder (Edit ▸ Preferences).
+        self.location = QLineEdit(str(projects_dir(settings)))
+        self.location.setReadOnly(True)
+        self.location.setToolTip("Projects are made in the projects folder: change it in "
+                                 "Edit ▸ Preferences")
+        where = QLabel("Change the projects folder in Edit ▸ Preferences.")
+        where.setEnabled(False)
         self.world_mode = QComboBox()
         for key, label in WORLD_MODES.items():
             self.world_mode.addItem(label, key)
@@ -62,7 +63,8 @@ class NewProjectDialog(QDialog):
         form = QFormLayout(self)
         form.addRow("Project name", self.name)
         form.addRow("Game title", self.title)
-        form.addRow("Location", row)
+        form.addRow("Projects folder", self.location)
+        form.addRow("", where)
         form.addRow("World mode", self.world_mode)
         form.addRow("", note)
         form.addRow("", self.git)
@@ -73,11 +75,6 @@ class NewProjectDialog(QDialog):
         form.addRow(buttons)
         self.settings = settings
 
-    def _browse(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Project location", self.location.text())
-        if folder:
-            self.location.setText(folder)
-
     def _create(self) -> None:
         name = self.name.text().strip()
         if not NAME_PATTERN.match(name):
@@ -86,12 +83,12 @@ class NewProjectDialog(QDialog):
                                 "digits, '-' and '_'.")
             return
         try:
+            Path(self.location.text()).mkdir(parents=True, exist_ok=True)
             self.project = Project.create(Path(self.location.text()), name,
                                           self.world_mode.currentData(), self.title.text())
         except (ProjectError, OSError) as e:
             QMessageBox.warning(self, "New Project", str(e))
             return
-        self.settings.set("last_project_dir", self.location.text())
         if self.git.isEnabled():
             self.settings.set("new_project_git", self.git.isChecked())
             if self.git.isChecked():
@@ -220,6 +217,15 @@ class PreferencesDialog(QDialog):
         self.open_last = QCheckBox("Open the last project when Midgard starts")
         self.open_last.setChecked(bool(settings.get("open_last_project")))
         form.addRow("Starting", self.open_last)
+        self.projects = QLineEdit(str(projects_dir(settings)))
+        self.projects.setToolTip("New projects are made here, each in its own folder (with its "
+                                 "Asset Library); Open Project starts here")
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse_projects)
+        row = QHBoxLayout()
+        row.addWidget(self.projects)
+        row.addWidget(browse)
+        form.addRow("Projects folder", row)
         self.keep = QSpinBox(minimum=1, maximum=100, value=int(settings.get("backup_keep")))
         self.minutes = QSpinBox(minimum=1, maximum=120, suffix=" min",
                                 value=int(settings.get("backup_minutes")))
@@ -254,7 +260,20 @@ class PreferencesDialog(QDialog):
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
+    def _browse_projects(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Projects folder", self.projects.text())
+        if folder:
+            self.projects.setText(folder)
+
     def _save(self) -> None:
+        folder = self.projects.text().strip()
+        if folder and folder != str(projects_dir(self.settings)):  # (changed: made, if need be)
+            try:
+                Path(folder).mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                QMessageBox.warning(self, "Preferences", f"The projects folder can't be made: {e}")
+                return
+            self.settings.set("projects_dir", folder)
         self.settings.set("open_last_project", self.open_last.isChecked())
         self.settings.set("backup_keep", self.keep.value())
         self.settings.set("backup_minutes", self.minutes.value())
