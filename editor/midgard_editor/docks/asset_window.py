@@ -815,12 +815,16 @@ class AssetWindow(QWidget):
         self.player = AssetPlayer()
         # A sound asset's files with their sizes: choosing one is what the player plays.
         self.files_list = QTreeWidget()
-        self.files_list.setHeaderLabels(["File", "Size"])
+        self.files_list.setHeaderLabels(["File", "Size", "Folder"])
         self.files_list.setRootIsDecorated(False)
         self.files_list.setAlternatingRowColors(True)
-        self.files_list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.files_list.header().setSectionResizeMode(1,
-                                                      QHeaderView.ResizeMode.ResizeToContents)
+        self.files_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        header = self.files_list.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(2, 120)
         self.files_list.setToolTip("Choose a sound to play it (double-click: play at once)")
         self.files_list.itemSelectionChanged.connect(self._file_chosen)
         self.files_list.itemDoubleClicked.connect(lambda *_: self._play_chosen())
@@ -972,17 +976,22 @@ class AssetWindow(QWidget):
             first = None
             # The sounds first (by name), then what else it holds (a licence, a read-me).
             ordered = sorted(asset.files, key=lambda f: (
-                Path(f["path"]).suffix.lower() not in lib.AUDIO, f["path"].lower()))
+                Path(f["path"]).suffix.lower() not in lib.AUDIO,
+                Path(f["path"]).name.lower(), f["path"].lower()))
             for f in ordered:
                 path = asset.folder / f["path"]
-                item = QTreeWidgetItem([f["path"], size_text(f.get("bytes", 0))])
+                # Its own name (where it sits in the pack beside it, and all of it on hover).
+                folder = Path(f["path"]).parent.as_posix()
+                item = QTreeWidgetItem([Path(f["path"]).name, size_text(f.get("bytes", 0)),
+                                        "" if folder == "." else folder])
+                item.setToolTip(0, f["path"])
                 item.setData(0, ASSET_ROLE, str(path))
                 item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight |
                                       Qt.AlignmentFlag.AlignVCenter)
                 if path.suffix.lower() not in lib.AUDIO:  # (a licence, a read-me)
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-                    item.setForeground(0, Qt.GlobalColor.gray)
-                    item.setForeground(1, Qt.GlobalColor.gray)
+                    for column in range(3):
+                        item.setForeground(column, Qt.GlobalColor.gray)
                 elif first is None:
                     first = item
                 self.files_list.addTopLevelItem(item)

@@ -480,3 +480,31 @@ def test_a_sound_assets_files_are_listed_with_their_sizes_to_play(project, qtbot
     window.select("images/tile")
     assert not window.files_list.isVisible()
     assert size_text(3_400_000) == "3.4 MB" and size_text(820_000) == "820 KB"
+
+
+def test_sounds_in_a_packs_folders_are_listed_by_their_own_names(project, qtbot, tmp_path):
+    """A pack keeps its folders: the list names each file, not the folder they share."""
+    pack = tmp_path / "pick"
+    (pack / "Sci-Fi Sound Pack" / "Lasers").mkdir(parents=True)
+    (pack / "Sci-Fi Sound Pack" / "Doors").mkdir()
+    (pack / "Sci-Fi Sound Pack" / "Lasers" / "laser_01.ogg").write_bytes(OGG + b"\x01" * 10)
+    (pack / "Sci-Fi Sound Pack" / "Lasers" / "laser_02.ogg").write_bytes(OGG + b"\x02" * 20)
+    (pack / "Sci-Fi Sound Pack" / "Doors" / "door_open.ogg").write_bytes(OGG + b"\x03" * 30)
+    (pack / "Sci-Fi Sound Pack" / "readme.txt").write_text("CC0", "utf-8")
+    lib.import_asset(project, [pack], "effects", "Sci-Fi")
+    window = AssetWindow()
+    qtbot.addWidget(window)
+    window.set_project(project)
+    window.show()
+    window.select("effects/miscellaneous/sci_fi")
+    rows = [tuple(window.files_list.topLevelItem(i).text(c) for c in range(3))
+            for i in range(window.files_list.topLevelItemCount())]
+    assert rows == [("door_open.ogg", "66 bytes", "Sci-Fi Sound Pack/Doors"),
+                    ("laser_01.ogg", "46 bytes", "Sci-Fi Sound Pack/Lasers"),
+                    ("laser_02.ogg", "56 bytes", "Sci-Fi Sound Pack/Lasers"),
+                    ("readme.txt", "3 bytes", "Sci-Fi Sound Pack")]
+    assert window.files_list.topLevelItem(1).toolTip(0) == \
+        "Sci-Fi Sound Pack/Lasers/laser_01.ogg"
+    window.files_list.topLevelItem(0).setSelected(False)
+    window.files_list.topLevelItem(2).setSelected(True)
+    assert window.player.choose.currentData()[1].name == "laser_02.ogg"
