@@ -10,7 +10,12 @@ written as things happen (so it survives a crash):
 - errors (the last 50, and no more than 1 MB of them): Python errors no one caught (with their
   traceback), Qt's warnings, the Log's warnings and errors, and the game's while it plays;
 - a hard crash (the program killed by a fault, say in the engine): Python's faulthandler writes
-  where every thread was at the end of the file.
+  where every thread was at the end of the file;
+- a freeze: if the editor stops responding for HANG_SECONDS, where every thread was stuck is
+  written at the end of the file too (so it is there even if the editor is then closed by
+  force), and once it carries on, that becomes a HANG error saying how long it was stuck.
+
+The last session's file is kept as error.previous.log when the editor starts again.
 
 Edit ▸ Preferences and each project's Project Page can turn it off (for speed): it runs only
 when both say on. error.log is left out of Git (the project's .gitignore) and never cooked."""
@@ -19,15 +24,20 @@ import faulthandler
 import logging
 import sys
 import threading
+import time
 import traceback
 from collections import deque
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QtMsgType, qInstallMessageHandler
+from PySide6.QtCore import QEvent, QObject, QTimer, QtMsgType, qInstallMessageHandler
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QAbstractButton, QApplication, QLineEdit, QMenu, QWidget
 
 FILE = "error.log"
+PREVIOUS = "error.previous.log"  # the last session's (kept when the editor starts again)
+HANG_SECONDS = 10  # stuck this long: where every thread is, into error.log
+HEARTBEAT_MS = 1000
+HANG = "HANG"
 EVENTS = 100
 ERRORS = 50
 ERROR_BYTES = 1 << 20
@@ -72,6 +82,13 @@ class ErrorLog(QObject):
         self._crash_file = None
         self._previous_hooks = None
         self._handler = _LogHandler(self)
+        self._written = 0  # error.log's size as last written (more: a dump appended since)
+        self._started: set[Path] = set()  # folders whose last session's file is kept aside
+        # The heartbeat: while the window's thread runs, a freeze's dump is put off again.
+        self._beat = time.monotonic()
+        self._heartbeat = QTimer(self)
+        self._heartbeat.setInterval(HEARTBEAT_MS)
+        self._heartbeat.timeout.connect(self._tick)
 
     @property
     def path(self) -> Path:
@@ -94,9 +111,14 @@ class ErrorLog(QObject):
             sys.excepthook = self._python_error
             threading.excepthook = self._thread_error
             qInstallMessageHandler(self._qt_message)
+            self._keep_previous()
             self._open_crash_file()
             self.write()
+            self._beat = time.monotonic()
+            self._heartbeat.start()
+            self._arm()
         else:
+            self._heartbeat.stop()
             if app is not None:
                 app.removeEventFilter(self)
             logging.getLogger().removeHandler(self._handler)
@@ -113,11 +135,26 @@ class ErrorLog(QObject):
         self.folder = folder
         self._ignore_in_git()
         if self.enabled:
+            self._keep_previous()
             self._open_crash_file()
             self.write()
+            self._arm()
+
+    def _keep_previous(self) -> None:
+        """The first time this session writes in a folder: the error.log already there (the last
+        session's, with any crash or freeze at its end) kept as error.previous.log."""
+        if self.folder in self._started:
+            return
+        self._started.add(self.folder)
+        try:
+            if self.path.is_file() and self.path.stat().st_size > 0:
+                self.path.replace(self.folder / PREVIOUS)
+        except OSError:
+            pass
 
     def _open_crash_file(self) -> None:
         self._close_crash_file()
+        self._written = 0  # (a new file, or another folder's: nothing of it written yet)
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
             # Appending: a fault's report goes after what was last written.
@@ -128,6 +165,7 @@ class ErrorLog(QObject):
 
     def _close_crash_file(self) -> None:
         if self._crash_file is not None:
+            faulthandler.cancel_dump_traceback_later()  # (not into a closed file)
             faulthandler.disable()
             self._crash_file.close()
             self._crash_file = None
@@ -137,9 +175,41 @@ class ErrorLog(QObject):
         ignore = self.folder / ".gitignore"
         if self.folder != self.settings_dir and ignore.is_file():
             text = ignore.read_text("utf-8")
-            if FILE not in text.split():
-                ignore.write_text(text + ("" if text.endswith("\n") else "\n") + FILE + "\n",
-                                  "utf-8")
+            missing = [f for f in (FILE, PREVIOUS) if f not in text.split()]
+            if missing:
+                ignore.write_text(text + ("" if text.endswith("\n") else "\n") +
+                                  "".join(f + "\n" for f in missing), "utf-8")
+
+    # ---- freezes ----------------------------------------------------------------------------
+    def _arm(self) -> None:
+        """Where every thread is, into error.log, if the window's thread doesn't come back to
+        put it off again within HANG_SECONDS."""
+        if self._crash_file is not None:
+            faulthandler.dump_traceback_later(HANG_SECONDS, repeat=False, file=self._crash_file)
+
+    def _tick(self) -> None:
+        now = time.monotonic()
+        stuck, self._beat = now - self._beat, now
+        self._arm()
+        if stuck >= HANG_SECONDS:
+            self.write()  # (takes in the dump, as a HANG error)
+            if self.errors and HANG in self.errors[-1].split("\n")[0]:
+                self.errors[-1] = self.errors[-1].replace(
+                    f"for {HANG_SECONDS} seconds or more", f"for {stuck:.0f} seconds", 1)
+                self.write()
+
+    def _take_dump(self) -> None:
+        """A freeze's dump written at the end of error.log since it was last written: kept as
+        an error (the file is about to be written afresh)."""
+        try:
+            with open(self.path, "rb") as f:
+                f.seek(self._written)
+                dump = f.read(ERROR_BYTES).decode("utf-8", "replace").strip()
+        except OSError:
+            return
+        if dump:
+            self.errors.append(f"{_now()}  {HANG}: the editor stopped responding for "
+                               f"{HANG_SECONDS} seconds or more. Where each thread was:\n{dump}")
 
     # ---- what it records --------------------------------------------------------------------
     def record_event(self, text: str) -> None:
@@ -230,10 +300,14 @@ class ErrorLog(QObject):
         """error.log as it is now (in place: a fault's report is appended to the same file)."""
         if not self.enabled:
             return
+        if self._written and self.path.is_file() and self.path.stat().st_size > self._written:
+            self._take_dump()
+        data = self.text().encode("utf-8")
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
-            with open(self.path, "w", encoding="utf-8") as f:
-                f.write(self.text())
+            with open(self.path, "wb") as f:
+                f.write(data)
+            self._written = len(data)
         except OSError:
             pass  # (nowhere to write: nothing to be done about it here)
 

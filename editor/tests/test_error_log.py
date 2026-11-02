@@ -105,8 +105,8 @@ def test_it_follows_the_project_and_keeps_out_of_git(qtbot, tmp_path, project):
         log.set_folder(project.root)
         log.record_error("ERROR", "in the project")
         assert "in the project" in (project.root / "error.log").read_text("utf-8")
-        assert (project.root / ".gitignore").read_text("utf-8").split() == [".midgard/",
-                                                                             "error.log"]
+        assert (project.root / ".gitignore").read_text("utf-8").split() == [
+            ".midgard/", "error.log", "error.previous.log"]
         log.set_folder(project.root)  # (again: not added twice)
         assert (project.root / ".gitignore").read_text("utf-8").count("error.log") == 1
     finally:
@@ -116,6 +116,53 @@ def test_it_follows_the_project_and_keeps_out_of_git(qtbot, tmp_path, project):
     log.record_error("ERROR", "while off")
     assert not (project.root / "error.log").exists()
     assert sys.excepthook is hook_before
+
+
+def test_a_freeze_leaves_where_every_thread_was_stuck(qtbot, tmp_path, monkeypatch):
+    """The window's thread stuck (here: asleep) past HANG_SECONDS: where it was is written to
+    error.log at the time, and once it carries on, it is a HANG error saying for how long."""
+    import time
+
+    from midgard_editor import error_log
+    monkeypatch.setattr(error_log, "HANG_SECONDS", 1)
+    monkeypatch.setattr(error_log, "HEARTBEAT_MS", 100)
+    log = ErrorLog(tmp_path)
+    log.set_enabled(True)
+    try:
+        log.record_event("before the freeze")
+        qtbot.wait(300)  # (the heartbeat going)
+
+        def stuck_in_the_window_thread():
+            time.sleep(2.5)
+
+        stuck_in_the_window_thread()
+        # Written while it was stuck: there even if it were then closed by force.
+        during = (tmp_path / "error.log").read_text("utf-8")
+        assert "stuck_in_the_window_thread" in during
+        qtbot.waitUntil(lambda: any("HANG" in e for e in log.errors), timeout=5000)
+        text = (tmp_path / "error.log").read_text("utf-8")
+        assert "HANG: the editor stopped responding for" in text
+        assert "stuck_in_the_window_thread" in text and "before the freeze" in text
+        assert "seconds or more" not in text  # (how long it was, once it carried on)
+        # Written afresh since: the dump is now one of the errors, not left at the end too.
+        assert text.count("stuck_in_the_window_thread") == 1
+        # No freeze: nothing more.
+        qtbot.wait(1500)
+        assert sum("HANG" in e for e in log.errors) == 1
+    finally:
+        log.set_enabled(False)
+
+
+def test_the_last_sessions_log_is_kept(qtbot, tmp_path):
+    (tmp_path / "error.log").write_text("Fatal Python error: the last session's crash", "utf-8")
+    log = ErrorLog(tmp_path)
+    log.set_enabled(True)
+    try:
+        log.record_event("this session")
+    finally:
+        log.set_enabled(False)
+    assert "the last session's crash" in (tmp_path / "error.previous.log").read_text("utf-8")
+    assert "this session" in (tmp_path / "error.log").read_text("utf-8")
 
 
 def test_a_hard_crash_leaves_its_traceback(tmp_path):

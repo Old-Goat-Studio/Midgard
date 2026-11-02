@@ -136,6 +136,7 @@ def test_the_player_shows_pictures_sounds_and_fonts(project, qtbot, tmp_path):
     picture = lib.import_asset(project, [a_picture(tmp_path, "slate.png")], "textures", "Slate",
                                category="stone")
     player.show_asset(picture)
+    qtbot.waitUntil(lambda: player.kind != "preparing", timeout=30000)
     assert player.kind in ("material", "picture")  # (its material; its picture without the engine)
     assert not player.picture.pixmap().isNull()
     assert not player.play_button.isVisible()
@@ -250,6 +251,7 @@ def test_the_library_picker_and_a_library_texture(project, qtbot, tmp_path):
     qtbot.addWidget(picker)
     assert not picker.use_button.isEnabled()
     picker.pick(0)
+    qtbot.waitUntil(lambda: picker.player.kind != "preparing", timeout=30000)
     assert picker.use_button.isEnabled() and picker.player.kind in ("material", "picture")
     picker.accept_current()
     assert picker.chosen == texture.folder / "slate.png"
@@ -407,6 +409,7 @@ def test_the_player_lists_what_an_asset_holds(project, qtbot, tmp_path):
     labels = [player.choose.itemText(i) for i in range(player.choose.count())]
     assert labels[0] == "Material (all maps)"
     assert "Colour: rock_color.png" in labels and "Normal: rock_normal.png" in labels
+    qtbot.waitUntil(lambda: player.kind != "preparing", timeout=30000)
     assert player.choose.isVisible() and player.kind in ("material", "picture")
     player.choose.setCurrentIndex(labels.index("Normal: rock_normal.png"))
     assert player.kind == "picture"
@@ -508,3 +511,82 @@ def test_sounds_in_a_packs_folders_are_listed_by_their_own_names(project, qtbot,
     window.files_list.topLevelItem(0).setSelected(False)
     window.files_list.topLevelItem(2).setSelected(True)
     assert window.player.choose.currentData()[1].name == "laser_02.ogg"
+
+
+def test_a_materials_textures_are_prepared_without_holding_up_the_window(project, qtbot,
+                                                                         tmp_path, monkeypatch):
+    """Encoding a picture for the engine takes seconds: the player says so and carries on, then
+    draws the material; choosing something else meanwhile forgets it."""
+    import threading
+
+    from midgard_editor import textures
+    from midgard_editor.docks.asset_window import AssetPlayer
+    if engine.module() is None:
+        pytest.skip("needs the engine module")
+    monkeypatch.setattr(textures, "CACHE", textures.TextureCache())
+    pack = a_rock_pack(tmp_path)
+    rock = lib.import_asset(project, [pack], "textures", "Rock", category="stone",
+                            roles={r: lib.guess_role(r) for r in lib.images_in([pack])})
+    gate = threading.Event()
+    encode = textures.TextureCache.data
+
+    def slow(cache, root, texture):  # (held until the test lets it go)
+        gate.wait(10)
+        return encode(cache, root, texture)
+
+    monkeypatch.setattr(textures.TextureCache, "data", slow)
+    player = AssetPlayer()
+    qtbot.addWidget(player)
+    player.show_asset(rock)
+    assert player.kind == "preparing" and "Preparing the textures" in player.picture.text()
+    # Something else chosen meanwhile: the preparation's end draws nothing.
+    player.choose.setCurrentIndex(1)
+    assert player.kind == "picture"
+    gate.set()
+    qtbot.wait(300)
+    assert player.kind == "picture"
+    # Back to the material: ready now (cached), drawn at once.
+    player.choose.setCurrentIndex(0)
+    qtbot.waitUntil(lambda: player.kind == "material", timeout=30000)
+    assert not player.picture.pixmap().isNull()
+
+
+def test_a_material_is_shown_on_a_cube_sphere_or_plane_tiled_1_1_to_1_4(project, qtbot,
+                                                                       tmp_path):
+    from midgard_editor.docks.asset_window import TILINGS, AssetPlayer
+    if engine.module() is None:
+        pytest.skip("needs the engine module")
+    from PySide6.QtGui import QColor, QImage
+    checks = QImage(64, 64, QImage.Format.Format_RGB32)  # (a pattern: tiling shows)
+    for y in range(64):
+        for x in range(64):
+            checks.setPixelColor(x, y, QColor(230, 230, 230) if (x // 16 + y // 16) % 2
+                                 else QColor(30, 60, 160))
+    (tmp_path / "checks").mkdir()
+    checks.save(str(tmp_path / "checks" / "checks_color.png"))
+    checks.save(str(tmp_path / "checks" / "checks_normal.png"))
+    tiles = lib.import_asset(project, [tmp_path / "checks"], "textures", "Checks",
+                             category="floor", roles={"checks_color.png": "color",
+                                                     "checks_normal.png": "normal"})
+    player = AssetPlayer()
+    qtbot.addWidget(player)
+    player.show()
+    player.show_asset(tiles)
+    qtbot.waitUntil(lambda: player.kind == "material", timeout=30000)
+    assert player.shape.isVisible() and player.tiling.isVisible()
+    assert [player.shape.itemText(i) for i in range(player.shape.count())] == \
+        ["Cube", "Sphere", "Plane"]
+    assert [player.tiling.itemText(i) for i in range(player.tiling.count())] == \
+        [f"1:{n}" for n in TILINGS] == ["1:1", "1:2", "1:4"]
+    pictures = {}
+    for shape in range(player.shape.count()):
+        player.shape.setCurrentIndex(shape)
+        for tiling in range(player.tiling.count()):
+            player.tiling.setCurrentIndex(tiling)
+            assert player.kind == "material"
+            pictures[shape, tiling] = player.picture.pixmap().toImage()
+    # Each shape and each tiling draws something of its own.
+    assert len({bytes(p.constBits()) for p in pictures.values()}) == len(pictures)
+    # A single map shown as a picture: neither choice applies.
+    player.choose.setCurrentIndex(1)
+    assert not player.shape.isVisible() and not player.tiling.isVisible()

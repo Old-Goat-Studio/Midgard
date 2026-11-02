@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import shutil
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -75,7 +76,7 @@ class DiskCache:
         entry = self.folder / key
         if entry.exists():
             return
-        tmp = self.folder / f"{key}.{os.getpid()}.tmp"
+        tmp = self.folder / f"{key}.{os.getpid()}.{threading.get_ident()}.tmp"  # (per thread)
         try:
             shutil.rmtree(tmp, ignore_errors=True)
             tmp.mkdir(parents=True)

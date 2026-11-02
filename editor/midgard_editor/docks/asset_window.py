@@ -9,9 +9,10 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -353,6 +354,7 @@ class DetailsDialog(QDialog):
 
 # ---- the player (step 4) -------------------------------------------------------------------------
 PLAYER_SIZE = (320, 240)
+TILINGS = (1, 2, 4)  # a material's textures, repeated this often across each face
 MODEL_KEY = "library-model"
 
 
@@ -379,6 +381,11 @@ def model_bounds(glb: bytes) -> tuple[list[float], list[float]] | None:
     return (lo, hi) if lo[0] != float("inf") else None
 
 
+class _Prepared(QObject):
+    """A worker thread's word that a texture set is ready (delivered on the window's thread)."""
+    ready = Signal(int)
+
+
 class AssetPlayer(QWidget):
     """The selected asset, shown or played: a picture; a model turning (a skinned one playing
     its clips) through the engine; a sound; a font's sample."""
@@ -399,11 +406,22 @@ class AssetPlayer(QWidget):
         self.choose.currentIndexChanged.connect(lambda _i: self.show_choice())
         top.addWidget(self.choose, 1)
         self.shape = QComboBox()
-        self.shape.addItem("Sphere", "prim_sphere")
-        self.shape.addItem("Tile", "prim_plane")
+        self.shape.setToolTip("What the material is shown on")
+        for label, shape in (("Cube", "prim_cube"), ("Sphere", "prim_sphere"),
+                             ("Plane", "prim_plane")):
+            self.shape.addItem(label, shape)
+        self.shape.setCurrentIndex(1)
         self.shape.currentIndexChanged.connect(
             lambda _i: self.kind == "material" and self._show_material())
         top.addWidget(self.shape)
+        # How often the textures repeat across each face (1:2: twice each way).
+        self.tiling = QComboBox()
+        self.tiling.setToolTip("The textures tiled: once, twice or four times across each face")
+        for n in TILINGS:
+            self.tiling.addItem(f"1:{n}", n)
+        self.tiling.currentIndexChanged.connect(
+            lambda _i: self.kind == "material" and self._show_material())
+        top.addWidget(self.tiling)
         layout.addLayout(top)
         layout.addWidget(self.picture, 1)
         controls = QHBoxLayout()
@@ -431,6 +449,10 @@ class AssetPlayer(QWidget):
         self.timer = QTimer(self)
         self.timer.setInterval(33)
         self.timer.timeout.connect(lambda: self.tick(0.033))
+        # Textures made ready on a worker thread: which preparation is wanted, and its signal.
+        self._preparing = 0
+        self._prepared = _Prepared()
+        self._prepared.ready.connect(self._textures_ready)
         self.show_asset(None)
 
     # ---- what it shows ----------------------------------------------------------------------
@@ -492,6 +514,7 @@ class AssetPlayer(QWidget):
     def show_choice(self) -> None:
         """What is chosen in the list, shown (or played)."""
         self.stop()
+        self._preparing += 1  # (a preparation under way: no longer wanted)
         self.kind = ""
         self.picture.clear()
         self.clip.clear()
@@ -508,26 +531,67 @@ class AssetPlayer(QWidget):
         self.clip.setVisible(self.kind == "model" and self.clip.count() > 0)
         self.position.setVisible(self.kind == "sound")
         self.time.setVisible(self.kind == "sound")
-        self.shape.setVisible(self.kind == "material")
+        material = self.kind in ("material", "preparing")  # (its textures may be on the way)
+        self.shape.setVisible(material)
+        self.tiling.setVisible(material)
 
-    def _show_material(self) -> None:
-        """A texture set as a material on a sphere (or a tile), every picture in its role."""
+    def _material_slots(self) -> tuple[Path, dict[str, str]] | None:
+        """The project folder and the texture set's slots ("tex:" ids)."""
         from types import SimpleNamespace
-
-        from .. import meshes, objects, textures
         library = next((p for p in self.asset.folder.parents if p.name == lib.FOLDER), None)
         if library is None:
+            return None
+        root = library.parent
+        return root, lib.material_textures(SimpleNamespace(root=root), self.asset)
+
+    def _show_material(self) -> None:
+        """A texture set as a material on a sphere (or a tile), every picture in its role. Its
+        pictures are made ready for the engine on a worker thread the first time (seconds
+        each, for big ones): the window carries on meanwhile."""
+        from .. import engine, textures
+        found = self._material_slots()
+        if found is None:
             self.picture.setText("(not in a library)")
             return
-        root = library.parent
-        slots = lib.material_textures(SimpleNamespace(root=root), self.asset)
+        root, slots = found
+        waiting = [t for t in slots.values() if textures.CACHE.cached(root, t) is None]
+        if not waiting or engine.module() is None:
+            self._render_material(root, slots)
+            return
+        self.kind = "preparing"
+        self._preparing += 1
+        token = self._preparing
+        self.picture.setText(f"Preparing the textures ({len(waiting)})…")
+
+        def prepare() -> None:  # (a worker thread: the engine encodes without the GIL)
+            for texture in waiting:
+                if token != self._preparing:
+                    return  # (another asset chosen meanwhile)
+                textures.texture_data(root, texture)
+            self._prepared.ready.emit(token)
+
+        threading.Thread(target=prepare, name="prepare textures", daemon=True).start()
+
+    def _textures_ready(self, token: int) -> None:
+        """The worker is done: shown, if it is still what is wanted."""
+        if token == self._preparing and self.kind == "preparing" and self.asset is not None:
+            found = self._material_slots()
+            if found is not None:
+                self._render_material(*found)
+
+    def _render_material(self, root: Path, slots: dict[str, str]) -> None:
+        from .. import meshes, objects, textures
         renderer = objects.shared_renderer()
         shape = self.shape.currentData()
+        tiles = self.tiling.currentData()
+        mesh = meshes.primitive(shape)
+        mesh.uvs = [(u * tiles, v * tiles) for u, v in mesh.uvs]  # (the sampler repeats)
+        mesh_id = f"{shape}@tiled{tiles}"
         material = {"color": [1.0, 1.0, 1.0, 1.0], "roughness": 1.0, "textures": slots}
         try:
-            renderer.send(shape, meshes.to_glb(meshes.primitive(shape)))
+            renderer.send(mesh_id, meshes.to_glb(mesh))
             for texture in slots.values():
-                data = textures.texture_data(root, texture)
+                data = textures.texture_data(root, texture)  # (ready by now: cached)
                 if data is not None:
                     renderer.send(texture, data)
         except RuntimeError as e:
@@ -535,7 +599,7 @@ class AssetPlayer(QWidget):
             return
         flat = shape == "prim_plane"
         image = renderer.render("library-material",
-                                [{"name": "preview", "components": {"mesh": {"asset": shape},
+                                [{"name": "preview", "components": {"mesh": {"asset": mesh_id},
                                                                     "material": material}}],
                                 [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], *PLAYER_SIZE,
                                 yaw=0.0 if flat else 35.0, pitch=60.0 if flat else 22.0,

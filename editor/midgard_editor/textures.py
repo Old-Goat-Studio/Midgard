@@ -10,6 +10,7 @@ the package and for the editor's views.
 """
 import logging
 import shutil
+import threading
 from pathlib import Path
 
 from . import content_cache, engine
@@ -88,6 +89,44 @@ class TextureCache:
         self.size = size
         self._items: dict[tuple, bytes] = {}
         self.encodes = 0  # images actually encoded (for tests)
+        # (Pictures are encoded on worker threads too: the table is guarded, the encoding,
+        # which can take seconds, isn't.)
+        self._lock = threading.Lock()
+
+    def _key(self, project_root: Path, texture: str) -> tuple | None:
+        parsed = parse(texture)
+        if parsed is None:
+            return None
+        relative, srgb = parsed
+        try:
+            stat = (project_root / relative).stat()
+        except OSError:
+            return None
+        return (str(project_root / relative), srgb, stat.st_mtime_ns, stat.st_size)
+
+    def cached(self, project_root: Path, texture: str) -> bytes | None:
+        """The texture's KTX2 bytes if they are ready now (in memory, or on disk), without
+        encoding it: None if it would need encoding first."""
+        key = self._key(project_root, texture)
+        if key is None:
+            return None
+        with self._lock:
+            if key in self._items:
+                return self._items[key]
+        relative, srgb = parse(texture)
+        file = project_root / relative
+        disk = content_cache.DiskCache(content_cache.cache_dir(project_root, "textures"))
+        found = disk.get(content_cache.key_of("texture", content_cache.file_hash(file), srgb))
+        if found is None or "ktx2" not in found[1]:
+            return None
+        self._remember(key, found[1]["ktx2"])
+        return found[1]["ktx2"]
+
+    def _remember(self, key: tuple, data: bytes) -> None:
+        with self._lock:
+            if key not in self._items and len(self._items) >= self.size:
+                self._items.pop(next(iter(self._items)))
+            self._items[key] = data
 
     def data(self, project_root: Path, texture: str) -> bytes | None:
         """The texture's KTX2 bytes, or None (not a "tex:" id, a missing or unreadable file,
@@ -103,25 +142,26 @@ class TextureCache:
         except OSError:
             return None
         key = (str(file), srgb, stat.st_mtime_ns, stat.st_size)
-        if key not in self._items:
-            # On disk by the file's contents (build/cache/textures/): encoded once.
-            disk = content_cache.DiskCache(content_cache.cache_dir(project_root, "textures"))
-            content_key = content_cache.key_of("texture", content_cache.file_hash(file), srgb)
-            found = disk.get(content_key)
-            if found is not None and "ktx2" in found[1]:
-                data = found[1]["ktx2"]
-            else:
-                try:
-                    data = module.encode_texture(file, srgb)
-                except RuntimeError as e:
-                    log.warning("Texture %s: %s", relative, e)
-                    return None
-                self.encodes += 1
-                disk.put(content_key, {}, {"ktx2": data})
-            if len(self._items) >= self.size:
-                self._items.pop(next(iter(self._items)))
-            self._items[key] = data
-        return self._items[key]
+        with self._lock:
+            ready = self._items.get(key)
+        if ready is not None:
+            return ready
+        # On disk by the file's contents (build/cache/textures/): encoded once.
+        disk = content_cache.DiskCache(content_cache.cache_dir(project_root, "textures"))
+        content_key = content_cache.key_of("texture", content_cache.file_hash(file), srgb)
+        found = disk.get(content_key)
+        if found is not None and "ktx2" in found[1]:
+            data = found[1]["ktx2"]
+        else:
+            try:
+                data = module.encode_texture(file, srgb)
+            except RuntimeError as e:
+                log.warning("Texture %s: %s", relative, e)
+                return None
+            self.encodes += 1
+            disk.put(content_key, {}, {"ktx2": data})
+        self._remember(key, data)
+        return data
 
 
 CACHE = TextureCache()
