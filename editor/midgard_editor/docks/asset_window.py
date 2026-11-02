@@ -12,7 +12,7 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -398,6 +398,10 @@ class AssetPlayer(QWidget):
         self.picture = QLabel()
         self.picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.picture.setMinimumSize(*PLAYER_SIZE)
+        # A material: drag to turn it, the wheel to zoom, double-click to start again.
+        self.view = self.start_view()
+        self._dragged_from = None
+        self.picture.installEventFilter(self)
         # What to show, when the asset holds more than one thing (and how: a material's shape).
         top = QHBoxLayout()
         self.choose = QComboBox()
@@ -411,8 +415,7 @@ class AssetPlayer(QWidget):
                              ("Plane", "prim_plane")):
             self.shape.addItem(label, shape)
         self.shape.setCurrentIndex(1)
-        self.shape.currentIndexChanged.connect(
-            lambda _i: self.kind == "material" and self._show_material())
+        self.shape.currentIndexChanged.connect(self._shape_chosen)
         top.addWidget(self.shape)
         # How often the textures repeat across each face (1:2: twice each way).
         self.tiling = QComboBox()
@@ -535,6 +538,50 @@ class AssetPlayer(QWidget):
         self.shape.setVisible(material)
         self.tiling.setVisible(material)
 
+    def start_view(self) -> list[float]:
+        """[yaw, pitch, zoom] a material is first seen from (a plane: from above)."""
+        flat = hasattr(self, "shape") and self.shape.currentData() == "prim_plane"
+        return [0.0, 60.0, 0.8] if flat else [35.0, 22.0, 1.0]
+
+    def _shape_chosen(self) -> None:
+        self.view = self.start_view()
+        if self.kind == "material":
+            self._show_material()
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt's name)
+        if obj is not self.picture or getattr(self, "kind", "") != "material":
+            return False
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress:
+            self._dragged_from = event.position()
+            return True
+        if kind == QEvent.Type.MouseButtonRelease:
+            self._dragged_from = None
+            return True
+        if kind == QEvent.Type.MouseMove and self._dragged_from is not None:
+            d = event.position() - self._dragged_from
+            self._dragged_from = event.position()
+            self.turn(-d.x() * 0.6, d.y() * 0.6)
+            return True
+        if kind == QEvent.Type.Wheel:
+            self.zoom_by(0.9 if event.angleDelta().y() > 0 else 1.1)
+            return True
+        if kind == QEvent.Type.MouseButtonDblClick:
+            self.view = self.start_view()
+            self._show_material()
+            return True
+        return False
+
+    def turn(self, yaw: float, pitch: float) -> None:
+        """The material turned under the lights (degrees)."""
+        self.view[0] = (self.view[0] + yaw) % 360.0
+        self.view[1] = max(-85.0, min(85.0, self.view[1] + pitch))
+        self._show_material()
+
+    def zoom_by(self, factor: float) -> None:
+        self.view[2] = max(0.4, min(3.0, self.view[2] * factor))
+        self._show_material()
+
     def _material_slots(self) -> tuple[Path, dict[str, str]] | None:
         """The project folder and the texture set's slots ("tex:" ids)."""
         from types import SimpleNamespace
@@ -587,7 +634,11 @@ class AssetPlayer(QWidget):
         mesh = meshes.primitive(shape)
         mesh.uvs = [(u * tiles, v * tiles) for u, v in mesh.uvs]  # (the sampler repeats)
         mesh_id = f"{shape}@tiled{tiles}"
-        material = {"color": [1.0, 1.0, 1.0, 1.0], "roughness": 1.0, "textures": slots}
+        # (The factors multiply the maps: with a metal/roughness map, the map says; without,
+        # a little shine and no metal.)
+        mapped = "metallic_roughness" in slots
+        material = {"color": [1.0, 1.0, 1.0, 1.0], "metallic": 1.0 if mapped else 0.0,
+                    "roughness": 1.0 if mapped else 0.5, "textures": slots}
         try:
             renderer.send(mesh_id, meshes.to_glb(mesh))
             for texture in slots.values():
@@ -597,13 +648,12 @@ class AssetPlayer(QWidget):
         except RuntimeError as e:
             self.picture.setText(f"Not shown: {e}")
             return
-        flat = shape == "prim_plane"
+        yaw, pitch, zoom = self.view
         image = renderer.render("library-material",
                                 [{"name": "preview", "components": {"mesh": {"asset": mesh_id},
                                                                     "material": material}}],
                                 [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], *PLAYER_SIZE,
-                                yaw=0.0 if flat else 35.0, pitch=60.0 if flat else 22.0,
-                                zoom=0.8 if flat else 1.0)
+                                yaw=yaw, pitch=pitch, zoom=zoom, key_light=True)
         if image is None:  # (no engine here: its colour picture, as it is)
             colour = lib.texture_set(self.asset).get("color")
             if colour is not None:

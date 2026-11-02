@@ -438,9 +438,10 @@ class ObjectRenderer:
 
     def render(self, object_id: str, parts: list[dict[str, Any]], bounds: list[float],
                width: int, height: int, yaw: float = 35.0, pitch: float = 22.0,
-               zoom: float = 1.0):
+               zoom: float = 1.0, key_light: bool = False):
         """The object as an image (QImage), or None. Its meshes and textures must have been
-        sent."""
+        sent. key_light: the lights turn with the camera (so turning the view turns the object
+        under them) and a lamp above and beside the camera shows off shine and reflections."""
         from PySide6.QtGui import QImage
         if self.view is None:
             return None
@@ -451,10 +452,6 @@ class ObjectRenderer:
             self.view.clear()
             self.view.set_settings(json.dumps(self.SETTINGS))
             self.view.set_object(object_id, json.dumps(parts))
-            self.view.put_entity(json.dumps({"id": "light", "name": "Light",
-                                             "components": self.LIGHT}))
-            self.view.put_entity(json.dumps({"id": "preview", "name": "Preview",
-                                             "components": {"object": {"id": object_id}}}))
             centre = [(bounds[i] + bounds[i + 3]) / 2 for i in range(3)]
             radius = max(0.5 * math.dist(bounds[:3], bounds[3:]), 0.05)
             fov = 40.0
@@ -463,6 +460,15 @@ class ObjectRenderer:
             eye = [centre[0] + distance * math.cos(p) * math.sin(y),
                    centre[1] + distance * math.sin(p),
                    centre[2] + distance * math.cos(p) * math.cos(y)]
+            light = self.LIGHT
+            if key_light:
+                light = {**self.LIGHT, "transform": {"rotation": [-25.0, yaw + 105.0, 0.0]}}
+                for entity in self._key_lights(centre, eye, distance, y):
+                    self.view.put_entity(json.dumps(entity))
+            self.view.put_entity(json.dumps({"id": "light", "name": "Light",
+                                             "components": light}))
+            self.view.put_entity(json.dumps({"id": "preview", "name": "Preview",
+                                             "components": {"object": {"id": object_id}}}))
             self.view.set_camera(eye, centre, fov)
             self.view.render()
             pixels = self.view.read_pixels()
@@ -472,6 +478,23 @@ class ObjectRenderer:
             return None
         self.error = None
         return QImage(pixels, width, height, QImage.Format.Format_RGBA8888).copy()
+
+
+    KEY_LIGHT = {"type": "point", "color": [1.0, 0.97, 0.92]}
+
+    def _key_lights(self, centre: list[float], eye: list[float], distance: float,
+                    yaw: float) -> list[dict[str, Any]]:
+        """A lamp up and to the left of the camera, as bright on the object at any zoom: its
+        highlight shows how shiny each part of the material is."""
+        right = [math.cos(yaw), 0.0, -math.sin(yaw)]
+        to_eye = [e - c for e, c in zip(eye, centre, strict=True)]
+        place = [c + 0.9 * t - 0.5 * distance * r + (0.6 * distance if i == 1 else 0.0)
+                 for i, (c, t, r) in enumerate(zip(centre, to_eye, right, strict=True))]
+        reach = math.dist(place, centre)
+        return [{"id": "key light", "name": "Key light",
+                 "components": {"transform": {"position": place},
+                                "light": {**self.KEY_LIGHT, "intensity": 1.8 * reach * reach,
+                                          "range": reach * 4.0}}}]
 
 
 _shared: ObjectRenderer | None = None

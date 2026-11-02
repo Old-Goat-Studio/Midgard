@@ -590,3 +590,64 @@ def test_a_material_is_shown_on_a_cube_sphere_or_plane_tiled_1_1_to_1_4(project,
     # A single map shown as a picture: neither choice applies.
     player.choose.setCurrentIndex(1)
     assert not player.shape.isVisible() and not player.tiling.isVisible()
+
+
+def test_a_material_turns_under_the_mouse_lit_to_show_its_shine(project, qtbot, tmp_path,
+                                                                monkeypatch):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication
+
+    from midgard_editor import objects
+    from midgard_editor.docks.asset_window import AssetPlayer
+    if engine.module() is None:
+        pytest.skip("needs the engine module")
+    pack = a_rock_pack(tmp_path)  # (colour, normal, and roughness: a metal/roughness map)
+    rock = lib.import_asset(project, [pack], "textures", "Rock", category="stone",
+                            roles={r: lib.guess_role(r) for r in lib.images_in([pack])})
+    drawn = []
+    render = objects.ObjectRenderer.render
+
+    def watch(renderer, object_id, parts, *args, **kwargs):
+        drawn.append((parts[0]["components"]["material"], kwargs))
+        return render(renderer, object_id, parts, *args, **kwargs)
+
+    monkeypatch.setattr(objects.ObjectRenderer, "render", watch)
+    player = AssetPlayer()
+    qtbot.addWidget(player)
+    player.show()
+    player.show_asset(rock)
+    qtbot.waitUntil(lambda: player.kind == "material", timeout=30000)
+    material, how = drawn[-1]
+    assert how["key_light"]  # (the lamp by the camera)
+    assert material["metallic"] == 1.0 and material["roughness"] == 1.0  # (the map says)
+    start = list(player.view)
+    # Dragging turns it (and draws it again).
+    qtbot.mousePress(player.picture, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
+    qtbot.mouseMove(player.picture, QPoint(150, 120))
+    qtbot.mouseRelease(player.picture, Qt.MouseButton.LeftButton, pos=QPoint(150, 120))
+    assert player.view[0] != start[0] and player.view[1] != start[1]
+    assert drawn[-1][1]["yaw"] == player.view[0] and drawn[-1][1]["pitch"] == player.view[1]
+    # The wheel zooms; a double-click starts again.
+    wheel = QWheelEvent(QPointF(100, 100), QPointF(100, 100), QPoint(), QPoint(0, 120),
+                        Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+                        Qt.ScrollPhase.NoScrollPhase, False)
+    QApplication.sendEvent(player.picture, wheel)
+    assert player.view[2] < start[2]
+    qtbot.mouseDClick(player.picture, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
+    assert player.view == start
+    # A plane is first seen from above; a set with no metal/roughness map: a little shine.
+    player.shape.setCurrentIndex(player.shape.findData("prim_plane"))
+    assert player.view == [0.0, 60.0, 0.8]
+    plain = lib.import_asset(project, [a_picture(tmp_path, "plain.png")], "textures", "Plain",
+                             category="floor")
+    player.show_asset(plain)
+    qtbot.waitUntil(lambda: player.kind == "material", timeout=30000)
+    assert drawn[-1][0]["metallic"] == 0.0 and drawn[-1][0]["roughness"] == 0.5
+    # Not a material: the mouse does nothing to it.
+    player.choose.setCurrentIndex(player.choose.count() - 1)
+    if player.kind == "picture":
+        before = list(player.view)
+        qtbot.mousePress(player.picture, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+        qtbot.mouseMove(player.picture, QPoint(80, 80))
+        assert player.view == before
