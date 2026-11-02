@@ -50,6 +50,10 @@ struct NavTileKey {
     bool operator==(const NavTileKey&) const = default;
 };
 
+// The settings as tiles use them: a tile a whole number of cells across (so neighbouring tiles'
+// edges meet exactly). NavMesh::settings() gives these.
+NavSettings nav_settings_fitted(NavSettings settings);
+
 // A built tile (Detour's data), empty if nothing in it can be walked on.
 using NavTileData = std::vector<std::uint8_t>;
 
@@ -70,8 +74,9 @@ public:
     // The tile a point is in.
     NavTileKey tile_at(const glm::vec3& p) const;
 
-    // Adds (or replaces) a tile; an empty one just removes what was there.
-    void add_tile(NavTileKey key, const NavTileData& data);
+    // Adds (or replaces) a tile; an empty one just removes what was there. False if Detour
+    // refused it (too many tiles on the mesh, or polygons in the tile: 4096 and 1024).
+    bool add_tile(NavTileKey key, const NavTileData& data);
     void remove_tile(NavTileKey key);
     std::size_t tile_count() const;
     std::size_t polygon_count() const;

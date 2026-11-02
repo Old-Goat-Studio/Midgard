@@ -17,6 +17,7 @@
 #include "midgard/camera_rig.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
+#include "midgard/nav_world.h"
 #include "midgard/navmesh.h"
 #include "midgard/package.h"
 #include "midgard/pak.h"
@@ -152,10 +153,14 @@ public:
     const WorldSave* world() const { return world_ ? &*world_ : nullptr; }
 
     // ---- navigation (milestone 5.12) ----
-    // Where agents can walk in the scene: built from its static colliders when first asked for,
-    // and again after the scene changes (live edits, a scene change). None where "up" isn't
-    // the same everywhere (planets, cylinders: their ground's navigation comes with terrain).
+    // Where agents can walk in a scene without terrain: built from its static colliders when
+    // first asked for, and again after the scene changes (live edits, a scene change). None
+    // where "up" isn't the same everywhere, or with terrain (see nav_world()).
     const NavMesh* navmesh() const;
+    // A scene with terrain: its navigation, a mesh per face made round the player as they go
+    // (midgard/nav_world.h). Update moves it on; stream_navigation(true) makes it all now.
+    const NavWorld* nav_world() const { return nav_world_.get(); }
+    void stream_navigation(bool wait = false);
     // The way from one place to another, in the scene's frame, or none (either too far from
     // anywhere walkable, or no navigation in this scene).
     std::optional<NavMesh::Path> find_path(const glm::dvec3& from, const glm::dvec3& to) const;
@@ -255,6 +260,8 @@ private:
     mutable bool nav_stale_ = true;
     bool show_navigation_ = false;
     const render::MeshData* outline_mesh(const std::string& asset) const;
+    // (Last: made from the terrain and the job system, so it goes before them.)
+    std::unique_ptr<NavWorld> nav_world_;
     void load_scene(const std::string& scene, const std::string& arrival);
     void update_scene_change(float dt);
     void update_exits(const Actions& actions);

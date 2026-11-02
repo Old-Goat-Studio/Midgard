@@ -24,6 +24,7 @@
 
 #include "midgard/det.h"
 #include "midgard/jobs.h"
+#include "midgard/nav_world.h"
 #include "midgard/navmesh.h"
 #include "midgard/physics.h"
 #include "midgard/render/ktx.h"
@@ -239,6 +240,24 @@ std::vector<Benchmark> benchmarks() {
                             const midgard::NavTileData t = midgard::build_nav_tile(
                                 midgard::NavSettings{}, glm::vec3(0.0f), {0, 0}, *g);
                             g_sink = g_sink + t.size();
+                        };
+                    }});
+    list.push_back({"nav.terrain_tile",
+                    "a 32 m navigation tile over terrain (5.9's hills): the ground sampled and "
+                    "Recast (one thread)",
+                    20, [](std::string&) -> std::function<void()> {
+                        auto terrain = std::make_shared<midgard::Terrain>(
+                            midgard::body_from_json(nlohmann::json::parse(
+                                R"({"id": "a", "shape": "bounded_area", "width": 3000,
+                                    "length": 3000, "seed": 7})")),
+                            midgard::terrain_from_json(nlohmann::json::parse(R"({"seed": 7})")));
+                        auto nav = std::make_shared<midgard::NavWorld>(*terrain, nullptr);
+                        nav->set_range(0.0);  // (just the tile under the point)
+                        const glm::dvec3 at = terrain->body().position({0, 0.5, 0.5, 0.0});
+                        return [terrain, nav, at] {
+                            nav->ground_changed();  // (made again each time)
+                            nav->update(at, true);
+                            g_sink = g_sink + nav->stats().tiles;
                         };
                     }});
     list.push_back({"shape.sphere_64x64_positions",

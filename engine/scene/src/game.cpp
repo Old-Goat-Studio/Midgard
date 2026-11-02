@@ -180,6 +180,7 @@ void Game::update(const Actions& actions, float dt) {
     camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
     update_exits(actions);
+    stream_navigation();
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
             save_profile();
@@ -348,6 +349,7 @@ void Game::reload_scene_settings() {
 }
 
 void Game::rebuild_terrain() {
+    nav_world_.reset();  // (its jobs read the terrain)
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
     place_again();  // (none without terrain)
@@ -365,6 +367,8 @@ void Game::rebuild_terrain() {
         put_on_ground(player);
     place_again();
     update_ground(1000);  // everything within reach of the start, now
+    nav_world_ = std::make_unique<NavWorld>(terrain_->terrain(), jobs_.get());
+    nav_stale_ = true;  // (its scenery is set on the next update)
 }
 
 void Game::place_again() {
@@ -430,7 +434,9 @@ void Game::update_ground(int max_tiles) {
 void Game::set_terrain_stamps(std::vector<TerrainStamp> stamps) {
     scene_.terrain_stamps = stamps;
     if (!terrain_) return;
+    if (nav_world_) nav_world_->wait();  // (its jobs read the terrain being changed)
     terrain_->set_stamps(std::move(stamps));
+    if (nav_world_) nav_world_->ground_changed();
     // The solid ground follows: made again round the player.
     if (ground_) ground_->clear(physics_->world());
     ground_ = std::make_unique<TerrainCollision>(terrain_->terrain());
@@ -556,6 +562,14 @@ const render::MeshData* Game::outline_mesh(const std::string& asset) const {
 std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const {
     std::vector<render::DebugLine> lines = collider_outlines(
         scene_, origin, [this](const std::string& asset) { return outline_mesh(asset); });
+    if (show_navigation_ && nav_world_) {
+        const glm::vec4 colour(0.2f, 0.95f, 0.75f, 1.0f);
+        for (const auto& [a, b] : nav_world_->edges()) {  // (lifted a little along up)
+            const glm::dvec3 up_a = terrain_->terrain().body().up(a) * 0.05;
+            const glm::dvec3 up_b = terrain_->terrain().body().up(b) * 0.05;
+            lines.push_back({glm::vec3(a + up_a - origin), glm::vec3(b + up_b - origin), colour});
+        }
+    }
     if (show_navigation_)
         if (const NavMesh* nav = navmesh()) {
             const glm::vec4 colour(0.2f, 0.95f, 0.75f, 1.0f);
@@ -567,7 +581,22 @@ std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const
     return lines;
 }
 
+void Game::stream_navigation(bool wait) {
+    if (!nav_world_) return;
+    if (nav_stale_) {
+        nav_stale_ = false;
+        nav_world_->set_scenery(scene_,
+                                [this](const std::string& asset) { return outline_mesh(asset); });
+    }
+    entt::entity player = entt::null;
+    for (entt::entity e : scene_.registry.view<const Player>()) player = e;
+    const glm::dvec3 around =
+        player != entt::null ? scene_.world_position(player) : camera(1.0f).origin;
+    nav_world_->update(around, wait);
+}
+
 const NavMesh* Game::navmesh() const {
+    if (nav_world_) return nullptr;  // (terrain: nav_world())
     if (nav_stale_) {
         nav_stale_ = false;
         nav_.reset();
@@ -582,6 +611,7 @@ const NavMesh* Game::navmesh() const {
 }
 
 std::optional<NavMesh::Path> Game::find_path(const glm::dvec3& from, const glm::dvec3& to) const {
+    if (nav_world_) return nav_world_->find_path(from, to);
     const NavMesh* nav = navmesh();
     if (!nav) return std::nullopt;
     return nav->find_path(glm::vec3(from), glm::vec3(to));
@@ -655,6 +685,7 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     const CameraRig::State view = had_camera ? camera_->state() : CameraRig::State{};
 
     // Leave the scene: its ground, placed objects and physics go.
+    nav_world_.reset();
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
     placed_.reset();

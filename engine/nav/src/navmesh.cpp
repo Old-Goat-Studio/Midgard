@@ -19,8 +19,10 @@ namespace midgard {
 
 namespace {
 
-constexpr int kMaxTiles = 1 << 14;  // (with kMaxPolys, the 22 bits of a polygon reference)
-constexpr int kMaxPolys = 1 << 8;
+// Tiles on a mesh at once, and polygons a tile (a polygon reference's 22 bits between them:
+// rough ground makes a few hundred polygons a tile).
+constexpr int kMaxTiles = 1 << 12;
+constexpr int kMaxPolys = 1 << 10;
 constexpr int kMaxVertsPerPoly = 6;
 constexpr int kMaxPath = 512;
 constexpr unsigned short kWalk = 1;  // the polygons' one flag
@@ -59,8 +61,15 @@ std::optional<std::pair<glm::vec3, glm::vec3>> NavGeometry::bounds() const {
     return std::pair{lo, hi};
 }
 
-NavTileData build_nav_tile(const NavSettings& s, const glm::vec3& origin, NavTileKey key,
+NavSettings nav_settings_fitted(NavSettings s) {
+    s.cell_size = std::max(s.cell_size, 0.01f);
+    s.tile_size = std::ceil(s.tile_size / s.cell_size - 1e-4f) * s.cell_size;
+    return s;
+}
+
+NavTileData build_nav_tile(const NavSettings& given, const glm::vec3& origin, NavTileKey key,
                            const NavGeometry& geometry) {
+    const NavSettings s = nav_settings_fitted(given);
     rcConfig cfg{};
     cfg.cs = s.cell_size;
     cfg.ch = s.cell_height;
@@ -73,7 +82,7 @@ NavTileData build_nav_tile(const NavSettings& s, const glm::vec3& origin, NavTil
     cfg.minRegionArea = 8 * 8;
     cfg.mergeRegionArea = 20 * 20;
     cfg.maxVertsPerPoly = kMaxVertsPerPoly;
-    cfg.tileSize = int(std::ceil(s.tile_size / cfg.cs));
+    cfg.tileSize = int(std::lround(s.tile_size / cfg.cs));
     cfg.borderSize = cfg.walkableRadius + 3;
     cfg.width = cfg.height = cfg.tileSize + 2 * cfg.borderSize;
     cfg.detailSampleDist = 6.0f * cfg.cs;
@@ -193,12 +202,12 @@ struct NavMesh::Impl {
 };
 
 NavMesh::NavMesh(const NavSettings& settings, const glm::vec3& origin)
-    : impl_(std::make_unique<Impl>()), settings_(settings), origin_(origin) {
+    : impl_(std::make_unique<Impl>()), settings_(nav_settings_fitted(settings)), origin_(origin) {
     dtNavMeshParams params{};
     params.orig[0] = origin.x;
     params.orig[1] = origin.y;
     params.orig[2] = origin.z;
-    params.tileWidth = params.tileHeight = settings.tile_size;
+    params.tileWidth = params.tileHeight = settings_.tile_size;
     params.maxTiles = kMaxTiles;
     params.maxPolys = kMaxPolys;
     impl_->mesh = dtAllocNavMesh();
@@ -217,15 +226,19 @@ NavTileKey NavMesh::tile_at(const glm::vec3& p) const {
             int(std::floor((p.z - origin_.z) / settings_.tile_size))};
 }
 
-void NavMesh::add_tile(NavTileKey key, const NavTileData& data) {
+bool NavMesh::add_tile(NavTileKey key, const NavTileData& data) {
     std::lock_guard guard(impl_->lock);
     if (const dtTileRef old = impl_->mesh->getTileRefAt(key.x, key.z, 0))
         impl_->mesh->removeTile(old, nullptr, nullptr);
-    if (data.empty()) return;
+    if (data.empty()) return true;
     auto* copy = static_cast<unsigned char*>(dtAlloc(int(data.size()), DT_ALLOC_PERM));
     std::memcpy(copy, data.data(), data.size());
-    if (dtStatusFailed(impl_->mesh->addTile(copy, int(data.size()), DT_TILE_FREE_DATA, 0, nullptr)))
+    if (dtStatusFailed(
+            impl_->mesh->addTile(copy, int(data.size()), DT_TILE_FREE_DATA, 0, nullptr))) {
         dtFree(copy);
+        return false;
+    }
+    return true;
 }
 
 void NavMesh::remove_tile(NavTileKey key) {

@@ -2798,3 +2798,45 @@ TEST_CASE("a planet has no flat navigation") {
     CHECK(game.navmesh() == nullptr);
     CHECK_FALSE(game.find_path({0, 0, 0}, {10, 0, 0}));
 }
+
+TEST_CASE("a terrain scene's navigation is made round the player and follows sculpting") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [0, 20, 0]},
+                                         "player": {}}')"}},
+                    R"({"body": {"id": "land", "shape": "bounded_area", "width": 2000,
+                                 "length": 2000, "seed": 2},
+                        "terrain": {"seed": 2, "height_scale": 1, "base": 5}})");
+    midgard::Game game(pkg.dir);
+    CHECK(game.navmesh() == nullptr);  // (terrain: per face)
+    REQUIRE(game.nav_world() != nullptr);
+    game.stream_navigation(true);
+    CHECK(game.nav_world()->stats().complete);
+    const midgard::Terrain& t = game.terrain()->terrain();
+    const auto on_ground = [&](double x, double z) {
+        const midgard::SurfacePoint s = t.body().surface({x, 0.0, z});
+        return t.body().position({0, s.u, s.v, t.height(0, s.u, s.v)});
+    };
+    const glm::dvec3 from = on_ground(-30, 0), to = on_ground(30, 0);
+    const auto straight = game.find_path(from, to);
+    REQUIRE(straight);
+    CHECK(straight->complete);
+    const auto length = [](const std::vector<glm::vec3>& p) {
+        double total = 0.0;
+        for (size_t i = 1; i < p.size(); ++i) total += glm::distance(p[i - 1], p[i]);
+        return total;
+    };
+    CHECK(length(straight->points) < 61.0);
+    // A steep mound sculpted across the way: the path goes round it.
+    const midgard::SurfacePoint middle = t.body().surface({0.0, 0.0, 0.0});
+    game.set_terrain_stamps(
+        {midgard::stamp_from_json(nlohmann::json{{"tool", "raise"},
+                                                 {"radius", 8.0},
+                                                 {"strength", 25.0},
+                                                 {"face", 0},
+                                                 {"points", {{middle.u, middle.v}}}})});
+    game.stream_navigation(true);
+    const auto round = game.find_path(from, to);
+    REQUIRE(round);
+    CHECK(round->complete);
+    CHECK(length(round->points) > length(straight->points) + 2.0);
+    for (const glm::vec3& p : round->points) CHECK(std::abs(t.above_ground(glm::dvec3(p))) < 0.6);
+}

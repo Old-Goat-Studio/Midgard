@@ -145,6 +145,7 @@ add_library(midgard_scene STATIC
     scene/src/scene_physics.cpp
     scene/src/collider_outlines.cpp
     scene/src/scene_nav.cpp
+    scene/src/nav_world.cpp
     scene/src/world_surface.cpp
     scene/src/model.cpp
     scene/src/materials.cpp
@@ -350,6 +351,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_world_type.cpp
         tests/test_worldgen.cpp
         tests/test_navmesh.cpp
+        tests/test_nav_world.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp
