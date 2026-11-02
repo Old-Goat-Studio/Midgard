@@ -48,6 +48,15 @@ THUMB = 48
 ASSET_ROLE = Qt.ItemDataRole.UserRole
 
 
+def size_text(size: int) -> str:
+    """'3.4 MB', '820 KB', '96 bytes'."""
+    if size >= 1_000_000:
+        return f"{size / 1e6:.1f} MB"
+    if size >= 1_000:
+        return f"{size / 1e3:.0f} KB"
+    return f"{size} bytes"
+
+
 def licence_label(code: str) -> str:
     return lib.LICENCES.get(code, (code or "none", "", False))[0]
 
@@ -435,8 +444,20 @@ class AssetPlayer(QWidget):
         for label, kind, path in self.choices(asset):
             self.choose.addItem(label, (kind, path))
         self.choose.blockSignals(False)
-        self.choose.setVisible(self.choose.count() > 1)
+        # (Sounds are chosen from the window's list of files, with their sizes.)
+        self.choose.setVisible(self.choose.count() > 1 and
+                               (asset is None or asset.type not in lib.ALBUMS))
         self.show_choice()
+
+    def choose_file(self, path: Path) -> None:
+        """One of the asset's files, shown (or ready to play)."""
+        for i in range(self.choose.count()):
+            data = self.choose.itemData(i)
+            if data and data[1] is not None and Path(data[1]) == Path(path):
+                if i == self.choose.currentIndex():
+                    return
+                self.choose.setCurrentIndex(i)  # (shows it)
+                return
 
     def choices(self, asset: lib.Asset | None) -> list[tuple[str, str, Path | None]]:
         """What can be shown of an asset: (label, kind, file). A texture set: its whole
@@ -792,9 +813,25 @@ class AssetWindow(QWidget):
         self.info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.player = AssetPlayer()
+        # A sound asset's files with their sizes: choosing one is what the player plays.
+        self.files_list = QTreeWidget()
+        self.files_list.setHeaderLabels(["File", "Size"])
+        self.files_list.setRootIsDecorated(False)
+        self.files_list.setAlternatingRowColors(True)
+        self.files_list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.files_list.header().setSectionResizeMode(1,
+                                                      QHeaderView.ResizeMode.ResizeToContents)
+        self.files_list.setToolTip("Choose a sound to play it (double-click: play at once)")
+        self.files_list.itemSelectionChanged.connect(self._file_chosen)
+        self.files_list.itemDoubleClicked.connect(lambda *_: self._play_chosen())
+        details = QWidget()
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        details_layout.addWidget(self.info)
+        details_layout.addWidget(self.files_list, 1)
         pane = QWidget()
         pane_layout = QHBoxLayout(pane)
-        pane_layout.addWidget(self.info, 1)
+        pane_layout.addWidget(details, 1)
         pane_layout.addWidget(self.player)
         right.addWidget(pane)
         right.setSizes([440, 220])
@@ -894,6 +931,7 @@ class AssetWindow(QWidget):
         shown = self.player.asset
         if (asset.id if asset else None) != (shown.id if shown else None):
             self.player.show_asset(asset)
+            self.show_files(asset)
         for b in (self.details_button, self.remove_button):
             b.setEnabled(asset is not None)
         if asset is None:
@@ -913,14 +951,55 @@ class AssetWindow(QWidget):
         if lib.needs_credit(asset):
             rows.append(f"Credit: {lib.credit(asset)}")
         size = sum(f.get("bytes", 0) for f in asset.files)
-        rows.append(f"Files ({len(asset.files)}, {size / 1e6:.1f} MB): " +
-                    ", ".join(f["path"] for f in asset.files[:8]) +
-                    (" …" if len(asset.files) > 8 else ""))
+        if asset.type in lib.ALBUMS:  # (listed below, with their sizes)
+            rows.append(f"Files: {len(asset.files)}, {size_text(size)}")
+        else:
+            rows.append(f"Files ({len(asset.files)}, {size / 1e6:.1f} MB): " +
+                        ", ".join(f["path"] for f in asset.files[:8]) +
+                        (" …" if len(asset.files) > 8 else ""))
         if said := lib.problems(asset):
             rows.append("<span style='color:#d05050'>" + "<br>".join(said) + "</span>")
         self.info.setText("<br>".join(rows))
 
     # ---- what it does -----------------------------------------------------------------------
+    def show_files(self, asset: lib.Asset | None) -> None:
+        """A sound asset's files, each with its size (the sounds can be chosen to play)."""
+        self.files_list.blockSignals(True)
+        self.files_list.clear()
+        sounds = asset is not None and asset.type in lib.ALBUMS
+        self.files_list.setVisible(sounds)
+        if sounds:
+            first = None
+            # The sounds first (by name), then what else it holds (a licence, a read-me).
+            ordered = sorted(asset.files, key=lambda f: (
+                Path(f["path"]).suffix.lower() not in lib.AUDIO, f["path"].lower()))
+            for f in ordered:
+                path = asset.folder / f["path"]
+                item = QTreeWidgetItem([f["path"], size_text(f.get("bytes", 0))])
+                item.setData(0, ASSET_ROLE, str(path))
+                item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight |
+                                      Qt.AlignmentFlag.AlignVCenter)
+                if path.suffix.lower() not in lib.AUDIO:  # (a licence, a read-me)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                    item.setForeground(0, Qt.GlobalColor.gray)
+                    item.setForeground(1, Qt.GlobalColor.gray)
+                elif first is None:
+                    first = item
+                self.files_list.addTopLevelItem(item)
+            if first is not None:
+                first.setSelected(True)
+        self.files_list.blockSignals(False)
+
+    def _file_chosen(self) -> None:
+        items = self.files_list.selectedItems()
+        if items:
+            self.player.choose_file(Path(items[0].data(0, ASSET_ROLE)))
+
+    def _play_chosen(self) -> None:
+        self._file_chosen()
+        if self.player.kind == "sound":
+            self.player.play_button.setChecked(True)
+
     def import_dialog(self) -> ImportDialog | None:
         if self.project is None:
             return None

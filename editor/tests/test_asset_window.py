@@ -446,3 +446,37 @@ def test_the_material_editor_takes_a_whole_texture_set(project, qtbot, tmp_path)
                             "Plain", category="wood")
     editor.use_library_picture("emissive", lone.folder / "plain.png")
     assert set(project.entity(entity.id).components["material"]["textures"]) == {"emissive"}
+
+
+def test_a_sound_assets_files_are_listed_with_their_sizes_to_play(project, qtbot, tmp_path):
+    from midgard_editor.docks.asset_window import size_text
+    album = tmp_path / "album"
+    album.mkdir()
+    (album / "dawn.ogg").write_bytes(OGG + b"\x00" * 2000)
+    (album / "dusk.ogg").write_bytes(OGG + b"\x01" * 50)
+    (album / "LICENSE.txt").write_text("CC0", "utf-8")
+    lib.import_asset(project, [album], "music", "Day", category="Lights")
+    window = AssetWindow()
+    qtbot.addWidget(window)
+    window.set_project(project)
+    window.show()
+    window.select("music/lights/day")
+    rows = [(window.files_list.topLevelItem(i).text(0), window.files_list.topLevelItem(i).text(1))
+            for i in range(window.files_list.topLevelItemCount())]
+    assert rows == [("dawn.ogg", "2 KB"), ("dusk.ogg", "86 bytes"), ("LICENSE.txt", "3 bytes")]
+    assert window.files_list.isVisible()
+    assert "dawn.ogg" not in window.info.text()  # (listed below, not in the details)
+    assert not window.player.choose.isVisible()  # (the list chooses)
+    licence = window.files_list.topLevelItem(2)
+    assert not licence.flags() & licence.flags().ItemIsSelectable  # (not a sound)
+    # The first sound is ready; choosing the other is what the player plays.
+    assert window.player.choose.currentData()[1].name == "dawn.ogg"
+    window.files_list.topLevelItem(0).setSelected(False)
+    window.files_list.topLevelItem(1).setSelected(True)
+    assert window.player.choose.currentData()[1].name == "dusk.ogg"
+    # Not a sound asset: no list.
+    lib.import_asset(project, [a_picture(tmp_path, "tile.png")], "images", "Tile")
+    window.refresh()
+    window.select("images/tile")
+    assert not window.files_list.isVisible()
+    assert size_text(3_400_000) == "3.4 MB" and size_text(820_000) == "820 KB"
