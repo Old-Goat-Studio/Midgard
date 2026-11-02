@@ -502,6 +502,8 @@ class ViewportPanel(QWidget):
         for path in paths:
             if path.startswith("objects/"):
                 self._sent_meshes.discard("asset:" + path[len("objects/"):])
+            elif path.startswith("library/"):  # (the Asset Library's models)
+                self._sent_meshes.discard("lib:" + path[len("library/"):])
 
     def _objects_changed(self, object_id: str) -> None:
         """An object changed (or objects came or went): the instances in view follow."""

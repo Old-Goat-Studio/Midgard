@@ -15,20 +15,18 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDoubleSpinBox,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMenu,
-    QMessageBox,
     QPushButton,
     QSizePolicy,
     QToolButton,
     QWidget,
 )
 
-from .. import engine, environments, scenes, scripting, transforms
+from .. import asset_library, engine, environments, scenes, scripting, transforms
 from ..group_objects import ask_save_group_as_object
 from ..project import Project
 from ..scene_model import Entity, sky_component
@@ -591,11 +589,11 @@ class EntityForm(QWidget):
                                         "folder")
         self.character_model.currentIndexChanged.connect(lambda _i: self._character_value(
             "model", self.character_model.currentData() or "", "model"))
-        import_model = QPushButton("Import...")
-        import_model.setToolTip("Copy a skinned model (.glb, or .gltf with its files) into the "
-                                "project's objects/characters/ folder, and use it")
-        import_model.clicked.connect(lambda: self._import_character("model"))
-        form.addRow("Character", _row(self.character_model, import_model, _remove_button(
+        library_model = QPushButton("Library...")
+        library_model.setToolTip("A model from the project's Asset Library (Assets ▸ Import "
+                                 "Into Library brings them in)")
+        library_model.clicked.connect(lambda: self._character_from_library("model"))
+        form.addRow("Character", _row(self.character_model, library_model, _remove_button(
             "No longer a character", lambda: self.remove_component("character"))))
         self.character_clips = QComboBox()
         self.character_clips.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
@@ -606,11 +604,10 @@ class EntityForm(QWidget):
                                         "another (an animation library) with the same joints")
         self.character_clips.currentIndexChanged.connect(lambda _i: self._character_value(
             "clips", self.character_clips.currentData() or "", "animations"))
-        import_clips = QPushButton("Import...")
-        import_clips.setToolTip("Copy a file of animations (.glb or .gltf) into the project's "
-                                "objects/characters/ folder, and take this character's from it")
-        import_clips.clicked.connect(lambda: self._import_character("clips"))
-        form.addRow("Animations from", _row(self.character_clips, import_clips))
+        library_clips = QPushButton("Library...")
+        library_clips.setToolTip("A file of animations from the project's Asset Library")
+        library_clips.clicked.connect(lambda: self._character_from_library("clips"))
+        form.addRow("Animations from", _row(self.character_clips, library_clips))
         self.character_clip = QComboBox()
         self.character_clip.currentIndexChanged.connect(lambda _i: self._character_value(
             "clip", self.character_clip.currentData() or "", "clip"))
@@ -695,29 +692,23 @@ class EntityForm(QWidget):
         entity.components["character"] = {**character, "ik": ik}
         self._push(entity, "IK")
 
-    def _import_character(self, key: str) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Import Character Model" if key == "model" else "Import Animations", "",
-            "glTF models (*.glb *.gltf)")
-        if path:
-            self.import_character_file(key, Path(path))
+    def character_picker(self, key: str):
+        from .asset_window import LibraryPicker
+        return LibraryPicker(self.project, "Character Model from the Library" if key == "model"
+                             else "Animations from the Library", ("models", "objects"),
+                             asset_library.MODEL_SUFFIXES, self)
 
-    def import_character_file(self, key: str, file: Path) -> str:
-        """Copies a model file (and the files a .gltf names) into objects/characters/ and makes
-        it this character's model ("model") or where its clips come from ("clips"). Returns its
-        content id; a file that isn't a skinned model is refused (a message, nothing copied)."""
-        module = engine.module()
-        if module is not None and file.suffix.lower() == ".glb":
-            try:
-                module.skinned_info(file.read_bytes())
-            except (OSError, ValueError) as e:
-                QMessageBox.warning(self, "Import", f"{file.name} isn't a skinned model: {e}")
-                return ""
-        from ..objects import copy_model
-        relative = copy_model(file, self.project.objects_dir / "characters")
-        asset = f"asset:characters/{relative}"
+    def _character_from_library(self, key: str) -> None:
+        picker = self.character_picker(key)
+        if picker.exec() and picker.chosen is not None:
+            self.use_library_model(key, picker.chosen)
+
+    def use_library_model(self, key: str, file: Path) -> str:
+        """A library model as this character's model ("model") or where its clips come from
+        ("clips"): used where it is (the library is the project's own). Returns its id."""
+        asset = asset_library.model_id(self.project, file)
         self._character_value(key, asset, "model" if key == "model" else "animations")
-        self.rebuild.emit(self.entity_id)  # (the lists gain the new file)
+        self.rebuild.emit(self.entity_id)
         return asset
 
     def model_info(self, asset: str) -> dict | None:

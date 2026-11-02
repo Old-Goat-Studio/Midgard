@@ -351,7 +351,7 @@ class Project(QObject):
 
     def mesh_assets(self) -> dict[str, str]:
         """Meshes an entity can use: id -> label. The editor's primitives, the world's surface,
-        then the .glb files in the project's objects/ folder."""
+        the .glb files in the project's objects/ folder, then the Asset Library's models."""
         found = dict(meshes.PRIMITIVES)
         found["builtin:surface"] = "World surface"  # made by the engine from the world shape
         objects = self.objects_dir
@@ -359,12 +359,18 @@ class Project(QObject):
             for file in sorted(objects.rglob("*.glb")):
                 relative = file.relative_to(objects).as_posix()
                 found[f"asset:{relative}"] = relative
+        from . import asset_library  # the Asset Library's models (used where they are)
+        found |= {asset_id: f"Library: {label}"
+                  for asset_id, label in asset_library.models(self).items()}
         return found
 
     def character_assets(self) -> dict[str, str]:
-        """Models a character can use (milestone 5.13): the .glb and .gltf files in the
-        project's objects/ folder, id -> label (the cook packs a .gltf into a .glb)."""
-        found: dict[str, str] = {}
+        """Models a character can use (milestone 5.13): the Asset Library's models, and the
+        .glb and .gltf files in the project's objects/ folder, id -> label (the cook packs a
+        .gltf into a .glb)."""
+        from . import asset_library
+        found = {asset_id: f"Library: {label}"
+                 for asset_id, label in asset_library.models(self).items()}
         objects = self.objects_dir
         if objects.is_dir():
             for file in sorted([*objects.rglob("*.glb"), *objects.rglob("*.gltf")]):

@@ -140,8 +140,16 @@ def test_the_player_shows_pictures_sounds_and_fonts(project, qtbot, tmp_path):
     sound = lib.import_asset(project, [tmp_path / "chime.ogg"], "effects", "Chime")
     player.show()
     player.show_asset(sound)
-    assert player.kind == "sound" and player.play_button.isVisible()
-    assert player._audio[0].source().toLocalFile().endswith("chime.ogg")
+    try:  # (Qt Multimedia needs the system's audio libraries: not on every machine)
+        from PySide6.QtMultimedia import QMediaPlayer  # noqa: F401
+        playable = True
+    except ImportError:
+        playable = False
+    if playable:
+        assert player.kind == "sound" and player.play_button.isVisible()
+        assert player._audio[0].source().toLocalFile().endswith("chime.ogg")
+    else:  # said, not a crash
+        assert player.kind == "" and "can't be played here" in player.picture.text()
     fonts = [Path(p) for p in ("C:/Windows/Fonts/arial.ttf",
                                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
              if Path(p).is_file()]
@@ -179,3 +187,94 @@ def test_the_player_turns_a_model_and_plays_its_clips(project, qtbot):
     assert player.picture.pixmap().toImage() != first  # (turned, and walking)
     player.drop()
     assert player._view is None and not player.timer.isActive()
+
+
+# ---- using library assets (step 5) ---------------------------------------------------------------
+def library_hero(project):
+    from test_characters import SAMPLES
+    hero = lib.import_asset(project, [SAMPLES / "superhero_male.glb"], "models", "Superhero",
+                            author="Quaternius")
+    moves = lib.import_asset(project, [SAMPLES / "animation_library.glb"], "models", "Moves",
+                             author="Quaternius")
+    return hero, moves
+
+
+def test_a_character_uses_library_models_and_the_cook_packs_them(project, qtbot, tmp_path):
+    import pytest
+
+    from midgard_editor import engine
+    from midgard_editor.cook import cook
+    from midgard_editor.docks.entity_form import EntityForm
+    from midgard_editor.scene_model import Entity
+    if engine.module() is None:
+        pytest.skip("engine module not built")
+    hero, moves = library_hero(project)
+    hero_id, moves_id = ("lib:models/superhero/superhero_male.glb",
+                         "lib:models/moves/animation_library.glb")
+    assert project.character_assets()[hero_id] == "Library: Superhero (superhero_male.glb)"
+    entity = Entity(project.next_entity_id(), "Hero", None, {"transform": {}})
+    project.put_entity(entity)
+    form = EntityForm(project, entity.id)
+    qtbot.addWidget(form)
+    form.add("character")
+    form = EntityForm(project, entity.id)
+    qtbot.addWidget(form)
+    assert form.character_model.findData(hero_id) >= 0  # (in its list)
+    picker = form.character_picker("model")
+    qtbot.addWidget(picker)
+    assert [p.name for _a, p in picker.choices] == ["animation_library.glb",
+                                                    "superhero_male.glb"]
+    assert form.use_library_model("model", hero.folder / "superhero_male.glb") == hero_id
+    form.use_library_model("clips", moves.folder / "animation_library.glb")
+    character = project.entity(entity.id).components["character"]
+    assert (character["model"], character["clips"]) == (hero_id, moves_id)
+    assert character["clip"] == "A_TPose"
+    assert not (project.objects_dir / "characters").exists()  # (used where it is: no copy)
+    result = cook(project, tmp_path / "pkg")
+    content = {c["id"]: c["path"] for c in result.manifest["content"]}
+    assert content[hero_id] == "meshes/library/models/superhero/superhero_male.glb"
+    assert moves_id in content
+    assert not [w for w in result.warnings if "Hero" in w], result.warnings
+
+
+def test_the_library_picker_and_a_library_texture(project, qtbot, tmp_path):
+    from midgard_editor.docks.asset_window import LibraryPicker
+    from midgard_editor.docks.material_editor import EntityMaterial, MaterialEditor
+    from midgard_editor.scene_model import Entity
+    texture = lib.import_asset(project, [a_picture(tmp_path, "slate.png")], "textures", "Slate",
+                               category="stone")
+    picker = LibraryPicker(project, "Pick", ("textures",), (".png",))
+    qtbot.addWidget(picker)
+    assert not picker.use_button.isEnabled()
+    picker.pick(0)
+    assert picker.use_button.isEnabled() and picker.player.kind == "picture"
+    picker.accept_current()
+    assert picker.chosen == texture.folder / "slate.png"
+    entity = Entity(project.next_entity_id(), "Floor", None, {"transform": {},
+                                                             "mesh": {"asset": "prim_cube"}})
+    project.put_entity(entity)
+    editor = MaterialEditor(project, EntityMaterial(project, entity.id))
+    qtbot.addWidget(editor)
+    editor.use_image("base_color", picker.chosen)
+    material = project.entity(entity.id).components["material"]
+    assert material["textures"]["base_color"] == "tex:library/textures/stone/slate/slate.png"
+    assert not (project.textures_dir / "slate.png").exists()  # (used where it is)
+    empty = LibraryPicker(project, "Pick", ("music",), (".ogg",))
+    qtbot.addWidget(empty)
+    assert empty.list.count() == 0
+
+
+def test_an_entity_uses_a_library_model_as_its_mesh(project, tmp_path):
+    from test_characters import SAMPLES
+
+    from midgard_editor.cook import cook, mesh_asset_data
+    from midgard_editor.scene_model import Entity
+    lib.import_asset(project, [SAMPLES / "superhero_male.glb"], "models", "Statue")
+    asset = "lib:models/statue/superhero_male.glb"
+    assert project.mesh_assets()[asset] == "Library: Statue (superhero_male.glb)"
+    assert mesh_asset_data(project, asset)[:4] == b"glTF"
+    assert mesh_asset_data(project, "lib:../Lib.db") is None  # (never outside the library)
+    project.put_entity(Entity(project.next_entity_id(), "Statue", None,
+                              {"transform": {}, "mesh": {"asset": asset}}))
+    result = cook(project, tmp_path / "pkg")
+    assert asset in {c["id"] for c in result.manifest["content"]}

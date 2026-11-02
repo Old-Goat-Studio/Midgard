@@ -25,7 +25,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import contract, engine, gltf_pack, meshes, objects, scenes, textures
+from . import asset_library, contract, engine, gltf_pack, meshes, objects, scenes, textures
 from .project import Project
 from .version import BUILD, VERSION
 
@@ -102,8 +102,12 @@ def mesh_asset_data(project: Project, asset: str) -> bytes | None:
     "builtin:" meshes are built into the engine and need no file."""
     if asset in meshes.PRIMITIVES:
         return meshes.to_glb(meshes.primitive(asset))
+    file = None
     if asset.startswith(PROJECT_ASSET_PREFIX):
         file = project.objects_dir / asset[len(PROJECT_ASSET_PREFIX):]
+    elif asset.startswith(asset_library.MODEL_PREFIX):  # (a model in the Asset Library)
+        file = asset_library.model_file(project, asset)
+    if file is not None:
         if file.is_file() and file.suffix.lower() == ".glb":
             return file.read_bytes()
         if file.is_file() and file.suffix.lower() == ".gltf":  # (with its .bin: one .glb)
@@ -213,6 +217,8 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
     files: dict[str, tuple[str, bytes]] = {}
     for asset, data in assets.items():
         path = f"meshes/{asset.removeprefix(PROJECT_ASSET_PREFIX)}"
+        if asset.startswith(asset_library.MODEL_PREFIX):
+            path = f"meshes/library/{asset.removeprefix(asset_library.MODEL_PREFIX)}"
         if not path.endswith(".glb"):
             path += ".glb"
         files[asset] = (path, data)

@@ -423,3 +423,39 @@ def import_asset(project, sources: list[Path], type_: str, name: str, *, categor
                 remove(asset)
             raise
     return asset
+
+
+# ---- using assets (step 5) -------------------------------------------------------------------
+MODEL_PREFIX = "lib:"  # a model in the library, by its path there: "lib:models/hero/hero.glb"
+MODEL_SUFFIXES = (".glb", ".gltf")
+
+
+def model_id(project, file: Path) -> str:
+    """A library model file's content id."""
+    return MODEL_PREFIX + Path(file).resolve().relative_to(
+        library_dir(project).resolve()).as_posix()
+
+
+def model_file(project, asset_id: str) -> Path | None:
+    """The file a "lib:" content id names (None: not one, or it isn't there)."""
+    if not asset_id.startswith(MODEL_PREFIX):
+        return None
+    relative = asset_id[len(MODEL_PREFIX):]
+    file = (library_dir(project) / relative).resolve()
+    if not file.is_relative_to(library_dir(project).resolve()) or not file.is_file():
+        return None  # (never outside the library)
+    return file
+
+
+def files_of(project, types: tuple[str, ...],
+             suffixes: tuple[str, ...]) -> list[tuple[Asset, Path]]:
+    """The library's files of some types with some endings, each with its asset."""
+    assets, _ = scan(project)
+    return [(a, p) for a in assets if a.type in types for p in a.file_paths()
+            if p.suffix.lower() in suffixes and p.is_file()]
+
+
+def models(project) -> dict[str, str]:
+    """The library's models (and objects'), content id -> label."""
+    return {model_id(project, p): f"{a.name} ({p.name})"
+            for a, p in files_of(project, ("models", "objects"), MODEL_SUFFIXES)}

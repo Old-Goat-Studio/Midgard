@@ -483,6 +483,68 @@ class AssetPlayer(QWidget):
             self._view = None
 
 
+class LibraryPicker(QDialog):
+    """Choose a file from the Asset Library: the assets of some types with files of some
+    endings, each shown in the player as it is picked."""
+
+    def __init__(self, project: Project, title: str, types: tuple[str, ...],
+                 suffixes: tuple[str, ...], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.project = project
+        self.chosen: Path | None = None
+        self.choices = lib.files_of(project, types, suffixes)
+        layout = QVBoxLayout(self)
+        row = QHBoxLayout()
+        self.list = QListWidget()
+        self.list.setIconSize(QSize(THUMB, THUMB))
+        for asset, path in self.choices:
+            item = QListWidgetItem(f"{asset.name}  ({path.name})\n{licence_label(asset.licence)}")
+            if path.suffix.lower() in (".png", ".jpg", ".jpeg"):
+                pixmap = QPixmap(str(path))
+                if not pixmap.isNull():
+                    item.setIcon(QIcon(pixmap.scaled(THUMB, THUMB,
+                                                     Qt.AspectRatioMode.KeepAspectRatio)))
+            self.list.addItem(item)
+        self.list.currentRowChanged.connect(self._picked)
+        self.list.itemDoubleClicked.connect(lambda _i: self.accept_current())
+        row.addWidget(self.list, 1)
+        self.player = AssetPlayer()
+        row.addWidget(self.player)
+        layout.addLayout(row)
+        if not self.choices:
+            empty = QLabel("The library has none yet: Assets ▸ Import Into Library brings them "
+                           "in.")
+            empty.setWordWrap(True)
+            layout.addWidget(empty)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.use_button = buttons.addButton("Use", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.use_button.setEnabled(False)
+        buttons.accepted.connect(self.accept_current)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.resize(760, 420)
+
+    def _picked(self, row: int) -> None:
+        self.use_button.setEnabled(row >= 0)
+        self.player.show_asset(self.choices[row][0] if row >= 0 else None)
+
+    def pick(self, row: int) -> None:
+        self.list.setCurrentRow(row)
+
+    def accept_current(self) -> None:
+        row = self.list.currentRow()
+        if row < 0:
+            return
+        self.chosen = self.choices[row][1]
+        self.player.drop()
+        self.accept()
+
+    def done(self, result: int) -> None:
+        self.player.drop()
+        super().done(result)
+
+
 class AssetWindow(QWidget):
     """The library's window (one for the editor; it follows the open project)."""
 

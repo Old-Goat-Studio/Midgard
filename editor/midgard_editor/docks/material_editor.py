@@ -265,6 +265,9 @@ class MaterialEditor(QWidget):
             name.setMinimumWidth(80)
             choose = QPushButton("Choose…")
             choose.clicked.connect(lambda _c=False, s=slot: self.choose_texture(s))
+            library = QPushButton("Library…")
+            library.setToolTip("A texture or image from the project's Asset Library")
+            library.clicked.connect(lambda _c=False, s=slot: self.choose_from_library(s))
             clear = QToolButton()
             clear.setText("✕")
             clear.setToolTip("No texture in this slot")
@@ -274,6 +277,7 @@ class MaterialEditor(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(name, 1)
             layout.addWidget(choose)
+            layout.addWidget(library)
             layout.addWidget(clear)
             form.addRow(f"{label} texture", row)
             self.slot_labels[slot] = name
@@ -416,6 +420,16 @@ class MaterialEditor(QWidget):
             "Images (" + " ".join("*" + s for s in textures.IMAGE_SUFFIXES) + ")")
         if file:
             self.use_image(slot, Path(file))
+
+    def library_picker(self, slot: str):
+        from .asset_window import LibraryPicker
+        return LibraryPicker(self.project, f"{textures.SLOTS[slot]} Texture from the Library",
+                             ("textures", "images", "gui"), (".png", ".jpg", ".jpeg"), self)
+
+    def choose_from_library(self, slot: str) -> None:
+        picker = self.library_picker(slot)
+        if picker.exec() and picker.chosen is not None:
+            self.use_image(slot, picker.chosen)  # (in the project: used where it is)
 
     def reset_to_original(self) -> None:
         original = self.target.original()

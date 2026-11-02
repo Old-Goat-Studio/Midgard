@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Notices model and image files changing on disk while a project is open (roadmap §5.5).
 
-Every second it looks at the files in the project's objects/ and textures/ folders. When some
-changed (saved again from Blender or a paint program, added, or removed), it says so with the
-project's signals:
+Every second it looks at the files in the project's objects/, textures/ and library/ folders.
+When some changed (saved again from Blender or a paint program, added, or removed), it says so
+with the project's signals:
 - files_changed, with the changed paths (the Objects panel lists new models; the live link
   cooks them for the running game);
 - objects_changed, for each object made from a changed file: it is imported again, and the
@@ -22,6 +22,7 @@ from .objects import object_files
 from .project import Project
 
 PROJECT_ASSET_PREFIX = "asset:"
+LIBRARY_PREFIX = "lib:"  # (asset_library.MODEL_PREFIX)
 
 
 class ContentWatcher(QObject):
@@ -43,7 +44,8 @@ class ContentWatcher(QObject):
     def _scan(self) -> dict[str, tuple[int, int]]:
         stamps = {}
         root = self.project.root
-        for folder in (self.project.objects_dir, self.project.textures_dir):
+        for folder in (self.project.objects_dir, self.project.textures_dir,
+                       self.project.root / "library"):  # (the Asset Library too)
             if not folder.is_dir():
                 continue
             for file in folder.rglob("*"):
@@ -97,8 +99,12 @@ class ContentWatcher(QObject):
                 project.objects_changed.emit(obj.id)
         for entity in project.entities():
             used = texture_files(entity.components)
-            asset = entity.components.get("mesh", {}).get("asset", "")
-            if asset.startswith(PROJECT_ASSET_PREFIX):
-                used.add("objects/" + asset[len(PROJECT_ASSET_PREFIX):])
+            character = entity.components.get("character", {})
+            for asset in (entity.components.get("mesh", {}).get("asset", ""),
+                          character.get("model", ""), character.get("clips", "")):
+                if asset.startswith(PROJECT_ASSET_PREFIX):
+                    used.add("objects/" + asset[len(PROJECT_ASSET_PREFIX):])
+                elif asset.startswith(LIBRARY_PREFIX):  # (the Asset Library's)
+                    used.add("library/" + asset[len(LIBRARY_PREFIX):])
             if used & changed:
                 project.entities_changed.emit(entity.id)
