@@ -622,6 +622,36 @@ class EntityForm(QWidget):
         self.character_speed.valueChanged.connect(lambda v: self._set_value(
             "character", "speed", round(v, 3), "animation speed"))
         form.addRow("Speed", self.character_speed)
+        ik = entity.components["character"].get("ik", {})
+        self.character_feet = QCheckBox("Feet on the ground")
+        self.character_feet.setToolTip("Each foot stands on what is under it (slopes, steps), "
+                                       "along the character's own up")
+        self.character_feet.setChecked(bool(ik.get("feet", False)))
+        self.character_feet.toggled.connect(lambda on: self._set_ik("feet", on))
+        form.addRow("IK", self.character_feet)
+        self.character_look = QComboBox()
+        self.character_look.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.character_look.addItem("Nothing", "")
+        self.character_look.addItem("The player", "player")
+        for other in self.project.entities():
+            if other.id != entity.id:
+                self.character_look.addItem(other.name, other.id)
+        look = ik.get("look", "")
+        if self.character_look.findData(look) < 0:
+            self.character_look.addItem(f"{look} (missing)", look)
+        self.character_look.setCurrentIndex(self.character_look.findData(look))
+        self.character_look.currentIndexChanged.connect(
+            lambda _i: self._set_ik("look", self.character_look.currentData() or ""))
+        self.character_look_limit = QDoubleSpinBox()
+        self.character_look_limit.setRange(0.0, 120.0)
+        self.character_look_limit.setSuffix("°")
+        self.character_look_limit.setKeyboardTracking(False)
+        self.character_look_limit.setValue(float(ik.get("look_limit", 70.0)))
+        self.character_look_limit.setToolTip("How far its head turns from where its animation "
+                                             "has it")
+        self.character_look_limit.valueChanged.connect(
+            lambda v: self._set_ik("look_limit", round(v, 1)))
+        form.addRow("Looks at", _row(self.character_look, self.character_look_limit))
         self.character_rig = QLabel()
         self.character_rig.setWordWrap(True)
         self.character_rig_button = QPushButton("Rig...")
@@ -635,6 +665,15 @@ class EntityForm(QWidget):
         graph.clicked.connect(lambda: self.open_animation.emit(self.entity_id))
         form.addRow("Graph", graph)
         self._refresh_character(entity)
+
+    def _set_ik(self, key: str, value) -> None:
+        entity = self._entity()
+        character = entity.components.get("character")
+        if character is None or character.get("ik", {}).get(key) == value:
+            return
+        ik = {**character.get("ik", {}), key: value}
+        entity.components["character"] = {**character, "ik": ik}
+        self._push(entity, "IK")
 
     def _import_character(self, key: str) -> None:
         path, _ = QFileDialog.getOpenFileName(

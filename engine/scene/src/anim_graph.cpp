@@ -491,8 +491,8 @@ AnimPlayer::Step AnimPlayer::update(float dt, Pose& pose) {
         }
     }
     pose.set_local(result_);
-    if (roots)  // (the motion is the character's: kept out of its pose)
-        pose.shift(glm::inverse(glm::mat3(armature_)) * -offset);
+    // The motion is the character's: kept out of its pose (none without root motion).
+    pose.shift(roots ? glm::inverse(glm::mat3(armature_)) * -offset : glm::vec3(0.0f));
     return step;
 }
 

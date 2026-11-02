@@ -183,6 +183,12 @@ struct CharacterRef {
     std::map<std::string, std::string> rig;
     // Its animation graph (midgard/anim_graph.h) as JSON text; empty: it plays `clip`.
     std::string graph;
+    // Inverse kinematics (midgard/ik.h): its feet on the ground under them (along its own up),
+    // and what it looks at ("player", an entity's id, or nothing), at most look_limit degrees
+    // from where its animation has its head.
+    bool feet = false;
+    std::string look;
+    float look_limit = 70.0f;
 };
 
 enum class ExitActivation { Enter, Use, Script };

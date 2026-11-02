@@ -27,6 +27,16 @@ Game::Game(const std::filesystem::path& package_dir)
     camera_ = std::make_unique<CameraRig>(scene_);
     camera_->follow(scene_, 0.0f, camera_sweep());
     note_exits_inside();
+    // Characters' feet stand on what physics has (the ground, and anything solid).
+    characters_.set_ground([this](entt::entity self, const glm::dvec3& from,
+                                  const glm::vec3& direction,
+                                  double distance) -> std::optional<Characters::GroundHit> {
+        if (!physics_) return std::nullopt;
+        const auto hit = physics_->world().raycast(from, direction, distance,
+                                                   physics::Touching::Solid, physics_->body(self));
+        if (!hit) return std::nullopt;
+        return Characters::GroundHit{hit->point, hit->normal};
+    });
 
     // The clock, on the standard calendar (validation refused unusable calendars at the cook).
     const std::filesystem::path database = package_dir / package_.manifest.database;
@@ -183,6 +193,7 @@ void Game::update(const Actions& actions, float dt) {
     update_triggers();
     update_exits(actions);
     load_characters();  // (new ones from live edits; read once each)
+    characters_.set_player(physics_->player());
     characters_.update(scene_, dt);
     apply_root_motion();
     stream_navigation();

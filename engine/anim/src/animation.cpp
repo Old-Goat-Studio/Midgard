@@ -302,12 +302,14 @@ Pose& Pose::operator=(Pose&&) noexcept = default;
 Pose::~Pose() = default;
 
 void Pose::rest() {
+    offset_ = glm::vec3(0.0f);
     const auto rest = skeleton_->impl().skeleton.joint_rest_poses();
     std::copy(rest.begin(), rest.end(), impl_->locals.begin());
     to_model();
 }
 
 void Pose::sample(const Clip& clip, float time, bool loop) {
+    offset_ = glm::vec3(0.0f);
     if (clip.joint_count() != skeleton_->joint_count())
         throw AnimationError("clip '" + clip.name() + "' is for another skeleton");
     const float d = clip.duration();
@@ -345,6 +347,12 @@ void Pose::sample_local(const Clip& clip, float time, bool loop, std::vector<Joi
     unpack(impl_->scratch, skeleton_->joint_count(), out);
 }
 
+std::vector<JointTransform> Pose::local() const {
+    std::vector<JointTransform> out;
+    unpack(impl_->locals, skeleton_->joint_count(), out);
+    return out;
+}
+
 void Pose::set_local(std::span<const JointTransform> joints) {
     if (int(joints.size()) != skeleton_->joint_count())
         throw AnimationError("a pose needs a transform for each joint");
@@ -353,7 +361,9 @@ void Pose::set_local(std::span<const JointTransform> joints) {
 }
 
 void Pose::shift(const glm::vec3& by) {
-    for (glm::mat4& m : model_) m[3] += glm::vec4(by, 0.0f);
+    const glm::vec3 change = by - offset_;
+    offset_ = by;
+    for (glm::mat4& m : model_) m[3] += glm::vec4(change, 0.0f);
 }
 
 void Pose::to_model() {
@@ -363,9 +373,11 @@ void Pose::to_model() {
     job.output = ozz::make_span(impl_->models);
     if (!job.Run()) throw AnimationError("the pose could not be made");
     model_.resize(impl_->models.size());
-    for (size_t i = 0; i < impl_->models.size(); ++i)
+    for (size_t i = 0; i < impl_->models.size(); ++i) {
         for (int c = 0; c < 4; ++c)
             ozz::math::StorePtrU(impl_->models[i].cols[c], &model_[i][c][0]);
+        model_[i][3] += glm::vec4(offset_, 0.0f);
+    }
 }
 
 }  // namespace midgard

@@ -167,6 +167,11 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
                 if (joint.is_string()) ch.rig[bone] = joint.get<std::string>();
         if (const auto graph = c.find("graph"); graph != c.end() && graph->is_object())
             ch.graph = graph->dump();
+        if (const auto ik = c.find("ik"); ik != c.end() && ik->is_object()) {
+            ch.feet = ik->value("feet", false);
+            ch.look = ik->value("look", std::string());
+            ch.look_limit = std::clamp(ik->value("look_limit", 70.0f), 0.0f, 120.0f);
+        }
         reg.emplace_or_replace<CharacterRef>(e, ch);
     } else if (name == "arrival") {
         reg.emplace_or_replace<Arrival>(e, Arrival{c.value("name", std::string())});

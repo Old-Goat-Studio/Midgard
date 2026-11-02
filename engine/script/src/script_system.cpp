@@ -321,6 +321,42 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             },
             py::arg("layer") = 0,
             "The state a layer of the character's animation graph is in ('' without a graph).")
+        .def(
+            "look_at",
+            [](const EntityHandle& h, const py::object& target) {
+                const entt::entity e = h.resolve();
+                Characters& c = current_game().characters();
+                if (target.is_none())
+                    c.look_at(e, std::nullopt);
+                else if (py::isinstance<EntityHandle>(target))
+                    c.look_at(e, std::nullopt, target.cast<EntityHandle>().resolve());
+                else
+                    c.look_at(e, dvec3(target.cast<std::array<double, 3>>()));
+            },
+            py::arg("target"),
+            "Turns the character's head to a point (x, y, z) or an entity (a character's head), "
+            "within its look limit; None: back to what its component says.")
+        .def(
+            "reach",
+            [](const EntityHandle& h, const std::string& hand, const py::object& target,
+               float weight) {
+                if (hand != "left" && hand != "right")
+                    throw py::value_error("a hand is 'left' or 'right'");
+                const entt::entity e = h.resolve();
+                Characters& c = current_game().characters();
+                std::optional<glm::dvec3> point;
+                if (py::isinstance<EntityHandle>(target))
+                    point = registry().all_of<Transform>(target.cast<EntityHandle>().resolve())
+                                ? std::optional(current_game().scene().world_position(
+                                      target.cast<EntityHandle>().resolve()))
+                                : std::nullopt;
+                else if (!target.is_none())
+                    point = dvec3(target.cast<std::array<double, 3>>());
+                c.reach(e, hand == "right", point, weight);
+            },
+            py::arg("hand"), py::arg("target"), py::arg("weight") = 1.0f,
+            "Reaches a hand ('left' or 'right') to a point (x, y, z) or where an entity is, by a "
+            "weight (0 to 1); None: lets it go.")
         .def("__eq__", [](const EntityHandle& a, const EntityHandle& b) { return a.id == b.id; })
         .def("__hash__", [](const EntityHandle& h) { return py::hash(py::str(h.id)); })
         .def("__repr__", [](const EntityHandle& h) {

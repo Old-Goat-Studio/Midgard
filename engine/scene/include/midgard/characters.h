@@ -7,8 +7,10 @@
 //                 "clip": "Walk_Loop", "speed": 1.0,      what it plays, and how fast
 //                 "rig": {"head": "Helmet"},              its humanoid bones, where its joint
 //                                                         names don't say (midgard/humanoid.h)
-//                 "graph": {...}}                         what it plays, decided as it plays
+//                 "graph": {...},                         what it plays, decided as it plays
 //                                                         (midgard/anim_graph.h; none: clip)
+//                 "ik": {"feet": true, "look": "player",  its feet on the ground, what it looks
+//                        "look_limit": 70}}               at (midgard/ik.h; a humanoid's)
 //
 // Each model is read once: its skeleton, clips, inverse bind matrices and skinned mesh (on the
 // GPU once uploaded). Clips from another file are retargeted to the model when both are
@@ -19,9 +21,11 @@
 // material.
 #pragma once
 
+#include <array>
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -57,6 +61,22 @@ public:
     // Their draws (characters whose model is on the GPU), except `hidden`.
     void draws(const Scene& scene, const glm::dvec3& origin, const MaterialCache& materials,
                entt::entity hidden, std::vector<render::DrawItem>& out) const;
+    // The ground for characters' feet: what a ray from a point along a direction meets first
+    // (none: nothing within the distance), leaving out the character itself. Without it, feet
+    // stay where their animation puts them.
+    struct GroundHit {
+        glm::dvec3 point{0.0};
+        glm::vec3 normal{0.0f, 1.0f, 0.0f};
+    };
+    using Ground = std::function<std::optional<GroundHit>(
+        entt::entity self, const glm::dvec3& from, const glm::vec3& direction, double distance)>;
+    void set_ground(Ground ground) { ground_ = std::move(ground); }
+    // Who "look": "player" means.
+    void set_player(entt::entity player) { player_ = player; }
+    // Scripts': what a character looks at (a point, or an entity; neither: what its component
+    // says), and where a hand reaches (none: nowhere), by a weight.
+    void look_at(entt::entity e, std::optional<glm::dvec3> point, entt::entity target = entt::null);
+    void reach(entt::entity e, bool right, std::optional<glm::dvec3> point, float weight = 1.0f);
     // Whether "speed" and "vertical_speed" are set from how characters move (else they are left
     // to whoever sets them: the editor's preview).
     void set_automatic(bool automatic) { automatic_ = automatic; }
@@ -76,6 +96,9 @@ public:
     float parameter(entt::entity e, const std::string& name) const;
     // Its clip, or graph, from the start (a graph's parameters back to their starting values).
     void restart(entt::entity e);
+    // Where one of its humanoid bones is in the world (none: it hasn't that bone, or no pose).
+    std::optional<glm::dvec3> bone_position(const Scene& scene, entt::entity e,
+                                            HumanBone bone) const;
     // The state a layer of its graph is in ("" without one).
     std::string state_of(entt::entity e, size_t layer = 0) const;
 
@@ -112,6 +135,17 @@ private:
         glm::dvec3 last{0.0};  // where it was (for its speed)
         bool placed = false;
         float speed = 0.0f, vertical_speed = 0.0f;
+        // Inverse kinematics: its humanoid bones (in its skeleton's order; -1: none), feet's
+        // offsets from the ground and the hips' drop (smoothed), what it looks at and reaches.
+        std::array<int, kHumanBones> bones{};
+        bool bones_known = false;
+        float foot_offset[2] = {0.0f, 0.0f}, drop = 0.0f, look_weight = 0.0f;
+        std::optional<glm::dvec3> look_point;
+        entt::entity look_entity = entt::null;
+        struct Reach {
+            std::optional<glm::dvec3> point;
+            float weight = 1.0f, blend = 0.0f;
+        } reach[2];
         const Clip* playing = nullptr;
         std::shared_ptr<Model> m;
         std::unique_ptr<Pose> pose;
@@ -121,6 +155,10 @@ private:
     const Clip* find_clip(const State& s);
     const Clip* find_clip(const State& s, const std::string& name) const;
     void start_graph(const CharacterRef& c, State& s);
+    void find_bones(const CharacterRef& c, State& s) const;
+    void apply_ik(const Scene& scene, entt::entity e, const CharacterRef& c, State& s, float dt);
+    std::optional<glm::dvec3> look_target(const Scene& scene, const CharacterRef& c,
+                                          const State& s) const;
     State& graph_state(entt::entity e);
 
     std::map<std::string, std::shared_ptr<Model>> models_;  // by content id
@@ -132,6 +170,8 @@ private:
     std::map<std::string, std::shared_ptr<const AnimGraph>> graphs_;  // by JSON text
     std::vector<Event> events_;
     bool automatic_ = true;
+    Ground ground_;
+    entt::entity player_ = entt::null;
     std::vector<std::pair<entt::entity, glm::vec3>> motions_;
 };
 

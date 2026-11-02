@@ -392,8 +392,23 @@ public:
         for (entt::entity e : reg.view<const midgard::EntityInfo>()) {
             const auto& t = reg.get<midgard::Transform>(e);
             const midgard::Material* m = reg.try_get<midgard::Material>(e);
+            // A character: what it plays, and where some of its bones are.
+            nlohmann::json character;
+            if (reg.all_of<midgard::CharacterRef>(e)) {
+                const midgard::Characters& c = game_.characters();
+                nlohmann::json bones = nlohmann::json::object();
+                for (const midgard::HumanBone b :
+                     {midgard::HumanBone::Hips, midgard::HumanBone::Head,
+                      midgard::HumanBone::LeftFoot, midgard::HumanBone::RightFoot,
+                      midgard::HumanBone::LeftHand, midgard::HumanBone::RightHand})
+                    if (const auto p = c.bone_position(game_.scene(), e, b))
+                        bones[midgard::human_bone_name(b)] = {p->x, p->y, p->z};
+                const std::string state = c.state_of(e);
+                character = {{"state", state.empty() ? c.clip_of(e) : state}, {"bones", bones}};
+            }
             entities.push_back(
                 {{"id", reg.get<midgard::EntityInfo>(e).id},
+                 {"character", character},
                  {"name", reg.get<midgard::EntityInfo>(e).name},
                  {"position", {t.position.x, t.position.y, t.position.z}},
                  {"rotation", {t.rotation.x, t.rotation.y, t.rotation.z}},

@@ -80,6 +80,15 @@ class Entity:
     def animation_state(self, layer: int = 0) -> str:
         """The state a layer of the character's animation graph is in ("" without a graph)."""
 
+    def look_at(self, target: tuple[float, float, float] | Entity | None) -> None:
+        """Turns the character's head to a point or an entity (a character's head), no further
+        than its look limit; None: back to what its component's "ik" says."""
+
+    def reach(self, hand: str, target: tuple[float, float, float] | Entity | None,
+              weight: float = 1.0) -> None:
+        """Reaches a hand ("left" or "right") to a point or where an entity is, by a weight (0 to
+        1), easing in; None: lets it go. ValueError for another hand."""
+
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
 

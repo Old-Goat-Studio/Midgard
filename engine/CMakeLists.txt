@@ -125,7 +125,7 @@ target_link_libraries(midgard_nav PUBLIC midgard_core glm::glm
 
 # ---- anim: skeletons, clips and poses (ozz-animation; milestone 5.13) ------------------------
 find_package(ozz-animation CONFIG REQUIRED)
-add_library(midgard_anim STATIC anim/src/animation.cpp anim/src/humanoid.cpp)
+add_library(midgard_anim STATIC anim/src/animation.cpp anim/src/humanoid.cpp anim/src/ik.cpp)
 target_include_directories(midgard_anim PUBLIC anim/include)
 target_link_libraries(midgard_anim PUBLIC midgard_core glm::glm
                       PRIVATE ozz::animation_offline ozz::animation ozz::base midgard_options)
@@ -367,6 +367,8 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_animation.cpp
         tests/test_humanoid.cpp
         tests/test_anim_graph.cpp
+        tests/test_ik.cpp
+        tests/test_character_ik.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp

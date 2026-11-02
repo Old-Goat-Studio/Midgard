@@ -131,9 +131,12 @@ public:
     // (the pose itself unchanged); the rest pose so; and a pose made from joints so.
     void sample_local(const Clip& clip, float time, bool loop, std::vector<JointTransform>& out);
     const std::vector<JointTransform>& rest_local() const { return rest_local_; }
+    std::vector<JointTransform> local() const;  // the pose's own (for IK: midgard/ik.h)
     void set_local(std::span<const JointTransform> joints);
-    // Moves the whole pose (the motion a clip's root has, kept out of it).
+    // Moves the whole pose by `by` from where its joints put it (the motion a clip's root has,
+    // kept out of it), until the next sample or rest; set_local keeps it.
     void shift(const glm::vec3& by);
+    const glm::vec3& offset() const { return offset_; }
 
 private:
     struct Impl;
@@ -141,6 +144,7 @@ private:
     const Skeleton* skeleton_;
     std::vector<glm::mat4> model_;
     std::vector<JointTransform> rest_local_;
+    glm::vec3 offset_{0.0f};
     void to_model();
 };
 

@@ -27,6 +27,7 @@
 #include "midgard/animation.h"
 #include "midgard/det.h"
 #include "midgard/humanoid.h"
+#include "midgard/ik.h"
 #include "midgard/jobs.h"
 #include "midgard/nav_world.h"
 #include "midgard/navmesh.h"
@@ -349,6 +350,53 @@ std::vector<Benchmark> benchmarks() {
                  for (size_t i = 0; i < crowd->players.size(); ++i) {
                      const auto step = crowd->players[i].update(1.0f / 60.0f, crowd->poses[i]);
                      g_sink = g_sink + step.events.size();
+                 }
+             };
+         }});
+    list.push_back(
+        {"anim.ik_32_characters",
+         "32 characters' IK on a frame (55 joints: both legs to the ground with their soles "
+         "along it, the head looking, a hand reaching; one thread)",
+         30, [](std::string&) -> std::function<void()> {
+             struct Crowd {
+                 midgard::RawSkeleton raw = bench_humanoid();
+                 midgard::Skeleton skeleton = midgard::Skeleton::build(raw);
+                 std::vector<midgard::JointTransform> rest;
+                 int thigh[2], calf[2], foot[2], head, upper, lower, hand;
+             };
+             auto c = std::make_shared<Crowd>();
+             midgard::Pose pose(c->skeleton);
+             c->rest = pose.local();
+             const auto j = [&](const char* name) { return c->skeleton.find(name); };
+             for (int side = 0; side < 2; ++side) {
+                 const std::string s = side ? "_r" : "_l";
+                 c->thigh[side] = j(("thigh" + s).c_str());
+                 c->calf[side] = j(("calf" + s).c_str());
+                 c->foot[side] = j(("foot" + s).c_str());
+             }
+             c->head = j("head");
+             c->upper = j("upperarm_r");
+             c->lower = j("lowerarm_r");
+             c->hand = j("hand_r");
+             return [c] {
+                 for (int i = 0; i < 32; ++i) {
+                     std::vector<midgard::JointTransform> local = c->rest;
+                     const std::span<const int> parents = c->skeleton.parents();
+                     const float lift = 0.02f * float(i % 5);
+                     for (int side = 0; side < 2; ++side) {
+                         const auto model = midgard::model_of(local, parents);
+                         glm::vec3 target(model[size_t(c->foot[side])][3]);
+                         target.y += side ? lift : -lift;
+                         midgard::two_bone_ik(local, parents, c->thigh[side], c->calf[side],
+                                              c->foot[side], target,
+                                              target + glm::vec3(0, 0.5f, 0.5f));
+                         midgard::orient(local, parents, c->foot[side], {0, 1, 0},
+                                         glm::normalize(glm::vec3(0, 1, -0.3f)), 0.6f);
+                     }
+                     midgard::aim(local, parents, c->head, {0, 0, 1}, {1, 1.6f, 1}, 1.2f);
+                     midgard::two_bone_ik(local, parents, c->upper, c->lower, c->hand,
+                                          {-0.3f, 1.1f, 0.3f}, {-0.3f, 0.8f, -0.5f});
+                     g_sink = g_sink + size_t(local[size_t(c->hand)].rotation.w * 100.0f);
                  }
              };
          }});
