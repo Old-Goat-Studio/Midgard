@@ -2840,3 +2840,76 @@ TEST_CASE("a terrain scene's navigation is made round the player and follows scu
     CHECK(length(round->points) > length(straight->points) + 2.0);
     for (const glm::vec3& p : round->points) CHECK(std::abs(t.above_ground(glm::dvec3(p))) < 0.6);
 }
+
+namespace {
+
+// 5.12's exit: the player (an agent) follows a path from `from` to `to` over a world's terrain:
+// it gets there, never through the ground. Returns where it stopped.
+glm::dvec3 walk_path(const char* body, const char* terrain, const glm::dvec3& start,
+                     const glm::dvec3& end) {
+    const std::string player = R"(NULL, '{"transform": {"position": [)" + std::to_string(start.x) +
+                               ", " + std::to_string(start.y) + ", " + std::to_string(start.z) +
+                               R"(]}, "player": {}}')";
+    TestPackage pkg({{"e1_player", player}},
+                    std::string(R"({"body": )") + body + R"(, "terrain": )" + terrain + "}");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (int i = 0; i < 60; ++i) {  // (lands first)
+        game.update(actions, 1.0f / 60.0f);
+        game.stream_navigation(true);
+    }
+    const midgard::Terrain& t = game.terrain()->terrain();
+    const entt::entity e = game.scene().find("e1_player");
+    const auto path = game.find_path(game.scene().world_position(e), end);
+    REQUIRE(path);
+    REQUIRE(path->complete);
+    std::vector<glm::dvec3> points(path->points.begin(), path->points.end());
+    game.follow_path(points);
+    double lowest = 1e9;
+    for (int frame = 0; frame < 60 * 60 && game.following_path(); ++frame) {
+        game.update(actions, 1.0f / 60.0f);
+        game.stream_navigation(true);
+        lowest = std::min(lowest, t.above_ground(game.scene().world_position(e)));
+    }
+    CHECK_FALSE(game.following_path());  // got there within a minute
+    CHECK(lowest > -0.3);                // never through the ground
+    const glm::dvec3 stopped = game.scene().world_position(e);
+    CHECK(glm::distance(stopped, end) < 1.5);
+    return stopped;
+}
+
+}  // namespace
+
+TEST_CASE("the exit: an agent walks across a planet's face edge") {
+    const char* body = R"({"id": "p", "shape": "sphere_outside", "radius": 1000, "seed": 12,
+                           "origin": [0, -1000, 0]})";
+    const char* terrain = R"({"seed": 12, "height_scale": 4, "base": 6})";
+    const midgard::Terrain t(midgard::body_from_json(nlohmann::json::parse(body)),
+                             midgard::terrain_from_json(nlohmann::json::parse(terrain)));
+    const auto ground = [&](double u, double v, double above) {  // face 2's frame, continued
+        midgard::SurfacePoint s = midgard::cube_surface(midgard::cube_direction(2, u, v));
+        s.height = t.height(s.face, s.u, s.v) + above;
+        return t.body().position(s);
+    };
+    // From 24 m short of face 2's edge to 31 m past it, onto the next face.
+    const glm::dvec3 start = ground(0.985, 0.5, 1.0), end = ground(1.02, 0.5, 0.0);
+    REQUIRE(t.body().surface(start).face == 2);
+    REQUIRE(t.body().surface(end).face != 2);
+    const glm::dvec3 stopped = walk_path(body, terrain, start, end);
+    CHECK(t.body().surface(stopped).face == t.body().surface(end).face);
+}
+
+TEST_CASE("the exit: an agent walks across a cylinder's join") {
+    const char* body = R"({"id": "h", "shape": "curved_cylinder", "radius": 1000,
+                           "length": 5000, "seed": 13, "origin": [0, 1000, 0]})";
+    const char* terrain = R"({"seed": 13, "height_scale": 4, "base": 6})";
+    const midgard::Terrain t(midgard::body_from_json(nlohmann::json::parse(body)),
+                             midgard::terrain_from_json(nlohmann::json::parse(terrain)));
+    const auto ground = [&](double u, double v, double above) {
+        return t.body().position({0, u, v, t.height(0, u, v) + above});
+    };
+    // From 19 m before the join (u = 0.997) to 25 m past it (u = 0.004).
+    const glm::dvec3 start = ground(0.997, 0.5, 1.0), end = ground(0.004, 0.5, 0.0);
+    const glm::dvec3 stopped = walk_path(body, terrain, start, end);
+    CHECK(t.body().surface(stopped).u < 0.01);  // over the join, not the long way round
+}

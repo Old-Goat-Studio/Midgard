@@ -207,3 +207,97 @@ TEST_CASE("paths cross a planet's face edges and corners") {
         check_sphere(R"({"id": "w", "shape": "sphere_inside", "radius": 2000, "seed": 10})");
     }
 }
+
+namespace {
+
+// A path all the way round a closed loop of ground points, leg by leg as an agent walking it
+// would ask (the navigation made round each leg's start): every leg complete, and ending
+// where it should.
+void round_and_round(const midgard::Terrain& t, const std::vector<glm::dvec3>& loop,
+                     midgard::JobSystem& jobs) {
+    midgard::NavWorld nav(t, &jobs);
+    nav.set_range(70.0);
+    int legs = 0;
+    double length = 0.0;
+    for (size_t i = 0; i < loop.size(); ++i) {
+        const glm::dvec3 a = loop[i], b = loop[(i + 1) % loop.size()];
+        nav.update(a, true);
+        const auto path = nav.find_path(a, b);
+        REQUIRE(path);
+        CHECK(path->complete);
+        // (A flat-wrap cylinder's room repeats: the end may be a whole way round over.)
+        glm::dvec3 end(path->points.back());
+        if (t.body().shape.kind() == midgard::Shape::Kind::FlatCylinder) {
+            const double round = t.body().shape.face_size().x;
+            end.x -= round * std::round((end.x - b.x) / round);
+        }
+        CHECK(glm::distance(end, b) < 1.0);
+        for (size_t k = 1; k < path->points.size(); ++k)
+            length += glm::distance(path->points[k - 1], path->points[k]);
+        ++legs;
+    }
+    MESSAGE(legs << " legs, " << length << " m");
+}
+
+// Ground points every `step` metres round a circle of directions (cos t a + sin t b) from a
+// sphere's centre.
+std::vector<glm::dvec3> sphere_loop(const midgard::Terrain& t, const glm::dvec3& a,
+                                    const glm::dvec3& b, double step) {
+    const double radius = t.body().shape.radius();
+    const int n = int(std::ceil(2.0 * 3.141592653589793 * radius / step));
+    std::vector<glm::dvec3> out;
+    for (int i = 0; i < n; ++i) {
+        const double angle = 2.0 * 3.141592653589793 * i / n;
+        midgard::SurfacePoint s = midgard::cube_surface(std::cos(angle) * a + std::sin(angle) * b);
+        s.height = t.height(s.face, s.u, s.v);
+        out.push_back(t.body().position(s));
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("the exit: a path all the way round each shape") {
+    midgard::JobSystem jobs;
+    const char* hills = R"({"seed": 14, "height_scale": 4, "base": 6})";
+    SUBCASE("a planet: round its equator, and over both poles") {
+        const midgard::Terrain t = make_terrain(
+            R"({"id": "p", "shape": "sphere_outside", "radius": 1000, "seed": 14})", hills);
+        round_and_round(t, sphere_loop(t, {1, 0, 0}, {0, 0, 1}, 60.0), jobs);
+        round_and_round(t, sphere_loop(t, {1, 0, 0}, {0, 1, 0}, 60.0), jobs);
+    }
+    SUBCASE("a hollow world") {
+        const midgard::Terrain t = make_terrain(
+            R"({"id": "w", "shape": "sphere_inside", "radius": 1000, "seed": 14})", hills);
+        round_and_round(t, sphere_loop(t, {1, 0, 0}, {0, 0, 1}, 60.0), jobs);
+    }
+    SUBCASE("inside a cylinder, and a flat-wrap cylinder") {
+        for (const char* body :
+             {R"({"id": "h", "shape": "curved_cylinder", "radius": 1000, "length": 5000,
+                  "seed": 14})",
+              R"({"id": "s", "shape": "flat_cylinder", "circumference": 6000, "length": 5000,
+                  "seed": 14})"}) {
+            const midgard::Terrain t = make_terrain(body, hills);
+            const double round = t.body().shape.face_size().x;
+            std::vector<glm::dvec3> loop;
+            const int n = int(std::ceil(round / 60.0));
+            for (int i = 0; i < n; ++i) loop.push_back(ground(t, 0, double(i) / n, 0.5));
+            round_and_round(t, loop, jobs);
+        }
+    }
+    SUBCASE("a bounded area: a loop round its middle") {
+        const midgard::Terrain t = make_terrain(
+            R"({"id": "a", "shape": "bounded_area", "width": 2000, "length": 2000, "seed": 14})",
+            hills);
+        std::vector<glm::dvec3> loop;
+        const auto side = [&](double u0, double v0, double u1, double v1) {
+            for (int i = 0; i < 10; ++i)
+                loop.push_back(ground(t, 0, u0 + (u1 - u0) * i / 10.0, v0 + (v1 - v0) * i / 10.0));
+        };
+        side(0.3, 0.3, 0.7, 0.3);  // 800 m sides, 80 m legs
+        side(0.7, 0.3, 0.7, 0.7);
+        side(0.7, 0.7, 0.3, 0.7);
+        side(0.3, 0.7, 0.3, 0.3);
+        round_and_round(t, loop, jobs);
+    }
+}

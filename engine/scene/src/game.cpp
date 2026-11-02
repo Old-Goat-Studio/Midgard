@@ -173,6 +173,8 @@ void Game::update(const Actions& actions, float dt) {
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
     if (change_)  // (on the way to another scene: the player stands still)
         physics_->set_player_intent(glm::vec3(0.0f), false);
+    else if (!route_.empty())  // following a path
+        physics_->set_player_intent(route_walk(camera_->player()), false);
     else
         physics_->set_player_intent(intent.walk, intent.jump);
     update_ground();               // solid ground under the player before it moves
@@ -579,6 +581,30 @@ std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const
                                  glm::vec3(glm::dvec3(b) - origin) + lift, colour});
         }
     return lines;
+}
+
+void Game::follow_path(std::vector<glm::dvec3> points) {
+    route_ = std::move(points);
+}
+
+glm::vec3 Game::route_walk(entt::entity player) {
+    if (player == entt::null || !scene_.registry.valid(player)) {
+        route_.clear();
+        return glm::vec3(0.0f);
+    }
+    const glm::dvec3 at = scene_.world_position(player);
+    const glm::dvec3 up = scene_.settings.body ? scene_.settings.body->up(at) : glm::dvec3(0, 1, 0);
+    // The next point not yet reached (within reach along the ground: heights differ a little).
+    while (!route_.empty()) {
+        glm::dvec3 d = route_.front() - at;
+        d -= glm::dot(d, up) * up;
+        if (glm::length(d) > (route_.size() == 1 ? 0.3 : 0.8)) {
+            const Player& p = scene_.registry.get<Player>(player);
+            return glm::vec3(glm::normalize(d) * double(p.speed));
+        }
+        route_.erase(route_.begin());
+    }
+    return glm::vec3(0.0f);
 }
 
 void Game::stream_navigation(bool wait) {

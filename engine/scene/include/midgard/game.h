@@ -161,6 +161,10 @@ public:
     // (midgard/nav_world.h). Update moves it on; stream_navigation(true) makes it all now.
     const NavWorld* nav_world() const { return nav_world_.get(); }
     void stream_navigation(bool wait = false);
+    // The player walks along these points at its speed (instead of following the controls)
+    // until it reaches the last; an empty list stops it. Tests, cutscenes, click-to-move.
+    void follow_path(std::vector<glm::dvec3> points);
+    bool following_path() const { return !route_.empty(); }
     // The way from one place to another, in the scene's frame, or none (either too far from
     // anywhere walkable, or no navigation in this scene).
     std::optional<NavMesh::Path> find_path(const glm::dvec3& from, const glm::dvec3& to) const;
@@ -262,6 +266,8 @@ private:
     const render::MeshData* outline_mesh(const std::string& asset) const;
     // (Last: made from the terrain and the job system, so it goes before them.)
     std::unique_ptr<NavWorld> nav_world_;
+    std::vector<glm::dvec3> route_;  // follow_path's points still ahead
+    glm::vec3 route_walk(entt::entity player);
     void load_scene(const std::string& scene, const std::string& arrival);
     void update_scene_change(float dt);
     void update_exits(const Actions& actions);
