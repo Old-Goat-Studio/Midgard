@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -30,6 +31,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -155,10 +158,24 @@ class ImportDialog(QDialog):
             row.addWidget(button)
         clear = QPushButton("Clear")
         clear.clicked.connect(self.sources.clear)
+        clear.clicked.connect(self.refresh_pictures)
         row.addWidget(clear)
         layout.addLayout(row)
         self.details = AssetDetailsForm(type_)
         layout.addWidget(self.details)
+        # A texture set: each picture (by its own name) and its role; saved <name>_<role>.
+        self.pictures_label = QLabel("Each picture's role (saved as the asset's name and its "
+                                     "role; those not used are left out):")
+        self.pictures_label.setWordWrap(True)
+        self.pictures = QTableWidget(0, 2)
+        self.pictures.setHorizontalHeaderLabels(["Picture", "Role"])
+        self.pictures.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch)
+        self.pictures.verticalHeader().setVisible(False)
+        layout.addWidget(self.pictures_label)
+        layout.addWidget(self.pictures)
+        self.details.type.currentIndexChanged.connect(lambda _i: self.refresh_pictures())
+        self.refresh_pictures()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         self.import_button = buttons.addButton("Import", QDialogButtonBox.ButtonRole.AcceptRole)
         buttons.accepted.connect(lambda: self.do_import())
@@ -166,12 +183,50 @@ class ImportDialog(QDialog):
         layout.addWidget(buttons)
         self.resize(520, 560)
 
+    def refresh_pictures(self) -> None:
+        """The pictures to give roles to (a texture import's), each with its guessed role."""
+        texture = self.details.type.currentData() == "textures"
+        found = []
+        if texture and self.sources.count():
+            try:
+                found = lib.images_in(self.source_paths())
+            except (lib.LibraryError, OSError):
+                found = []
+        self.pictures.setRowCount(len(found))
+        for row, rel in enumerate(found):
+            item = QTableWidgetItem(rel)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.pictures.setItem(row, 0, item)
+            role = lib.guess_role(rel) or ("color" if len(found) == 1 else "")
+            combo = QComboBox()
+            for key, label in lib.TEXTURE_ROLES.items():
+                combo.addItem(label, key)
+            combo.setCurrentIndex(combo.findData(role))
+            self.pictures.setCellWidget(row, 1, combo)
+        show = texture and bool(found)
+        self.pictures.setVisible(show)
+        self.pictures_label.setVisible(show)
+
+    def roles(self) -> dict[str, str] | None:
+        """Each picture's role, as chosen (None: not a texture import)."""
+        if self.details.type.currentData() != "textures" or not self.pictures.rowCount():
+            return None
+        return {self.pictures.item(r, 0).text(): self.pictures.cellWidget(r, 1).currentData()
+                for r in range(self.pictures.rowCount())}
+
+    def set_role(self, picture: str, role: str) -> None:
+        for r in range(self.pictures.rowCount()):
+            if self.pictures.item(r, 0).text() == picture:
+                combo = self.pictures.cellWidget(r, 1)
+                combo.setCurrentIndex(combo.findData(role))
+
     def add_sources(self, paths) -> None:
         for p in paths:
             self.sources.addItem(str(p))
         if not self.details.name.text() and paths:  # (named after the first, to begin with)
             stem = Path(paths[0]).stem.replace("_", " ").replace("-", " ").strip()
             self.details.name.setText(stem[:1].upper() + stem[1:])
+        self.refresh_pictures()
 
     def _add_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Files to import")
@@ -214,7 +269,7 @@ class ImportDialog(QDialog):
             self.imported = lib.import_assets(
                 self.project, sources, v["type"], v["name"], category=v["category"],
                 description=v["description"], licence=v["licence"], author=v["author"],
-                source=v["source"], title=v["title"], split=split)
+                source=v["source"], title=v["title"], split=split, roles=self.roles())
         except (lib.LibraryError, OSError) as e:
             QMessageBox.warning(self, "Import", f"Not imported: {e}")
             return False
@@ -327,6 +382,20 @@ class AssetPlayer(QWidget):
         self.picture = QLabel()
         self.picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.picture.setMinimumSize(*PLAYER_SIZE)
+        # What to show, when the asset holds more than one thing (and how: a material's shape).
+        top = QHBoxLayout()
+        self.choose = QComboBox()
+        self.choose.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.choose.setToolTip("Which of the asset's files to show or play")
+        self.choose.currentIndexChanged.connect(lambda _i: self.show_choice())
+        top.addWidget(self.choose, 1)
+        self.shape = QComboBox()
+        self.shape.addItem("Sphere", "prim_sphere")
+        self.shape.addItem("Tile", "prim_plane")
+        self.shape.currentIndexChanged.connect(
+            lambda _i: self.kind == "material" and self._show_material())
+        top.addWidget(self.shape)
+        layout.addLayout(top)
         layout.addWidget(self.picture, 1)
         controls = QHBoxLayout()
         self.play_button = QPushButton("Play")
@@ -357,29 +426,108 @@ class AssetPlayer(QWidget):
 
     # ---- what it shows ----------------------------------------------------------------------
     def show_asset(self, asset: lib.Asset | None) -> None:
+        """An asset: the list of what it holds that can be shown (when more than one), and
+        the first of them shown."""
         self.stop()
         self.asset = asset
+        self.choose.blockSignals(True)
+        self.choose.clear()
+        for label, kind, path in self.choices(asset):
+            self.choose.addItem(label, (kind, path))
+        self.choose.blockSignals(False)
+        self.choose.setVisible(self.choose.count() > 1)
+        self.show_choice()
+
+    def choices(self, asset: lib.Asset | None) -> list[tuple[str, str, Path | None]]:
+        """What can be shown of an asset: (label, kind, file). A texture set: its whole
+        material first, then each picture by its role."""
+        if asset is None:
+            return []
+        files = [p for p in asset.file_paths() if p.is_file()]
+        out: list[tuple[str, str, Path | None]] = []
+        if asset.type == "textures":
+            roles = {p: r for r, p in lib.texture_set(asset).items()}
+            if roles:
+                out.append(("Material (all maps)", "material", None))
+            for p in files:
+                if p.suffix.lower() in (".png", ".jpg", ".jpeg"):
+                    role = lib.TEXTURE_ROLES.get(roles.get(p, ""), "")
+                    label = f"{role}: {p.name}" if p in roles else p.name
+                    out.append((label, "picture", p))
+            return out
+        for p in files:
+            ext = p.suffix.lower()
+            if asset.type in ("models", "objects") and ext in lib.MODEL_SUFFIXES:
+                out.append((p.name, "model", p))
+            elif ext in lib.AUDIO:
+                out.append((p.name, "sound", p))
+            elif asset.type == "fonts" and ext in (".ttf", ".otf"):
+                out.append((p.name, "font", p))
+        if not out:  # (pictures, when that is all it has)
+            out = [(p.name, "picture", p) for p in files
+                   if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
+        return out
+
+    def show_choice(self) -> None:
+        """What is chosen in the list, shown (or played)."""
+        self.stop()
         self.kind = ""
         self.picture.clear()
         self.clip.clear()
-        files = asset.file_paths() if asset else []
-        by_ext = {p.suffix.lower(): p for p in reversed(files)}  # (the first of each)
-        if asset is None:
+        choice = self.choose.currentData()
+        if self.asset is None:
             self.picture.setText("")
-        elif asset.type in ("models", "objects") and (by_ext.get(".glb") or by_ext.get(".gltf")):
-            self._show_model(by_ext.get(".glb") or by_ext.get(".gltf"))
-        elif any(e in by_ext for e in lib.AUDIO):
-            self._show_sound(next(by_ext[e] for e in lib.AUDIO if e in by_ext))
-        elif asset.type == "fonts" and (by_ext.get(".ttf") or by_ext.get(".otf")):
-            self._show_font(by_ext.get(".ttf") or by_ext.get(".otf"))
-        elif any(e in by_ext for e in (".png", ".jpg", ".jpeg")):
-            self._show_picture(next(by_ext[e] for e in (".png", ".jpg", ".jpeg") if e in by_ext))
-        else:
+        elif choice is None:
             self.picture.setText("(nothing to show)")
+        else:
+            kind, path = choice
+            {"model": self._show_model, "sound": self._show_sound, "font": self._show_font,
+             "picture": self._show_picture}.get(kind, lambda _p: self._show_material())(path)
         self.play_button.setVisible(self.kind in ("model", "sound"))
         self.clip.setVisible(self.kind == "model" and self.clip.count() > 0)
         self.position.setVisible(self.kind == "sound")
         self.time.setVisible(self.kind == "sound")
+        self.shape.setVisible(self.kind == "material")
+
+    def _show_material(self) -> None:
+        """A texture set as a material on a sphere (or a tile), every picture in its role."""
+        from types import SimpleNamespace
+
+        from .. import meshes, objects, textures
+        library = next((p for p in self.asset.folder.parents if p.name == lib.FOLDER), None)
+        if library is None:
+            self.picture.setText("(not in a library)")
+            return
+        root = library.parent
+        slots = lib.material_textures(SimpleNamespace(root=root), self.asset)
+        renderer = objects.shared_renderer()
+        shape = self.shape.currentData()
+        material = {"color": [1.0, 1.0, 1.0, 1.0], "roughness": 1.0, "textures": slots}
+        try:
+            renderer.send(shape, meshes.to_glb(meshes.primitive(shape)))
+            for texture in slots.values():
+                data = textures.texture_data(root, texture)
+                if data is not None:
+                    renderer.send(texture, data)
+        except RuntimeError as e:
+            self.picture.setText(f"Not shown: {e}")
+            return
+        flat = shape == "prim_plane"
+        image = renderer.render("library-material",
+                                [{"name": "preview", "components": {"mesh": {"asset": shape},
+                                                                    "material": material}}],
+                                [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], *PLAYER_SIZE,
+                                yaw=0.0 if flat else 35.0, pitch=60.0 if flat else 22.0,
+                                zoom=0.8 if flat else 1.0)
+        if image is None:  # (no engine here: its colour picture, as it is)
+            colour = lib.texture_set(self.asset).get("color")
+            if colour is not None:
+                self._show_picture(colour)
+            else:
+                self.picture.setText(f"Not shown: {renderer.error or 'nothing to draw'}")
+            return
+        self.kind = "material"
+        self.picture.setPixmap(QPixmap.fromImage(image))
 
     def _show_picture(self, path: Path) -> None:
         pixmap = QPixmap(str(path))

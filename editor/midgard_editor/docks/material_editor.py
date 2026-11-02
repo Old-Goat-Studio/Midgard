@@ -429,7 +429,23 @@ class MaterialEditor(QWidget):
     def choose_from_library(self, slot: str) -> None:
         picker = self.library_picker(slot)
         if picker.exec() and picker.chosen is not None:
-            self.use_image(slot, picker.chosen)  # (in the project: used where it is)
+            self.use_library_picture(slot, picker.chosen)
+
+    def use_library_picture(self, slot: str, file: Path) -> None:
+        """A picture from the Asset Library: a texture set's fills every slot from its roles
+        (one step); a picture on its own, the slot (used where it is)."""
+        from .. import asset_library
+        asset = asset_library.asset_of(self.project, file)
+        slots = {}
+        if asset is not None and asset.type == "textures":
+            slots = asset_library.material_textures(self.project, asset)
+        if len(slots) < 2:
+            self.use_image(slot, file)
+            return
+        m = self.material()
+        self._push({**m, "textures": {**m.get("textures", {}), **slots}},
+                   "textures " + ", ".join(sorted(slots)),
+                   f"textures ({asset.name})")
 
     def reset_to_original(self) -> None:
         original = self.target.original()

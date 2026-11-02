@@ -231,3 +231,76 @@ def test_a_pack_of_models_split_one_asset_each(project, tmp_path):
     lib.remove(moves)
     whole = lib.import_assets(project, [pack], "models", "Heroes", split=False)
     assert len(whole.assets) == 1 and len(whole.assets[0].files) == 5
+
+
+# ---- texture sets: each picture's role (FixMe) -------------------------------------------------
+def grey_picture(folder, name: str, value: int, size: int = 4):
+    from PySide6.QtGui import QColor, QImage
+    image = QImage(size, size, QImage.Format.Format_RGB32)
+    image.fill(QColor(value, value, value))
+    path = folder / name
+    image.save(str(path))
+    return path
+
+
+def test_roles_are_guessed_from_the_common_packs_names():
+    guesses = {
+        "Rock001_2K_Color.jpg": "color", "rock_diff_2k.png": "color",
+        "T_Wall_BaseColor.png": "color", "wood_albedo.png": "color",
+        "Rock001_2K_NormalGL.jpg": "normal", "rock_nor_gl_2k.png": "normal",
+        "Rock001_2K_Roughness.jpg": "roughness", "rock_rough_2k.png": "roughness",
+        "Metal_Metalness.png": "metallic", "Rock001_2K_AmbientOcclusion.jpg": "occlusion",
+        "rock_ao_2k.png": "occlusion", "lamp_emissive.png": "emissive",
+        "rock_arm_2k.png": "metallic_roughness",
+        "Rock001_2K_Displacement.jpg": "", "rock_disp_2k.png": "", "preview.png": "",
+    }
+    for name, role in guesses.items():
+        assert lib.guess_role(name) == role, name
+
+
+def test_a_texture_set_imported_by_role(project, tmp_path):
+    import zipfile
+
+    from PySide6.QtGui import QColor, QImage
+    folder = tmp_path / "src"
+    folder.mkdir()
+    grey_picture(folder, "Rock_Color.png", 128)
+    grey_picture(folder, "Rock_NormalGL.png", 200)
+    grey_picture(folder, "Rock_Roughness.png", 90)
+    grey_picture(folder, "Rock_Metalness.png", 30)
+    grey_picture(folder, "Rock_Displacement.png", 60)
+    pack = tmp_path / "rock.zip"
+    with zipfile.ZipFile(pack, "w") as z:
+        for p in folder.iterdir():
+            z.write(p, f"Rock/{p.name}")
+        z.writestr("Rock/LICENSE.txt", "CC0")
+    found = lib.images_in([pack])
+    assert sorted(found) == ["Rock_Color.png", "Rock_Displacement.png", "Rock_Metalness.png",
+                             "Rock_NormalGL.png", "Rock_Roughness.png"]  # (top folder off)
+    roles = {rel: lib.guess_role(rel) for rel in found}
+    result = lib.import_assets(project, [pack], "textures", "Mossy Rock", category="stone",
+                               roles=roles)
+    asset = result.assets[0]
+    assert sorted(f["path"] for f in asset.files) == [
+        "LICENSE.txt", "mossy_rock_color.png", "mossy_rock_metallic.png",
+        "mossy_rock_metallic_roughness.png", "mossy_rock_normal.png", "mossy_rock_roughness.png"]
+    assert result.skipped == [("Rock_Displacement.png", "not used")]
+    # The combined picture: roughness in green, metallic in blue.
+    combined = QImage(str(asset.folder / "mossy_rock_metallic_roughness.png"))
+    pixel = QColor(combined.pixel(1, 1))
+    assert (pixel.green(), pixel.blue()) == (90, 30)
+    assert set(lib.texture_set(asset)) == {"color", "normal", "roughness", "metallic",
+                                           "metallic_roughness"}
+    slots = lib.material_textures(project, asset)
+    assert slots["base_color"] == "tex:library/textures/stone/mossy_rock/mossy_rock_color.png"
+    assert set(slots) == {"base_color", "normal", "metallic_roughness"}
+    assert slots["normal"].endswith("?linear")  # (not colour)
+
+
+def test_two_pictures_with_one_role_are_refused(project, tmp_path):
+    a, b = grey_picture(tmp_path, "a.png", 10), grey_picture(tmp_path, "b.png", 20)
+    with pytest.raises(lib.LibraryError, match="a.png and b.png are both colour"):
+        lib.import_asset(project, [a, b], "textures", "Twins", category="wood",
+                         roles={"a.png": "color", "b.png": "color"})
+    single = lib.import_asset(project, [a], "textures", "Plain", category="wood")
+    assert lib.texture_set(single) == {"color": single.folder / "a.png"}  # (a lone one)

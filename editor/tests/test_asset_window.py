@@ -136,7 +136,8 @@ def test_the_player_shows_pictures_sounds_and_fonts(project, qtbot, tmp_path):
     picture = lib.import_asset(project, [a_picture(tmp_path, "slate.png")], "textures", "Slate",
                                category="stone")
     player.show_asset(picture)
-    assert player.kind == "picture" and not player.picture.pixmap().isNull()
+    assert player.kind in ("material", "picture")  # (its material; its picture without the engine)
+    assert not player.picture.pixmap().isNull()
     assert not player.play_button.isVisible()
     (tmp_path / "chime.ogg").write_bytes(OGG)
     sound = lib.import_asset(project, [tmp_path / "chime.ogg"], "effects", "Chime")
@@ -249,7 +250,7 @@ def test_the_library_picker_and_a_library_texture(project, qtbot, tmp_path):
     qtbot.addWidget(picker)
     assert not picker.use_button.isEnabled()
     picker.pick(0)
-    assert picker.use_button.isEnabled() and picker.player.kind == "picture"
+    assert picker.use_button.isEnabled() and picker.player.kind in ("material", "picture")
     picker.accept_current()
     assert picker.chosen == texture.folder / "slate.png"
     entity = Entity(project.next_entity_id(), "Floor", None, {"transform": {},
@@ -352,3 +353,96 @@ def test_the_dialog_imports_a_pack_skipping_what_it_cant_use(project, qtbot, tmp
                                                               "Heroes: Superhero male"]
     assert "skipped 1 file: 1 .fbx" in dialog.last_report
     assert "hero/hero.fbx: models can't use .fbx" in dialog.last_report
+
+
+# ---- texture roles and the player's list (FixMe 3-4) -------------------------------------------
+def a_rock_pack(tmp_path):
+    from test_asset_library import grey_picture
+    pack = tmp_path / "rock"
+    pack.mkdir()
+    for name, value in (("Rock_Color.png", 128), ("Rock_NormalGL.png", 200),
+                        ("Rock_Roughness.png", 90), ("Rock_Displacement.png", 60)):
+        grey_picture(pack, name, value)
+    return pack
+
+
+def test_the_dialog_asks_each_pictures_role(project, qtbot, tmp_path, monkeypatch):
+    said = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: said.append(a[2]))
+    dialog = ImportDialog(project, "textures")
+    qtbot.addWidget(dialog)
+    dialog.quiet = True
+    dialog.add_sources([a_rock_pack(tmp_path)])
+    assert not dialog.pictures.isHidden()
+    assert dialog.roles() == {"Rock_Color.png": "color", "Rock_NormalGL.png": "normal",
+                              "Rock_Roughness.png": "roughness", "Rock_Displacement.png": ""}
+    dialog.set_role("Rock_NormalGL.png", "color")  # two colours: refused, said
+    assert not dialog.do_import()
+    assert said and "both colour" in said[0]
+    dialog.set_role("Rock_NormalGL.png", "normal")
+    dialog.details.name.setText("Grey Rock")
+    dialog.details.category.setCurrentIndex(dialog.details.category.findData("stone"))
+    assert dialog.do_import()
+    assert sorted(f["path"] for f in dialog.asset.files) == [
+        "grey_rock_color.png", "grey_rock_metallic_roughness.png", "grey_rock_normal.png",
+        "grey_rock_roughness.png"]
+    assert "Rock_Displacement.png: not used" in dialog.last_report
+    # Not textures: no roles asked.
+    dialog.details.type.setCurrentIndex(dialog.details.type.findData("images"))
+    assert dialog.pictures.isHidden() and dialog.roles() is None
+
+
+def test_the_player_lists_what_an_asset_holds(project, qtbot, tmp_path):
+    from test_asset_library import grey_picture
+    from test_characters import SAMPLES
+
+    from midgard_editor.docks.asset_window import AssetPlayer
+    pack = a_rock_pack(tmp_path)
+    rock = lib.import_asset(project, [pack], "textures", "Rock", category="stone",
+                            roles={r: lib.guess_role(r) for r in lib.images_in([pack])})
+    player = AssetPlayer()
+    qtbot.addWidget(player)
+    player.show()
+    player.show_asset(rock)
+    labels = [player.choose.itemText(i) for i in range(player.choose.count())]
+    assert labels[0] == "Material (all maps)"
+    assert "Colour: rock_color.png" in labels and "Normal: rock_normal.png" in labels
+    assert player.choose.isVisible() and player.kind in ("material", "picture")
+    player.choose.setCurrentIndex(labels.index("Normal: rock_normal.png"))
+    assert player.kind == "picture"
+    # A model asset of two models: either one.
+    two = lib.import_asset(project, [SAMPLES / "superhero_male.glb",
+                                     SAMPLES / "animation_library.glb"], "models", "Two")
+    player.show_asset(two)
+    assert [player.choose.itemText(i) for i in range(player.choose.count())] == [
+        "animation_library.glb", "superhero_male.glb"]
+    # One thing only: no list.
+    lone = lib.import_asset(project, [grey_picture(tmp_path, "lone.png", 5)], "images", "Lone")
+    player.show_asset(lone)
+    assert not player.choose.isVisible() and player.kind == "picture"
+    player.drop()
+
+
+def test_the_material_editor_takes_a_whole_texture_set(project, qtbot, tmp_path):
+    from test_asset_library import grey_picture
+
+    from midgard_editor.docks.material_editor import EntityMaterial, MaterialEditor
+    from midgard_editor.scene_model import Entity
+    pack = a_rock_pack(tmp_path)
+    rock = lib.import_asset(project, [pack], "textures", "Rock", category="stone",
+                            roles={r: lib.guess_role(r) for r in lib.images_in([pack])})
+    entity = Entity(project.next_entity_id(), "Wall", None, {"transform": {},
+                                                            "mesh": {"asset": "prim_cube"}})
+    project.put_entity(entity)
+    editor = MaterialEditor(project, EntityMaterial(project, entity.id))
+    qtbot.addWidget(editor)
+    editor.use_library_picture("normal", rock.folder / "rock_normal.png")
+    slots = project.entity(entity.id).components["material"]["textures"]
+    assert set(slots) == {"base_color", "normal", "metallic_roughness"}
+    assert slots["base_color"].endswith("rock_color.png")
+    project.undo_stack.undo()  # (one step)
+    assert "textures" not in project.entity(entity.id).components.get("material", {})
+    lone = lib.import_asset(project, [grey_picture(tmp_path, "plain.png", 7)], "textures",
+                            "Plain", category="wood")
+    editor.use_library_picture("emissive", lone.folder / "plain.png")
+    assert set(project.entity(entity.id).components["material"]["textures"]) == {"emissive"}

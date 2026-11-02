@@ -464,14 +464,15 @@ def _make(project, files: list[tuple[Path, str]], type_: str, name: str, *, cate
 
 def import_asset(project, sources: list[Path], type_: str, name: str, *, category: str = "",
                  description: str = "", licence: str = "CC0-1.0", author: str = "",
-                 source: str = "", title: str = "", today: str = "") -> Asset:
+                 source: str = "", title: str = "", today: str = "",
+                 roles: dict[str, str] | None = None) -> Asset:
     """An asset copied into the library from files, a folder or a zip (never linked). Files it
     can't use (another type, or not what their name says) are left out (asset.skipped says
     which); text about it (a licence, a read-me) is kept. LibraryError says why nothing could
     be imported: nothing is left behind then."""
     result = import_assets(project, sources, type_, name, category=category,
                            description=description, licence=licence, author=author,
-                           source=source, title=title, today=today, split=False)
+                           source=source, title=title, today=today, split=False, roles=roles)
     if not result.assets:
         why = result.refused[0][1] if result.refused else "there is nothing to import"
         if result.skipped:
@@ -545,10 +546,12 @@ def pretty(stem: str) -> str:
 def import_assets(project, sources: list[Path], type_: str, name: str, *, category: str = "",
                   description: str = "", licence: str = "CC0-1.0", author: str = "",
                   source: str = "", title: str = "", today: str = "",
-                  split: bool = False) -> ImportResult:
+                  split: bool = False, roles: dict[str, str] | None = None) -> ImportResult:
     """Files, folders and zips into the library: one asset, or (split, for models) one for each
     model with what goes with it and the pack's text. Files it can't use are skipped, and why;
-    an asset that can't be made is refused (and why) without stopping the rest."""
+    an asset that can't be made is refused (and why) without stopping the rest. `roles` (for
+    textures: each picture's path, as images_in gives them, to its role) renames the pictures
+    <name>_<role> and leaves out those not used."""
     import tempfile
     if type_ not in TYPES:
         raise LibraryError(f"there is no asset type '{type_}'")
@@ -565,6 +568,9 @@ def import_assets(project, sources: list[Path], type_: str, name: str, *, catego
         if not files:
             raise LibraryError("there is nothing to import")
         kept, result.skipped = _sorted(files, type_)
+        if roles is not None and type_ == "textures":
+            kept, unused = _named_by_role(kept, roles, name, Path(scratch))
+            result.skipped += unused
         groups = [(name, kept)]
         if split and type_ in ("models", "objects"):
             found = _model_groups(kept)
@@ -722,3 +728,137 @@ def add_samples(project) -> tuple[list[Asset], list[str]]:
         except LibraryError as e:
             left.append(f"{name}: {e}")
     return added, left
+
+
+# ---- texture sets: each picture's role (FixMe) ---------------------------------------------------
+# The roles a texture asset's pictures can have (what Midgard's materials use), and the material
+# slot each fills. "" is "not used": the picture is left out.
+TEXTURE_ROLES: dict[str, str] = {
+    "color": "Colour",
+    "normal": "Normal",
+    "roughness": "Roughness",
+    "metallic": "Metallic",
+    "metallic_roughness": "Metallic & roughness (combined)",
+    "occlusion": "Ambient occlusion",
+    "emissive": "Emissive",
+    "": "Not used (left out)",
+}
+ROLE_SLOTS = {"color": "base_color", "normal": "normal",
+              "metallic_roughness": "metallic_roughness", "occlusion": "occlusion",
+              "emissive": "emissive"}
+# Words in file names that say a role (the common packs' namings: ambientCG, Poly Haven...).
+_ROLE_WORDS = (
+    ("metallic_roughness", ("metallicroughness", "roughnessmetallic", "orm", "arm", "mr")),
+    ("color", ("color", "colour", "basecolor", "basecolour", "albedo", "diffuse", "diff",
+               "col", "base", "basecol")),
+    ("normal", ("normal", "normalgl", "normaldx", "nor", "norm", "nrm", "nor_gl", "normal_gl")),
+    ("roughness", ("roughness", "rough", "rgh")),
+    ("metallic", ("metallic", "metalness", "metal", "met")),
+    ("occlusion", ("ambientocclusion", "occlusion", "ao")),
+    ("emissive", ("emissive", "emission", "emit", "glow")),
+)
+
+
+def guess_role(filename: str) -> str:
+    """A picture's role from its name ("rock_Color.png": "color"; "" when it doesn't say, or
+    it is a kind Midgard doesn't use, like a height map)."""
+    words = [w for w in re.split(r"[^a-z0-9]+", Path(filename).stem.lower()) if w]
+    joined = "".join(words)
+    for role, names in _ROLE_WORDS:
+        if any(w in names for w in words) or any(joined.endswith(n) for n in names
+                                                    if len(n) > 4):
+            return role
+    return ""
+
+
+def images_in(sources: list[Path]) -> list[str]:
+    """The pictures files, folders and zips hold, by their path in an asset (as an import would
+    put them), to choose their roles before importing."""
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="midgard_images_") as scratch:
+        return [rel for p, rel in _gathered([Path(s) for s in sources], Path(scratch))
+                if p.suffix.lower() in IMAGES]
+
+
+def _combined(roughness: Path | None, metallic: Path | None, out: Path) -> Path | None:
+    """The combined picture the engine reads (glTF's: roughness in green, metallic in blue),
+    from separate roughness and metallic maps (a missing one: rough, not metal)."""
+    from PySide6.QtGui import QImage
+    maps = {k: QImage(str(p)) for k, p in (("r", roughness), ("m", metallic)) if p is not None}
+    if not maps or any(img.isNull() for img in maps.values()):
+        return None
+    size = next(iter(maps.values())).size()
+    w, h = size.width(), size.height()
+
+    def grey(img: QImage | None, fill: int) -> bytes:  # one byte a pixel, rows unpadded
+        if img is None:
+            return bytes([fill]) * (w * h)
+        g = img.scaled(size).convertToFormat(QImage.Format.Format_Grayscale8)
+        data, stride = bytes(g.constBits()), g.bytesPerLine()
+        return b"".join(data[y * stride:y * stride + w] for y in range(h))
+
+    pixels = bytearray(w * h * 4)  # (RGB32 in memory: blue, green, red, alpha)
+    pixels[0::4] = grey(maps.get("m"), 0)
+    pixels[1::4] = grey(maps.get("r"), 255)
+    pixels[3::4] = bytes([255]) * (w * h)
+    image = QImage(bytes(pixels), w, h, w * 4, QImage.Format.Format_RGB32)
+    return out if image.save(str(out)) else None
+
+
+def _named_by_role(files: list[tuple[Path, str]], roles: dict[str, str], name: str,
+                   scratch: Path) -> tuple[list[tuple[Path, str]], list[tuple[str, str]]]:
+    """A texture set's files renamed by role (<name>_<role>.<ext>), pictures "not used" left
+    out, and the combined metallic & roughness made from separate maps. LibraryError if two
+    pictures have the same role."""
+    base = slug(name)
+    out, skipped, by_role = [], [], {}
+    for p, rel in files:
+        if p.suffix.lower() not in IMAGES:
+            out.append((p, rel))  # (text about it, kept as it is)
+            continue
+        role = roles.get(rel, "")
+        if not role:
+            skipped.append((rel, "not used"))
+            continue
+        if role not in TEXTURE_ROLES:
+            raise LibraryError(f"'{role}' isn't a role a picture can have")
+        if role in by_role:
+            raise LibraryError(f"{by_role[role][1]} and {rel} are both "
+                               f"{TEXTURE_ROLES[role].lower()}: one picture each")
+        by_role[role] = (p, rel)
+        out.append((p, f"{base}_{role}{p.suffix.lower()}"))
+    if ("roughness" in by_role or "metallic" in by_role) and "metallic_roughness" not in by_role:
+        made = _combined(by_role.get("roughness", (None,))[0],
+                         by_role.get("metallic", (None,))[0],
+                         scratch / f"{base}_metallic_roughness.png")
+        if made is not None:
+            out.append((made, made.name))
+    return out, skipped
+
+
+def texture_set(asset: Asset) -> dict[str, Path]:
+    """A texture asset's pictures by role: from their names (<name>_<role>), or guessed from
+    them; a lone picture is its colour."""
+    pictures = [p for p in asset.file_paths() if p.suffix.lower() in IMAGES and p.is_file()]
+    found: dict[str, Path] = {}
+    for p in pictures:
+        stem = p.stem.lower()
+        named = sorted((r for r in TEXTURE_ROLES if r), key=len, reverse=True)  # (longest first)
+        role = next((r for r in named if stem.endswith("_" + r)), "") or guess_role(p.name)
+        if role and role not in found:
+            found[role] = p
+    if not found and len(pictures) == 1:
+        found["color"] = pictures[0]
+    return found
+
+
+def material_textures(project, asset: Asset) -> dict[str, str]:
+    """A texture set as a material's texture slots ("tex:" ids, used where they are)."""
+    from . import textures
+    root = Path(project.root).resolve()
+    slots = {}
+    for role, path in texture_set(asset).items():
+        slot = ROLE_SLOTS.get(role)
+        if slot is not None:
+            slots[slot] = textures.ref(path.resolve().relative_to(root).as_posix(), slot)
+    return slots
