@@ -405,7 +405,18 @@ public:
                                  {"color", {light.color.x, light.color.y, light.color.z}},
                                  {"ambient", {light.ambient.x, light.ambient.y, light.ambient.z}}};
         const auto phase = game_.scene().solar_phase;
+        // The world as generated (midgard/world_type.h): the editor's preview must match it.
+        nlohmann::json world_hash;
+        const midgard::SceneSettings& settings = game_.scene().settings;
+        if (settings.body && settings.terrain) {
+            char hex[17];
+            std::snprintf(hex, sizeof hex, "%016llx",
+                          static_cast<unsigned long long>(midgard::world_hash(
+                              midgard::Terrain(*settings.body, *settings.terrain))));
+            world_hash = hex;
+        }
         return nlohmann::json{{"entities", entities},
+                              {"world_hash", world_hash},
                               {"sky", {sky.x, sky.y, sky.z}},
                               {"time", game_.time().now()},
                               {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},

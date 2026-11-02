@@ -370,6 +370,26 @@ the sample world types on every target.
 **Exit:** you build a world type in the editor, preview it from several seeds, and the game
 generates the same world.
 
+### 5.11a Scenes · M
+Added on 1 November 2026: a game is many scenes, and designers move players between them without
+scripting. This brings forward the room-change core of 5.16.
+- **Scenes in the project:** a Scenes list (new, rename, duplicate, delete) and the starting
+  scene; the cook packs every scene.
+- **One scene open at a time** in the editor: every panel, the undo history and the viewport work
+  on the open scene, and Play starts from it.
+- **Arrival points** (markers placed in a scene) and the **Scene Exit** component: a target scene
+  and arrival point, used by walking into it (a door, an atmosphere's edge), by using it (a lever,
+  a teleport pad) or only from a script. The cook checks that targets exist.
+- **Scene changes in the game:** fade out, unload the scene being left, load the target and
+  stream the ground round the arrival point **before** fading in, carrying the character across.
+- Script API: `midgard.rooms.change(scene, arrival)`, `on_room_enter`, `on_room_exit`.
+
+**Tests:** scene editing undo and redo; cook checks for missing targets; a change never shows an
+unloaded area; state carries across; memory returns to its baseline after many changes; Play from
+any scene.
+**Exit:** the player walks through a door from one scene into another and back, and uses a
+teleport pad, in the editor's Play and an exported game.
+
 ### 5.12 Navigation · M
 - Recast navigation meshes per chunk, built in the chunk's local frame on the job system, and
   linked across chunk edges, the cylinder join and cube-sphere faces.
@@ -438,6 +458,7 @@ feels-like temperature against the Python reference; particle budget on the phon
 then normal weather resumes, and the forecast predicted the natural changes.
 
 ### 5.16 Rooms and system space · M
+- (Scenes and the room-change core come in 5.11a; this adds system space and the exits to it.)
 - **Room manager:** one loaded play space at a time per player, and **room changes** that fade,
   save and unload the room being left, carry the character across, and stream the arrival area
   **before** fading in.
@@ -495,6 +516,7 @@ the slopes, with biome ambience and music. 📱 All of it runs on your phone.
 | 5.9 Terrain: rectangular grids | 5.3, 5.4 | 5.8 |
 | 5.10 Terrain: cube-sphere | 5.9 | 5.12 |
 | 5.11 World Type editor | 5.9, 5.10 | 5.13 |
+| 5.11a Scenes | 5.4, 5.9 | 5.12 |
 | 5.12 Navigation | 5.9 (5.10 for spheres) | 5.10, 5.11 |
 | 5.13 Character animation | 5.5, 5.6 | 5.11, 5.14 |
 | 5.14 Audio | 5.4, 5.7 | 5.13, 5.15 |
@@ -509,7 +531,8 @@ In stages (each stage starts when the one before it is done):
 2. **On the foundation:** 5.5 Objects, 5.6 Cameras, 5.7 Calendar.
 3. **The world's surface:** 5.8 Environment, 5.9 Terrain (rectangles), then 5.10 Terrain
    (spheres).
-4. **On the terrain:** 5.11 World types, 5.12 Navigation, 5.13 Animation, 5.14 Audio.
+4. **On the terrain:** 5.11 World types, 5.11a Scenes, 5.12 Navigation, 5.13 Animation,
+   5.14 Audio.
 5. **Bringing it together:** 5.15 Weather, 5.16 Rooms, 5.17 Shaders.
 6. **5.18** Sample and exit.
 

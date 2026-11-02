@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -241,7 +242,14 @@ class WorldTypePanel(QWidget):
         bar.addWidget(self.name, 1)
         self.version = QLabel()
         bar.addWidget(self.version)
-        for text, slot in (("New", self.new_world_type), ("Duplicate", self.duplicate),
+        new = QPushButton("New")
+        self.new_menu = QMenu(new)
+        self.new_menu.addAction("Empty…", lambda: self.new_world_type())
+        self.samples_menu = self.new_menu.addMenu("From Sample")
+        self.new_menu.aboutToShow.connect(self._fill_samples_menu)
+        new.setMenu(self.new_menu)
+        bar.addWidget(new)
+        for text, slot in (("Duplicate", self.duplicate),
                            ("Delete", lambda: self.delete_world_type(confirm=True))):
             b = QPushButton(text)
             b.clicked.connect(lambda _=False, s=slot: s())
@@ -777,7 +785,8 @@ class WorldTypePanel(QWidget):
             self._placements_changed()
 
     # ---- world types ------------------------------------------------------------------------
-    def new_world_type(self, name: str | None = None) -> str | None:
+    def new_world_type(self, name: str | None = None, recipe: dict | None = None) -> str | None:
+        """A new world type: the 5.9 ground as a graph, or the recipe given."""
         if self.project is None:
             return None
         if name is None:
@@ -785,12 +794,36 @@ class WorldTypePanel(QWidget):
             if not ok or not name.strip():
                 return None
         world_type = world_types.new_id(self.project, name)
-        terrain: dict = {}
+        if recipe is None:
+            recipe = {"terrain": {}, "graph": classic_graph({})}
         self.project.undo_stack.push(world_types.SaveRecipeCommand(
-            self.project, world_type, {"terrain": terrain, "graph": classic_graph(terrain)},
-            name.strip()))
+            self.project, world_type, copy.deepcopy(recipe), name.strip()))
         self._reload(keep=world_type)
         return world_type
+
+    def new_from_sample(self, sample_id: str) -> str | None:
+        """A new world type from one of the engine's samples (midgard/world_type.h), with the
+        preview set to the sample's own world."""
+        midgard = engine.module()
+        sample = next((x for x in midgard.sample_world_types() if x["id"] == sample_id), None) \
+            if midgard else None
+        if sample is None:
+            return None
+        world_type = self.new_world_type(sample["name"], json.loads(sample["recipe"]))
+        body = json.loads(sample["body"])
+        self.preview_shape.setCurrentIndex(max(self.preview_shape.findData(body["shape"]), 0))
+        self.preview_size.setValue(float(body.get("radius", body.get("width",
+                                                                     body.get("circumference")))))
+        self.seed.setValue(int(body["seed"]))
+        return world_type
+
+    def _fill_samples_menu(self) -> None:
+        self.samples_menu.clear()
+        midgard = engine.module()
+        for sample in midgard.sample_world_types() if midgard else []:
+            self.samples_menu.addAction(sample["name"],
+                                        lambda i=sample["id"]: self.new_from_sample(i))
+        self.samples_menu.setEnabled(bool(self.samples_menu.actions()))
 
     def duplicate(self) -> str | None:
         if self.project is None or self.world_type is None:

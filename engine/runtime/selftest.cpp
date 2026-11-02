@@ -23,6 +23,7 @@
 #include "midgard/shape.h"
 #include "midgard/terrain.h"
 #include "midgard/version.h"
+#include "midgard/world_type.h"
 #include "test_scenes.h"
 #ifdef MIDGARD_HAS_SCRIPTING
 #include "midgard/script.h"
@@ -115,6 +116,11 @@ Check terrain_check() {
         return {"Terrain", Status::Fail,
                 format("cube-sphere fingerprint %016" PRIx64 ", expected %016" PRIx64, spheres,
                        kSphereTerrainFingerprint)};
+    const std::uint64_t samples = sample_world_types_fingerprint();
+    if (samples != kSampleWorldTypesFingerprint)
+        return {"Terrain", Status::Fail,
+                format("sample world types' fingerprint %016" PRIx64 ", expected %016" PRIx64,
+                       samples, kSampleWorldTypesFingerprint)};
     const Terrain terrain(body_from_json(nlohmann::json::parse(
                               R"({"id": "a", "shape": "bounded_area", "width": 3000,
                                   "length": 2000, "seed": 7})")),
@@ -130,10 +136,11 @@ Check terrain_check() {
     }
     std::sort(times.begin(), times.end());
     const double median = times[times.size() / 2];
-    const std::string detail = format(
-        "chunk hashes on four shapes: %016" PRIx64 ", on planets and hollow worlds: %016" PRIx64
-        ", world graphs: %016" PRIx64 "; a chunk in %.2f ms (budget %.2f)",
-        got, spheres, graphs, median, kChunkBudgetMs);
+    const std::string detail =
+        format("chunk hashes on four shapes: %016" PRIx64
+               ", on planets and hollow worlds: %016" PRIx64 ", world graphs: %016" PRIx64
+               ", sample world types: %016" PRIx64 "; a chunk in %.2f ms (budget %.2f)",
+               got, spheres, graphs, samples, median, kChunkBudgetMs);
     return {"Terrain", median <= kChunkBudgetMs ? Status::Pass : Status::Fail, detail};
 }
 

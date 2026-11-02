@@ -84,4 +84,24 @@ struct WorldTypeVersion {
 std::vector<WorldTypeVersion> load_world_type_versions(const std::filesystem::path& database);
 std::vector<std::string> world_type_problems(const std::vector<WorldTypeVersion>& versions);
 
+// A world's hash: its sea level, and the ground as generated (without sculpting) on every
+// face: the heights of its coarsest chunks' corners and a detail chunk in the middle, the
+// temperature and biome on a 17 x 17 grid, and the objects placed in three tiles. The editor's
+// preview and the game must agree on it (the runtime's --dump-scene shows the game's as
+// "world_hash").
+std::uint64_t world_hash(const Terrain& terrain);
+
+// The sample world types (the World Type editor's New from Sample): each one's recipe, and a
+// world it suits with a seed, as JSON.
+struct SampleWorldType {
+    std::string id, name;
+    std::string recipe;  // JSON
+    std::string body;    // JSON, with its seed
+};
+const std::vector<SampleWorldType>& sample_world_types();
+// The world_hash of each sample's world, hashed together: kSampleWorldTypesFingerprint on every
+// target. The self-test checks it on devices.
+std::uint64_t sample_world_types_fingerprint();
+inline constexpr std::uint64_t kSampleWorldTypesFingerprint = 0x97cff531b6ff08c1ULL;
+
 }  // namespace midgard

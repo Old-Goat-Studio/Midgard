@@ -14,6 +14,7 @@
 //   _midgard.encode_texture(path, srgb)
 //                                 an image file (PNG, JPEG) as KTX2 bytes with mipmaps
 #include <array>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -277,6 +278,33 @@ PYBIND11_MODULE(_midgard, m) {
         "A world's map (midgard/world_map.h) from scene settings with a body and the ground's "
         "settings themselves, in a projection (none: the shape's usual one): RGBA8, top row "
         "first.");
+    m.def(
+        "world_hash",
+        [map_terrain](const std::string& settings_json) {
+            const auto terrain = map_terrain(settings_json);
+            char hex[17];
+            std::snprintf(hex, sizeof hex, "%016llx",
+                          static_cast<unsigned long long>(midgard::world_hash(*terrain)));
+            return std::string(hex);
+        },
+        py::arg("settings_json"),
+        "A world's hash (midgard/world_type.h) from scene settings with a body and the ground's "
+        "settings, as 16 hex digits: the game's --dump-scene shows the same as \"world_hash\".");
+    m.def(
+        "sample_world_types",
+        [] {
+            py::list out;
+            for (const midgard::SampleWorldType& s : midgard::sample_world_types()) {
+                py::dict d;
+                d["id"] = s.id;
+                d["name"] = s.name;
+                d["recipe"] = s.recipe;
+                d["body"] = s.body;
+                out.append(d);
+            }
+            return out;
+        },
+        "The sample world types: [{id, name, recipe (JSON), body (JSON, with its seed)}].");
     m.def(
         "map_projections",
         [](const std::string& shape) {

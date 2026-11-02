@@ -170,3 +170,22 @@ TEST_CASE("a world's map: projections for each shape, coloured by the ground") {
     CHECK(cross[3] == 0);                                 // a corner: transparent
     CHECK(cross[(size_t(15) * 40 + 15) * 4 + 3] == 255);  // +Z's cell
 }
+
+TEST_CASE("the sample world types: sound, suited to their worlds, the same on every target") {
+    for (const midgard::SampleWorldType& s : midgard::sample_world_types()) {
+        CAPTURE(s.id);
+        const midgard::WorldRecipe r = midgard::recipe_from_json(json::parse(s.recipe));
+        const json body_json = json::parse(s.body);
+        const midgard::Body body = midgard::body_from_json(body_json);
+        CHECK(midgard::recipe_problems(r).empty());
+        CHECK(midgard::recipe_misfits(r, body).empty());
+        midgard::WorldRef world{s.id, 1, body_json.at("seed").get<std::uint64_t>()};
+        const midgard::Terrain a(body, midgard::world_terrain(r, world));
+        const midgard::Terrain again(body, midgard::world_terrain(r, world));
+        CHECK(midgard::world_hash(a) == midgard::world_hash(again));
+        world.seed = *world.seed + 1;  // another seed: another world
+        CHECK(midgard::world_hash(a) !=
+              midgard::world_hash(midgard::Terrain(body, midgard::world_terrain(r, world))));
+    }
+    CHECK(midgard::sample_world_types_fingerprint() == midgard::kSampleWorldTypesFingerprint);
+}
