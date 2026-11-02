@@ -125,7 +125,7 @@ target_link_libraries(midgard_nav PUBLIC midgard_core glm::glm
 
 # ---- anim: skeletons, clips and poses (ozz-animation; milestone 5.13) ------------------------
 find_package(ozz-animation CONFIG REQUIRED)
-add_library(midgard_anim STATIC anim/src/animation.cpp)
+add_library(midgard_anim STATIC anim/src/animation.cpp anim/src/humanoid.cpp)
 target_include_directories(midgard_anim PUBLIC anim/include)
 target_link_libraries(midgard_anim PUBLIC midgard_core glm::glm
                       PRIVATE ozz::animation_offline ozz::animation ozz::base midgard_options)
@@ -364,6 +364,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_navmesh.cpp
         tests/test_nav_world.cpp
         tests/test_animation.cpp
+        tests/test_humanoid.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp
@@ -379,7 +380,8 @@ if(MIDGARD_BUILD_TESTS)
         doctest::doctest
         unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
     target_compile_definitions(midgard_tests PRIVATE
-        MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema")
+        MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema"
+        MIDGARD_ASSETS_DIR="${PROJECT_SOURCE_DIR}/assets")
     if(NOT CMAKE_CROSSCOMPILING)
         add_test(NAME midgard_tests COMMAND midgard_tests)
     endif()

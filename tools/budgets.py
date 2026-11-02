@@ -5,8 +5,9 @@
     python tools/budgets.py results.json [--platform ci-linux-release]
 
 A benchmark fails when its median is over its budget plus the file's margin, and when it has no
-budget at all (every new benchmark needs one). In GitHub Actions each timing is also posted as a
-notice and added to the job summary, so CI keeps a record of every run.
+budget at all (every new benchmark needs one). In GitHub Actions each failure is posted as an
+error, every timing in one notice (GitHub keeps only ten notices a step), and all of them are
+added to the job summary, so CI keeps a record of every run.
 """
 import argparse
 import json
@@ -53,6 +54,7 @@ def report(checks: list[Check], platform: str) -> int:
     github = bool(os.environ.get("GITHUB_ACTIONS"))
     rows = ["| Benchmark | Measured (ms) | Budget (ms) | Result |", "|---|---:|---:|---|"]
     failures = 0
+    notes = []  # (one notice for them all)
     for c in checks:
         measured = "-" if c.measured is None else f"{c.measured:.3f}"
         budget = "-" if c.budget is None else f"{c.budget:g}"
@@ -63,12 +65,14 @@ def report(checks: list[Check], platform: str) -> int:
         rows.append(f"| {c.name} | {measured} | {budget} | {c.status} |")
         bad = c.status in ("over", "no budget")
         failures += bad
-        if github:
-            kind = "error" if bad else "notice"
-            detail = (f"{measured} ms against a budget of {budget} ms (limit {c.limit:.3f} ms)"
-                      if c.limit is not None and c.measured is not None
-                      else c.note or c.status)
-            print(f"::{kind} title=Budget {c.name} on {platform}::{c.status}: {detail}")
+        detail = (f"{measured} ms against a budget of {budget} ms (limit {c.limit:.3f} ms)"
+                  if c.limit is not None and c.measured is not None
+                  else c.note or c.status)
+        notes.append(f"{c.name}: {c.status}: {detail}")
+        if github and bad:
+            print(f"::error title=Budget {c.name} on {platform}::{c.status}: {detail}")
+    if github and notes:  # (a line each: newlines escaped, as GitHub reads them)
+        print(f"::notice title=Budgets on {platform}::" + "%0A".join(notes))
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as f:

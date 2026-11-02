@@ -158,3 +158,58 @@ def test_the_viewport_draws_characters():
     assert view.render()
     assert lit(view.read_pixels()) > empty + 500, "the character is drawn"
     view.detach()
+
+
+@needs_engine
+def test_the_engine_finds_a_models_humanoid_bones():
+    midgard = engine.module()
+    bones = midgard.humanoid_bones()
+    assert len(bones) == 22 and bones[0] == ("hips", True) and ("upper_chest", False) in bones
+    rig = midgard.skinned_info((SAMPLES / "superhero_male.glb").read_bytes())["rig"]
+    assert rig["hips"] == "pelvis" and rig["left_upper_arm"] == "upperarm_l"
+    assert rig["right_toes"] == "ball_r" and rig["head"] == "Head"
+    assert set(rig) == {name for name, _ in bones}
+
+
+def test_a_designers_rig_choices_over_the_names():
+    from midgard_editor.docks.rig_dialog import effective_rig, missing_bones, rig_summary
+    bones = [("hips", True), ("head", True), ("neck", False)]
+    found = {"hips": "pelvis", "head": "Head", "neck": ""}
+    assert missing_bones(effective_rig(found, {}), bones) == []
+    assert effective_rig(found, {"head": "pelvis"}) == {"hips": "", "head": "pelvis", "neck": ""}
+    assert effective_rig(found, {"hips": ""})["hips"] == ""
+    assert rig_summary(found, {}, bones).startswith("Humanoid")
+    assert "no hips" in rig_summary(found, {"hips": ""}, bones)
+
+
+@needs_engine
+def test_the_inspector_names_a_characters_rig(project, qtbot):
+    from midgard_editor.docks.entity_form import EntityForm
+    from midgard_editor.docks.rig_dialog import FOUND
+    with_samples(project)
+    entity = Entity(project.next_entity_id(), "Hero", None, {
+        "transform": {}, "character": {"model": HERO, "clips": LIBRARY, "clip": "Walk_Loop"}})
+    project.put_entity(entity)
+    form = EntityForm(project, entity.id)
+    qtbot.addWidget(form)
+    assert form.character_rig.text().startswith("Humanoid")
+    dialog = form.rig_dialog()
+    qtbot.addWidget(dialog)
+    assert dialog.chosen() == {}  # (all as the names say)
+    assert dialog.combos["hips"].currentData() is FOUND
+    assert "pelvis" in dialog.combos["hips"].currentText()
+    dialog.combos["hips"].setCurrentIndex(dialog.combos["hips"].findData(""))
+    dialog.combos["head"].setCurrentIndex(dialog.combos["head"].findData("neck_01"))
+    assert dialog.chosen() == {"hips": "", "head": "neck_01"}
+    assert "no hips" in dialog.summary.text()
+    form._character_value("rig", dialog.chosen(), "rig")  # (as OK does)
+    assert project.entity(entity.id).components["character"]["rig"] == {
+        "hips": "", "head": "neck_01"}
+    assert "no hips" in form.character_rig.text()
+    again = form.rig_dialog()  # (shows the choices made)
+    qtbot.addWidget(again)
+    assert again.combos["head"].currentData() == "neck_01"
+    form._character_value("rig", {}, "rig")  # all back to the names: no rig kept
+    assert "rig" not in project.entity(entity.id).components["character"]
+    project.undo_stack.undo()
+    assert project.entity(entity.id).components["character"]["rig"]["hips"] == ""

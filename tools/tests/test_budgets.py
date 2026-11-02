@@ -42,7 +42,9 @@ def test_over_budget_fails_on_purpose(tmp_path, capsys, monkeypatch):
     assert run(tmp_path, {"fast": {"median_ms": 12.6}, "gpu": {"median_ms": 5.0}}) == 1
     out = capsys.readouterr().out
     assert "::error title=Budget fast on default::over: 12.600 ms against a budget of 10 ms" in out
-    assert "::notice title=Budget gpu on default::ok" in out
+    notice = next(line for line in out.splitlines() if line.startswith("::notice"))
+    assert notice.startswith("::notice title=Budgets on default::fast: over: 12.600 ms")
+    assert "%0Agpu: ok: 5.000 ms" in notice  # (every timing in one notice)
     assert "| fast | 12.600 | 10 | over |" in summary.read_text("utf-8")
 
 
@@ -75,5 +77,5 @@ def test_the_real_budgets_cover_every_benchmark():
 def test_skipped_notices_give_the_reason(tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     run(tmp_path, {"gpu": {"skipped": "no Vulkan: no device"}})
-    assert "::notice title=Budget gpu on default::skipped: no Vulkan: no device" in \
+    assert "::notice title=Budgets on default::gpu: skipped: no Vulkan: no device" in \
         capsys.readouterr().out

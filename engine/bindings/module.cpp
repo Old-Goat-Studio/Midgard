@@ -32,6 +32,7 @@
 #include "midgard/environment.h"
 #include "midgard/gltf.h"
 #include "midgard/gltf_skin.h"
+#include "midgard/humanoid.h"
 #include "midgard/link.h"
 #include "midgard/model.h"
 #include "midgard/pak.h"
@@ -297,6 +298,15 @@ PYBIND11_MODULE(_midgard, m) {
                 out["joints"] = model.skeleton.names;
                 out["clips"] = clips;
                 out["vertices"] = model.mesh.vertices.size();
+                // Its humanoid bones as its joint names say ("" for a bone they don't name).
+                const midgard::HumanoidMap rig = midgard::map_humanoid(model.skeleton);
+                py::dict bones;
+                for (int b = 0; b < midgard::kHumanBones; ++b) {
+                    const int j = rig.joint[size_t(b)];
+                    bones[midgard::human_bone_name(midgard::HumanBone(b))] =
+                        j < 0 ? std::string() : model.skeleton.names[size_t(j)];
+                }
+                out["rig"] = bones;
                 return out;
             } catch (const std::exception& e) {
                 throw py::value_error(e.what());
@@ -304,7 +314,20 @@ PYBIND11_MODULE(_midgard, m) {
         },
         py::arg("glb"),
         "A skinned glTF's skeleton and clips (midgard/gltf_skin.h): {joints: [names], clips: "
-        "[{name, duration}], vertices}. ValueError if it isn't one.");
+        "[{name, duration}], vertices, rig: {humanoid bone: joint found by name, or ''}}. "
+        "ValueError if it isn't one.");
+    m.def(
+        "humanoid_bones",
+        [] {
+            py::list out;
+            for (int b = 0; b < midgard::kHumanBones; ++b) {
+                const auto bone = midgard::HumanBone(b);
+                out.append(py::make_tuple(midgard::human_bone_name(bone),
+                                          midgard::human_bone_required(bone)));
+            }
+            return out;
+        },
+        "The humanoid rig's bones (midgard/humanoid.h), in order: [(name, required)].");
     m.def(
         "world_hash",
         [map_terrain](const std::string& settings_json) {

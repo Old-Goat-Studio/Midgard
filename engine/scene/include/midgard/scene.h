@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -177,6 +178,9 @@ struct CharacterRef {
     std::string clip;   // the clip it plays (empty: the first)
     float speed = 1.0f;
     bool loop = true;
+    // The model's humanoid bones where its joint names don't say (bone name -> joint name; an
+    // empty joint name: it hasn't that bone). Clips from another file are retargeted to it.
+    std::map<std::string, std::string> rig;
 };
 
 enum class ExitActivation { Enter, Use, Script };

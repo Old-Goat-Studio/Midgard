@@ -162,6 +162,9 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         ch.clip = c.value("clip", std::string());
         ch.speed = std::clamp(c.value("speed", 1.0f), 0.0f, 10.0f);
         ch.loop = c.value("loop", true);
+        if (const auto rig = c.find("rig"); rig != c.end() && rig->is_object())
+            for (const auto& [bone, joint] : rig->items())
+                if (joint.is_string()) ch.rig[bone] = joint.get<std::string>();
         reg.emplace_or_replace<CharacterRef>(e, ch);
     } else if (name == "arrival") {
         reg.emplace_or_replace<Arrival>(e, Arrival{c.value("name", std::string())});

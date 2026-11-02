@@ -4,21 +4,27 @@
 //   "character": {"model": "asset:characters/hero.glb",   a skinned glTF in the package
 //                 "clips": "asset:characters/moves.glb",  where its clips come from (none: the
 //                                                         model's own), by joint name
-//                 "clip": "Walk_Loop", "speed": 1.0}      what it plays, and how fast
+//                 "clip": "Walk_Loop", "speed": 1.0,      what it plays, and how fast
+//                 "rig": {"head": "Helmet"}}              its humanoid bones, where its joint
+//                                                         names don't say (midgard/humanoid.h)
 //
 // Each model is read once: its skeleton, clips, inverse bind matrices and skinned mesh (on the
-// GPU once uploaded). Each update moves every character's clip on and samples its pose; each
-// frame draws it skinned, with the entity's material.
+// GPU once uploaded). Clips from another file are retargeted to the model when both are
+// humanoids (so they keep the model's proportions), else used by joint name. Each update moves
+// every character's clip on and samples its pose; each frame draws it skinned, with the entity's
+// material.
 #pragma once
 
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
 #include "midgard/animation.h"
+#include "midgard/humanoid.h"
 #include "midgard/materials.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
@@ -57,6 +63,7 @@ public:
 private:
     struct Model {
         Skeleton skeleton;
+        RawSkeleton raw;          // (for retargeting)
         std::vector<Clip> clips;  // its own
         std::vector<int> skin_to_skeleton;
         std::vector<glm::mat4> inverse_binds;
@@ -69,6 +76,7 @@ private:
     };
     struct State {
         std::string model, clips, clip;
+        std::map<std::string, std::string> rig;
         const Clip* playing = nullptr;
         std::shared_ptr<Model> m;
         std::unique_ptr<Pose> pose;
@@ -78,8 +86,9 @@ private:
     const Clip* find_clip(const State& s);
 
     std::map<std::string, std::shared_ptr<Model>> models_;  // by content id
-    // Clips from another file, built for a model's skeleton: by (clips, model).
-    std::map<std::pair<std::string, std::string>, std::vector<Clip>> libraries_;
+    // Clips from another file, built for a model's skeleton: by (clips, model, its rig).
+    using LibraryKey = std::tuple<std::string, std::string, std::map<std::string, std::string>>;
+    std::map<LibraryKey, std::vector<Clip>> libraries_;
     std::map<std::string, std::string> failed_;  // content id -> why
     std::unordered_map<entt::entity, State> states_;
 };

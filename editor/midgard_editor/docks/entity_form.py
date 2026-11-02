@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMenu,
     QPushButton,
@@ -31,6 +32,7 @@ from ..scene_model import Entity, sky_component
 from ..undo import SetEntityCommand
 from .camera_editor import CameraDialog
 from .material_editor import EntityMaterial, MaterialDialog
+from .rig_dialog import RigDialog, rig_summary
 
 
 def style_color_button(button: QPushButton, rgb: list[float]) -> None:
@@ -572,7 +574,7 @@ class EntityForm(QWidget):
     # ---- characters (milestone 5.13) --------------------------------------------------------
     def _build_character(self, entity, form: QFormLayout) -> None:
         self.character_model = self.character_clips = self.character_clip = None
-        self.character_speed = None
+        self.character_speed = self.character_rig = self.character_rig_button = None
         if "character" not in entity.components:
             return
         models = self.project.character_assets()
@@ -608,25 +610,56 @@ class EntityForm(QWidget):
         self.character_speed.valueChanged.connect(lambda v: self._set_value(
             "character", "speed", round(v, 3), "animation speed"))
         form.addRow("Speed", self.character_speed)
+        self.character_rig = QLabel()
+        self.character_rig.setWordWrap(True)
+        self.character_rig_button = QPushButton("Rig...")
+        self.character_rig_button.setToolTip("Which of the model's joints is each humanoid bone")
+        self.character_rig_button.clicked.connect(self.edit_rig)
+        form.addRow("Rig", _row(self.character_rig, self.character_rig_button))
         self._refresh_character(entity)
 
-    def clips_in(self, asset: str) -> list[str]:
-        """The clips in a model file (none if it can't be read, or isn't skinned)."""
+    def model_info(self, asset: str) -> dict | None:
+        """A model file's joints, clips and rig (skinned_info; none if it can't be read, or
+        isn't skinned)."""
         from ..cook import mesh_asset_data
         module = engine.module()
         data = mesh_asset_data(self.project, asset) if asset else None
         if module is None or data is None:
-            return []
+            return None
         try:
-            return [c["name"] for c in module.skinned_info(data)["clips"]]
+            return module.skinned_info(data)
         except ValueError:
-            return []
+            return None
+
+    def clips_in(self, asset: str) -> list[str]:
+        """The clips in a model file (none if it can't be read, or isn't skinned)."""
+        info = self.model_info(asset)
+        return [c["name"] for c in info["clips"]] if info else []
+
+    def rig_dialog(self) -> RigDialog | None:
+        """The rig dialog for the character's model (none if it hasn't a skinned one)."""
+        c = self._entity().components.get("character", {})
+        info = self.model_info(c.get("model", ""))
+        if info is None:
+            return None
+        return RigDialog(info["joints"], info["rig"], dict(c.get("rig", {})),
+                         engine.module().humanoid_bones(), self)
+
+    def edit_rig(self) -> None:
+        dialog = self.rig_dialog()
+        if dialog is not None and dialog.exec():
+            self._character_value("rig", dialog.chosen(), "rig")
 
     def _character_value(self, key: str, value, label: str) -> None:
         entity = self._entity()
-        if "character" not in entity.components or entity.components["character"].get(key) == value:
+        if "character" not in entity.components:
+            return
+        unset = {} if key == "rig" else None  # (no rig: the model's names say it all)
+        if entity.components["character"].get(key, unset) == value:
             return
         character = {**entity.components["character"], key: value}
+        if key == "rig" and not value:
+            del character["rig"]
         if key in ("model", "clips"):  # (another file: its clips, the first of them playing)
             clips = self.clips_in(character.get("clips") or character.get("model", ""))
             if character.get("clip") not in clips:
@@ -660,6 +693,11 @@ class EntityForm(QWidget):
         self.character_speed.blockSignals(True)
         self.character_speed.setValue(float(c.get("speed", 1.0)))
         self.character_speed.blockSignals(False)
+        info = self.model_info(c.get("model", ""))
+        self.character_rig_button.setEnabled(info is not None)
+        self.character_rig.setText(
+            rig_summary(info["rig"], c.get("rig", {}), engine.module().humanoid_bones())
+            if info else "(no skinned model)")
 
     # ---- moving between scenes (milestone 5.11a) -------------------------------------------
     def _build_scene_exit(self, entity, form: QFormLayout) -> None:

@@ -20,10 +20,10 @@ std::vector<std::string> Characters::load(const Scene& scene, const Bytes& bytes
             SkinnedModel skinned = load_skinned_glb(data);
             BuiltAnimation built = build_animation(skinned);
             auto m = std::make_shared<Model>(
-                Model{std::move(built.skeleton), std::move(built.clips),
-                      std::move(built.skin_to_skeleton), std::move(skinned.inverse_binds),
-                      skinned.armature, std::move(skinned.mesh), std::move(skinned.joints),
-                      std::move(skinned.weights)});
+                Model{std::move(built.skeleton), std::move(skinned.skeleton),
+                      std::move(built.clips), std::move(built.skin_to_skeleton),
+                      std::move(skinned.inverse_binds), skinned.armature, std::move(skinned.mesh),
+                      std::move(skinned.joints), std::move(skinned.weights)});
             models_.emplace(asset, m);
             return m;
         } catch (const std::exception& e) {
@@ -36,15 +36,30 @@ std::vector<std::string> Characters::load(const Scene& scene, const Bytes& bytes
         if (c.model.empty()) continue;
         const std::shared_ptr<Model> m = read_model(c.model);
         if (!m) continue;
-        // Clips from another file: read once, built for this skeleton by joint name.
-        if (!c.clips.empty() && c.clips != c.model && !libraries_.contains({c.clips, c.model}) &&
+        // Clips from another file: read once, retargeted to this skeleton if both are
+        // humanoids, else built for it by joint name.
+        const LibraryKey key{c.clips, c.model, c.rig};
+        if (!c.clips.empty() && c.clips != c.model && !libraries_.contains(key) &&
             !failed_.contains(c.clips)) {
+            HumanoidMap to_map;
+            try {
+                to_map = map_humanoid(m->raw, c.rig);
+            } catch (const AnimationError& ex) {  // (a joint it hasn't got: as if unnamed)
+                if (failed_.emplace(c.model + "#rig", ex.what()).second)
+                    problems.push_back("character model '" + c.model + "': " + ex.what());
+                to_map = map_humanoid(m->raw);
+            }
             try {
                 const SkinnedModel source = load_skinned_glb(bytes(c.clips));
+                const HumanoidMap from_map = map_humanoid(source.skeleton);
+                const bool humanoids = to_map.missing().empty() && from_map.missing().empty();
                 std::vector<Clip> built;
                 for (const RawClip& raw : source.clips)
-                    built.push_back(Clip::build(m->skeleton, raw));
-                libraries_.emplace(std::pair{c.clips, c.model}, std::move(built));
+                    built.push_back(Clip::build(
+                        m->skeleton, humanoids
+                                         ? retarget(raw, source.skeleton, from_map, m->raw, to_map)
+                                         : raw));
+                libraries_.emplace(key, std::move(built));
             } catch (const std::exception& ex) {
                 fail(c.clips, "character clips '" + c.clips + "': " + ex.what());
             }
@@ -68,8 +83,9 @@ void Characters::renderer_gone() {
 void Characters::forget(const std::string& asset) {
     models_.erase(asset);
     failed_.erase(asset);
+    failed_.erase(asset + "#rig");
     std::erase_if(libraries_, [&](const auto& kv) {
-        return kv.first.first == asset || kv.first.second == asset;
+        return std::get<0>(kv.first) == asset || std::get<1>(kv.first) == asset;
     });
     for (auto& [e, s] : states_)
         if (s.model == asset || s.clips == asset) s = State{};
@@ -78,7 +94,7 @@ void Characters::forget(const std::string& asset) {
 const Clip* Characters::find_clip(const State& s) {
     const std::vector<Clip>* from = &s.m->clips;
     if (!s.clips.empty() && s.clips != s.model) {
-        const auto it = libraries_.find({s.clips, s.model});
+        const auto it = libraries_.find(LibraryKey{s.clips, s.model, s.rig});
         if (it == libraries_.end()) return nullptr;
         from = &it->second;
     }
@@ -103,9 +119,10 @@ void Characters::update(const Scene& scene, float dt) {
             s.model = c.model;
             s.pose = std::make_unique<Pose>(s.m->skeleton);
         }
-        if (s.clips != c.clips || s.clip != c.clip || !s.playing) {
+        if (s.clips != c.clips || s.clip != c.clip || s.rig != c.rig || !s.playing) {
             s.clips = c.clips;
             s.clip = c.clip;
+            s.rig = c.rig;
             s.playing = find_clip(s);
             s.time = 0.0f;
         }
