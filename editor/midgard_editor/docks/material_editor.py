@@ -219,6 +219,9 @@ class MaterialEditor(QWidget):
 
         self.preview = PreviewLabel(180)
         self.preview.changed.connect(self.render_preview)
+        self._preparer = textures.Preparer(self)
+        self._preparer.ready.connect(
+            lambda token: self._preparer.wanted(token) and self.render_preview())
         self.shape = QComboBox()
         for asset, label in SHAPES.items():
             self.shape.addItem(label, asset)
@@ -329,6 +332,15 @@ class MaterialEditor(QWidget):
 
     def render_preview(self) -> None:
         m = self.material()
+        # Pictures not yet ready for the engine are made ready on a worker thread first (the
+        # first time, seconds each for big ones): the window carries on meanwhile.
+        waiting = self._preparer.waiting(self.project.root, textures.material_textures(m))
+        if waiting:
+            self._preparer.start(self.project.root, waiting)
+            self.preview.clear()
+            self.preview.setText(f"Preparing the textures ({len(waiting)})…")
+            return
+        self._preparer.cancel()
         renderer = objects.shared_renderer()
         asset = self.shape.currentData()
         parts = [{"name": "preview", "components": {"mesh": {"asset": asset}, "material": m}}]
@@ -347,7 +359,7 @@ class MaterialEditor(QWidget):
         width = min(max(self.preview.width(), 160), 1024)
         image = renderer.render(PREVIEW_ID, parts, [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], width,
                                 self.preview.height(), self.preview.yaw, self.preview.pitch,
-                                self.preview.zoom)
+                                self.preview.zoom, key_light=True)
         if image is None:
             self.preview.clear()
             self.preview.setText(f"No preview: {renderer.error or 'nothing to draw'}")

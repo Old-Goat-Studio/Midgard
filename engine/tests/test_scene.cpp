@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <numeric>
 #include <random>
 #include <set>
@@ -35,6 +36,7 @@
 #include "midgard/collider_outlines.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
+#include "midgard/light_markers.h"
 #include "midgard/pak.h"
 #include "midgard/scene.h"
 #include "midgard/validate.h"
@@ -3081,4 +3083,122 @@ TEST_CASE("the exit: an agent walks across a cylinder's join") {
     const glm::dvec3 start = ground(0.997, 0.5, 1.0), end = ground(0.004, 0.5, 0.0);
     const glm::dvec3 stopped = walk_path(body, terrain, start, end);
     CHECK(t.body().surface(stopped).u < 0.01);  // over the join, not the long way round
+}
+
+TEST_CASE("light markers: a bulb at each point and spot light, seen through what hides it") {
+    TestPackage pkg({
+        {"e1_candle", R"(NULL, '{"transform": {"position": [5, 1, 0]}}')"},
+        {"e2_flame", R"('e1_candle', '{"transform": {"position": [0, 0.5, 0]},
+                       "light": {"type": "point", "color": [1, 0.6, 0.2], "range": 4}}')"},
+        {"e3_torch", R"(NULL, '{"transform": {"position": [-5, 2, 0], "rotation": [-90, 0, 0]},
+                       "light": {"type": "spot", "range": 6, "outer_angle": 30}}')"},
+        {"e4_sun", R"(NULL, '{"light": {"type": "directional"}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    const auto& scene = game.scene();
+    midgard::LightMarkerView view;
+    view.eye = glm::dvec3(0, 1.5, 10);
+    const glm::dvec3 origin = view.eye;
+    const auto lines = midgard::light_markers(scene, origin, view);
+    REQUIRE(!lines.empty());
+    // Each line is drawn twice where it can be hidden: solid, and faintly on top.
+    size_t on_top = 0;
+    for (const auto& l : lines)
+        if (l.on_top) {
+            ++on_top;
+            CHECK(l.color.a < 0.5f);
+        }
+    CHECK(on_top > 10);
+    CHECK(on_top < lines.size());
+    // Two bulbs, none for the sun: one round the flame (which its candle carries), one round
+    // the torch; each the size the camera's distance gives it.
+    const glm::dvec3 flame(5, 1.5, 0), torch(-5, 2, 0);
+    size_t near_flame = 0, near_torch = 0;
+    for (const auto& l : lines) {
+        const glm::dvec3 a = glm::dvec3(l.a) + origin;
+        const double size = midgard::light_marker_size(glm::distance(flame, view.eye));
+        if (glm::distance(a, flame) < size)
+            ++near_flame;
+        else if (glm::distance(a, torch) < 6.5)
+            ++near_torch;  // (its cone reaches out)
+        else
+            FAIL("a line far from both lights");
+    }
+    CHECK(near_flame > 20);
+    CHECK(near_torch > 20);
+    // The bulb takes the light's colour, lifted towards white.
+    bool orange = false;
+    for (const auto& l : lines)
+        if (!l.on_top && glm::distance(glm::dvec3(l.a) + origin, flame) < 1.0)
+            orange = orange || (l.color.r > 0.9f && l.color.b < 0.6f);
+    CHECK(orange);
+    // Selected, a point light shows its reach: lines out at its range.
+    view.selected = "e2_flame";
+    const auto chosen = midgard::light_markers(scene, origin, view);
+    CHECK(chosen.size() > lines.size());
+    bool reach = false;
+    for (const auto& l : chosen)
+        reach = reach || std::abs(glm::distance(glm::dvec3(l.a) + origin, flame) - 4.0) < 1e-3;
+    CHECK(reach);
+    CHECK(midgard::light_markers(scene, origin, view, 10).size() <= 10);
+}
+
+TEST_CASE("a flickering light dims and brightens, each its own way, the same everywhere") {
+    // The share of its brightness: steady at 0; down to a quarter at most at 1.
+    CHECK(midgard::flicker_brightness(0.0f, 1.0f, 12.3, 7) == 1.0f);
+    float low = 1.0f, high = 0.0f;
+    double changes = 0.0;
+    float last = midgard::flicker_brightness(1.0f, 1.0f, 0.0, 7);
+    for (int i = 1; i < 6000; ++i) {  // a minute, at 100 a second
+        const float b = midgard::flicker_brightness(1.0f, 1.0f, i * 0.01, 7);
+        low = std::min(low, b);
+        high = std::max(high, b);
+        changes += std::abs(b - last);
+        last = b;
+    }
+    CHECK(low >= 0.25f);
+    CHECK(low < 0.5f);
+    CHECK(high > 0.95f);
+    CHECK(high <= 1.0f);
+    CHECK(changes > 5.0);  // (it moves)
+    // A little flicker dims a little; faster flickers change more in the same time.
+    for (int i = 0; i < 100; ++i) CHECK(midgard::flicker_brightness(0.2f, 1.0f, i, 7) >= 0.85f);
+    double slow = 0.0, fast = 0.0;
+    for (int i = 1; i < 1000; ++i) {
+        slow += std::abs(midgard::flicker_brightness(1.0f, 1.0f, i * 0.01, 7) -
+                         midgard::flicker_brightness(1.0f, 1.0f, (i - 1) * 0.01, 7));
+        fast += std::abs(midgard::flicker_brightness(1.0f, 3.0f, i * 0.01, 7) -
+                         midgard::flicker_brightness(1.0f, 3.0f, (i - 1) * 0.01, 7));
+    }
+    CHECK(fast > slow * 2.0);
+    // Two candles side by side don't flicker together.
+    CHECK(midgard::flicker_brightness(1.0f, 1.0f, 3.0, 7) !=
+          midgard::flicker_brightness(1.0f, 1.0f, 3.0, 8));
+
+    // In a scene: the game's time moves the flame, not the lamp.
+    TestPackage pkg({
+        {"e1_candle", R"(NULL, '{"light": {"type": "point", "intensity": 2, "flicker": 0.6,
+                       "flicker_speed": 1.5}}')"},
+        {"e2_lamp", R"(NULL, '{"transform": {"position": [0, 0, 0.1]},
+                       "light": {"type": "point", "intensity": 2}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto intensities = [&] {
+        std::map<float, float> by_z;  // (told apart by where they are)
+        for (const auto& l : game.scene().light().local) by_z[l.position.z] = l.intensity;
+        return std::pair{by_z.at(0.0f), by_z.at(0.1f)};
+    };
+    const auto first = intensities();
+    std::set<float> flame;
+    for (int i = 0; i < 30; ++i) {
+        game.update(actions, 0.05f);
+        const auto [candle, lamp] = intensities();
+        CHECK(lamp == 2.0f);
+        CHECK(candle <= 2.0f);
+        CHECK(candle >= 2.0f * (1.0f - 0.75f * 0.6f) - 1e-4f);
+        flame.insert(candle);
+    }
+    CHECK(flame.size() > 20);
+    CHECK(first.first <= 2.0f);
 }

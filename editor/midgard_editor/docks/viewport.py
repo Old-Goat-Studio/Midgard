@@ -208,6 +208,16 @@ class ViewportPanel(QWidget):
             "the terrain round where the view looks), green (F4 shows it in the game too)")
         self.navigation_action.toggled.connect(self.set_show_navigation)
         self.toolbar.addAction(self.navigation_action)
+        self.lights_action = QAction("Show &Lights", self)
+        self.lights_action.setIconText("Lights")
+        self.lights_action.setCheckable(True)
+        self.lights_action.setChecked(True)
+        self.lights_action.setToolTip(
+            "A light bulb where each point and spot light is, in its colour (faint where "
+            "something hides it); a spot's cone, and the selected light's reach. Only here: "
+            "the game shows just the light")
+        self.lights_action.toggled.connect(self.set_show_lights)
+        self.toolbar.addAction(self.lights_action)
         self.gizmos_action = QAction("Show &Gizmos", self)
         self.gizmos_action.setIconText("Gizmos")
         self.gizmos_action.setCheckable(True)
@@ -257,6 +267,8 @@ class ViewportPanel(QWidget):
                                "turn on Edit ▸ Preferences ▸ Use X11 and restart the editor.")
         else:
             self.view = module.Viewport()
+            if hasattr(self.view, "show_lights"):
+                self.view.show_lights = True
             self.window = ViewportWindow(self)
             container = QWidget.createWindowContainer(self.window, view_area)
             container.setMinimumSize(160, 120)
@@ -343,6 +355,9 @@ class ViewportPanel(QWidget):
         """The entity the gizmos act on (the Scene panel's selection)."""
         self.selected = entity_id
         self.gizmos.set_entity(self.project, entity_id)
+        if self.view is not None and hasattr(self.view, "selected"):
+            self.view.selected = entity_id or ""  # (a selected light shows its reach)
+            self.request_render()
 
     def set_show_colliders(self, show: bool) -> None:
         """Outlines of colliders (by how they move), triggers and the player."""
@@ -351,6 +366,15 @@ class ViewportPanel(QWidget):
             return
         if self.view is not None:
             self.view.show_colliders = show
+            self.request_render()
+
+    def set_show_lights(self, show: bool) -> None:
+        """Light bulbs where the point and spot lights are."""
+        if self.lights_action.isChecked() != show:
+            self.lights_action.setChecked(show)  # comes back here through toggled
+            return
+        if self.view is not None and hasattr(self.view, "show_lights"):
+            self.view.show_lights = show
             self.request_render()
 
     def set_show_navigation(self, show: bool) -> None:

@@ -155,6 +155,7 @@ add_library(midgard_scene STATIC
     scene/src/validate.cpp
     scene/src/scene_physics.cpp
     scene/src/collider_outlines.cpp
+    scene/src/light_markers.cpp
     scene/src/scene_nav.cpp
     scene/src/nav_world.cpp
     scene/src/world_surface.cpp

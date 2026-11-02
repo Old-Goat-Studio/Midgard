@@ -180,6 +180,7 @@ void Game::update(const Actions& actions, float dt) {
     time_events_.insert(time_events_.end(), passed.begin(), passed.end());
     update_sun();
     scene_.water_time += dt;
+    scene_.light_time += dt;
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
     if (change_)  // (on the way to another scene: the player stands still)
         physics_->set_player_intent(glm::vec3(0.0f), false);

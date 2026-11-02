@@ -96,11 +96,13 @@ struct TerrainLook {
 };
 
 // A line drawn into the scene for debugging (collider outlines and the like): its ends relative
-// to the camera's origin, like everything drawn, and its colour (sRGB, unlit). Things in front
-// of it hide it.
+// to the camera's origin, like everything drawn, and its colour (sRGB, unlit; alpha blends it).
+// Things in front of it hide it, unless it is on_top: then it shows through them (drawn after
+// the others, so a faint on-top copy of a line shows where something hides it).
 struct DebugLine {
     glm::vec3 a{0.0f}, b{0.0f};
     glm::vec4 color{1.0f};
+    bool on_top = false;
 };
 
 // What to draw: a mesh, its model matrix relative to the camera's origin, and glTF's material

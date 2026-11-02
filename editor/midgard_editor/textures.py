@@ -8,10 +8,13 @@ numbers aren't colours (metal/roughness, normal, occlusion). The path is relativ
 project folder, usually textures/<file>. The engine encodes them as KTX2 with mipmaps, for
 the package and for the editor's views.
 """
+import contextlib
 import logging
 import shutil
 import threading
 from pathlib import Path
+
+from PySide6.QtCore import QObject, Signal
 
 from . import content_cache, engine
 
@@ -92,6 +95,7 @@ class TextureCache:
         # (Pictures are encoded on worker threads too: the table is guarded, the encoding,
         # which can take seconds, isn't.)
         self._lock = threading.Lock()
+        self._encoding: dict[tuple, threading.Lock] = {}  # one encoding of a picture at a time
 
     def _key(self, project_root: Path, texture: str) -> tuple | None:
         parsed = parse(texture)
@@ -144,23 +148,32 @@ class TextureCache:
         key = (str(file), srgb, stat.st_mtime_ns, stat.st_size)
         with self._lock:
             ready = self._items.get(key)
+            encoding = self._encoding.setdefault(key, threading.Lock())
         if ready is not None:
             return ready
-        # On disk by the file's contents (build/cache/textures/): encoded once.
-        disk = content_cache.DiskCache(content_cache.cache_dir(project_root, "textures"))
-        content_key = content_cache.key_of("texture", content_cache.file_hash(file), srgb)
-        found = disk.get(content_key)
-        if found is not None and "ktx2" in found[1]:
-            data = found[1]["ktx2"]
-        else:
-            try:
-                data = module.encode_texture(file, srgb)
-            except RuntimeError as e:
-                log.warning("Texture %s: %s", relative, e)
-                return None
-            self.encodes += 1
-            disk.put(content_key, {}, {"ktx2": data})
-        self._remember(key, data)
+        # (Two threads wanting the same picture: the second waits for the first's.)
+        with encoding:
+            with self._lock:
+                ready = self._items.get(key)
+            if ready is not None:
+                return ready
+            # On disk by the file's contents (build/cache/textures/): encoded once.
+            disk = content_cache.DiskCache(content_cache.cache_dir(project_root, "textures"))
+            content_key = content_cache.key_of("texture", content_cache.file_hash(file), srgb)
+            found = disk.get(content_key)
+            if found is not None and "ktx2" in found[1]:
+                data = found[1]["ktx2"]
+            else:
+                try:
+                    data = module.encode_texture(file, srgb)
+                except RuntimeError as e:
+                    log.warning("Texture %s: %s", relative, e)
+                    return None
+                self.encodes += 1
+                disk.put(content_key, {}, {"ktx2": data})
+            self._remember(key, data)
+        with self._lock:
+            self._encoding.pop(key, None)
         return data
 
 
@@ -169,3 +182,43 @@ CACHE = TextureCache()
 
 def texture_data(project_root: Path, texture: str) -> bytes | None:
     return CACHE.data(project_root, texture)
+
+
+class Preparer(QObject):
+    """Pictures made ready for the engine on a worker thread (encoding one can take seconds),
+    so a window carries on meanwhile. ready(token) comes on the window's thread when a
+    preparation is done; only the latest start() counts (cancel() forgets it too)."""
+    ready = Signal(int)
+
+    def __init__(self, parent: QObject | None = None):
+        super().__init__(parent)
+        self.token = 0
+
+    @staticmethod
+    def waiting(project_root: Path, texture_ids) -> list[str]:
+        """The "tex:" ids that would need encoding first (none without the engine)."""
+        if engine.module() is None:
+            return []
+        return [t for t in texture_ids
+                if parse(t) is not None and CACHE.cached(project_root, t) is None]
+
+    def start(self, project_root: Path, texture_ids: list[str]) -> int:
+        self.token += 1
+        token = self.token
+
+        def prepare() -> None:  # (the engine encodes without holding the GIL)
+            for texture in texture_ids:
+                if token != self.token:
+                    return  # (no longer wanted)
+                texture_data(project_root, texture)
+            with contextlib.suppress(RuntimeError):  # (its window has closed)
+                self.ready.emit(token)
+
+        threading.Thread(target=prepare, name="prepare textures", daemon=True).start()
+        return token
+
+    def cancel(self) -> None:
+        self.token += 1
+
+    def wanted(self, token: int) -> bool:
+        return token == self.token

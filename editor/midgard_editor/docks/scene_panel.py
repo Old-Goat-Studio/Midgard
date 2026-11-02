@@ -31,6 +31,16 @@ from ..undo import AddEntityCommand, AddObjectCommand, DeleteEntityCommand, SetE
 
 ICONS = {"folder": "📁", "group": "🧩", "object": "🧱", "player": "🧍", "camera": "🎥",
          "light": "☀", "sky": "🌌", "mesh": "■"}
+LIGHT_ICONS = {"directional": "☀", "point": "💡", "spot": "🔦"}
+# New lights: a warm lamp's glow, and a spot pointing down. (A light added with a placed thing
+# selected goes inside it, a little above its origin: a candle's flame, a torch's.)
+LIGHTS = {
+    "point": ("Point Light", {"type": "point", "color": [1.0, 0.82, 0.6], "intensity": 3.0,
+                              "range": 8.0}),
+    "spot": ("Spot Light", {"type": "spot", "color": [1.0, 0.95, 0.85], "intensity": 6.0,
+                            "range": 12.0, "inner_angle": 20.0, "outer_angle": 30.0}),
+}
+LIGHT_ABOVE = 0.3  # metres above the origin of the thing a new light goes into
 # These place themselves in the world, so they stay out of groups.
 NOT_IN_GROUPS = ("player", "camera")
 ID_ROLE = Qt.ItemDataRole.UserRole
@@ -38,6 +48,9 @@ ID_ROLE = Qt.ItemDataRole.UserRole
 
 def describe(entity: Entity) -> str:
     kinds = [ICONS[k] for k in ICONS if k in entity.components]
+    if "light" in entity.components:
+        kinds[kinds.index(ICONS["light"])] = LIGHT_ICONS.get(
+            entity.components["light"].get("type", "directional"), ICONS["light"])
     return f"{' '.join(kinds) or '·'}  {entity.name}"
 
 
@@ -54,16 +67,24 @@ class _SceneTree(QTreeWidget):
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.folders: set[str] = set()  # ids of the entities others can go into (folders, groups)
+        self.lights: set[str] = set()   # point and spot lights: they can go into anything placed
+        self.placed: set[str] = set()   # entities with a place in the world (a transform)
 
     def drop_parent(self, target: QTreeWidgetItem | None,
-                    position: QAbstractItemView.DropIndicatorPosition) -> tuple[bool, str | None]:
+                    position: QAbstractItemView.DropIndicatorPosition,
+                    dragged: str | None = None) -> tuple[bool, str | None]:
         """Where a drop lands: (allowed, new parent id). Onto a folder or a group goes inside
-        it, beside an entity goes next to it (same parent), onto any other entity is refused."""
+        it, beside an entity goes next to it (same parent). A light dropped onto anything
+        placed goes into it (a candle's flame moves with the candle); onto any other entity is
+        refused."""
         if target is None:
             return True, None
         target_id = target.data(0, ID_ROLE)
         if position == QAbstractItemView.DropIndicatorPosition.OnItem:
-            return (True, target_id) if target_id in self.folders else (False, None)
+            if target_id in self.folders or (dragged in self.lights and
+                                             target_id in self.placed):
+                return True, target_id
+            return False, None
         parent = target.parent()
         return True, parent.data(0, ID_ROLE) if parent is not None else None
 
@@ -77,7 +98,8 @@ class _SceneTree(QTreeWidget):
     def dropEvent(self, event: QDropEvent) -> None:
         item = self.currentItem()
         target = self.itemAt(event.position().toPoint())
-        allowed, parent = self.drop_parent(target, self.dropIndicatorPosition())
+        dragged = item.data(0, ID_ROLE) if item is not None else None
+        allowed, parent = self.drop_parent(target, self.dropIndicatorPosition(), dragged)
         event.setDropAction(Qt.DropAction.IgnoreAction)  # the tree is rebuilt instead
         event.accept()
         if item is not None and allowed:
@@ -111,6 +133,9 @@ class ScenePanel(QWidget):
                               add_menu.addAction("🚪  Scene Exit", self.add_scene_exit))
         add_menu.insertAction(self.add_sky_action,
                               add_menu.addAction("📍  Arrival Point", self.add_arrival))
+        for kind, icon in (("point", "💡"), ("spot", "🔦")):
+            add_menu.insertAction(self.add_sky_action, add_menu.addAction(
+                f"{icon}  {LIGHTS[kind][0]}", lambda k=kind: self.add_light(k)))
         # Objects from the library, and model files in objects/ that aren't objects yet.
         self.object_menu = QMenu("🧱  Object", add_menu)
         add_menu.insertMenu(self.add_sky_action, self.object_menu)
@@ -158,6 +183,9 @@ class ScenePanel(QWidget):
         self.scene_name.setText(f"<b>{scenes.name(self.project, self.project.scene)}</b>")
         entities = self.project.entities()
         self.tree.folders = {e.id for e in entities if e.is_folder or "group" in e.components}
+        self.tree.lights = {e.id for e in entities if e.components.get("light", {}).get(
+            "type", "directional") in ("point", "spot")}
+        self.tree.placed = {e.id for e in entities if "transform" in e.components}
         items: dict[str, QTreeWidgetItem] = {}
         for entity in parents_first(entities):
             parent = items.get(entity.parent) if entity.parent else None
@@ -165,8 +193,8 @@ class ScenePanel(QWidget):
             item.setText(0, describe(entity))
             item.setData(0, ID_ROLE, entity.id)
             flags = item.flags() | Qt.ItemFlag.ItemIsDragEnabled
-            if entity.id in self.tree.folders:
-                flags |= Qt.ItemFlag.ItemIsDropEnabled
+            if entity.id in self.tree.folders or entity.id in self.tree.placed:
+                flags |= Qt.ItemFlag.ItemIsDropEnabled  # (placed things: lights only)
             else:
                 flags &= ~Qt.ItemFlag.ItemIsDropEnabled
             item.setFlags(flags)
@@ -299,6 +327,36 @@ class ScenePanel(QWidget):
         entity = Entity(self.project.next_entity_id(), name, self.target_folder(),
                         {"transform": {"position": [1.5 * count, 0.0, 2.0]},
                          "arrival": {"name": name}})
+        self._add(entity)
+        return entity.id
+
+    def add_light(self, kind: str) -> str | None:
+        """Adds a point or spot light (Add ▸ Point Light, Spot Light). With a placed thing
+        selected (a candle, a torch, a lamp) it goes inside it, a little above its origin, and
+        moves with it; otherwise where the folder is. Returns its id."""
+        if self.project is None or kind not in LIGHTS:
+            return None
+        label, light = LIGHTS[kind]
+        name, count = self._unique_name(label)
+        down = [-90.0, 0.0, 0.0] if kind == "spot" else [0.0, 0.0, 0.0]  # (a spot shines down)
+        selected = self.project.entity(self.selected_id()) if self.selected_id() else None
+        if selected is not None and "transform" in selected.components and \
+                not selected.is_folder and "group" not in selected.components:
+            by_id = {e.id: e for e in self.project.entities()}
+            holder = transforms.world_matrix(by_id, selected.id)
+            at = transforms.position_of(holder)
+            world = transforms.compose({"position": [at[0], at[1] + LIGHT_ABOVE, at[2]],
+                                        "rotation": down})
+            try:
+                transform = transforms.relative_to(holder, world)
+            except ValueError:  # (a holder scaled to nothing)
+                transform = {"position": [0.0, LIGHT_ABOVE, 0.0], "rotation": down}
+            parent = selected.id
+        else:
+            transform = {"position": [1.5 * count, 2.5, 0.0], "rotation": down}
+            parent = self.target_folder()
+        entity = Entity(self.project.next_entity_id(), name, parent,
+                        {"transform": transform, "light": dict(light)})
         self._add(entity)
         return entity.id
 

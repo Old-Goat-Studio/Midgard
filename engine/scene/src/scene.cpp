@@ -2,6 +2,7 @@
 #include "midgard/scene.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <memory>
 #include <unordered_map>
@@ -270,6 +271,8 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
             l.range = std::max(c.value("range", 10.0f), 0.01f);
             l.inner_angle = std::clamp(c.value("inner_angle", 20.0f), 0.0f, 89.0f);
             l.outer_angle = std::clamp(c.value("outer_angle", 30.0f), l.inner_angle, 90.0f);
+            l.flicker = std::clamp(c.value("flicker", 0.0f), 0.0f, 1.0f);
+            l.flicker_speed = std::clamp(c.value("flicker_speed", 1.0f), 0.05f, 10.0f);
             reg.emplace<LocalLightSource>(e, l);
         }
     }
@@ -756,6 +759,24 @@ std::optional<render::Camera> Scene::camera(float aspect) const {
     return cam;
 }
 
+float flicker_brightness(float amount, float speed, double time, uint32_t seed) {
+    if (amount <= 0.0f) return 1.0f;
+    // Phases from the seed; rates unrelated to each other (a flame's slow sway, its quicker
+    // gutter and a fast shimmer).
+    const auto phase = [&](int i) {
+        uint32_t h = seed + uint32_t(i) * 0x9E3779B9u;
+        h ^= h >> 16;
+        h *= 0x7FEB352Du;
+        h ^= h >> 15;
+        return double(h % 10000u) / 10000.0 * 6.283185307179586;
+    };
+    const double t = std::fmod(time, 100000.0) * double(speed);
+    const double wave = 0.5 * std::sin(t * 2.3 + phase(0)) + 0.3 * std::sin(t * 5.9 + phase(1)) +
+                        0.2 * std::sin(t * 13.7 + phase(2));  // -1 to 1
+    const double dim = 0.5 + 0.5 * wave;                      // 0 bright to 1 dim
+    return float(1.0 - 0.75 * double(std::clamp(amount, 0.0f, 1.0f)) * dim * dim);
+}
+
 render::Light Scene::light(const glm::dvec3& origin) const {
     render::Light light;
     light.ambient = settings.ambient;
@@ -806,6 +827,13 @@ render::Light Scene::light(const glm::dvec3& origin) const {
         l.position = glm::vec3(relative);
         l.color = s.color;
         l.intensity = s.intensity;
+        if (s.flicker > 0.0f) {
+            const EntityInfo* info = registry.try_get<EntityInfo>(le);
+            uint32_t seed = 2166136261u;  // FNV-1a of its id: its own flicker
+            for (const char ch : info ? info->id : std::string())
+                seed = (seed ^ uint8_t(ch)) * 16777619u;
+            l.intensity *= flicker_brightness(s.flicker, s.flicker_speed, light_time, seed);
+        }
         l.range = s.range;
         l.spot = s.spot;
         l.direction = glm::vec3(m * glm::dvec4(0, 0, -1, 0));

@@ -95,6 +95,13 @@ public:
     // Outlines of colliders, triggers and the player over the scene (midgard/collider_outlines.h).
     void set_show_colliders(bool show) { show_colliders_ = show; }
     bool show_colliders() const { return show_colliders_; }
+    // A light bulb where each point and spot light is (midgard/light_markers.h): off unless
+    // asked for (the editor's small previews light their subjects with lamps of their own).
+    void set_show_lights(bool show) { show_lights_ = show; }
+    bool show_lights() const { return show_lights_; }
+    // The entity selected in the editor (a selected light shows how far it reaches).
+    void set_selected(const std::string& entity_id) { selected_ = entity_id; }
+    const std::string& selected() const { return selected_; }
     // Where agents can walk (milestone 5.12): a flat scene's navigation from its colliders, or
     // the terrain's round where the view looks, as the game makes them.
     void set_show_navigation(bool show) { show_navigation_ = show; }
@@ -141,6 +148,8 @@ private:
     float fov_ = 55.0f;
     bool show_colliders_ = false;
     bool show_navigation_ = false;
+    bool show_lights_ = false;
+    std::string selected_;
     std::unique_ptr<NavMesh> nav_;  // a flat scene's, made when shown after it went stale
     bool nav_stale_ = true;
     std::vector<render::DebugLine> navigation_lines(const glm::dvec3& origin);

@@ -94,6 +94,20 @@ def _remove_button(tooltip: str, slot) -> QToolButton:
     return button
 
 
+# A flame's flicker (point and spot lights): (label, how much it dims, how fast).
+FLICKERS = {"steady": ("Steady", 0.0, 1.0), "candle": ("Candle", 0.3, 1.0),
+            "torch": ("Torch", 0.5, 1.6), "fire": ("Campfire", 0.7, 2.2)}
+
+
+def flicker_kind(light: dict) -> str:
+    """Which of FLICKERS a light's flicker is ("custom": none of them)."""
+    amount, speed = light.get("flicker", 0.0), light.get("flicker_speed", 1.0)
+    if amount == 0.0:
+        return "steady"
+    return next((k for k, (_l, a, s) in FLICKERS.items() if (a, s) == (amount, speed)),
+                "custom")
+
+
 class EntityForm(QWidget):
     open_script = Signal(str)  # a module to open in the Script editor
     open_object = Signal(str)  # an object to show in the Objects panel
@@ -159,6 +173,9 @@ class EntityForm(QWidget):
                 self.sky[key] = button
         self.color = self.fov = self.intensity = self.mesh = None
         self.follows_clock = None
+        self.light_type = self.light_color = self.light_range = None
+        self.inner_angle = self.outer_angle = None
+        self.flicker = self.flicker_amount = self.flicker_speed = None
         if "mesh" in entity.components:
             self.mesh = QComboBox()
             for asset, label in project.mesh_assets().items():
@@ -182,11 +199,70 @@ class EntityForm(QWidget):
             edit.clicked.connect(self.edit_camera)
             form.addRow("Field of view", _row(self.fov, edit))
         if "light" in entity.components:
+            kind = entity.components["light"].get("type", "directional")
+            if kind in ("point", "spot"):
+                self.light_type = QComboBox()
+                self.light_type.addItem("Point: shines all round", "point")
+                self.light_type.addItem("Spot: shines in a cone, along -Z", "spot")
+                self.light_type.setToolTip(
+                    "A point light glows all round (a candle, a lamp); a spot shines one way "
+                    "in a cone (a torch, a headlamp): turn it to aim it")
+                self.light_type.currentIndexChanged.connect(
+                    lambda _i: self.set_light_type(self.light_type.currentData()))
+                form.addRow("Light", self.light_type)
+            self.light_color = QPushButton()
+            self.light_color.setToolTip("The light's colour")
+            self.light_color.clicked.connect(self._pick_light_color)
+            form.addRow("Colour", self.light_color)
             self.intensity = _spin(0.0, 100.0, 0.1, 2)
             self.intensity.valueChanged.connect(
                 lambda _v: self._component_value("light", "intensity", self.intensity.value()))
             form.addRow("Intensity", self.intensity)
-            if entity.components["light"].get("type", "directional") == "directional":
+            if kind in ("point", "spot"):
+                self.light_range = _spin(0.1, 1000.0, 0.5, 1)
+                self.light_range.setSuffix(" m")
+                self.light_range.setToolTip("How far it reaches: it fades to nothing there")
+                self.light_range.valueChanged.connect(
+                    lambda _v: self._component_value("light", "range", self.light_range.value()))
+                form.addRow("Reach", self.light_range)
+                # A flame's flicker: a kind, or how much and how fast (shown when playing).
+                self.flicker = QComboBox()
+                for key, (label, _a, _s) in FLICKERS.items():
+                    self.flicker.addItem(label, key)
+                self.flicker.addItem("Custom", "custom")
+                self.flicker.setToolTip("A flame's flicker: a candle's gentle one, a torch's, a "
+                                        "campfire's (it shows when the game plays)")
+                self.flicker.currentIndexChanged.connect(
+                    lambda _i: self.set_flicker(self.flicker.currentData()))
+                self.flicker_amount = _spin(0.0, 1.0, 0.05, 2)
+                self.flicker_amount.setToolTip("How much it dims at most: 0 steady, 1 down to "
+                                               "a quarter")
+                self.flicker_amount.valueChanged.connect(
+                    lambda _v: self._component_value("light", "flicker",
+                                                     self.flicker_amount.value()))
+                self.flicker_speed = _spin(0.1, 5.0, 0.1, 2)
+                self.flicker_speed.setSuffix("×")
+                self.flicker_speed.setToolTip("How fast: 1 a candle's, faster for a torch or "
+                                              "a fire")
+                self.flicker_speed.valueChanged.connect(
+                    lambda _v: self._component_value("light", "flicker_speed",
+                                                     self.flicker_speed.value()))
+                form.addRow("Flicker", self.flicker)
+                form.addRow("", _row(QLabel("dims"), self.flicker_amount, QLabel("speed"),
+                                     self.flicker_speed))
+            if kind == "spot":
+                self.inner_angle = _spin(0.0, 89.0, 1.0, 1)
+                self.outer_angle = _spin(1.0, 90.0, 1.0, 1)
+                for box in (self.inner_angle, self.outer_angle):
+                    box.setSuffix("°")
+                self.inner_angle.setToolTip("Full brightness inside this angle from its middle")
+                self.outer_angle.setToolTip("Nothing beyond this angle (it fades from the "
+                                            "inner one)")
+                self.inner_angle.valueChanged.connect(lambda _v: self.set_spot_angles())
+                self.outer_angle.valueChanged.connect(lambda _v: self.set_spot_angles())
+                form.addRow("Cone", _row(QLabel("inner"), self.inner_angle, QLabel("outer"),
+                                         self.outer_angle))
+            if kind == "directional":
                 self.follows_clock = QCheckBox("Follows the clock")
                 self.follows_clock.setToolTip(
                     "The sun rises and sets with the game's clock (and the Calendar dock's "
@@ -251,6 +327,7 @@ class EntityForm(QWidget):
         if self.position is not None:  # things in the world, not folders or the sky
             form.addRow("", self.add_component)
         self._kinds = set(entity.components)
+        self._light_type = entity.components.get("light", {}).get("type")
         project.entities_changed.connect(self._changed)
         self.refresh()
 
@@ -436,7 +513,8 @@ class EntityForm(QWidget):
         entity = self.project.entity(self.entity_id)
         if entity is None:
             return
-        if set(entity.components) != self._kinds:
+        if set(entity.components) != self._kinds or \
+                entity.components.get("light", {}).get("type") != self._light_type:
             self.rebuild.emit(self.entity_id)  # rows to add or remove (also after Undo)
         else:
             self.refresh()
@@ -491,8 +569,28 @@ class EntityForm(QWidget):
             self.follows_clock.blockSignals(True)
             self.follows_clock.setChecked(bool(entity.components["light"].get("follows_clock")))
             self.follows_clock.blockSignals(False)
+        if self.light_color is not None:
+            style_color_button(self.light_color,
+                               entity.components["light"].get("color", [1.0, 1.0, 1.0]))
+        if self.flicker is not None:
+            light = entity.components["light"]
+            self.flicker.blockSignals(True)
+            self.flicker.setCurrentIndex(self.flicker.findData(flicker_kind(light)))
+            self.flicker.blockSignals(False)
+            self.flicker_speed.setEnabled(light.get("flicker", 0.0) > 0.0)
+        if self.light_type is not None:
+            self.light_type.blockSignals(True)
+            self.light_type.setCurrentIndex(self.light_type.findData(
+                entity.components["light"].get("type")))
+            self.light_type.blockSignals(False)
         for box, component, key, default in ((self.fov, "camera", "fov", 55.0),
-                                             (self.intensity, "light", "intensity", 1.0)):
+                                             (self.intensity, "light", "intensity", 1.0),
+                                             (self.light_range, "light", "range", 10.0),
+                                             (self.inner_angle, "light", "inner_angle", 20.0),
+                                             (self.outer_angle, "light", "outer_angle", 30.0),
+                                             (self.flicker_amount, "light", "flicker", 0.0),
+                                             (self.flicker_speed, "light", "flicker_speed",
+                                              1.0)):
             if box is not None:
                 box.blockSignals(True)
                 box.setValue(float(entity.components[component].get(key, default)))
@@ -964,6 +1062,61 @@ class EntityForm(QWidget):
         entity.components["sky"] = {**entity.components["sky"],
                                     key: [round(c, 4) for c in rgb[:3]]}
         self._push(entity, self.SKY_COLOURS[key].lower())
+
+    # ---- lights ----------------------------------------------------------------------------
+    def _pick_light_color(self) -> None:
+        rgb = self._entity().components["light"].get("color", [1.0, 1.0, 1.0])
+        chosen = QColorDialog.getColor(QColor.fromRgbF(*rgb[:3]), self, "Light colour")
+        if chosen.isValid():
+            self.set_light_color([chosen.redF(), chosen.greenF(), chosen.blueF()])
+
+    def set_light_color(self, rgb: list[float]) -> None:
+        self._set_value("light", "color", [round(c, 4) for c in rgb[:3]], "light colour")
+
+    def set_flicker(self, kind: str) -> None:
+        """One of FLICKERS: how much and how fast together, one step to undo ("custom" leaves
+        them as they are, to change one by one)."""
+        if kind not in FLICKERS:
+            return
+        label, amount, speed = FLICKERS[kind]
+        entity = self._entity()
+        light = {**entity.components["light"], "flicker": amount, "flicker_speed": speed}
+        if kind == "steady":
+            light.pop("flicker")
+            light.pop("flicker_speed")
+        if light == entity.components["light"]:
+            return
+        entity.components["light"] = light
+        self._push(entity, f"flicker ({label.lower()})")
+
+    def set_light_type(self, kind: str) -> None:
+        """A point light made a spot (or back): a spot gets a cone if it has none."""
+        entity = self._entity()
+        light = dict(entity.components["light"])
+        if kind not in ("point", "spot") or light.get("type") == kind:
+            return
+        light["type"] = kind
+        if kind == "spot":
+            light.setdefault("inner_angle", 20.0)
+            light.setdefault("outer_angle", 30.0)
+        entity.components["light"] = light
+        self._push(entity, f"{kind} light")
+
+    def set_spot_angles(self) -> None:
+        """The cone: the inner angle never wider than the outer."""
+        inner, outer = self.inner_angle.value(), self.outer_angle.value()
+        if inner > outer:
+            inner = outer
+            self.inner_angle.blockSignals(True)
+            self.inner_angle.setValue(inner)
+            self.inner_angle.blockSignals(False)
+        entity = self._entity()
+        light = entity.components["light"]
+        if light.get("inner_angle") == inner and light.get("outer_angle") == outer:
+            return
+        entity.components["light"] = {**light, "inner_angle": round(inner, 2),
+                                      "outer_angle": round(outer, 2)}
+        self._push(entity, "spot cone")
 
     def _pick_color(self) -> None:
         entity = self._entity()

@@ -22,6 +22,7 @@
 #include "midgard/collider_outlines.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
+#include "midgard/light_markers.h"
 #include "midgard/world_surface.h"
 
 namespace midgard::editor {
@@ -460,6 +461,18 @@ bool Viewport::render() {
     characters_.draws(scene_, camera.origin, materials_, entt::null, draws);
     if (show_navigation_)  // (after the terrain: its navigation is made from it)
         for (const render::DebugLine& l : navigation_lines(camera.origin)) lines.push_back(l);
+    if (show_lights_) {  // a bulb facing the camera at each light
+        LightMarkerView marker_view;
+        marker_view.eye = glm::dvec3(eye_);
+        const glm::dvec3 forward = glm::normalize(glm::dvec3(target_ - eye_));
+        glm::dvec3 right = glm::cross(forward, glm::dvec3(0, 1, 0));
+        right = glm::length(right) > 1e-6 ? glm::normalize(right) : glm::dvec3(1, 0, 0);
+        marker_view.right = right;
+        marker_view.up = glm::normalize(glm::cross(right, forward));
+        marker_view.selected = selected_;
+        for (const render::DebugLine& l : light_markers(scene_, camera.origin, marker_view))
+            lines.push_back(l);
+    }
     renderer_->set_debug_lines(lines);
     // A curved cylinder's light rod or a hollow world's light sphere, and seeing that far.
     if (const auto light = world_light_.draw(scene_, camera.origin)) draws.push_back(*light);

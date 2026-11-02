@@ -137,7 +137,16 @@ struct LocalLightSource {
     float intensity = 1.0f;
     float range = 10.0f;
     float inner_angle = 20.0f, outer_angle = 30.0f;  // degrees
+    // A flame's flicker: how much it dims at most (0 steady, 1 down to a quarter) and how fast
+    // (1: a candle's; a torch about 1.5, a campfire about 2).
+    float flicker = 0.0f;
+    float flicker_speed = 1.0f;
 };
+
+// How bright a flickering light is at `time` seconds (a share of its intensity, 1 at most):
+// a few waves at unrelated rates, so it never visibly repeats, each light its own (`seed`,
+// from its entity id), the same on every machine.
+float flicker_brightness(float amount, float speed, double time, uint32_t seed);
 
 // The entity the player controls: a character in the physics world (an upright capsule centred
 // on the entity) that walks on the ground. The first camera follows it in third person.
@@ -358,6 +367,9 @@ public:
     SunClock sun_clock;
     // Seconds the water's waves have moved for (the game adds each frame's time).
     double water_time = 0.0;
+    // Seconds the flames have flickered for (the game adds each frame's time; the editor's
+    // views stay still).
+    double light_time = 0.0;
     // The sun as seen from `origin` (its light model, midgard/sunlight.h): none when it doesn't
     // follow the clock (or there is no clock, or no sun).
     std::optional<LocalSun> local_sun(const glm::dvec3& origin) const;

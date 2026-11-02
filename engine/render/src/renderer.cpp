@@ -214,11 +214,12 @@ struct Renderer::Impl {
     VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkPipeline sky_pipeline = VK_NULL_HANDLE;      // in the scene pass, after the opaque objects
-    VkPipeline water_pipeline = VK_NULL_HANDLE;    // after the sky: blended, no depth writes
-    VkPipeline terrain_pipeline = VK_NULL_HANDLE;  // opaque, with the terrain's material
-    VkPipeline line_pipeline = VK_NULL_HANDLE;     // debug lines, after the sky
-    VkPipeline skinned_pipeline = VK_NULL_HANDLE;  // skinned meshes (as meshes, deformed)
+    VkPipeline sky_pipeline = VK_NULL_HANDLE;       // in the scene pass, after the opaque objects
+    VkPipeline water_pipeline = VK_NULL_HANDLE;     // after the sky: blended, no depth writes
+    VkPipeline terrain_pipeline = VK_NULL_HANDLE;   // opaque, with the terrain's material
+    VkPipeline line_pipeline = VK_NULL_HANDLE;      // debug lines, after the sky
+    VkPipeline line_top_pipeline = VK_NULL_HANDLE;  // debug lines seen through everything
+    VkPipeline skinned_pipeline = VK_NULL_HANDLE;   // skinned meshes (as meshes, deformed)
     std::vector<DebugLine> debug_lines;
     Environment environment;
     TerrainLook terrain_look;
@@ -239,7 +240,8 @@ struct Renderer::Impl {
         uint32_t overlay_vertices = 0;
         Buffer lines;  // the debug lines' ends, rewritten each frame
         VkDeviceSize lines_capacity = 0;
-        uint32_t line_vertices = 0;
+        uint32_t line_vertices = 0;      // depth-tested lines first in the buffer,
+        uint32_t top_line_vertices = 0;  // then those drawn over everything
         // Skinned draws' joint matrices, one after another (set 0, binding 2), and where each
         // draw's start (by its index in the frame's draws).
         Buffer palette;
@@ -1008,8 +1010,23 @@ struct Renderer::Impl {
         line_input.pVertexAttributeDescriptions = line_attrs.data();
         info.pVertexInputState = &line_input;
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-        const VkResult line_result =
+        // (Alpha-blended: a line's alpha fades it.)
+        blend_att.blendEnable = VK_TRUE;
+        blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_att.colorBlendOp = VK_BLEND_OP_ADD;
+        blend_att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blend_att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend_att.alphaBlendOp = VK_BLEND_OP_ADD;
+        VkResult line_result =
             vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &line_pipeline);
+        if (line_result == VK_SUCCESS) {  // the same, seen through whatever is in front
+            const VkBool32 tested = depth_state.depthTestEnable;
+            depth_state.depthTestEnable = VK_FALSE;
+            line_result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr,
+                                                    &line_top_pipeline);
+            depth_state.depthTestEnable = tested;
+        }
         vkDestroyShaderModule(device, line_v, nullptr);
         vkDestroyShaderModule(device, line_f, nullptr);
         check(line_result, "Creating the debug line pipeline");
@@ -1548,14 +1565,19 @@ struct Renderer::Impl {
     // Lays out the overlay for this frame into the frame's own vertex buffer.
     // The debug lines for this frame into the frame's own vertex buffer.
     void prepare_lines(Frame& f) {
-        f.line_vertices = 0;
+        f.line_vertices = f.top_line_vertices = 0;
         if (debug_lines.empty()) return;
         std::vector<float> data;
         data.reserve(debug_lines.size() * 14);
-        for (const DebugLine& l : debug_lines) {
-            const glm::vec4 c = to_linear(l.color);
-            for (const glm::vec3& p : {l.a, l.b})
-                data.insert(data.end(), {p.x, p.y, p.z, c.r, c.g, c.b, c.a});
+        uint32_t tested = 0;
+        for (const bool top : {false, true}) {  // (the depth-tested ones first)
+            for (const DebugLine& l : debug_lines) {
+                if (l.on_top != top) continue;
+                const glm::vec4 c = to_linear(l.color);
+                for (const glm::vec3& p : {l.a, l.b})
+                    data.insert(data.end(), {p.x, p.y, p.z, c.r, c.g, c.b, c.a});
+                if (!top) tested += 2;
+            }
         }
         const VkDeviceSize bytes = data.size() * sizeof(float);
         if (bytes > f.lines_capacity) {  // the fence has passed, so the old one is unused
@@ -1565,7 +1587,8 @@ struct Renderer::Impl {
         }
         std::memcpy(f.lines.mapped, data.data(), bytes);
         vmaFlushAllocation(allocator, f.lines.allocation, 0, bytes);
-        f.line_vertices = static_cast<uint32_t>(debug_lines.size() * 2);
+        f.line_vertices = tested;
+        f.top_line_vertices = static_cast<uint32_t>(debug_lines.size() * 2) - tested;
     }
 
     void prepare_overlay(Frame& f) {
@@ -2021,11 +2044,17 @@ struct Renderer::Impl {
                 vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
             }
         }
-        if (frame.line_vertices > 0) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, line_pipeline);
+        if (frame.line_vertices + frame.top_line_vertices > 0) {
             VkDeviceSize offset = 0;
             vkCmdBindVertexBuffers(cmd, 0, 1, &frame.lines.buffer, &offset);
-            vkCmdDraw(cmd, frame.line_vertices, 1, 0, 0);
+            if (frame.line_vertices > 0) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, line_pipeline);
+                vkCmdDraw(cmd, frame.line_vertices, 1, 0, 0);
+            }
+            if (frame.top_line_vertices > 0) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, line_top_pipeline);
+                vkCmdDraw(cmd, frame.top_line_vertices, 1, frame.line_vertices, 0);
+            }
         }
         vkCmdEndRenderPass(cmd);
 
@@ -2099,6 +2128,7 @@ struct Renderer::Impl {
             if (water_pipeline) vkDestroyPipeline(device, water_pipeline, nullptr);
             if (terrain_pipeline) vkDestroyPipeline(device, terrain_pipeline, nullptr);
             if (line_pipeline) vkDestroyPipeline(device, line_pipeline, nullptr);
+            if (line_top_pipeline) vkDestroyPipeline(device, line_top_pipeline, nullptr);
             if (shadow_pipeline) vkDestroyPipeline(device, shadow_pipeline, nullptr);
             if (shadow_layout) vkDestroyPipelineLayout(device, shadow_layout, nullptr);
             if (shadow_skinned_pipeline)

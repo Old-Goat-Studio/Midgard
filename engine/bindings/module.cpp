@@ -689,6 +689,11 @@ PYBIND11_MODULE(_midgard, m) {
                       "Where agents can walk: the navigation mesh's edges over the scene.")
         .def_property("show_colliders", &Viewport::show_colliders, &Viewport::set_show_colliders,
                       "Outlines of colliders, triggers and the player over the scene.")
+        .def_property("show_lights", &Viewport::show_lights, &Viewport::set_show_lights,
+                      "A light bulb at each point and spot light (seen faintly through what "
+                      "hides it); off unless asked for.")
+        .def_property("selected", &Viewport::selected, &Viewport::set_selected,
+                      "The entity selected in the editor: a selected light shows its reach.")
         .def(
             "set_mesh",
             [](Viewport& v, const std::string& asset, const py::bytes& glb) {

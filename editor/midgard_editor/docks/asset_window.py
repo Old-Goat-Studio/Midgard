@@ -9,10 +9,9 @@ import contextlib
 import logging
 import os
 import sys
-import threading
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -381,11 +380,6 @@ def model_bounds(glb: bytes) -> tuple[list[float], list[float]] | None:
     return (lo, hi) if lo[0] != float("inf") else None
 
 
-class _Prepared(QObject):
-    """A worker thread's word that a texture set is ready (delivered on the window's thread)."""
-    ready = Signal(int)
-
-
 class AssetPlayer(QWidget):
     """The selected asset, shown or played: a picture; a model turning (a skinned one playing
     its clips) through the engine; a sound; a font's sample."""
@@ -452,10 +446,10 @@ class AssetPlayer(QWidget):
         self.timer = QTimer(self)
         self.timer.setInterval(33)
         self.timer.timeout.connect(lambda: self.tick(0.033))
-        # Textures made ready on a worker thread: which preparation is wanted, and its signal.
-        self._preparing = 0
-        self._prepared = _Prepared()
-        self._prepared.ready.connect(self._textures_ready)
+        # Textures made ready on a worker thread (the first time: seconds each, for big ones).
+        from .. import textures
+        self._preparer = textures.Preparer(self)
+        self._preparer.ready.connect(self._textures_ready)
         self.show_asset(None)
 
     # ---- what it shows ----------------------------------------------------------------------
@@ -517,7 +511,7 @@ class AssetPlayer(QWidget):
     def show_choice(self) -> None:
         """What is chosen in the list, shown (or played)."""
         self.stop()
-        self._preparing += 1  # (a preparation under way: no longer wanted)
+        self._preparer.cancel()  # (a preparation under way: no longer wanted)
         self.kind = ""
         self.picture.clear()
         self.clip.clear()
@@ -595,33 +589,23 @@ class AssetPlayer(QWidget):
         """A texture set as a material on a sphere (or a tile), every picture in its role. Its
         pictures are made ready for the engine on a worker thread the first time (seconds
         each, for big ones): the window carries on meanwhile."""
-        from .. import engine, textures
         found = self._material_slots()
         if found is None:
             self.picture.setText("(not in a library)")
             return
         root, slots = found
-        waiting = [t for t in slots.values() if textures.CACHE.cached(root, t) is None]
-        if not waiting or engine.module() is None:
+        waiting = self._preparer.waiting(root, slots.values())
+        if not waiting:
             self._render_material(root, slots)
             return
         self.kind = "preparing"
-        self._preparing += 1
-        token = self._preparing
+        self._preparer.start(root, waiting)
         self.picture.setText(f"Preparing the textures ({len(waiting)})…")
-
-        def prepare() -> None:  # (a worker thread: the engine encodes without the GIL)
-            for texture in waiting:
-                if token != self._preparing:
-                    return  # (another asset chosen meanwhile)
-                textures.texture_data(root, texture)
-            self._prepared.ready.emit(token)
-
-        threading.Thread(target=prepare, name="prepare textures", daemon=True).start()
 
     def _textures_ready(self, token: int) -> None:
         """The worker is done: shown, if it is still what is wanted."""
-        if token == self._preparing and self.kind == "preparing" and self.asset is not None:
+        if self._preparer.wanted(token) and self.kind == "preparing" and \
+                self.asset is not None:
             found = self._material_slots()
             if found is not None:
                 self._render_material(*found)

@@ -170,7 +170,17 @@ def test_an_objects_material_changes_replace_the_models(qtbot, project, tmp_path
 
 
 @needs_encode
-def test_the_preview_shows_the_material(qtbot, project, tmp_path):
+def test_the_preview_shows_the_material(qtbot, project, tmp_path, monkeypatch):
+    from midgard_editor.objects import ObjectRenderer
+    monkeypatch.setattr(textures, "CACHE", textures.TextureCache())  # (nothing ready yet)
+    lit = []
+    render = ObjectRenderer.render
+
+    def watch(renderer, *args, **kwargs):
+        lit.append(kwargs.get("key_light"))
+        return render(renderer, *args, **kwargs)
+
+    monkeypatch.setattr(ObjectRenderer, "render", watch)
     add_box(project)
     editor = MaterialEditor(project, EntityMaterial(project, "e000050"))
     qtbot.addWidget(editor)
@@ -178,6 +188,11 @@ def test_the_preview_shows_the_material(qtbot, project, tmp_path):
     (tmp_path / "blue.png").write_bytes(png((20, 40, 230, 255)))
     editor.set_color("color", [1.0, 1.0, 1.0])
     editor.use_image("base_color", tmp_path / "blue.png")
+    if engine.module() is not None:
+        # The picture is made ready on a worker thread: the window carries on meanwhile.
+        assert "Preparing the textures" in editor.preview.text()
+        qtbot.waitUntil(lambda: "Preparing" not in editor.preview.text(), timeout=30000)
+        assert lit[-1] is True  # (the lamp beside the camera)
     pixmap = editor.preview.pixmap()
     if pixmap is None or pixmap.isNull():
         pytest.skip("no offscreen rendering here: " + editor.preview.text())
