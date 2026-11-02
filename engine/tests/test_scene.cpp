@@ -2486,3 +2486,97 @@ TEST_CASE("scene exits and arrivals: read, outlined, and checked by the cook") {
     CHECK(errors[0].find("leads nowhere") != std::string::npos);
     sqlite3_close(db);
 }
+
+TEST_CASE("walking into a scene exit fades out, swaps the scene and arrives") {
+    TestPackage pkg({
+        {"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]}, "player": {}}')"},
+        {"e2_door", R"(NULL, '{"transform": {"position": [3, 1, 0]},
+                      "scene_exit": {"scene": "scn_cave", "arrival": "e9_in", "fade": 0.2,
+                                     "size": [1, 2, 2]}}')"},
+    });
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, "INSERT INTO string VALUES ('scn_cave.name', 'Cave', '')");
+        exec(db,
+             "INSERT INTO scene (id, name_key, settings) VALUES ('scn_cave', "
+             "'scn_cave.name', '{\"sky\": [0, 0, 0]}')");
+        // The cave's own player, its arrival (facing -X: turned 90 degrees) and an exit back
+        // round the arrival, which mustn't fire on arriving.
+        exec(db,
+             "INSERT INTO entity (id, scene, name, parent, components) VALUES "
+             "('e8_cave_player', 'scn_cave', 'Player', NULL, "
+             "'{\"transform\": {\"position\": [0, 1, 0]}, \"player\": {}}'), "
+             "('e9_in', 'scn_cave', 'In', NULL, '{\"transform\": {\"position\": [10, 1, 5], "
+             "\"rotation\": [0, 90, 0]}, \"arrival\": {\"name\": \"In\"}}'), "
+             "('e10_out', 'scn_cave', 'Out', NULL, '{\"transform\": {\"position\": [10, 1, "
+             "5]}, \"scene_exit\": {\"scene\": \"scn_main\", \"fade\": 0}}')");
+        sqlite3_close(db);
+    }
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto player_at = [&] {
+        midgard::Scene& s = game.scene();
+        for (entt::entity e : s.registry.view<const midgard::Player>()) return s.world_position(e);
+        return glm::dvec3(-1.0);
+    };
+    game.update(actions, 0.016f);
+    CHECK_FALSE(game.changing_scene());
+    // Into the door's box: the change starts, and the picture darkens over 0.2 s.
+    midgard::Scene& main = game.scene();
+    main.registry.get<midgard::Transform>(main.find("e1_player")).position = {3.0, 1.0, 0.0};
+    game.update(actions, 0.016f);
+    REQUIRE(game.changing_scene());
+    game.update(actions, 0.1f);
+    CHECK(game.fade() == doctest::Approx(0.5f));
+    CHECK(game.scene().id == "scn_main");
+    game.update(actions, 0.1f);  // dark: the cave now
+    CHECK(game.scene_changed());
+    CHECK(game.scene().id == "scn_cave");
+    CHECK(game.scene_change_error().empty());
+    CHECK(glm::length(player_at() - glm::dvec3(10.0, 1.0, 5.0)) < 0.2);
+    const midgard::Scene& cave = game.scene();
+    CHECK(std::abs(cave.registry.get<midgard::Transform>(cave.find("e8_cave_player")).rotation.y -
+                   90.0f) < 0.5f);
+    CHECK(game.fade() == doctest::Approx(1.0f));
+    game.update(actions, 0.1f);
+    CHECK_FALSE(game.scene_changed());
+    CHECK(game.fade() == doctest::Approx(0.5f));
+    game.update(actions, 0.1f);
+    CHECK_FALSE(game.changing_scene());
+    CHECK(game.fade() == 0.0f);
+    // Arriving inside the cave's way out didn't take it; stepping out and back in does.
+    for (int i = 0; i < 5; ++i) game.update(actions, 0.016f);
+    CHECK(game.scene().id == "scn_cave");
+    midgard::Scene& in_cave = game.scene();
+    in_cave.registry.get<midgard::Transform>(in_cave.find("e8_cave_player")).position = {20.0, 1.0,
+                                                                                         5.0};
+    game.update(actions, 0.016f);
+    in_cave.registry.get<midgard::Transform>(in_cave.find("e8_cave_player")).position = {10.0, 1.0,
+                                                                                         5.0};
+    game.update(actions, 0.016f);  // (no fade: at once)
+    game.update(actions, 0.016f);
+    CHECK(game.scene().id == "scn_main");
+    while (game.changing_scene()) game.update(actions, 0.016f);
+
+    // A scene or arrival that isn't there: the player stays.
+    game.change_scene("scn_cave", "e_nowhere", 0.0f);
+    game.update(actions, 0.016f);
+    CHECK(game.scene().id == "scn_main");
+    CHECK(game.scene_change_error().find("e_nowhere") != std::string::npos);
+    while (game.changing_scene()) game.update(actions, 0.016f);
+
+    // The world remembers the scene: a new game carries on there.
+    game.change_scene("scn_cave", "e9_in", 0.0f);
+    for (int i = 0; i < 3; ++i) game.update(actions, 0.016f);
+    REQUIRE(game.scene().id == "scn_cave");
+    const fs::path world = pkg.dir / "world";
+    game.use_world(world);
+    game.save_world();
+    midgard::Game again(pkg.dir);
+    CHECK(again.scene().id == "scn_main");
+    again.use_world(world);
+    CHECK(again.scene().id == "scn_cave");
+    CHECK(glm::length(again.scene().world_position(again.scene().find("e8_cave_player")) -
+                      glm::dvec3(10.0, 1.0, 5.0)) < 0.2);
+}

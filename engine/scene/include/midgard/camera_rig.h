@@ -73,6 +73,8 @@ public:
     // The third-person orbit (clamped).
     void set_orbit(Scene& scene, float yaw, float elevation, float distance);
     State state() const { return state_; }
+    // The yaw that puts the camera behind the player, looking the way it faces.
+    float facing_yaw(const Scene& scene) { return yaw_toward(scene, facing_); }
     void restore(Scene& scene, const State& state);
 
     // Shakes the camera for a while, fading out (strength in metres).

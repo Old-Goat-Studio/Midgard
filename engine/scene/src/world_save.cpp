@@ -24,9 +24,10 @@ CREATE TABLE IF NOT EXISTS clock (
 CREATE TABLE IF NOT EXISTS place (  -- where the player was (version 2)
     id INTEGER PRIMARY KEY CHECK (id = 1),
     x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,  -- metres, double precision
-    rx REAL NOT NULL, ry REAL NOT NULL, rz REAL NOT NULL  -- Euler degrees
+    rx REAL NOT NULL, ry REAL NOT NULL, rz REAL NOT NULL,  -- Euler degrees
+    scene TEXT  -- the scene they were in (version 3)
 );
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 )";
 
 struct Db {
@@ -110,6 +111,17 @@ WorldSave WorldSave::open(const std::filesystem::path& folder, const std::string
     }
     Db db(folder / "world.db");
     db.exec(kWorldSchema);
+    // A world from before version 3: its place gains the scene (none: the starting one).
+    bool has_scene = false;
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db.db, "SELECT name FROM pragma_table_info('place')", -1, &st,
+                           nullptr) == SQLITE_OK) {
+        while (sqlite3_step(st) == SQLITE_ROW)
+            if (std::string(reinterpret_cast<const char*>(sqlite3_column_text(st, 0))) == "scene")
+                has_scene = true;
+        sqlite3_finalize(st);
+    }
+    if (!has_scene) db.exec("ALTER TABLE place ADD COLUMN scene TEXT");
     return w;
 }
 
@@ -145,8 +157,8 @@ void WorldSave::save_clock(const WorldClock& clock) const {
 std::optional<WorldPlace> WorldSave::place() const {
     Db db(folder_ / "world.db");
     sqlite3_stmt* st = nullptr;
-    if (sqlite3_prepare_v2(db.db, "SELECT x, y, z, rx, ry, rz FROM place WHERE id = 1", -1, &st,
-                           nullptr) != SQLITE_OK)
+    if (sqlite3_prepare_v2(db.db, "SELECT x, y, z, rx, ry, rz, scene FROM place WHERE id = 1", -1,
+                           &st, nullptr) != SQLITE_OK)
         throw WorldError("world.db has no place");
     std::optional<WorldPlace> out;
     if (sqlite3_step(st) == SQLITE_ROW) {
@@ -155,6 +167,8 @@ std::optional<WorldPlace> WorldSave::place() const {
             out->position[i] = sqlite3_column_double(st, i);
             out->rotation[i] = float(sqlite3_column_double(st, 3 + i));
         }
+        if (const auto* scene = sqlite3_column_text(st, 6))
+            out->scene = reinterpret_cast<const char*>(scene);
     }
     sqlite3_finalize(st);
     return out;
@@ -165,15 +179,19 @@ void WorldSave::save_place(const WorldPlace& place) const {
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(
             db.db,
-            "INSERT INTO place (id, x, y, z, rx, ry, rz) VALUES (1, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET x = excluded.x, y = excluded.y, "
-            "z = excluded.z, rx = excluded.rx, ry = excluded.ry, rz = excluded.rz",
+            "INSERT INTO place (id, x, y, z, rx, ry, rz, scene) VALUES (1, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET x = excluded.x, y = excluded.y, z = excluded.z, "
+            "rx = excluded.rx, ry = excluded.ry, rz = excluded.rz, scene = excluded.scene",
             -1, &st, nullptr) != SQLITE_OK)
         throw WorldError("world.db has no place");
     for (int i = 0; i < 3; ++i) {
         sqlite3_bind_double(st, 1 + i, place.position[i]);
         sqlite3_bind_double(st, 4 + i, double(place.rotation[i]));
     }
+    if (place.scene.empty())
+        sqlite3_bind_null(st, 7);
+    else
+        sqlite3_bind_text(st, 7, place.scene.c_str(), -1, SQLITE_TRANSIENT);
     const int rc = sqlite3_step(st);
     sqlite3_finalize(st);
     if (rc != SQLITE_DONE) throw WorldError("can't save the player's place in world.db");

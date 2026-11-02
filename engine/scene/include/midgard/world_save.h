@@ -44,6 +44,7 @@ struct WorldClock {
 struct WorldPlace {
     glm::dvec3 position{0.0};
     glm::vec3 rotation{0.0f};  // Euler degrees, as in the transform component
+    std::string scene;         // the scene they were in (empty: saved before scenes changed)
 };
 
 class WorldSave {

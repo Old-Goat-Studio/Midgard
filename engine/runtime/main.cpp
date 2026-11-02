@@ -236,6 +236,8 @@ public:
     virtual std::vector<render::DebugLine> debug_lines(const glm::dvec3&) const { return {}; }
     // The scene as JSON (entities and their transforms and colours), for tests.
     virtual std::string dump() const { return "{}"; }
+    // How dark the picture is (a scene change fading out and in): 0 clear, 1 black.
+    virtual float fade() const { return 0.0f; }
     // The player's profile file: used from now on, and saved when the game ends.
     virtual void use_profile(const std::filesystem::path&) {}
     // The world's folder: its clock is restored now and saved when the game ends.
@@ -362,6 +364,7 @@ public:
         return game_.scene().environment(origin);
     }
     render::TerrainLook terrain_look() const override { return game_.terrain_look(); }
+    float fade() const override { return game_.fade(); }
     render::Light light(const glm::dvec3& origin) const override {
         return game_.scene().light(origin);
     }
@@ -416,6 +419,7 @@ public:
             world_hash = hex;
         }
         return nlohmann::json{{"entities", entities},
+                              {"scene", game_.scene().id},
                               {"world_hash", world_hash},
                               {"sky", {sky.x, sky.y, sky.z}},
                               {"time", game_.time().now()},
@@ -434,6 +438,13 @@ public:
 
     void apply(const nlohmann::json& message, render::Renderer* renderer) override {
         const std::string type = message.value("type", "");
+        // Edits to a scene the game isn't in (the player went through a scene exit) wait for
+        // the next Play.
+        if (message.contains("scene") && message["scene"].is_string() &&
+            message["scene"].get<std::string>() != game_.scene().id && type != "scene.dump") {
+            acknowledge("skipped " + type + ": the game is in scene " + game_.scene().id);
+            return;
+        }
         if (type == "scene.dump") {  // what the game has, for the editor's tests and tools
             if (g_link) g_link->send({{"type", "scene"}, {"scene", nlohmann::json::parse(dump())}});
             return;
@@ -1079,6 +1090,7 @@ int run_window(const Options& opt, Source& source) {
                 MIDGARD_PROFILE_SCOPE("render");
                 renderer.set_environment(source.environment(camera.origin));
                 renderer.set_terrain_look(source.terrain_look());
+                renderer.set_exposure(opt.exposure * (1.0f - source.fade()));
                 renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
                                                       : std::vector<render::DebugLine>{});
                 drawn =

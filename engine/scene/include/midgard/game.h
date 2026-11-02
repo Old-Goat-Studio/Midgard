@@ -147,6 +147,21 @@ public:
     void save_world();
     const WorldSave* world() const { return world_ ? &*world_ : nullptr; }
 
+    // ---- moving between scenes (milestone 5.11a) ----
+    // Takes the player to another scene: the picture fades out over `fade` seconds, the scene
+    // being left is unloaded and the target loaded with the player at the arrival (an entity
+    // with an arrival; empty: where the scene puts its player), its ground round the player is
+    // made, and the picture fades in again. A scene exit the player walks into (activation
+    // "enter") calls this; so do scripts. Asked again while one is under way: ignored.
+    void change_scene(const std::string& scene, const std::string& arrival = "", float fade = 0.5f);
+    bool changing_scene() const { return change_.has_value(); }
+    // How dark the picture is: 0 clear, 1 black (the renderer's exposure scales by 1 - fade).
+    float fade() const { return fade_; }
+    // Whether the last update swapped the scene (scripts start again from it).
+    bool scene_changed() const { return scene_changed_; }
+    // Why the last change failed (a missing scene or arrival), or empty: the player stays.
+    const std::string& scene_change_error() const { return scene_change_error_; }
+
 private:
     render::MeshData load_mesh(const std::string& asset) const;
     void refresh_camera(entt::entity edited);
@@ -191,6 +206,23 @@ private:
     void place_again();            // the terrain changed: its placed objects are made again
     void update_ground(int max_tiles = 6);
     void put_on_ground(entt::entity e);
+    // Moving between scenes.
+    struct SceneChange {
+        std::string scene, arrival;
+        float fade = 0.5f, t = 0.0f;
+        bool swapped = false;
+    };
+    std::optional<SceneChange> change_;
+    float fade_ = 0.0f;
+    bool scene_changed_ = false;
+    bool stream_all_ = false;  // a scene was just loaded: its view is made in full, at once
+    std::string scene_change_error_;
+    std::unordered_set<entt::entity> exits_inside_;  // scene exits the player is in
+    void load_scene(const std::string& scene, const std::string& arrival);
+    void update_scene_change(float dt);
+    void update_exits();
+    void note_exits_inside();
+    bool inside_exit(entt::entity exit, const glm::dvec3& p) const;
 };
 
 }  // namespace midgard

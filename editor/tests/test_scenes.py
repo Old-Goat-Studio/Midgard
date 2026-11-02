@@ -302,3 +302,40 @@ def test_the_cook_refuses_an_exit_to_nowhere_and_takes_a_sound_one(project, tmp_
                                             "activation": "use"}
     project.put_entity(exit_entity)
     assert cook(project, tmp_path / "good").manifest
+
+
+# ---- changing scenes in the game (step 4) ----------------------------------------------------
+def run_game(package, frames: int) -> dict:
+    runtime = next((r for r in runtime_candidates() if r.is_file()), None)
+    if runtime is None:
+        pytest.skip("no runtime built")
+    run = subprocess.run([str(runtime), "--package", str(package), "--simulate", str(frames),
+                          "--dump-scene"], capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr
+    return json.loads([x for x in run.stdout.splitlines() if x.startswith("{")][-1])
+
+
+@needs_engine
+def test_the_game_goes_through_a_scene_exit_to_the_arrival(project, tmp_path):
+    command = scenes.AddSceneCommand(project, "Cave")
+    project.undo_stack.push(command)
+    cave = command.scene
+    arrival = Entity(project.next_entity_id(), "From the Main", None,
+                     {"transform": {"position": [6.0, 0.6, -2.0]}, "arrival": {"name": "In"}})
+    project.put_entity(arrival, cave)
+    # The main scene's player starts above a pit whose bottom is the exit: it falls in.
+    player = next(e for e in project.entities(MAIN_SCENE) if e.name == "Player")
+    player.components["transform"]["position"] = [0.0, 4.0, 0.0]
+    project.put_entity(player)
+    project.put_entity(Entity(project.next_entity_id(), "Pit", None, {
+        "transform": {"position": [0.0, 0.75, 0.0]},
+        "scene_exit": {"scene": cave, "arrival": arrival.id, "activation": "enter",
+                       "size": [2.0, 1.5, 2.0], "fade": 0.25}}))
+    package = cook(project, tmp_path / "pkg").out_dir
+    before = run_game(package, 5)  # still falling
+    assert before["scene"] == MAIN_SCENE
+    after = run_game(package, 150)  # fell in, faded out and in
+    assert after["scene"] == cave
+    cave_player = next(e for e in after["entities"] if e["name"] == "Player")
+    assert abs(cave_player["position"][0] - 6.0) < 0.3
+    assert abs(cave_player["position"][2] + 2.0) < 0.3

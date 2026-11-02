@@ -24,6 +24,7 @@ Game::Game(const std::filesystem::path& package_dir)
     rebuild_terrain();
     camera_ = std::make_unique<CameraRig>(scene_);
     camera_->follow(scene_, 0.0f, camera_sweep());
+    note_exits_inside();
 
     // The clock, on the standard calendar (validation refused unusable calendars at the cook).
     const std::filesystem::path database = package_dir / package_.manifest.database;
@@ -108,8 +109,15 @@ void Game::use_world(const std::filesystem::path& folder) {
     }
     // The player is put back where they were (the character follows on the next step); the
     // camera keeps its view, now round the player's new place.
+    const auto place = world_->place();
+    if (place && !place->scene.empty() && place->scene != scene_.id) {
+        try {  // the scene they were in (where the scene puts them; their place follows)
+            load_scene(place->scene, "");
+        } catch (const std::exception&) {  // (a scene since deleted: the starting one)
+        }
+    }
     const entt::entity player = camera_->player();
-    if (const auto place = world_->place(); place && player != entt::null) {
+    if (place && (place->scene.empty() || place->scene == scene_.id) && player != entt::null) {
         Transform& t = scene_.registry.get<Transform>(player);
         t.position = place->position;
         t.rotation = place->rotation;
@@ -117,6 +125,7 @@ void Game::use_world(const std::filesystem::path& folder) {
         camera_ = std::make_unique<CameraRig>(scene_);
         camera_->restore(scene_, view);
         camera_->follow(scene_, 0.0f, camera_sweep());
+        note_exits_inside();
     }
 }
 
@@ -126,7 +135,7 @@ void Game::save_world() {
     const entt::entity player = camera_->player();
     if (player != entt::null && scene_.registry.valid(player)) {
         const Transform& t = scene_.registry.get<Transform>(player);
-        world_->save_place({t.position, t.rotation});
+        world_->save_place({t.position, t.rotation, scene_.id});
     }
 }
 
@@ -151,6 +160,7 @@ CameraSweep Game::camera_sweep() const {
 }
 
 void Game::update(const Actions& actions, float dt) {
+    update_scene_change(dt);
     time_events_ = std::move(skipped_);
     skipped_.clear();
     const std::vector<TimeEvent>& passed = time_.update(dt);
@@ -158,11 +168,15 @@ void Game::update(const Actions& actions, float dt) {
     update_sun();
     scene_.water_time += dt;
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
-    physics_->set_player_intent(intent.walk, intent.jump);
+    if (change_)  // (on the way to another scene: the player stands still)
+        physics_->set_player_intent(glm::vec3(0.0f), false);
+    else
+        physics_->set_player_intent(intent.walk, intent.jump);
     update_ground();               // solid ground under the player before it moves
     physics_->update(scene_, dt);  // the player walks
     camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
+    update_exits();
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
             save_profile();
@@ -420,6 +434,11 @@ void Game::set_terrain_stamps(std::vector<TerrainStamp> stamps) {
 
 void Game::stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait) {
     terrain_renderer_ = &renderer;
+    if (stream_all_) {  // a scene just loaded: its meshes, and all of its ground in view
+        for (const std::string& problem : upload_new_meshes(renderer)) (void)problem;
+        wait = true;
+        stream_all_ = false;
+    }
     if (terrain_) terrain_->update(camera, &renderer, wait);
     if (placed_changed_) {  // the placed objects' meshes, as they come
         upload_new_meshes(renderer);
@@ -529,6 +548,131 @@ render::Camera Game::camera(float aspect) const {
                                      float(inside_view_distance(scene_.settings.body)));
     cam.projection = render::perspective(glm::radians(55.0f), aspect, 0.05f, far_plane);
     return cam;
+}
+
+// ---- moving between scenes (milestone 5.11a) ---------------------------------------------------
+
+void Game::change_scene(const std::string& scene, const std::string& arrival, float fade) {
+    if (change_) return;
+    change_ = SceneChange{scene, arrival, std::clamp(fade, 0.0f, 10.0f)};
+    scene_change_error_.clear();
+}
+
+void Game::update_scene_change(float dt) {
+    scene_changed_ = false;
+    if (!change_) return;
+    SceneChange& c = *change_;
+    c.t += dt;
+    const float part = c.fade > 0.0f ? std::min(c.t / c.fade, 1.0f) : 1.0f;
+    if (!c.swapped) {
+        fade_ = part;
+        if (part < 1.0f) return;
+        try {
+            load_scene(c.scene, c.arrival);
+            scene_changed_ = true;
+        } catch (const std::exception& e) {  // (the cook checks exits; scripts may still ask)
+            scene_change_error_ = e.what();
+        }
+        c.swapped = true;
+        c.t = 0.0f;
+        return;
+    }
+    fade_ = 1.0f - part;
+    if (part >= 1.0f) {
+        change_.reset();
+        fade_ = 0.0f;
+    }
+}
+
+void Game::load_scene(const std::string& id, const std::string& arrival) {
+    // Everything that can fail first, so a failed change leaves the scene as it was.
+    Scene next = Scene::load(package_.root / package_.manifest.database, id);
+    std::optional<glm::dmat4> at;
+    if (!arrival.empty()) {
+        const entt::entity a = next.find(arrival);
+        if (a == entt::null || !next.registry.all_of<Arrival>(a))
+            throw SceneError("scene '" + id + "' has no arrival '" + arrival + "'");
+        at = next.world_matrix(a);
+    }
+    const bool had_camera = camera_ && camera_->active();
+    const CameraRig::State view = had_camera ? camera_->state() : CameraRig::State{};
+
+    // Leave the scene: its ground, placed objects and physics go.
+    if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
+    terrain_.reset();
+    placed_.reset();
+    ground_.reset();
+    inside_.clear();
+    exits_inside_.clear();
+    trigger_events_.clear();
+    outline_meshes_.clear();
+    scene_ = std::move(next);
+
+    // The player at the arrival, facing the way it does (level: "up" comes from the world).
+    entt::entity player = entt::null;
+    for (entt::entity e : scene_.registry.view<const Player>()) player = e;
+    if (at && player != entt::null) {
+        glm::dmat4 parent(1.0);
+        if (const auto* info = scene_.registry.try_get<EntityInfo>(player);
+            info && info->parent != entt::null && scene_.registry.valid(info->parent))
+            parent = scene_.world_matrix(info->parent);
+        Transform& t = scene_.registry.get<Transform>(player);
+        t.position = glm::dvec3(glm::inverse(parent) * (*at)[3]);
+        const glm::dvec3 ahead = -glm::dvec3((*at)[2]);
+        const glm::vec3 turn = look_rotation(glm::vec3(0.0f), glm::vec3(ahead));
+        t.rotation = {0.0f, turn.y, 0.0f};
+    }
+    rebuild_physics();
+    rebuild_terrain();  // (lifts the player onto the ground there, and makes it solid)
+    camera_ = std::make_unique<CameraRig>(scene_);
+    if (had_camera && camera_->active()) {  // the same view, behind the player as it faces
+        CameraRig::State s = view;
+        s.yaw = camera_->facing_yaw(scene_);
+        camera_->restore(scene_, s);
+    }
+    camera_->follow(scene_, 0.0f, camera_sweep());
+    update_sun();
+    note_exits_inside();
+    stream_all_ = true;
+}
+
+void Game::note_exits_inside() {
+    // Exits the player starts or arrives inside wait until they have stepped out.
+    exits_inside_.clear();
+    for (entt::entity player : scene_.registry.view<const Player>())
+        for (entt::entity e : scene_.registry.view<const SceneExit>())
+            if (inside_exit(e, scene_.world_position(player))) exits_inside_.insert(e);
+}
+
+bool Game::inside_exit(entt::entity exit, const glm::dvec3& p) const {
+    const SceneExit& x = scene_.registry.get<SceneExit>(exit);
+    const glm::dvec3 local =
+        glm::dvec3(glm::inverse(scene_.world_matrix(exit)) * glm::dvec4(p, 1.0));
+    const glm::dvec3 half = glm::dvec3(x.size) * 0.5;
+    return std::abs(local.x) <= half.x && std::abs(local.y) <= half.y &&
+           std::abs(local.z) <= half.z;
+}
+
+void Game::update_exits() {
+    if (change_) return;
+    entt::entity player = entt::null;
+    for (entt::entity e : scene_.registry.view<const Player>()) player = e;
+    if (player == entt::null) return;
+    const glm::dvec3 p = scene_.world_position(player);
+    for (entt::entity e : scene_.registry.view<const SceneExit>()) {
+        const bool inside = inside_exit(e, p);
+        const bool was = exits_inside_.contains(e);
+        if (inside && !was) {
+            exits_inside_.insert(e);
+            const SceneExit& x = scene_.registry.get<SceneExit>(e);
+            if (x.activation == ExitActivation::Enter && !x.scene.empty()) {
+                change_scene(x.scene, x.arrival, x.fade);
+                return;
+            }
+        } else if (!inside && was) {
+            exits_inside_.erase(e);
+        }
+    }
 }
 
 }  // namespace midgard

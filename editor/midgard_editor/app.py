@@ -78,7 +78,7 @@ def _smoke_test(app: QApplication, window, folder: Path) -> int:
         result = {
             "engine": engine.version if engine else None,
             "engine_module": engine_module.module() is not None,
-            "ok": opened and window.windowTitle() == f"{APP_NAME} - SmokeTest",
+            "ok": opened and window.windowTitle() == f"{APP_NAME} - SmokeTest - Main",
             "title": window.windowTitle(),
             "panels": sorted(window.panels),
             "version": VERSION,

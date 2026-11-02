@@ -83,10 +83,10 @@ def entity_message(project: Project, entity_id: str) -> dict:
     """entity.put for an entity of the project, or entity.delete if it has gone."""
     entity = project.entity(entity_id)
     if entity is None:
-        return {"type": "entity.delete", "entity": entity_id}
-    return {"type": "entity.put", "entity": {"id": entity.id, "name": entity.name,
-                                             "parent": entity.parent,
-                                             "components": entity.components}}
+        return {"type": "entity.delete", "entity": entity_id, "scene": project.scene}
+    return {"type": "entity.put", "scene": project.scene,
+            "entity": {"id": entity.id, "name": entity.name, "parent": entity.parent,
+                       "components": entity.components}}
 
 
 class State(Enum):
@@ -309,7 +309,7 @@ class PlaySession(QObject):
         entities = self.project.entities()
         current = {e.id for e in entities}
         for gone in sorted(self._known - current):
-            self.send({"type": "entity.delete", "entity": gone})
+            self.send({"type": "entity.delete", "entity": gone, "scene": self.project.scene})
         for added in parents_first([e for e in entities if e.id not in self._known]):
             self.send(entity_message(self.project, added.id))
         self._known = current

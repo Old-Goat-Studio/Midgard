@@ -62,8 +62,10 @@ def test_entity_messages(project):
     put = live_link.entity_message(project, "e000004")
     assert put["type"] == "entity.put"
     assert put["entity"]["id"] == "e000004" and "transform" in put["entity"]["components"]
+    assert put["scene"] == "scn_main"  # (a game in another scene leaves it for the next Play)
     assert live_link.entity_message(project, "nobody") == {"type": "entity.delete",
-                                                           "entity": "nobody"}
+                                                           "entity": "nobody",
+                                                           "scene": "scn_main"}
 
 
 @pytest.fixture
@@ -103,8 +105,8 @@ def test_play_session_with_a_stand_in_game(project, session, qtbot, tmp_path):
 
     # Deleting an entity sends entity.delete; pausing sends pause.
     project.delete_entity("e000004")
-    qtbot.waitUntil(lambda: {"type": "entity.delete", "entity": "e000004"} in echoed(received),
-                    timeout=5000)
+    gone = {"type": "entity.delete", "entity": "e000004", "scene": "scn_main"}
+    qtbot.waitUntil(lambda: gone in echoed(received), timeout=5000)
     session.pause()
     assert session.state == State.PAUSED
     qtbot.waitUntil(lambda: {"type": "pause"} in echoed(received), timeout=5000)
@@ -177,8 +179,8 @@ def test_hot_reload_messages(project, session, qtbot, tmp_path):
 
     # Deleting the World folder takes everything in it; Undo sends the folder first.
     project.undo_stack.push(DeleteEntityCommand(project, project.entity("e000006")))
-    qtbot.waitUntil(lambda: {"type": "entity.delete", "entity": "e000001"} in echoed(received),
-                    timeout=5000)
+    gone = {"type": "entity.delete", "entity": "e000001", "scene": "scn_main"}
+    qtbot.waitUntil(lambda: gone in echoed(received), timeout=5000)
     project.undo_stack.undo()
     qtbot.waitUntil(lambda: live_link.entity_message(project, "e000001") in echoed(received),
                     timeout=5000)
