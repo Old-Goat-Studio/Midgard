@@ -93,6 +93,7 @@ class FileDetails(QWidget):
 class Inspector(QWidget):
     open_script = Signal(str)  # a script module to open in the Script editor
     open_object = Signal(str)  # an object to show in the Objects panel
+    open_animation = Signal(str)  # a character to show in the Animation editor
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -121,6 +122,7 @@ class Inspector(QWidget):
         self.entity_form = EntityForm(self.settings.project, entity_id)
         self.entity_form.open_script.connect(self.open_script)
         self.entity_form.open_object.connect(self.open_object)
+        self.entity_form.open_animation.connect(self.open_animation)
         # Rebuilt after the current signal has been delivered (the old form sent it).
         self.entity_form.rebuild.connect(
             lambda eid: QTimer.singleShot(0, lambda: self.show_entity(eid)))

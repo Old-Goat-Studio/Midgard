@@ -209,8 +209,10 @@ void Characters::update(const Scene& scene, float dt) {
         s.last = at;
         s.placed = true;
         if (s.player) {
-            s.player->set(kSpeedParameter, s.speed);
-            s.player->set(kVerticalSpeedParameter, s.vertical_speed);
+            if (automatic_) {
+                s.player->set(kSpeedParameter, s.speed);
+                s.player->set(kVerticalSpeedParameter, s.vertical_speed);
+            }
             const AnimPlayer::Step step = s.player->update(dt * c.speed, *s.pose);
             for (const std::string& name : step.events) events_.push_back({e, name});
             if (step.motion != glm::vec3(0.0f)) motions_.emplace_back(e, step.motion);
@@ -247,6 +249,14 @@ void Characters::draws(const Scene& scene, const glm::dvec3& origin, const Mater
 const Pose* Characters::pose(entt::entity e) const {
     const auto it = states_.find(e);
     return it == states_.end() ? nullptr : it->second.pose.get();
+}
+
+void Characters::restart(entt::entity e) {
+    const auto it = states_.find(e);
+    if (it == states_.end()) return;
+    it->second.time = 0.0f;
+    it->second.graph.clear();  // (started again at the next update)
+    it->second.player.reset();
 }
 
 Characters::State& Characters::graph_state(entt::entity e) {

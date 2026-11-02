@@ -27,6 +27,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "midgard/anim_graph.h"
 #include "midgard/body.h"
 #include "midgard/calendar.h"
 #include "midgard/environment.h"
@@ -316,6 +317,18 @@ PYBIND11_MODULE(_midgard, m) {
         "A skinned glTF's skeleton and clips (midgard/gltf_skin.h): {joints: [names], clips: "
         "[{name, duration}], vertices, rig: {humanoid bone: joint found by name, or ''}}. "
         "ValueError if it isn't one.");
+    m.def(
+        "anim_graph_problem",
+        [](const std::string& graph_json) {
+            try {
+                (void)midgard::AnimGraph::parse(graph_json);
+                return std::string();
+            } catch (const midgard::AnimationError& e) {
+                return std::string(e.what());
+            }
+        },
+        py::arg("graph_json"),
+        "What is wrong with an animation graph (midgard/anim_graph.h), or '' if nothing.");
     m.def(
         "humanoid_bones",
         [] {
@@ -615,6 +628,60 @@ PYBIND11_MODULE(_midgard, m) {
         .def("put_entity", &Viewport::put_entity, py::arg("entity_json"),
              "Adds or replaces an entity: JSON {id, name, parent, components}.")
         .def("remove_entity", &Viewport::remove_entity, py::arg("entity_id"))
+        .def("animate", &Viewport::animate, py::arg("dt"),
+             "Moves characters' clips and graphs on by dt seconds at the next render.")
+        .def(
+            "set_animation",
+            [](Viewport& v, const std::string& id, const std::string& name, float value) {
+                try {
+                    v.set_animation(id, name, value);
+                } catch (const midgard::AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("entity_id"), py::arg("name"), py::arg("value"),
+            "Sets a parameter of a character's animation graph (ValueError: none such).")
+        .def(
+            "trigger_animation",
+            [](Viewport& v, const std::string& id, const std::string& name) {
+                try {
+                    v.trigger_animation(id, name);
+                } catch (const midgard::AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("entity_id"), py::arg("name"))
+        .def(
+            "animation",
+            [](const Viewport& v, const std::string& id, const std::string& name) {
+                try {
+                    return v.animation(id, name);
+                } catch (const midgard::AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("entity_id"), py::arg("name"), "A parameter of a character's graph.")
+        .def(
+            "animation_state",
+            [](const Viewport& v, const std::string& id, int layer) {
+                try {
+                    return v.animation_state(id, layer);
+                } catch (const midgard::AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("entity_id"), py::arg("layer") = 0,
+            "The state a layer of a character's graph is in ('' without a graph).")
+        .def(
+            "restart_animation",
+            [](Viewport& v, const std::string& id) {
+                try {
+                    v.restart_animation(id);
+                } catch (const midgard::AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("entity_id"), "A character's clip or graph from the start.")
         .def("clear", &Viewport::clear, "Removes every entity.")
         .def("set_settings", &Viewport::set_settings, py::arg("settings_json"),
              "The scene settings: JSON {sky, ambient, body}.")

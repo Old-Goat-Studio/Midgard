@@ -100,6 +100,18 @@ public:
     void set_show_navigation(bool show) { show_navigation_ = show; }
     bool show_navigation() const { return show_navigation_; }
 
+    // ---- characters' animation (milestone 5.13: the Animation editor's preview) ----
+    // Moves their clips and graphs on by dt at the next render (the viewport shows them still
+    // otherwise). "speed" is a parameter like the rest here: nothing moves them.
+    void animate(float dt) { pending_dt_ += dt; }
+    // An entity's graph (ValueError: none, or no such parameter).
+    void set_animation(const std::string& entity_id, const std::string& name, float value);
+    void trigger_animation(const std::string& entity_id, const std::string& name);
+    float animation(const std::string& entity_id, const std::string& name) const;
+    std::string animation_state(const std::string& entity_id, int layer) const;
+    // Restarts an entity's character (its clip or graph from the start).
+    void restart_animation(const std::string& entity_id);
+
     // ---- the target ----
     // platform: "windows" (handle = HWND) or "xcb" (handle = X11 window id).
     void attach_window(const std::string& platform, uint64_t handle, uint32_t width,
@@ -145,6 +157,8 @@ private:
     // Characters (milestone 5.13), shown at the start of their clips: read from the files the
     // editor sent (set_mesh keeps their bytes).
     Characters characters_;
+    float pending_dt_ = 0.0f;
+    entt::entity character(const std::string& entity_id) const;
     std::unordered_map<std::string, std::vector<uint8_t>> files_;
     void drop_terrain();
     void drop_characters();

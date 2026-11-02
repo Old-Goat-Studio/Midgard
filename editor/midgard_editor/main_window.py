@@ -37,6 +37,7 @@ from .about import AboutDialog, engine_info, runtime_candidates
 from .backup import BackupScheduler
 from .cook import CookError, cook
 from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_project_under_git
+from .docks.animation_editor import AnimationPanel
 from .docks.assistant import AssistantPanel
 from .docks.calendar_panel import CalendarPanel
 from .docks.camera_editor import CameraDialog
@@ -69,7 +70,7 @@ PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
           "calendar": "Calendar", "environment": "Environment", "terrain": "Terrain",
-          "world_types": "World Types", "scenes": "Scenes"}
+          "world_types": "World Types", "scenes": "Scenes", "animation": "Animation"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -168,6 +169,7 @@ class MainWindow(QMainWindow):
         self.environment_panel.season_previewed.connect(self.viewport.set_season)
         self.terrain_panel = TerrainPanel()
         self.world_type_panel = WorldTypePanel()
+        self.animation_panel = AnimationPanel()
         self.scenes_panel = ScenesPanel()
         self.scenes_panel.set_can_open(True)
         self.scenes_panel.open_requested.connect(self.open_scene)
@@ -184,6 +186,8 @@ class MainWindow(QMainWindow):
         self.browser.file_selected.connect(self.inspector.show_selection)
         self.scene_panel.entity_selected.connect(self.inspector.show_entity)
         self.scene_panel.entity_selected.connect(self.viewport.set_selected)
+        self.scene_panel.entity_selected.connect(self.animation_panel.show_entity)
+        self.inspector.open_animation.connect(self.edit_animation)
         self.inspector.setMinimumWidth(340)
         self.inspector.open_script.connect(self.edit_script)
         self.inspector.open_object.connect(self.edit_object)
@@ -194,7 +198,7 @@ class MainWindow(QMainWindow):
                    "project_page": self.project_page, "objects": self.objects_panel,
                    "calendar": self.calendar_panel, "environment": self.environment_panel,
                    "terrain": self.terrain_panel, "world_types": self.world_type_panel,
-                   "scenes": self.scenes_panel}
+                   "scenes": self.scenes_panel, "animation": self.animation_panel}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -235,6 +239,7 @@ class MainWindow(QMainWindow):
         self._tab_behind_viewport("project_page")
         self._tab_behind_viewport("objects")
         self._tab_behind_viewport("world_types")
+        self._tab_behind_viewport("animation")
         self._place_assistant()
         self._tab_behind_inspector("calendar")
         self._tab_behind_inspector("environment")
@@ -347,6 +352,8 @@ class MainWindow(QMainWindow):
                 self._tab_behind_viewport("objects")
             if "world_types" not in saved:
                 self._tab_behind_viewport("world_types")
+            if "animation" not in saved:
+                self._tab_behind_viewport("animation")
             if "scenes" not in saved:
                 self._tab_beside_scene("scenes")
             if "calendar" not in saved:
@@ -647,6 +654,12 @@ class MainWindow(QMainWindow):
             self.panels["viewport"].toggleView(True)
             self.panels["viewport"].setAsCurrentTab()
 
+    def edit_animation(self, entity_id: str) -> None:
+        """Shows a character's animation graph in the Animation editor (the Inspector's)."""
+        self.panels["animation"].toggleView(True)
+        self.panels["animation"].setAsCurrentTab()
+        self.animation_panel.show_entity(entity_id)
+
     def edit_script(self, module: str) -> None:
         """Shows a script in the Script editor (from the Inspector's Edit button)."""
         if not module:
@@ -716,6 +729,7 @@ class MainWindow(QMainWindow):
         self.environment_panel.set_project(project)
         self.terrain_panel.set_project(project)
         self.world_type_panel.set_project(project)
+        self.animation_panel.set_project(project)
         self.scenes_panel.set_project(project)
         MaterialDialog.close_all()
         CameraDialog.close_all()

@@ -57,6 +57,9 @@ public:
     // Their draws (characters whose model is on the GPU), except `hidden`.
     void draws(const Scene& scene, const glm::dvec3& origin, const MaterialCache& materials,
                entt::entity hidden, std::vector<render::DrawItem>& out) const;
+    // Whether "speed" and "vertical_speed" are set from how characters move (else they are left
+    // to whoever sets them: the editor's preview).
+    void set_automatic(bool automatic) { automatic_ = automatic; }
     // A scene was left: the characters' states go (entity handles are used again); the models
     // stay, for a scene coming back.
     void clear_states() { states_.clear(); }
@@ -71,6 +74,8 @@ public:
     void set_parameter(entt::entity e, const std::string& name, float value);
     void trigger(entt::entity e, const std::string& name);
     float parameter(entt::entity e, const std::string& name) const;
+    // Its clip, or graph, from the start (a graph's parameters back to their starting values).
+    void restart(entt::entity e);
     // The state a layer of its graph is in ("" without one).
     std::string state_of(entt::entity e, size_t layer = 0) const;
 
@@ -126,6 +131,7 @@ private:
     std::unordered_map<entt::entity, State> states_;
     std::map<std::string, std::shared_ptr<const AnimGraph>> graphs_;  // by JSON text
     std::vector<Event> events_;
+    bool automatic_ = true;
     std::vector<std::pair<entt::entity, glm::vec3>> motions_;
 };
 

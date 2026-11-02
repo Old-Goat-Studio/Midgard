@@ -96,6 +96,7 @@ def _remove_button(tooltip: str, slot) -> QToolButton:
 class EntityForm(QWidget):
     open_script = Signal(str)  # a module to open in the Script editor
     open_object = Signal(str)  # an object to show in the Objects panel
+    open_animation = Signal(str)  # a character to show in the Animation editor
     rebuild = Signal(str)  # the entity's set of components changed: build the form again
 
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
@@ -616,6 +617,12 @@ class EntityForm(QWidget):
         self.character_rig_button.setToolTip("Which of the model's joints is each humanoid bone")
         self.character_rig_button.clicked.connect(self.edit_rig)
         form.addRow("Rig", _row(self.character_rig, self.character_rig_button))
+        graph = QPushButton("Edit Animation Graph..." if "graph" in entity.components["character"]
+                            else "Animation Graph...")
+        graph.setToolTip("What it plays, decided as it plays: states, blends, transitions and "
+                         "layers (the Animation editor)")
+        graph.clicked.connect(lambda: self.open_animation.emit(self.entity_id))
+        form.addRow("Graph", graph)
         self._refresh_character(entity)
 
     def model_info(self, asset: str) -> dict | None:

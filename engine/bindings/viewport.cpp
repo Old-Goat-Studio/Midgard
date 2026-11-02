@@ -83,6 +83,7 @@ struct Viewport::Platform {
 
 Viewport::Viewport() : platform_(std::make_unique<Platform>()) {
     scene_.id = "editor";
+    characters_.set_automatic(false);  // (nothing moves here: the preview sets "speed")
 }
 
 Viewport::~Viewport() {
@@ -309,6 +310,33 @@ std::optional<Viewport::TerrainHit> Viewport::terrain_hit(const glm::dvec3& orig
     return TerrainHit{s.face, s.u, s.v, *p, s.height};
 }
 
+entt::entity Viewport::character(const std::string& entity_id) const {
+    const entt::entity e = scene_.find(entity_id);
+    if (e == entt::null || !scene_.registry.all_of<CharacterRef>(e))
+        throw AnimationError("'" + entity_id + "' isn't a character");
+    return e;
+}
+
+void Viewport::set_animation(const std::string& entity_id, const std::string& name, float value) {
+    characters_.set_parameter(character(entity_id), name, value);
+}
+
+void Viewport::trigger_animation(const std::string& entity_id, const std::string& name) {
+    characters_.trigger(character(entity_id), name);
+}
+
+float Viewport::animation(const std::string& entity_id, const std::string& name) const {
+    return characters_.parameter(character(entity_id), name);
+}
+
+std::string Viewport::animation_state(const std::string& entity_id, int layer) const {
+    return characters_.state_of(character(entity_id), size_t(std::max(0, layer)));
+}
+
+void Viewport::restart_animation(const std::string& entity_id) {
+    characters_.restart(character(entity_id));
+}
+
 void Viewport::drop_characters() {
     characters_.renderer_gone();
 }
@@ -427,7 +455,8 @@ bool Viewport::render() {
         return it->second;
     });
     characters_.upload(*renderer_);
-    characters_.update(scene_, 0.0f);
+    characters_.update(scene_, pending_dt_);
+    pending_dt_ = 0.0f;
     characters_.draws(scene_, camera.origin, materials_, entt::null, draws);
     if (show_navigation_)  // (after the terrain: its navigation is made from it)
         for (const render::DebugLine& l : navigation_lines(camera.origin)) lines.push_back(l);
