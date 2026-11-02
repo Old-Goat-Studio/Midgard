@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 CONFIG_FORMAT = 1
 # The project's folders, made when it is created and again whenever it opens (Git doesn't keep
 # empty folders, so a fresh clone may lack some).
-FOLDERS = ("audio", "images", "objects", "scripts", "textures")
+FOLDERS = ("audio", "images", "library", "objects", "scripts", "textures")
 # Layout 1: models in objects/ (they were in assets/), and scenes grouped in a World folder
 # with a Sky entity. Older projects are brought up to date when they open (upgrade_layout).
 LAYOUT = 1
