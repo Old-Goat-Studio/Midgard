@@ -114,6 +114,11 @@ public:
     bool has(const std::string& parameter) const { return values_.contains(parameter); }
     const std::string& state(size_t layer = 0) const;
 
+    // Kept in step with another graph (a first-person rig's with its body's): its parameters
+    // of the same names copied, and each layer whose leader's state it has by name put in that
+    // state at the same point in its cycle (those layers then move only as the leader's do).
+    void follow(const AnimPlayer& leader);
+
     struct Step {
         glm::vec3 motion{0.0f};  // root motion: metres in the model (Y up), this step
         std::vector<std::string> events;
@@ -130,6 +135,7 @@ private:
         Playing now, before;  // (before: fading out)
         float fade = 1.0f, fade_time = 0.0f;
         std::vector<float> mask;  // each joint's share
+        bool led = false;         // (follow: in step with a leader's layer)
     };
     struct RootTrack {  // a clip's motion joint, horizontally, from its first frame
         std::vector<glm::vec3> at;

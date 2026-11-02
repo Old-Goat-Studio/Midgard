@@ -272,8 +272,9 @@ void Game::load_characters() {
 
 void Game::upload_meshes(render::Renderer& renderer) {
     load_characters();
-    characters_.upload(renderer);
+    characters_.set_player(physics_->player());
     characters_.update(scene_, 0.0f);  // (posed from the start: a first frame draws them)
+    characters_.upload(renderer);
     for (entt::entity e : scene_.registry.view<const MeshRef>())
         for (const std::string& asset : scene_.registry.get<MeshRef>(e).assets())
             if (!meshes_.contains(asset))
@@ -491,7 +492,8 @@ void Game::stream(render::Renderer* renderer, const glm::dvec3& camera, bool wai
         stream_all_ = false;
     }
     if (terrain_) terrain_->update(camera, renderer, wait);
-    if (placed_changed_ && renderer) {  // the placed objects' meshes, as they come
+    if (renderer) characters_.upload(*renderer);  // (a player's first-person arms, as made)
+    if (placed_changed_ && renderer) {            // the placed objects' meshes, as they come
         upload_new_meshes(*renderer);
         placed_changed_ = false;
     }
@@ -561,6 +563,13 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
         out.push_back(d);
     }
     characters_.draws(scene_, origin, materials_, hidden, out);
+    if (hidden != entt::null) {  // first person: the player's arms, held at the camera
+        if (const auto cam = scene_.camera(1.0f)) {
+            glm::mat4 frame(glm::inverse(glm::mat3(cam->view)));
+            frame[3] = glm::vec4(glm::vec3(cam->origin - origin), 1.0f);
+            characters_.first_person_draws(scene_, hidden, frame, materials_, out);
+        }
+    }
     if (terrain_) {
         // The season where the camera is (a tilted planet's hemispheres differ).
         const std::optional<LocalSun> sun = scene_.local_sun(origin);

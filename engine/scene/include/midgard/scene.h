@@ -189,6 +189,15 @@ struct CharacterRef {
     bool feet = false;
     std::string look;
     float look_limit = 70.0f;
+    // First-person arms (the player's, seen in first person): cut from its own model and posed
+    // as its body is (model empty), or a separate rig with its own clips and graph kept in step
+    // with the body's; held at the camera by its eye joint (empty: its head), moved by offset
+    // (metres, the camera's right, up and back).
+    struct FirstPerson {
+        bool on = false;
+        std::string model, clips, graph, eye;
+        glm::vec3 offset{0.0f};
+    } first_person;
 };
 
 enum class ExitActivation { Enter, Use, Script };

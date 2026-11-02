@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -404,8 +405,9 @@ std::vector<Benchmark> benchmarks() {
                     "a 65-joint humanoid's pose sampled from a clip (30 keys a second on every "
                     "joint) and put in model space, 100 times (one thread)",
                     30, [](std::string&) -> std::function<void()> {
-                        // A humanoid's shape: a spine of 6, a head, two arms of 5 with 15
-                        // finger joints each, two legs of 5 (65 joints).
+                        // A humanoid's shape, as many joints as the Quaternius Superhero: a spine
+                        // of 6, a head, two arms of 5 with five fingers of 4 (a "leaf" at each
+                        // tip), two legs of 4 (65 joints).
                         midgard::RawSkeleton raw;
                         const auto add = [&](int parent, float up) {
                             raw.names.push_back("j" + std::to_string(raw.names.size()));
@@ -421,13 +423,14 @@ std::vector<Benchmark> benchmarks() {
                             for (int i = 0; i < 5; ++i) arm = add(arm, 0.15f);
                             for (int f = 0; f < 5; ++f) {
                                 int finger = arm;
-                                for (int i = 0; i < 3; ++i) finger = add(finger, 0.02f);
+                                for (int i = 0; i < 4; ++i) finger = add(finger, 0.02f);
                             }
                         }
                         for (int side = 0; side < 2; ++side) {
                             int leg = 0;
                             for (int i = 0; i < 4; ++i) leg = add(leg, -0.25f);
                         }
+                        if (raw.names.size() != 65) throw std::logic_error("not 65 joints");
                         midgard::RawClip clip{"walk", 4.0f / 3.0f, {}};
                         for (size_t j = 0; j < raw.names.size(); ++j) {
                             midgard::RawTrack t{raw.names[j], {}, {}, {}};
@@ -444,7 +447,7 @@ std::vector<Benchmark> benchmarks() {
                         auto pose = std::make_shared<midgard::Pose>(*skeleton);
                         return [skeleton, c, pose] {
                             for (int i = 0; i < 100; ++i) pose->sample(*c, i * 0.013f);
-                            g_sink = g_sink + size_t(pose->model()[64][3][1] * 1000.0f);
+                            g_sink = g_sink + size_t(pose->model().back()[3][1] * 1000.0f);
                         };
                     }});
     list.push_back({"nav.terrain_tile",
@@ -717,6 +720,8 @@ int main(int argc, char** argv) {
             std::printf("%-30s %s\n", b.name.c_str(), b.about.c_str());
             continue;
         }
+        // (Said first, unbuffered: if one crashes, CI's log names it.)
+        std::fprintf(stderr, "running %s\n", b.name.c_str());
         const Result r = measure(b);
         if (r.skipped) {
             std::printf("%-30s skipped (%s)\n", r.name.c_str(), r.skip_reason.c_str());

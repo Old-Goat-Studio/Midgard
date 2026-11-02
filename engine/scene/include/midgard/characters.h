@@ -10,7 +10,11 @@
 //                 "graph": {...},                         what it plays, decided as it plays
 //                                                         (midgard/anim_graph.h; none: clip)
 //                 "ik": {"feet": true, "look": "player",  its feet on the ground, what it looks
-//                        "look_limit": 70}}               at (midgard/ik.h; a humanoid's)
+//                        "look_limit": 70},               at (midgard/ik.h; a humanoid's)
+//                 "first_person": {"offset": [0, 0, 0]}}  the player's arms in first person:
+//                                                         cut from its body and in its pose, or
+//                                                         {"model", "clips", "graph", "eye"}: a
+//                                                         rig of their own, kept in step
 //
 // Each model is read once: its skeleton, clips, inverse bind matrices and skinned mesh (on the
 // GPU once uploaded). Clips from another file are retargeted to the model when both are
@@ -61,6 +65,21 @@ public:
     // Their draws (characters whose model is on the GPU), except `hidden`.
     void draws(const Scene& scene, const glm::dvec3& origin, const MaterialCache& materials,
                entt::entity hidden, std::vector<render::DrawItem>& out) const;
+    // The player's first-person arms, held at the camera (`camera`: the camera's own frame,
+    // relative to the draws' origin), if it has them: they cast no shadow.
+    void first_person_draws(const Scene& scene, entt::entity player, const glm::mat4& camera,
+                            const MaterialCache& materials,
+                            std::vector<render::DrawItem>& out) const;
+    // Where they are drawn: their mesh, the model matrix and the skin's joint matrices (none:
+    // the player has no arms yet).
+    struct FirstPersonView {
+        const render::MeshData* mesh = nullptr;
+        glm::mat4 model{1.0f};
+        std::span<const glm::mat4> skin;
+        std::string state;  // its own graph's (first layer), if it has one
+    };
+    std::optional<FirstPersonView> first_person(const Scene& scene, entt::entity player,
+                                                const glm::mat4& camera) const;
     // The ground for characters' feet: what a ray from a point along a direction meets first
     // (none: nothing within the distance), leaving out the character itself. Without it, feet
     // stay where their animation puts them.
@@ -80,6 +99,12 @@ public:
     // Whether "speed" and "vertical_speed" are set from how characters move (else they are left
     // to whoever sets them: the editor's preview).
     void set_automatic(bool automatic) { automatic_ = automatic; }
+    // A skinned mesh cut down to the triangles whose vertices all hang mostly from kept joints
+    // (`keep`, by the mesh's joint indices): a body's arms, say. Its vertices are renumbered.
+    static void cut_skinned(const render::MeshData& mesh, std::span<const glm::u16vec4> joints,
+                            std::span<const glm::vec4> weights, const std::vector<bool>& keep,
+                            render::MeshData& out_mesh, std::vector<glm::u16vec4>& out_joints,
+                            std::vector<glm::vec4>& out_weights);
     // A scene was left: the characters' states go (entity handles are used again); the models
     // stay, for a scene coming back.
     void clear_states() { states_.clear(); }
@@ -146,6 +171,23 @@ private:
             std::optional<glm::dvec3> point;
             float weight = 1.0f, blend = 0.0f;
         } reach[2];
+        // First-person arms (the player's).
+        struct FirstPerson {
+            std::string key;  // (its settings: made again when they change)
+            std::shared_ptr<Model> m;
+            bool own = false;  // its own rig (else cut from the body, in the body's pose)
+            std::unique_ptr<Pose> pose;
+            std::unique_ptr<AnimPlayer> player;
+            std::vector<glm::mat4> palette;
+            render::MeshData mesh;
+            std::vector<glm::u16vec4> joints;
+            std::vector<glm::vec4> weights;
+            render::MeshId gpu = 0;
+            bool uploaded = false;
+            int eye = 0;  // in its skeleton
+            float time = 0.0f;
+        };
+        std::unique_ptr<FirstPerson> fp;
         const Clip* playing = nullptr;
         std::shared_ptr<Model> m;
         std::unique_ptr<Pose> pose;
@@ -156,6 +198,9 @@ private:
     const Clip* find_clip(const State& s, const std::string& name) const;
     void start_graph(const CharacterRef& c, State& s);
     void find_bones(const CharacterRef& c, State& s) const;
+    void update_first_person(const CharacterRef& c, State& s, float dt);
+    const std::vector<Clip>* clips_for(const std::string& clips, const std::string& model,
+                                       const std::map<std::string, std::string>& rig) const;
     void apply_ik(const Scene& scene, entt::entity e, const CharacterRef& c, State& s, float dt);
     std::optional<glm::dvec3> look_target(const Scene& scene, const CharacterRef& c,
                                           const State& s) const;

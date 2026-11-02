@@ -3,6 +3,8 @@
 
 #include <algorithm>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "midgard/gltf_skin.h"
 #include "midgard/ik.h"
 
@@ -32,8 +34,21 @@ std::vector<std::string> Characters::load(const Scene& scene, const Bytes& bytes
             return nullptr;
         }
     };
+    // Each character, and a player's first-person rig of its own.
+    std::vector<CharacterRef> wanted;
     for (entt::entity e : scene.registry.view<const CharacterRef>()) {
         const CharacterRef& c = scene.registry.get<CharacterRef>(e);
+        wanted.push_back(c);
+        const CharacterRef::FirstPerson& fp = c.first_person;
+        if (fp.on && !fp.model.empty() && fp.model != c.model) {
+            CharacterRef arms;
+            arms.model = fp.model;
+            arms.clips = fp.clips;
+            arms.graph = fp.graph;
+            wanted.push_back(arms);
+        }
+    }
+    for (const CharacterRef& c : wanted) {
         if (c.model.empty()) continue;
         const std::shared_ptr<Model> m = read_model(c.model);
         if (!m) continue;
@@ -101,10 +116,190 @@ void Characters::upload(render::Renderer& renderer) {
         m->gpu = renderer.upload_skinned_mesh(m->mesh, m->joints, m->weights);
         m->uploaded = true;
     }
+    for (auto& [e, s] : states_) {
+        if (!s.fp || s.fp->uploaded || s.fp->mesh.vertices.empty()) continue;
+        s.fp->gpu = renderer.upload_skinned_mesh(s.fp->mesh, s.fp->joints, s.fp->weights);
+        s.fp->uploaded = true;
+    }
 }
 
 void Characters::renderer_gone() {
     for (auto& [asset, m] : models_) m->uploaded = false;
+    for (auto& [e, s] : states_)
+        if (s.fp) s.fp->uploaded = false;
+}
+
+void Characters::cut_skinned(const render::MeshData& mesh, std::span<const glm::u16vec4> joints,
+                             std::span<const glm::vec4> weights, const std::vector<bool>& keep,
+                             render::MeshData& out_mesh, std::vector<glm::u16vec4>& out_joints,
+                             std::vector<glm::vec4>& out_weights) {
+    // A vertex is kept's if its heaviest joint is.
+    const auto kept = [&](std::uint32_t v) {
+        int best = 0;
+        for (int k = 1; k < 4; ++k)
+            if (weights[v][k] > weights[v][best]) best = k;
+        const size_t j = joints[v][best];
+        return j < keep.size() && keep[j];
+    };
+    out_mesh = render::MeshData{};
+    out_joints.clear();
+    out_weights.clear();
+    std::vector<std::int64_t> renumbered(mesh.vertices.size(), -1);
+    for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+        const std::uint32_t a = mesh.indices[t], b = mesh.indices[t + 1], c = mesh.indices[t + 2];
+        if (!kept(a) || !kept(b) || !kept(c)) continue;
+        for (const std::uint32_t v : {a, b, c}) {
+            if (renumbered[v] < 0) {
+                renumbered[v] = std::int64_t(out_mesh.vertices.size());
+                out_mesh.vertices.push_back(mesh.vertices[v]);
+                out_joints.push_back(joints[v]);
+                out_weights.push_back(weights[v]);
+            }
+            out_mesh.indices.push_back(std::uint32_t(renumbered[v]));
+        }
+    }
+}
+
+const std::vector<Clip>* Characters::clips_for(
+    const std::string& clips, const std::string& model,
+    const std::map<std::string, std::string>& rig) const {
+    if (!clips.empty() && clips != model) {
+        const auto it = libraries_.find(LibraryKey{clips, model, rig});
+        return it == libraries_.end() ? nullptr : &it->second;
+    }
+    const auto it = models_.find(model);
+    return it == models_.end() ? nullptr : &it->second->clips;
+}
+
+// The player's arms as first person shows them: cut from its body and posed as the body is
+// (kept in step by being the body's own joints), or a rig of their own whose graph follows the
+// body's.
+void Characters::update_first_person(const CharacterRef& c, State& s, float dt) {
+    const CharacterRef::FirstPerson& fp = c.first_person;
+    const bool own = !fp.model.empty() && fp.model != c.model;
+    const std::string key =
+        fp.model + "|" + fp.clips + "|" + fp.graph + "|" + fp.eye + "|" + c.model + "|" + c.clips;
+    if (!s.fp || s.fp->key != key) {
+        auto f = std::make_unique<State::FirstPerson>();
+        f->key = key;
+        f->own = own;
+        if (!own) {
+            // The arms: everything under the shoulders (or the upper arms, without them).
+            f->m = s.m;
+            const int n = s.m->skeleton.joint_count();
+            std::vector<bool> under(size_t(n), false);
+            for (const auto [shoulder, arm] :
+                 {std::pair{HumanBone::LeftShoulder, HumanBone::LeftUpperArm},
+                  std::pair{HumanBone::RightShoulder, HumanBone::RightUpperArm}}) {
+                const int root = s.bones[size_t(shoulder)] >= 0 ? s.bones[size_t(shoulder)]
+                                                                : s.bones[size_t(arm)];
+                if (root < 0) continue;
+                for (int j = 0; j < n; ++j) {  // (parents before children)
+                    const int p = s.m->skeleton.parents()[size_t(j)];
+                    if (j == root || (p >= 0 && under[size_t(p)])) under[size_t(j)] = true;
+                }
+            }
+            std::vector<bool> keep(s.m->skin_to_skeleton.size(), false);
+            for (size_t k = 0; k < keep.size(); ++k) {
+                const int j = s.m->skin_to_skeleton[k];
+                keep[k] = j >= 0 && under[size_t(j)];
+            }
+            cut_skinned(s.m->mesh, s.m->joints, s.m->weights, keep, f->mesh, f->joints, f->weights);
+            f->eye = std::max(0, s.bones[size_t(HumanBone::Head)]);
+            if (!fp.eye.empty() && s.m->skeleton.find(fp.eye) >= 0)
+                f->eye = s.m->skeleton.find(fp.eye);
+        } else {
+            const auto it = models_.find(fp.model);
+            if (it == models_.end()) return;  // (not read, or it failed: said when loaded)
+            f->m = it->second;
+            f->mesh = f->m->mesh;
+            f->joints = f->m->joints;
+            f->weights = f->m->weights;
+            f->pose = std::make_unique<Pose>(f->m->skeleton);
+            // Its eye: the joint named, else a humanoid's head, else its first joint.
+            f->eye = f->m->skeleton.find(fp.eye);
+            if (f->eye < 0) {
+                const HumanoidMap rig = map_humanoid(f->m->raw);
+                const int head = rig[HumanBone::Head];
+                f->eye = head >= 0 ? f->m->skeleton.find(f->m->raw.names[size_t(head)]) : 0;
+            }
+            if (const auto g = graphs_.find(fp.graph); g != graphs_.end() && g->second) {
+                const std::vector<Clip>* clips = clips_for(fp.clips, fp.model, {});
+                f->player = std::make_unique<AnimPlayer>(
+                    g->second, f->m->skeleton, [clips](const std::string& name) -> const Clip* {
+                        if (!clips) return nullptr;
+                        for (const Clip& clip : *clips)
+                            if (clip.name() == name) return &clip;
+                        return nullptr;
+                    });
+            }
+        }
+        s.fp = std::move(f);
+    }
+    State::FirstPerson& f = *s.fp;
+    if (!f.own) return;  // (drawn with the body's own joints)
+    // Its own rig: its graph kept in step with the body's, or the body's clip by name.
+    if (f.player) {
+        if (s.player) f.player->follow(*s.player);
+        f.player->update(dt * c.speed, *f.pose);
+    } else {
+        f.time = s.time;
+        const std::vector<Clip>* clips = clips_for(fp.clips, fp.model, {});
+        const Clip* playing = nullptr;
+        const std::string name = s.playing ? s.playing->name() : std::string();
+        if (clips)
+            for (const Clip& clip : *clips)
+                if (clip.name() == name) playing = &clip;
+        if (playing)
+            f.pose->sample(*playing, f.time, c.loop);
+        else
+            f.pose->rest();
+    }
+    const std::vector<glm::mat4>& model = f.pose->model();
+    f.palette.resize(f.m->inverse_binds.size());
+    for (size_t j = 0; j < f.palette.size(); ++j) {
+        const int k = f.m->skin_to_skeleton[j];
+        f.palette[j] = (k >= 0 ? model[size_t(k)] : glm::mat4(1.0f)) * f.m->inverse_binds[j];
+    }
+}
+
+std::optional<Characters::FirstPersonView> Characters::first_person(const Scene& scene,
+                                                                    entt::entity player,
+                                                                    const glm::mat4& camera) const {
+    const auto it = states_.find(player);
+    if (it == states_.end() || !it->second.fp || !scene.registry.valid(player)) return {};
+    const State& s = it->second;
+    const State::FirstPerson& f = *s.fp;
+    const CharacterRef* c = scene.registry.try_get<CharacterRef>(player);
+    const Pose* pose = f.own ? f.pose.get() : s.pose.get();
+    const std::span<const glm::mat4> palette = f.own ? f.palette : s.palette;
+    if (!c || !pose || palette.empty() || f.mesh.vertices.empty()) return {};
+    // The eye at the camera: the model's +Z (forward) along the camera's -Z, its up the
+    // camera's up; moved by the offset in the camera's frame.
+    const glm::vec3 eye = glm::vec3(f.m->armature * pose->model()[size_t(f.eye)][3]);
+    const glm::mat4 turn = glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0, 1, 0));
+    FirstPersonView view;
+    view.mesh = &f.mesh;
+    view.model = camera * glm::translate(glm::mat4(1.0f), c->first_person.offset) * turn *
+                 glm::translate(glm::mat4(1.0f), -eye) * f.m->armature;
+    view.skin = palette;
+    if (f.player) view.state = f.player->state();
+    return view;
+}
+
+void Characters::first_person_draws(const Scene& scene, entt::entity player,
+                                    const glm::mat4& camera, const MaterialCache& materials,
+                                    std::vector<render::DrawItem>& out) const {
+    const auto view = first_person(scene, player, camera);
+    const auto it = states_.find(player);
+    if (!view || !it->second.fp->uploaded) return;
+    // The player's own material (its colour and surface), held at the camera.
+    render::DrawItem d = scene.draw_item(player, it->second.fp->gpu, glm::dvec3(0.0));
+    d.model = view->model;
+    if (const Material* m = scene.registry.try_get<Material>(player)) materials.apply(*m, d);
+    d.casts_shadow = false;  // (it hangs at the camera: its shadow would be the camera's)
+    d.skin = view->skin;
+    out.push_back(d);
 }
 
 void Characters::forget(const std::string& asset) {
@@ -233,6 +428,11 @@ void Characters::update(const Scene& scene, float dt) {
             const int k = s.m->skin_to_skeleton[j];
             s.palette[j] = (k >= 0 ? model[size_t(k)] : glm::mat4(1.0f)) * s.m->inverse_binds[j];
         }
+        // The player's first-person arms (after its body: kept in step with it).
+        if (e == player_ && c.first_person.on)
+            update_first_person(c, s, dt);
+        else
+            s.fp.reset();
     }
 }
 

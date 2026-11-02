@@ -172,6 +172,15 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
             ch.look = ik->value("look", std::string());
             ch.look_limit = std::clamp(ik->value("look_limit", 70.0f), 0.0f, 120.0f);
         }
+        if (const auto fp = c.find("first_person"); fp != c.end() && fp->is_object()) {
+            ch.first_person.on = true;
+            ch.first_person.model = fp->value("model", std::string());
+            ch.first_person.clips = fp->value("clips", std::string());
+            ch.first_person.eye = fp->value("eye", std::string());
+            if (const auto g = fp->find("graph"); g != fp->end() && g->is_object())
+                ch.first_person.graph = g->dump();
+            ch.first_person.offset = vec3(*fp, "offset", glm::vec3(0.0f));
+        }
         reg.emplace_or_replace<CharacterRef>(e, ch);
     } else if (name == "arrival") {
         reg.emplace_or_replace<Arrival>(e, Arrival{c.value("name", std::string())});

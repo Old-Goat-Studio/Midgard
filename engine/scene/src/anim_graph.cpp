@@ -418,6 +418,30 @@ glm::vec3 AnimPlayer::root_moved(const AnimState& s, double from, double to, Pos
     return out;
 }
 
+void AnimPlayer::follow(const AnimPlayer& leader) {
+    for (auto& [name, value] : values_)
+        if (const auto it = leader.values_.find(name); it != leader.values_.end())
+            value = it->second;
+    for (size_t li = 0; li < layers_.size(); ++li) {
+        LayerState& ls = layers_[li];
+        ls.led = false;
+        if (li >= leader.layers_.size()) continue;
+        const std::string& name = leader.state(li);
+        const auto& states = graph_->layers[li].states;
+        const auto it = std::find_if(states.begin(), states.end(),
+                                     [&](const AnimState& s) { return s.name == name; });
+        if (it == states.end()) continue;
+        const int state = int(it - states.begin());
+        if (ls.now.state != state) {  // (a quick cross-fade into it)
+            ls.before = ls.now;
+            ls.fade = 0.0f;
+            ls.fade_time = 0.15f;
+        }
+        ls.now = Playing{state, leader.layers_[li].now.cycles};
+        ls.led = true;
+    }
+}
+
 AnimPlayer::Step AnimPlayer::update(float dt, Pose& pose) {
     Step step;
     const bool roots = graph_->root_motion && motion_joint_ >= 0;
@@ -425,8 +449,9 @@ AnimPlayer::Step AnimPlayer::update(float dt, Pose& pose) {
     for (size_t li = 0; li < layers_.size(); ++li) {
         const AnimLayer& layer = graph_->layers[li];
         LayerState& ls = layers_[li];
-        // A transition whose conditions hold (the first listed).
+        // A transition whose conditions hold (the first listed; not while led).
         for (const AnimTransition& t : layer.transitions) {
+            if (ls.led) break;
             if (t.from >= 0 ? t.from != ls.now.state : t.to == ls.now.state) continue;
             if (t.after && ls.now.cycles < double(*t.after)) continue;
             if (!std::all_of(t.when.begin(), t.when.end(),
@@ -445,7 +470,8 @@ AnimPlayer::Step AnimPlayer::update(float dt, Pose& pose) {
             const AnimState& s = layer.states[size_t(p.state)];
             const float cycle = cycle_time(s);
             const double from = p.cycles;
-            if (cycle > 0.0f) p.cycles += double(dt * state_speed(s) / cycle);
+            const bool kept = ls.led && &p == &ls.now;  // (the leader's point already)
+            if (cycle > 0.0f && !kept) p.cycles += double(dt * state_speed(s) / cycle);
             if (events)
                 for (const auto& [point, name] : s.events) {
                     // Passed: some k + point in [from, to) (once, if it doesn't loop).

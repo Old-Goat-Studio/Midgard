@@ -369,6 +369,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_anim_graph.cpp
         tests/test_ik.cpp
         tests/test_character_ik.cpp
+        tests/test_first_person.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp

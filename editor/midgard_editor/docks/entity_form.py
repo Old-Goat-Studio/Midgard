@@ -652,6 +652,13 @@ class EntityForm(QWidget):
         self.character_look_limit.valueChanged.connect(
             lambda v: self._set_ik("look_limit", round(v, 1)))
         form.addRow("Looks at", _row(self.character_look, self.character_look_limit))
+        self.character_first_person = QCheckBox("Arms in first person")
+        self.character_first_person.setToolTip(
+            "The player's arms, seen in first person: cut from this model and moving as its "
+            "body does (a separate arms rig: \"first_person\" in the component)")
+        self.character_first_person.setChecked("first_person" in entity.components["character"])
+        self.character_first_person.toggled.connect(self._set_first_person)
+        form.addRow("Player", self.character_first_person)
         self.character_rig = QLabel()
         self.character_rig.setWordWrap(True)
         self.character_rig_button = QPushButton("Rig...")
@@ -665,6 +672,19 @@ class EntityForm(QWidget):
         graph.clicked.connect(lambda: self.open_animation.emit(self.entity_id))
         form.addRow("Graph", graph)
         self._refresh_character(entity)
+
+    def _set_first_person(self, on: bool) -> None:
+        entity = self._entity()
+        character = entity.components.get("character")
+        if character is None or ("first_person" in character) == on:
+            return
+        character = dict(character)
+        if on:
+            character["first_person"] = {}
+        else:
+            del character["first_person"]
+        entity.components["character"] = character
+        self._push(entity, "first-person arms")
 
     def _set_ik(self, key: str, value) -> None:
         entity = self._entity()

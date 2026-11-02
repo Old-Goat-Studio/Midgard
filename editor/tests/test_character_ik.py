@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Characters' IK in the game (milestone 5.13 step 6): the Superhero's feet on what physics has
-under them (one on a step), a hand reached by a script (which turns its head too); and the
-Inspector's IK settings."""
+under them (one on a step), a hand reached by a script (which turns its head too); the player's
+arms in first person; and the Inspector's IK and first-person settings."""
 import math
+import subprocess
 
 import pytest
 from test_characters import HERO, LIBRARY, with_samples
@@ -87,3 +88,65 @@ def test_the_inspector_sets_a_characters_ik(project, qtbot):
     assert ik == {"feet": True, "look": "player", "look_limit": 45.0}
     project.undo_stack.undo()
     assert "look_limit" not in project.entity(hero.id).components["character"]["ik"]
+
+
+@needs_engine
+def test_the_inspector_gives_the_player_first_person_arms(project, qtbot):
+    from midgard_editor.docks.entity_form import EntityForm
+    with_samples(project)
+    add_hero(project, "Hero", 0.0, {})
+    hero = next(e for e in project.entities() if e.name == "Hero")
+    form = EntityForm(project, hero.id)
+    qtbot.addWidget(form)
+    assert not form.character_first_person.isChecked()
+    form.character_first_person.setChecked(True)
+    assert project.entity(hero.id).components["character"]["first_person"] == {}
+    form.character_first_person.setChecked(False)
+    assert "first_person" not in project.entity(hero.id).components["character"]
+
+
+def first_person_shot(project, tmp_path, arms: bool):
+    """The game's first frames in first person, the player the Superhero holding a pistol pose
+    (its arms up in front of it), with or without first-person arms: the image's pixels."""
+    from PIL import Image
+
+    from midgard_editor import about
+    for e in project.entities():
+        if "player" in e.components:
+            e.components["character"] = {"model": HERO, "clips": LIBRARY,
+                                         "clip": "Pistol_Idle_Loop"}
+            if arms:
+                e.components["character"]["first_person"] = {}
+            e.components.pop("mesh", None)
+            e.components["material"] = {"color": [0.9, 0.6, 0.4, 1]}
+            project.put_entity(e)
+        if "camera" in e.components:
+            e.components["camera"]["view"] = "first"
+            project.put_entity(e)
+    out = cook(project, tmp_path / f"pkg{arms}").out_dir
+    shot = tmp_path / f"shot{arms}.png"
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--screenshot", str(shot), "--size", "320x180", "--frames", "10"],
+                         capture_output=True, text=True, timeout=60)
+    if run.returncode != 0 and "Vulkan" in (run.stderr + run.stdout):
+        pytest.skip("no Vulkan driver available: " + run.stderr.strip())
+    assert run.returncode == 0, run.stderr
+    return Image.open(shot).convert("RGB")
+
+
+@needs_engine
+def test_the_player_sees_its_arms_in_first_person(project, tmp_path):
+    from midgard_editor import about
+    if not about.runtime_candidates():
+        pytest.skip("engine not built here")
+    with_samples(project)
+
+    def skin(image) -> int:  # the arms' colour, warm: red well above blue
+        pixels = image.tobytes()  # (RGB)
+        return sum(1 for i in range(0, len(pixels), 3)
+                   if pixels[i] > 90 and pixels[i] > pixels[i + 2] + 50)
+
+    without = skin(first_person_shot(project, tmp_path, arms=False))
+    with_arms = skin(first_person_shot(project, tmp_path, arms=True))
+    assert without < 50  # (its own body isn't drawn in first person)
+    assert with_arms > 1500, "the arms are in view"
