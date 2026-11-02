@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "viewport.h"
 
+#include "midgard/scene_nav.h"
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -93,14 +95,17 @@ void Viewport::put_entity(const std::string& entity_json) {
     scene_.put_entity(text(e, "id"), text(e, "name"), text(e, "parent"),
                       components != e.end() ? *components : nlohmann::json::object());
     upload_meshes();
+    nav_stale_ = true;
 }
 
 void Viewport::remove_entity(const std::string& entity_id) {
     scene_.remove_entity(entity_id);
+    nav_stale_ = true;
 }
 
 void Viewport::clear() {
     scene_.registry.clear();
+    nav_stale_ = true;
 }
 
 void Viewport::set_settings(const std::string& settings_json) {
@@ -110,6 +115,7 @@ void Viewport::set_settings(const std::string& settings_json) {
         if (it == s.end() || !it->is_array() || it->size() < 3) return fallback;
         return glm::vec3((*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>());
     };
+    nav_stale_ = true;
     scene_.settings.sky = vec("sky", scene_.settings.sky);
     scene_.settings.ambient = vec("ambient", scene_.settings.ambient);
     const auto it_mode = s.find("sun_mode");
@@ -267,7 +273,9 @@ void Viewport::set_terrain_stamps(const std::string& stamps_json) {
         stamps.push_back(stamp_from_json(s));  // throws on a malformed stamp
     stamps_ = stamps;
     scene_.terrain_stamps = stamps;
+    if (nav_world_) nav_world_->wait();  // (its jobs read the terrain being changed)
     if (terrain_) terrain_->set_stamps(std::move(stamps));
+    if (nav_world_) nav_world_->ground_changed();
 }
 
 std::optional<Viewport::TerrainGround> Viewport::terrain_ground(const glm::dvec3& point) const {
@@ -300,6 +308,7 @@ std::optional<Viewport::TerrainHit> Viewport::terrain_hit(const glm::dvec3& orig
 }
 
 void Viewport::drop_terrain() {
+    nav_world_.reset();  // (its jobs read the terrain)
     if (placed_) placed_->clear(scene_);
     placed_.reset();
     if (terrain_ && renderer_) terrain_->release(*renderer_);
@@ -372,14 +381,14 @@ bool Viewport::render() {
         if (const Material* m = scene_.registry.try_get<Material>(e)) materials_.apply(*m, d);
         draws.push_back(d);
     }
-    renderer_->set_debug_lines(
+    std::vector<render::DebugLine> lines =
         show_colliders_
             ? collider_outlines(scene_, camera.origin,
                                 [this](const std::string& asset) -> const render::MeshData* {
                                     const auto it = mesh_data_.find(asset);
                                     return it == mesh_data_.end() ? nullptr : &it->second;
                                 })
-            : std::vector<render::DebugLine>{});
+            : std::vector<render::DebugLine>{};
     // Terrain: the chunks for this view, all of them now (the viewport draws on request, so
     // it doesn't stream over several frames as the game does).
     float far_plane = 2000.0f;
@@ -404,6 +413,9 @@ bool Viewport::render() {
         }
         far_plane = kTerrainViewDistance;
     }
+    if (show_navigation_)  // (after the terrain: its navigation is made from it)
+        for (const render::DebugLine& l : navigation_lines(camera.origin)) lines.push_back(l);
+    renderer_->set_debug_lines(lines);
     // A curved cylinder's light rod or a hollow world's light sphere, and seeing that far.
     if (const auto light = world_light_.draw(scene_, camera.origin)) draws.push_back(*light);
     far_plane = std::max(far_plane, float(inside_view_distance(scene_.settings.body)));
@@ -413,6 +425,45 @@ bool Viewport::render() {
     renderer_->set_terrain_look(terrain_ ? terrain_->look() : render::TerrainLook{});
     return renderer_->render_frame(camera, scene_.light(camera.origin), draws,
                                    glm::vec4(scene_.settings.sky, 1.0f));
+}
+
+std::vector<render::DebugLine> Viewport::navigation_lines(const glm::dvec3& origin) {
+    const glm::vec4 colour(0.2f, 0.95f, 0.75f, 1.0f);
+    const auto lookup = [this](const std::string& asset) -> const render::MeshData* {
+        const auto it = mesh_data_.find(asset);
+        return it == mesh_data_.end() ? nullptr : &it->second;
+    };
+    std::vector<render::DebugLine> out;
+    if (terrain_) {  // round where the view looks, all of it now (the view draws on request)
+        if (!nav_world_) {
+            nav_world_ = std::make_unique<NavWorld>(terrain_->terrain(), jobs_.get());
+            nav_stale_ = true;
+        }
+        if (nav_stale_) {
+            nav_world_->set_scenery(scene_, lookup);
+            nav_stale_ = false;
+        }
+        const glm::dvec3 at = terrain_->terrain().ground(glm::dvec3(target_));
+        nav_world_->update(at, true);
+        for (const auto& [a, b] : nav_world_->edges()) {
+            const glm::dvec3 up_a = terrain_->terrain().body().up(a) * 0.05;
+            const glm::dvec3 up_b = terrain_->terrain().body().up(b) * 0.05;
+            out.push_back({glm::vec3(a + up_a - origin), glm::vec3(b + up_b - origin), colour});
+        }
+        return out;
+    }
+    if (!flat_world(scene_)) return out;
+    if (nav_stale_ || !nav_) {
+        if (!jobs_) jobs_ = std::make_unique<JobSystem>();
+        nav_ = build_navmesh(NavSettings{}, nav_geometry(scene_, glm::dvec3(0.0), lookup),
+                             jobs_.get());
+        nav_stale_ = false;
+    }
+    const glm::vec3 lift(0.0f, 0.05f, 0.0f);
+    for (const auto& [a, b] : nav_->edges())
+        out.push_back({glm::vec3(glm::dvec3(a) - origin) + lift,
+                       glm::vec3(glm::dvec3(b) - origin) + lift, colour});
+    return out;
 }
 
 std::vector<uint8_t> Viewport::read_pixels() {

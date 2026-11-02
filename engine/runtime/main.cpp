@@ -228,6 +228,9 @@ public:
     virtual render::TerrainLook terrain_look() const { return {}; }
     virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
     virtual void update(const midgard::Actions&, float) {}
+    // Background work a frame would have had time for (navigation tiles being made): done
+    // now. Headless simulations run frames far faster than real time.
+    virtual void settle() {}
     virtual bool wants_mouse_look() const { return false; }
     virtual std::string title() const { return "Midgard"; }
     // The game's icon (icon.png in its package), for the window and the taskbar.
@@ -366,6 +369,7 @@ public:
     }
     render::TerrainLook terrain_look() const override { return game_.terrain_look(); }
     float fade() const override { return game_.fade(); }
+    void settle() override { game_.stream_navigation(true); }
     render::Light light(const glm::dvec3& origin) const override {
         return game_.scene().light(origin);
     }
@@ -1209,6 +1213,7 @@ int run_simulation(const Options& opt, Source& source) {
     for (long frame = 0; frame < opt.simulate; ++frame) {
         actions.begin_frame();
         source.update(actions, 1.0f / 60.0f);
+        source.settle();
     }
     if (opt.dump_scene) std::printf("%s\n", source.dump().c_str());
     return 0;

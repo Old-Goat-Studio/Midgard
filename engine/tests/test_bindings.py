@@ -244,6 +244,25 @@ def check_viewport() -> None:
     view.show_colliders = True
     assert view.render()
     assert yellow(view.read_pixels()) > 20, "the trigger's outline is drawn"
+    # Navigation: a floor's walkable polygons show as green-blue lines only when asked.
+    view.show_colliders = False
+    view.put_entity(json.dumps({"id": "e4", "name": "Floor", "components": {
+        "transform": {"position": [0, -1.5, 0]}, "collider": {"shape": "box",
+                                                            "size": [12, 1, 12]}}}))
+    view.set_camera([0, 8, 4], [0, -1, 0], 60)
+
+    def teal(rgba: bytes) -> int:
+        return sum(1 for i in range(0, len(rgba), 4)
+                   if rgba[i] < 120 and rgba[i + 1] > 200 and rgba[i + 2] > 140)
+
+    assert not view.show_navigation
+    assert view.render()
+    assert teal(view.read_pixels()) == 0
+    view.show_navigation = True
+    assert view.render()
+    assert teal(view.read_pixels()) > 20, "the floor's navigation is drawn"
+    view.show_navigation = False
+    view.remove_entity("e4")
     view.detach()
     view.remove_entity("e3")
     view.remove_entity("e1")

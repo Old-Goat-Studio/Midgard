@@ -146,6 +146,7 @@ def test_the_stub_matches_the_engine():
     assert members("Time") == api["Time"]
     assert members("GameTime") == api["GameTime"]
     assert members("Rooms") == api["Rooms"]
+    assert members("Nav") == api["Nav"]
 
 
 @needs_scripting

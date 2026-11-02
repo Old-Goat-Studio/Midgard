@@ -49,6 +49,7 @@ entt::registry& registry() {
 
 // midgard.Entity: a handle on an entity of the running scene, by id.
 struct RoomsHandle {};  // midgard.rooms
+struct NavHandle {};    // midgard.nav
 
 struct EntityHandle {
     entt::entity entity = entt::null;
@@ -559,6 +560,48 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             "Whether a change is under way (fading out or in).")
         .def("__repr__", [](const RoomsHandle&) { return std::string("<midgard.rooms>"); });
     m.attr("rooms") = RoomsHandle{};
+
+    py::class_<NavHandle>(m, "Nav",
+                          "Where agents can walk (midgard.nav; milestone 5.12): paths over the "
+                          "scene's navigation mesh, made round the player.")
+        .def(
+            "path",
+            [](const NavHandle&, const std::array<double, 3>& start,
+               const std::array<double, 3>& end, bool partial) -> std::optional<py::list> {
+                const auto path = current_game().find_path(dvec3(start), dvec3(end));
+                if (!path || (!path->complete && !partial)) return std::nullopt;
+                py::list out;
+                for (const glm::vec3& p : path->points) out.append(tuple3(glm::dvec3(p)));
+                return out;
+            },
+            py::arg("start"), py::arg("end"), py::kw_only(), py::arg("partial") = false,
+            "The way from one place to another as points a few metres apart on the ground (the "
+            "first at the start), or None if there is none (either place too far from where "
+            "agents can walk, or no way between them; with partial=True, the way as near the "
+            "end as it gets).")
+        .def(
+            "nearest",
+            [](const NavHandle&, const std::array<double, 3>& point,
+               double reach) -> std::optional<py::tuple> {
+                // (a path to itself: the point on the mesh nearest it)
+                const auto path = current_game().find_path(dvec3(point), dvec3(point));
+                if (!path || path->points.empty()) return std::nullopt;
+                const glm::dvec3 at(path->points.front());
+                if (glm::distance(at, dvec3(point)) > reach) return std::nullopt;
+                return tuple3(at);
+            },
+            py::arg("point"), py::arg("reach") = 2.0,
+            "The nearest place agents can walk to a point (within `reach` metres), or None.")
+        .def_property_readonly(
+            "ready",
+            [](const NavHandle&) {
+                const Game& g = current_game();
+                if (const NavWorld* w = g.nav_world()) return w->stats().complete;
+                return g.navmesh() != nullptr;
+            },
+            "Whether the navigation round the player is all made (it is made as they go).")
+        .def("__repr__", [](const NavHandle&) { return std::string("<midgard.nav>"); });
+    m.attr("nav") = NavHandle{};
     m.def(
         "action",
         [](const std::string& name) {
@@ -815,6 +858,7 @@ result = json.dumps({
     "Time": sorted(n for n in dir(midgard.Time) if not n.startswith("_")),
     "GameTime": sorted(n for n in dir(midgard.GameTime) if not n.startswith("_")),
     "Rooms": sorted(n for n in dir(midgard.Rooms) if not n.startswith("_")),
+    "Nav": sorted(n for n in dir(midgard.Nav) if not n.startswith("_")),
 })
 )",
              scope);

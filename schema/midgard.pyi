@@ -278,6 +278,28 @@ rooms: Rooms
 """Moving between scenes."""
 
 
+class Nav:
+    """Where agents can walk (midgard.nav): paths over the scene's navigation mesh. A scene
+    without terrain has one from its scenery (static colliders); a world with terrain has one
+    made round the player as they go (about 100 m each way), across a cylinder's join and a
+    planet's face edges."""
+
+    ready: bool
+    """Whether the navigation round the player is all made (read-only)."""
+
+    def path(self, start: Vector, end: Vector, *, partial: bool = False) -> list[Vector] | None:
+        """The way from start to end: points a few metres apart on the ground, the first at the
+        start. None if there is none: either place too far from where agents can walk, or no
+        way between them (with partial=True, the way as near the end as it gets instead)."""
+
+    def nearest(self, point: Vector, reach: float = 2.0) -> Vector | None:
+        """The nearest place agents can walk to a point, within `reach` metres, or None."""
+
+
+nav: Nav
+"""Where agents can walk."""
+
+
 def action(name: str) -> float:
     """An input action's value this frame (-1 to 1 for movement; see the Input editor)."""
 

@@ -200,6 +200,14 @@ class ViewportPanel(QWidget):
             "triggers yellow, the player cyan (F4 does the same in the game)")
         self.colliders_action.toggled.connect(self.set_show_colliders)
         self.toolbar.addAction(self.colliders_action)
+        self.navigation_action = QAction("Show &Navigation", self)
+        self.navigation_action.setIconText("Navigation")
+        self.navigation_action.setCheckable(True)
+        self.navigation_action.setToolTip(
+            "Outline where characters can walk: the navigation mesh, made from the scenery (or "
+            "the terrain round where the view looks), green (F4 shows it in the game too)")
+        self.navigation_action.toggled.connect(self.set_show_navigation)
+        self.toolbar.addAction(self.navigation_action)
         self.gizmos_action = QAction("Show &Gizmos", self)
         self.gizmos_action.setIconText("Gizmos")
         self.gizmos_action.setCheckable(True)
@@ -343,6 +351,15 @@ class ViewportPanel(QWidget):
             return
         if self.view is not None:
             self.view.show_colliders = show
+            self.request_render()
+
+    def set_show_navigation(self, show: bool) -> None:
+        """Where characters can walk: the navigation mesh's edges."""
+        if self.navigation_action.isChecked() != show:
+            self.navigation_action.setChecked(show)  # comes back here through toggled
+            return
+        if self.view is not None:
+            self.view.show_navigation = show
             self.request_render()
 
     def _settings_changed(self, scene: str) -> None:

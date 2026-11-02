@@ -21,6 +21,8 @@
 
 #include "midgard/camera_rig.h"
 #include "midgard/materials.h"
+#include "midgard/nav_world.h"
+#include "midgard/navmesh.h"
 #include "midgard/placed_objects.h"
 #include "midgard/render/renderer.h"
 #include "midgard/scene.h"
@@ -92,6 +94,10 @@ public:
     // Outlines of colliders, triggers and the player over the scene (midgard/collider_outlines.h).
     void set_show_colliders(bool show) { show_colliders_ = show; }
     bool show_colliders() const { return show_colliders_; }
+    // Where agents can walk (milestone 5.12): a flat scene's navigation from its colliders, or
+    // the terrain's round where the view looks, as the game makes them.
+    void set_show_navigation(bool show) { show_navigation_ = show; }
+    bool show_navigation() const { return show_navigation_; }
 
     // ---- the target ----
     // platform: "windows" (handle = HWND) or "xcb" (handle = X11 window id).
@@ -121,6 +127,10 @@ private:
     glm::vec3 eye_{4.0f, 3.0f, 6.0f}, target_{0.0f, 0.5f, 0.0f};
     float fov_ = 55.0f;
     bool show_colliders_ = false;
+    bool show_navigation_ = false;
+    std::unique_ptr<NavMesh> nav_;  // a flat scene's, made when shown after it went stale
+    bool nav_stale_ = true;
+    std::vector<render::DebugLine> navigation_lines(const glm::dvec3& origin);
     std::string body_json_;  // the world shape the surface mesh was made for
     // Terrain (midgard/terrain_streamer.h), on the current renderer: made when first drawn,
     // and again when the world shape or terrain settings change.
@@ -130,6 +140,7 @@ private:
     std::unique_ptr<TerrainStreamer> terrain_;
     WorldLight world_light_;  // a curved cylinder's light rod or a hollow world's light sphere
     std::unique_ptr<PlacedObjects> placed_;  // the world type's objects round the camera
+    std::unique_ptr<NavWorld> nav_world_;    // the terrain's navigation (made when shown)
     void drop_terrain();
     struct Platform;
     std::unique_ptr<Platform> platform_;  // per-window-system state (the X11 connection)
