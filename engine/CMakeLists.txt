@@ -122,6 +122,13 @@ target_include_directories(midgard_nav PUBLIC nav/include)
 target_link_libraries(midgard_nav PUBLIC midgard_core glm::glm
                       PRIVATE RecastNavigation::Recast RecastNavigation::Detour midgard_options)
 
+# ---- anim: skeletons, clips and poses (ozz-animation; milestone 5.13) ------------------------
+find_package(ozz-animation CONFIG REQUIRED)
+add_library(midgard_anim STATIC anim/src/animation.cpp)
+target_include_directories(midgard_anim PUBLIC anim/include)
+target_link_libraries(midgard_anim PUBLIC midgard_core glm::glm
+                      PRIVATE ozz::animation_offline ozz::animation ozz::base midgard_options)
+
 # ---- scene: game.pak, glTF meshes and the EnTT scene built from the database ----------------
 find_package(miniz CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
@@ -130,6 +137,7 @@ find_path(CGLTF_INCLUDE_DIR cgltf.h REQUIRED)
 add_library(midgard_scene STATIC
     scene/src/pak.cpp
     scene/src/gltf.cpp
+    scene/src/gltf_skin.cpp
     scene/src/scene.cpp
     scene/src/game.cpp
     scene/src/camera_rig.cpp
@@ -154,7 +162,8 @@ add_library(midgard_scene STATIC
 target_include_directories(midgard_scene PUBLIC scene/include
                            PRIVATE "${CGLTF_INCLUDE_DIR}" ${Stb_INCLUDE_DIR})
 target_link_libraries(midgard_scene
-    PUBLIC midgard_core midgard_render midgard_input midgard_physics midgard_nav EnTT::EnTT
+    PUBLIC midgard_core midgard_render midgard_input midgard_physics midgard_nav midgard_anim
+           EnTT::EnTT
            glm::glm
            nlohmann_json::nlohmann_json
     PRIVATE miniz::miniz unofficial::sqlite3::sqlite3 midgard_options
@@ -352,6 +361,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_worldgen.cpp
         tests/test_navmesh.cpp
         tests/test_nav_world.cpp
+        tests/test_animation.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp

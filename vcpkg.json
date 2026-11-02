@@ -31,6 +31,7 @@
     "entt",
     "joltphysics",
     "recastnavigation",
+    "ozz-animation",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]
 }

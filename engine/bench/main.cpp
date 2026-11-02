@@ -22,6 +22,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/animation.h"
 #include "midgard/det.h"
 #include "midgard/jobs.h"
 #include "midgard/nav_world.h"
@@ -240,6 +241,53 @@ std::vector<Benchmark> benchmarks() {
                             const midgard::NavTileData t = midgard::build_nav_tile(
                                 midgard::NavSettings{}, glm::vec3(0.0f), {0, 0}, *g);
                             g_sink = g_sink + t.size();
+                        };
+                    }});
+    list.push_back({"anim.pose_65_joints",
+                    "a 65-joint humanoid's pose sampled from a clip (30 keys a second on every "
+                    "joint) and put in model space, 100 times (one thread)",
+                    30, [](std::string&) -> std::function<void()> {
+                        // A humanoid's shape: a spine of 6, a head, two arms of 5 with 15
+                        // finger joints each, two legs of 5 (65 joints).
+                        midgard::RawSkeleton raw;
+                        const auto add = [&](int parent, float up) {
+                            raw.names.push_back("j" + std::to_string(raw.names.size()));
+                            raw.parents.push_back(parent);
+                            raw.rest.push_back({{0.0f, up, 0.0f}, {1, 0, 0, 0}, {1, 1, 1}});
+                            return int(raw.names.size()) - 1;
+                        };
+                        int spine = add(-1, 1.0f);
+                        for (int i = 0; i < 5; ++i) spine = add(spine, 0.1f);
+                        add(spine, 0.2f);
+                        for (int side = 0; side < 2; ++side) {
+                            int arm = spine;
+                            for (int i = 0; i < 5; ++i) arm = add(arm, 0.15f);
+                            for (int f = 0; f < 5; ++f) {
+                                int finger = arm;
+                                for (int i = 0; i < 3; ++i) finger = add(finger, 0.02f);
+                            }
+                        }
+                        for (int side = 0; side < 2; ++side) {
+                            int leg = 0;
+                            for (int i = 0; i < 4; ++i) leg = add(leg, -0.25f);
+                        }
+                        midgard::RawClip clip{"walk", 4.0f / 3.0f, {}};
+                        for (size_t j = 0; j < raw.names.size(); ++j) {
+                            midgard::RawTrack t{raw.names[j], {}, {}, {}};
+                            for (int k = 0; k <= 40; ++k)
+                                t.rotations.push_back(
+                                    {k / 30.0f, glm::angleAxis(0.3f * std::sin(k * 0.3f + float(j)),
+                                                               glm::vec3(1, 0, 0))});
+                            clip.tracks.push_back(t);
+                        }
+                        auto skeleton =
+                            std::make_shared<midgard::Skeleton>(midgard::Skeleton::build(raw));
+                        auto c =
+                            std::make_shared<midgard::Clip>(midgard::Clip::build(*skeleton, clip));
+                        auto pose = std::make_shared<midgard::Pose>(*skeleton);
+                        return [skeleton, c, pose] {
+                            for (int i = 0; i < 100; ++i) pose->sample(*c, i * 0.013f);
+                            g_sink = g_sink + size_t(pose->model()[64][3][1] * 1000.0f);
                         };
                     }});
     list.push_back({"nav.terrain_tile",

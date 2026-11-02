@@ -1,0 +1,13 @@
+{
+  "name": "ozz-animation",
+  "version": "0.17.0",
+  "description": "Skeletal animation library and toolset: sampling, blending, IK, offline import (runtime and offline libraries only)",
+  "homepage": "https://github.com/guillaumeblanc/ozz-animation",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

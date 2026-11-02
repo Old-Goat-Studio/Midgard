@@ -29,6 +29,7 @@
       "ci-linux-arm64-release": 250
     },
     "terrain.chunk_mesh_eroded": {"default": 10, "_about": "A chunk from a world graph with one erode over 6-octave noise (cost 5 in 5.9 grounds, over kGraphCostBudget's 4, so the cook warns about such a ground): 3.7 ms on the development PC against the plain chunk's 1.1."},
+    "anim.pose_65_joints": {"default": 0.5, "_about": "100 poses of a 65-joint humanoid sampled from a clip and put in model space: 0.12 ms on the development PC (about 1 us a pose; the Quaternius library's real clips about 12 us a pose with cold caches)."},
     "nav.terrain_tile": {"default": 25, "_about": "A 32 m navigation tile over terrain (the ground sampled on a 1 m grid, Recast at 0.3 m cells): 8.3 ms on the development PC, one thread; the game makes them round the player on the job system."},
     "nav.tile_32m": {"default": 25, "_about": "A 32 m navigation tile (Recast, 0.2 m cells) over rolling ground with 12 boxes: 7.6 ms on the development PC, one thread (tiles build in parallel on the job system)."},
     "terrain.placements_tile": {"default": 2, "_about": "Objects placed in one 125 m tile by two rules: 0.25 ms on the development PC (a few hundred candidates, five heights each)."},
