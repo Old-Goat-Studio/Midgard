@@ -14,7 +14,7 @@ def test_title_without_a_project(window):
 
 def test_opening_a_project(window, project, settings):
     assert window.open_project(project.config_path)
-    assert window.windowTitle() == "Midgard - HelloCube"
+    assert window.windowTitle() == "Midgard - HelloCube - Main"  # the open scene
     assert settings.recent_projects()[0] == project.config_path.resolve()
     assert window.close_action.isEnabled()
     window.close_project()

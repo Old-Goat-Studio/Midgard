@@ -15,11 +15,11 @@ def test_play_starts_afresh_and_continue_keeps_where_it_got_to(window, project, 
     window.set_project(project)
     started = []
     monkeypatch.setattr(main_window_module, "runtime_candidates", lambda: [Path("runtime")])
-    monkeypatch.setattr(window, "cook_project", lambda: tmp_path / "pkg")
+    monkeypatch.setattr(window, "cook_project", lambda entry_scene=None: tmp_path / "pkg")
     monkeypatch.setattr(window.session, "start",
                         lambda runtime, package, extra=None: started.append(extra))
     folder = window.play_folder()
-    assert folder == project.root / ".midgard" / "play"
+    assert folder == project.root / ".midgard" / "play" / "scn_main"  # one per scene
     assert not window.can_continue()  # nothing played yet
     window._play_state_changed(State.STOPPED)
     assert not window.continue_action.isEnabled()

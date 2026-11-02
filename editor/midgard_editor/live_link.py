@@ -293,6 +293,8 @@ class PlaySession(QObject):
     def _entities_changed(self, entity_id: str) -> None:
         if self.socket is None:
             return
+        if entity_id and self.project.entity_scene(entity_id) not in (None, self.project.scene):
+            return  # (an undo in another scene: not the one being played)
         # A mesh the game's package doesn't have yet (a new shape, a file from objects/) is
         # cooked into game.pak before the entity that uses it is sent.
         if used_mesh_assets(self.project) - self._cooked_assets:
@@ -382,7 +384,7 @@ class PlaySession(QObject):
 
     def _terrain_changed(self, scene: str) -> None:
         """Sculpting and painting: the running game's ground follows at once."""
-        if self.socket is None:
+        if self.socket is None or scene != self.project.scene:
             return
         self.send({"type": "terrain.stamps", "stamps": terrain_stamps.stamps(self.project, scene)})
 

@@ -14,7 +14,7 @@ from typing import Any
 
 from PySide6.QtGui import QUndoCommand
 
-from .project import MAIN_SCENE, Project
+from .project import Project
 
 
 def load_all(project: Project) -> list[dict[str, Any]]:
@@ -188,7 +188,7 @@ class DeleteWorldTypeCommand(QUndoCommand):
         self.project.world_types_changed.emit(self.world_type)
 
 
-def scene_world(project: Project, scene: str = MAIN_SCENE) -> dict[str, Any] | None:
+def scene_world(project: Project, scene: str | None = None) -> dict[str, Any] | None:
     """The scene's world: {"world_type", "version", "seed"?}, or None (no terrain, or terrain
     settings from before world types)."""
     terrain = project.scene_settings(scene).get("terrain")

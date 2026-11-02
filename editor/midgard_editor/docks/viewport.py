@@ -34,7 +34,7 @@ from .. import engine, environments, terrain_stamps, textures, world_types
 from ..cook import BUILTIN_PREFIX, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
-from ..scene_model import MAIN_SCENE, parents_first
+from ..scene_model import parents_first
 from .gizmos import GizmoPanel
 
 log = logging.getLogger("midgard")
@@ -287,7 +287,7 @@ class ViewportPanel(QWidget):
             project.objects_changed.connect(self._objects_changed)
             project.environments_changed.connect(self._environments_changed)
             project.terrain_changed.connect(self._terrain_changed)
-            project.world_types_changed.connect(lambda _id: self._settings_changed(MAIN_SCENE))
+            project.world_types_changed.connect(lambda _id: self._settings_changed(project.scene))
             project.files_changed.connect(self._files_changed)
             camera = next((e for e in project.entities() if "camera" in e.components), None)
             if camera is not None:  # start where the game's camera starts
@@ -345,10 +345,10 @@ class ViewportPanel(QWidget):
             self.view.show_colliders = show
             self.request_render()
 
-    def _settings_changed(self, _scene: str) -> None:
-        if self.project is not None:
+    def _settings_changed(self, scene: str) -> None:
+        if self.project is not None and scene == self.project.scene:
             self.view.set_settings(json.dumps(world_types.resolved_settings(
-                self.project, self.project.scene_settings(MAIN_SCENE))))
+                self.project, self.project.scene_settings())))
             self.request_render()
 
     def _sync_all(self) -> None:
@@ -356,7 +356,7 @@ class ViewportPanel(QWidget):
         if self.project is not None:
             # The fallback for a scene without a Sky entity, as in the game.
             self.view.set_settings(json.dumps(world_types.resolved_settings(
-                self.project, self.project.scene_settings(MAIN_SCENE))))
+                self.project, self.project.scene_settings())))
             self.send_environments()
             self.send_terrain()
             for entity in parents_first(self.project.entities()):
@@ -369,7 +369,7 @@ class ViewportPanel(QWidget):
         if self.view is None or self.project is None or \
                 not hasattr(self.view, "set_terrain_stamps"):
             return
-        stamps = terrain_stamps.stamps(self.project, MAIN_SCENE)
+        stamps = terrain_stamps.stamps(self.project)
         if extra is not None:
             stamps.append(extra)
         try:
@@ -534,6 +534,8 @@ class ViewportPanel(QWidget):
         if not entity_id:  # added or removed: start again (scenes are small for now)
             self._sync_all()
             return
+        if self.project.entity_scene(entity_id) not in (None, self.project.scene):
+            return  # (an undo in a scene that isn't open)
         entity = self.project.entity(entity_id)
         if entity is None:
             self.view.remove_entity(entity_id)

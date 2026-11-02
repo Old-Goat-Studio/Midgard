@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import APP_NAME, DESCRIPTION, ICON_PATH, ICONS_DIR, vcs
+from . import APP_NAME, DESCRIPTION, ICON_PATH, ICONS_DIR, scenes, vcs
 from . import layouts as layout_store
 from .about import AboutDialog, engine_info, runtime_candidates
 from .backup import BackupScheduler
@@ -169,6 +169,8 @@ class MainWindow(QMainWindow):
         self.terrain_panel = TerrainPanel()
         self.world_type_panel = WorldTypePanel()
         self.scenes_panel = ScenesPanel()
+        self.scenes_panel.set_can_open(True)
+        self.scenes_panel.open_requested.connect(self.open_scene)
         self.viewport.brush = self.terrain_panel.brush  # Sculpt on: the viewport's left button
         self.calendar_panel.season_scrubbed.connect(self.viewport.set_season)
         self.calendar_panel.time_scrubbed.connect(self._time_scrubbed)
@@ -660,6 +662,23 @@ class MainWindow(QMainWindow):
         self.script_editor.show_error(error.get("file", ""), int(error.get("line", 0)),
                                       error.get("message", ""))
 
+    def _show_title(self) -> None:
+        if self.project is None:
+            self.setWindowTitle(APP_NAME)
+            return
+        scene = scenes.name(self.project, self.project.scene)
+        self.setWindowTitle(f"{APP_NAME} - {self.project.name} - {scene}")
+
+    def open_scene(self, scene: str) -> None:
+        """Edit another of the game's scenes (the Scenes panel's Open). A game that is running
+        is stopped first: it was playing the scene being left."""
+        if self.project is None or scene == self.project.scene:
+            return
+        self.stop_game()
+        self.project.open_scene(scene)
+        self._play_state_changed(self.session.state if self.session else State.STOPPED)
+        log.info("Editing scene %s", scenes.name(self.project, scene))
+
     def edit_world_shape(self) -> None:
         if self.project is not None:
             WorldShapeDialog(self.project, self).exec()
@@ -681,6 +700,10 @@ class MainWindow(QMainWindow):
             self.undo_group.removeStack(self.project.undo_stack)
             self.project.deleteLater()
         self.project = project
+        if project is not None:
+            project.scene = scenes.start_scene(project)  # (before the panels look)
+            project.scene_opened.connect(lambda _s: self._show_title())
+            project.scenes_changed.connect(lambda _s: self._show_title())
         self.browser.set_project(project)
         self.inspector.set_project(project)
         self.scene_panel.set_project(project)
@@ -717,7 +740,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(APP_NAME)
             self.start.show_welcome(self.settings.recent_projects())
             return
-        self.setWindowTitle(f"{APP_NAME} - {project.name}")
+        self._show_title()
         self.undo_group.addStack(project.undo_stack)
         self.undo_group.setActiveStack(project.undo_stack)
         self.settings.add_recent(project.config_path)
@@ -729,12 +752,13 @@ class MainWindow(QMainWindow):
         project.config_changed.connect(lambda *_: self.start.show_project(project))
 
     # ---- build -------------------------------------------------------------------------
-    def cook_project(self) -> Path | None:
-        """Cook the open project for this machine. Returns the package folder."""
+    def cook_project(self, entry_scene: str | None = None) -> Path | None:
+        """Cook the open project for this machine, starting in entry_scene (none: the starting
+        scene). Returns the package folder."""
         if self.project is None:
             return None
         try:
-            result = cook(self.project)
+            result = cook(self.project, entry_scene=entry_scene)
         except (CookError, OSError) as e:
             QMessageBox.warning(self, "Cook", str(e))
             log.error("Cook failed: %s", e)
@@ -752,8 +776,11 @@ class MainWindow(QMainWindow):
     # ---- play-in-editor ----------------------------------------------------------------
     def play_folder(self) -> Path | None:
         """Where Play keeps the game's world (clock, the player's place) and the player's
-        profile (camera view) between runs, for Continue: .midgard/play/ in the project."""
-        return self.project.work_dir / "play" if self.project is not None else None
+        profile (camera view) between runs, for Continue: .midgard/play/<scene>/ in the project
+        (each scene played has its own)."""
+        if self.project is None:
+            return None
+        return self.project.work_dir / "play" / self.project.scene
 
     def can_continue(self) -> bool:
         folder = self.play_folder()
@@ -777,7 +804,7 @@ class MainWindow(QMainWindow):
                                 "The engine runtime was not found. Build the engine first "
                                 "(see the README), or use a packaged editor.")
             return
-        package = self.cook_project()
+        package = self.cook_project(entry_scene=self.project.scene)  # Play: the open scene
         if package is None:
             return
         folder = self.play_folder()

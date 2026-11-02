@@ -103,6 +103,13 @@ def _delete(con: sqlite3.Connection, scene: str, name_key: str) -> None:
     con.execute("DELETE FROM string WHERE key = ?", (name_key,))
 
 
+def _gone(project: Project, scene: str) -> None:
+    """A scene was deleted (or its making undone): if the editor had it open, it opens the
+    starting scene instead."""
+    if project.scene == scene:
+        project.open_scene(start_scene(project))
+
+
 def _fresh_ids(project: Project, entities: list) -> dict[str, str]:
     """New entity ids for entities copied into another scene (ids are the project's, not the
     scene's), in the same order."""
@@ -141,6 +148,7 @@ class AddSceneCommand(QUndoCommand):
     def undo(self) -> None:
         with self.project.connect() as con:
             _delete(con, self.scene, self.snap["name_key"])
+        _gone(self.project, self.scene)
         self.project.scenes_changed.emit(self.scene)
 
 
@@ -181,6 +189,7 @@ class DeleteSceneCommand(QUndoCommand):
     def redo(self) -> None:
         with self.project.connect() as con:
             _delete(con, self.scene, self.snap["name_key"])
+        _gone(self.project, self.scene)
         self.project.scenes_changed.emit(self.scene)
 
     def undo(self) -> None:

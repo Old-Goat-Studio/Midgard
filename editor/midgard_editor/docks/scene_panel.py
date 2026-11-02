@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The Scene panel: the main scene's entities as a tree, with folders (a new scene keeps its
+"""The Scene panel: the open scene's entities as a tree, with folders (a new scene keeps its
 camera, sky, light, ground and player in a World folder) and groups (several parts that move as
 one, see schema/components.md). Add, Delete (the button, the Delete key or right-click), and drag
 an entity onto a folder or a group (or beside another entity) to move it there: it stays where
@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import transforms
+from .. import scenes, transforms
 from ..group_objects import ask_save_group_as_object
 from ..meshes import PRIMITIVES
 from ..objects import new_models, object_for_model
@@ -125,6 +125,8 @@ class ScenePanel(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 4, 4, 4)
+        self.scene_name = QLabel()  # the scene open for editing (the Scenes panel opens others)
+        layout.addWidget(self.scene_name)
         layout.addLayout(buttons)
         layout.addWidget(self.tree)
         self.empty = QLabel("No project open.")
@@ -139,6 +141,7 @@ class ScenePanel(QWidget):
             self.stack.setCurrentWidget(self.empty)
             return
         project.entities_changed.connect(self.refresh)
+        project.scenes_changed.connect(self.refresh)  # (its name)
         self.stack.setCurrentIndex(1)
         self.refresh()
 
@@ -148,6 +151,7 @@ class ScenePanel(QWidget):
         current = self.selected_id()
         self.tree.blockSignals(True)
         self.tree.clear()
+        self.scene_name.setText(f"<b>{scenes.name(self.project, self.project.scene)}</b>")
         entities = self.project.entities()
         self.tree.folders = {e.id for e in entities if e.is_folder or "group" in e.components}
         items: dict[str, QTreeWidgetItem] = {}

@@ -300,7 +300,8 @@ def _cook_icon(project: Project, out: Path) -> None:
 
 
 def _write_manifest(project: Project, out: Path, target: dict[str, str],
-                    content: list[dict[str, str]], schema_version: int) -> dict:
+                    content: list[dict[str, str]], schema_version: int,
+                    entry_scene: str | None = None) -> dict:
     content_hash = hashlib.sha256()
     for item in content:
         content_hash.update(item["sha256"].encode("ascii"))
@@ -316,7 +317,7 @@ def _write_manifest(project: Project, out: Path, target: dict[str, str],
         "built_with": {"editor": f"{VERSION}+{BUILD}", "engine_abi": ENGINE_ABI},
         "target": target,
         "world_mode": project.config.get("world_mode", "system_map"),
-        "entry": {"scene": scenes.start_scene(project)},
+        "entry": {"scene": entry_scene or scenes.start_scene(project)},
         "database": f"{project.name}.db",
         "schema_version": schema_version,
         "content_hash": "sha256:" + content_hash.hexdigest(),
@@ -332,7 +333,9 @@ def _write_manifest(project: Project, out: Path, target: dict[str, str],
 
 
 def cook(project: Project, out_dir: Path | None = None,
-         target: dict[str, str] | None = None) -> CookResult:
+         target: dict[str, str] | None = None, entry_scene: str | None = None) -> CookResult:
+    """The project as a package for target (this machine if none), starting in entry_scene
+    (Play's open scene; none: the starting scene)."""
     target = target or host_target()
     out = out_dir or default_out_dir(project, target)
     if out.exists():
@@ -348,7 +351,7 @@ def cook(project: Project, out_dir: Path | None = None,
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
     (out / f"{project.name}.config").write_text(json.dumps(runtime_config, indent=2) + "\n",
                                                 "utf-8")
-    manifest = _write_manifest(project, out, target, content, schema_version)
+    manifest = _write_manifest(project, out, target, content, schema_version, entry_scene)
     report = engine.validate(out)
     if report is not None:
         if not report["ok"]:
@@ -385,5 +388,9 @@ def recook(project: Project, out: Path, database: bool = False, assets: bool = F
         after |= {SCRIPT_PREFIX + m: s for m, s in cooked.items()}
         warnings += _script_warnings(project, cooked)
     changed = {i for i in before.keys() | after.keys() if before.get(i) != after.get(i)}
-    manifest = _write_manifest(project, out, old["target"], content, schema_version)
+    with project.connect() as con:  # the scene it started in, while there is one
+        kept = con.execute("SELECT id FROM scene WHERE id = ?",
+                           (old["entry"]["scene"],)).fetchone()
+    manifest = _write_manifest(project, out, old["target"], content, schema_version,
+                               kept[0] if kept else None)
     return CookResult(out, manifest, warnings), changed

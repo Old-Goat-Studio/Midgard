@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The Scenes panel (milestone 5.11a): the game's scenes, the one it starts in first (marked),
-with New, Duplicate, Rename, Delete and Make Starting Scene, each one undoable step.
-Double-clicking a scene (or Open) asks for it to be opened for editing."""
+"""The Scenes panel (milestone 5.11a): the game's scenes, the one it starts in first (marked,
+in bold; the one open for editing in italics), with Open, New, Duplicate, Rename, Delete and
+Make Starting Scene, each change one undoable step. Double-clicking a scene opens it too."""
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -59,10 +59,12 @@ class ScenesPanel(QWidget):
     def set_project(self, project) -> None:
         if self.project is not None:
             self.project.scenes_changed.disconnect(self._changed)
+            self.project.scene_opened.disconnect(self._changed)
         self.project = project
         self.stack.setCurrentIndex(0 if project is None else 1)
         if project is not None:
             project.scenes_changed.connect(self._changed)
+            project.scene_opened.connect(self._changed)
         self.reload()
 
     def _changed(self, scene: str) -> None:
@@ -77,11 +79,12 @@ class ScenesPanel(QWidget):
         for s in scenes.load_all(self.project):
             item = QListWidgetItem(s["name"] + (START_MARK if s["id"] == start else ""))
             item.setData(Qt.ItemDataRole.UserRole, s["id"])
-            item.setToolTip(s["id"])
-            if s["id"] == start:
-                font = QFont(item.font())
-                font.setBold(True)
-                item.setFont(font)
+            is_open = s["id"] == self.project.scene
+            item.setToolTip(s["id"] + (" (open for editing)" if is_open else ""))
+            font = QFont(item.font())
+            font.setBold(s["id"] == start)
+            font.setItalic(is_open)  # the scene the editor is editing
+            item.setFont(font)
             self.list.addItem(item)
         rows = [i for i in range(self.list.count())
                 if self.list.item(i).data(Qt.ItemDataRole.UserRole) == keep]

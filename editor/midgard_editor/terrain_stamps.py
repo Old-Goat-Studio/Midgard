@@ -9,7 +9,7 @@ from typing import Any
 
 from PySide6.QtGui import QUndoCommand
 
-from .project import MAIN_SCENE, Project
+from .project import Project
 
 TOOLS = {  # tool: (label, what strength means, default strength, its range)
     "raise": ("Raise", "metres", 2.0, (0.0, 1000.0)),
@@ -22,15 +22,17 @@ PAINTS = {"lush": "Lush grass", "dry": "Dry grass", "sand": "Sand", "rock": "Roc
           "clear": "Clear paint"}
 
 
-def load(project: Project, scene: str = MAIN_SCENE) -> list[tuple[int, dict[str, Any]]]:
+def load(project: Project, scene: str | None = None) -> list[tuple[int, dict[str, Any]]]:
     """The scene's stamps in order: (row id, stamp)."""
+    scene = scene or project.scene
     with project.connect() as con:
         rows = con.execute("SELECT id, stamp FROM terrain_stamp WHERE scene = ? ORDER BY id",
                            (scene,)).fetchall()
     return [(int(i), json.loads(s)) for i, s in rows]
 
 
-def stamps(project: Project, scene: str = MAIN_SCENE) -> list[dict[str, Any]]:
+def stamps(project: Project, scene: str | None = None) -> list[dict[str, Any]]:
+    scene = scene or project.scene
     return [s for _i, s in load(project, scene)]
 
 
@@ -61,9 +63,9 @@ def describe(stamp: dict[str, Any]) -> str:
 class StampCommand(QUndoCommand):
     """Adds one stroke (redo puts it back with the same id, so the order stays)."""
 
-    def __init__(self, project: Project, stamp: dict[str, Any], scene: str = MAIN_SCENE):
+    def __init__(self, project: Project, stamp: dict[str, Any], scene: str | None = None):
         super().__init__(f"Terrain: {describe(stamp)}")
-        self.project, self.scene = project, scene
+        self.project, self.scene = project, scene or project.scene
         self.stamp = copy.deepcopy(stamp)
         self.row_id: int | None = None
 
@@ -78,9 +80,9 @@ class StampCommand(QUndoCommand):
 class ClearStampsCommand(QUndoCommand):
     """Removes every stroke from the scene's terrain."""
 
-    def __init__(self, project: Project, scene: str = MAIN_SCENE):
+    def __init__(self, project: Project, scene: str | None = None):
         super().__init__("Terrain: clear all sculpting and painting")
-        self.project, self.scene = project, scene
+        self.project, self.scene = project, scene or project.scene
         self.rows = load(project, scene)
 
     def redo(self) -> None:

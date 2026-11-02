@@ -145,3 +145,106 @@ def test_the_cook_packs_every_scene_and_starts_in_the_starting_one(project, tmp_
     assert run.returncode == 0, run.stderr
     dumped = json.loads([x for x in run.stdout.splitlines() if x.startswith("{")][-1])
     assert "Pillar" in {e["name"] for e in dumped["entities"]}
+
+
+# ---- one scene open at a time (step 2) ---------------------------------------------------------
+def test_edits_go_to_the_open_scene_and_undo_finds_their_own(project):
+    from midgard_editor.undo import AddEntityCommand, DeleteEntityCommand, SetSceneSettingsCommand
+    command = scenes.AddSceneCommand(project, "Cave")
+    project.undo_stack.push(command)
+    cave = command.scene
+    main_ids = {e.id for e in project.entities(MAIN_SCENE)}
+    project.open_scene(cave)
+    assert project.scene == cave
+    assert {e.id for e in project.entities()} == {e.id for e in project.entities(cave)}
+    rock = Entity(project.next_entity_id(), "Rock", None, {"transform": {}})
+    project.undo_stack.push(AddEntityCommand(project, rock))
+    project.undo_stack.push(SetSceneSettingsCommand(
+        project, {**project.scene_settings(), "sky": [1.0, 0.0, 0.0]}, "sky"))
+    assert project.entity_scene(rock.id) == cave
+    assert project.scene_settings(cave)["sky"] == [1.0, 0.0, 0.0]
+    assert project.scene_settings(MAIN_SCENE)["sky"] != [1.0, 0.0, 0.0]
+    # Back in the main scene, a deletion there, then undo everything: each in its own scene.
+    project.open_scene(MAIN_SCENE)
+    player = next(e for e in project.entities() if e.name == "Player")
+    project.undo_stack.push(DeleteEntityCommand(project, player))
+    project.open_scene(cave)
+    project.undo_stack.undo()  # the player comes back to the main scene, not the cave
+    assert project.entity_scene(player.id) == MAIN_SCENE
+    project.undo_stack.undo()
+    project.undo_stack.undo()
+    assert project.entity(rock.id) is None
+    assert {e.id for e in project.entities(MAIN_SCENE)} == main_ids
+    project.undo_stack.redo()  # the rock goes back into the cave
+    assert project.entity_scene(rock.id) == cave
+
+
+def test_stamps_keep_their_scene_and_a_deleted_open_scene_closes(project):
+    command = scenes.AddSceneCommand(project, "Cave")
+    project.undo_stack.push(command)
+    project.open_scene(command.scene)
+    project.undo_stack.push(terrain_stamps.StampCommand(project, {"tool": "raise",
+                                                                  "radius": 4.0}))
+    assert len(terrain_stamps.load(project, command.scene)) == 1
+    assert terrain_stamps.load(project, MAIN_SCENE) == []
+    opened = []
+    project.scene_opened.connect(opened.append)
+    project.undo_stack.push(scenes.DeleteSceneCommand(project, command.scene))
+    assert project.scene == MAIN_SCENE and opened == [MAIN_SCENE]  # the starting scene
+    project.undo_stack.undo()
+    project.open_scene(command.scene)
+    project.undo_stack.undo()  # the stroke
+    project.undo_stack.undo()  # making the cave: it's open, so the starting scene opens
+    assert project.scene == MAIN_SCENE
+
+
+def test_the_window_edits_the_scene_it_opens_and_plays_it(window, project, monkeypatch,
+                                                         tmp_path):
+    from midgard_editor import main_window as main_window_module
+    from midgard_editor.docks.scene_panel import ID_ROLE
+    assert window.open_project(project.config_path)
+    opened = window.project
+    window.scenes_panel.new_scene("Cave")
+    cave = "scn_cave"
+    assert not window.scenes_panel.buttons["Open"].isHidden()
+    window.scenes_panel.list.setCurrentRow(1)
+    window.scenes_panel.open_selected()
+    assert opened.scene == cave
+    assert window.windowTitle() == "Midgard - HelloCube - Cave"
+    assert window.scenes_panel.list.item(1).font().italic()  # marked as open
+    assert not window.scenes_panel.list.item(0).font().italic()
+    assert "Cave" in window.scene_panel.scene_name.text()
+    tree_ids = set()
+    root = window.scene_panel.tree.invisibleRootItem()
+    stack = [root.child(i) for i in range(root.childCount())]
+    while stack:
+        item = stack.pop()
+        tree_ids.add(item.data(0, ID_ROLE))
+        stack += [item.child(i) for i in range(item.childCount())]
+    assert tree_ids == {e.id for e in opened.entities(cave)}
+    # Play starts in the open scene, keeping its own place for Continue.
+    cooked = []
+    monkeypatch.setattr(main_window_module, "runtime_candidates", lambda: [tmp_path / "rt"])
+    monkeypatch.setattr(window, "cook_project",
+                        lambda entry_scene=None: cooked.append(entry_scene) or tmp_path / "pkg")
+    started = []
+    monkeypatch.setattr(window.session, "start",
+                        lambda runtime, package, extra=None: started.append(extra))
+    window.play()
+    assert cooked == [cave]
+    assert window.play_folder() == opened.work_dir / "play" / cave
+    # Renaming the open scene renames the title.
+    window.scenes_panel.rename("Crystal Cave")
+    assert window.windowTitle() == "Midgard - HelloCube - Crystal Cave"
+
+
+@needs_engine
+def test_play_cooks_the_open_scene_as_the_start_and_recook_keeps_it(project, tmp_path):
+    from midgard_editor.cook import recook
+    command = scenes.AddSceneCommand(project, "Cave")
+    project.undo_stack.push(command)
+    result = cook(project, tmp_path / "pkg", entry_scene=command.scene)
+    assert result.manifest["entry"]["scene"] == command.scene
+    again, _changed = recook(project, result.out_dir, database=True)
+    assert again.manifest["entry"]["scene"] == command.scene
+    assert cook(project, tmp_path / "pkg2").manifest["entry"]["scene"] == MAIN_SCENE

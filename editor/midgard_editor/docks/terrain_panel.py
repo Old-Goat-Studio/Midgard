@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
 
 from .. import terrain_stamps
 from ..project import Project
-from ..scene_model import MAIN_SCENE
 from ..terrain_stamps import PAINTS, TOOLS, ClearStampsCommand
 
 
@@ -89,7 +88,7 @@ class TerrainPanel(QWidget):
     def has_terrain(self) -> bool:
         if self.project is None:
             return False
-        settings = self.project.scene_settings(MAIN_SCENE)
+        settings = self.project.scene_settings()
         return bool(settings.get("body")) and settings.get("terrain") is not None
 
     def _refresh(self, *_args) -> None:
@@ -101,7 +100,7 @@ class TerrainPanel(QWidget):
             self.status.setText("No terrain in this scene: turn it on in World ▸ World Shape… "
                                 "(bounded areas and cylinders).")
             return
-        count = len(terrain_stamps.load(self.project, MAIN_SCENE))
+        count = len(terrain_stamps.load(self.project))
         self.status.setText(f"{count} stroke{'s' if count != 1 else ''}. "
                             + ("Drag over the terrain in the viewport."
                                if self.sculpt.isChecked() else "Turn on Sculpt to draw."))
@@ -128,7 +127,7 @@ class TerrainPanel(QWidget):
         return brush
 
     def clear_all(self) -> None:
-        if self.project is not None and terrain_stamps.load(self.project, MAIN_SCENE):
+        if self.project is not None and terrain_stamps.load(self.project):
             self.project.undo_stack.push(ClearStampsCommand(self.project))
 
 

@@ -70,6 +70,7 @@ class Project(QObject):
     terrain_changed = Signal(str)  # scene id: its terrain stamps (sculpting and painting)
     world_types_changed = Signal(str)  # world type id: its recipe or name
     scenes_changed = Signal(str)  # scene id: added, removed, renamed or made the starting one
+    scene_opened = Signal(str)  # scene id: the editor now edits this scene
     files_changed = Signal(list)  # model and image files changed on disk (paths in the project)
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
@@ -78,6 +79,9 @@ class Project(QObject):
         self.name = name
         self.config = config
         self.undo_stack = QUndoStack(self)
+        # The scene the editor is editing (scenes.py; one at a time): what the scene methods
+        # below work on when not given one.
+        self.scene = MAIN_SCENE
 
     # ---- locations ---------------------------------------------------------------------
     @property
@@ -262,9 +266,22 @@ class Project(QObject):
                             "VALUES (?, ?, ?, ?, ?)",
                             (e.id, MAIN_SCENE, e.name, e.parent, json.dumps(e.components)))
 
-    def group_in_world(self, scene: str = MAIN_SCENE) -> None:
+    def open_scene(self, scene: str) -> None:
+        """Edit another scene: every panel shows it (they hear entities_changed,
+        scene_settings_changed and terrain_changed as for any change, after scene_opened)."""
+        with self.connect() as con:
+            if not con.execute("SELECT 1 FROM scene WHERE id = ?", (scene,)).fetchone():
+                raise ProjectError(f"There is no scene {scene}.")
+        self.scene = scene
+        self.scene_opened.emit(scene)
+        self.entities_changed.emit("")
+        self.scene_settings_changed.emit(scene)
+        self.terrain_changed.emit(scene)
+
+    def group_in_world(self, scene: str | None = None) -> None:
         """For scenes made before layout 1: a Sky entity with the scene's sky and ambient
         colours, and a World folder holding the entities that were at the top."""
+        scene = scene or self.scene
         entities = self.entities(scene)
         ids = (f"e{n:06d}" for n in itertools.count(int(self.next_entity_id()[1:])))
         sky = sky_component(self.scene_settings(scene))
@@ -284,16 +301,18 @@ class Project(QObject):
                 add(next(ids), "Sky", world, {"sky": sky})
         self.entities_changed.emit("")
 
-    def scene_settings(self, scene: str = MAIN_SCENE) -> dict[str, Any]:
+    def scene_settings(self, scene: str | None = None) -> dict[str, Any]:
         """A scene's settings (sky and ambient colours), with defaults filled in. A Sky entity
         outranks them; they are kept for scenes without one."""
+        scene = scene or self.scene
         with self.connect() as con:
             row = con.execute("SELECT settings FROM scene WHERE id = ?", (scene,)).fetchone()
         stored = json.loads(row[0]) if row and row[0] else {}
         return {**DEFAULT_SETTINGS, **stored}
 
-    def set_scene_settings(self, settings: dict[str, Any], scene: str = MAIN_SCENE) -> None:
+    def set_scene_settings(self, settings: dict[str, Any], scene: str | None = None) -> None:
         """Replace a scene's settings. Use undo.SetSceneSettingsCommand from the UI."""
+        scene = scene or self.scene
         with self.connect() as con:
             con.execute("UPDATE scene SET settings = ? WHERE id = ?", (json.dumps(settings), scene))
         self.scene_settings_changed.emit(scene)
@@ -342,7 +361,8 @@ class Project(QObject):
                 found[f"asset:{relative}"] = relative
         return found
 
-    def entities(self, scene: str = MAIN_SCENE) -> list[Entity]:
+    def entities(self, scene: str | None = None) -> list[Entity]:
+        scene = scene or self.scene
         with self.connect() as con:
             rows = con.execute("SELECT id, name, parent, components FROM entity "
                                "WHERE scene = ? ORDER BY id", (scene,)).fetchall()
@@ -354,6 +374,12 @@ class Project(QObject):
             rows = con.execute("SELECT id, name, parent, components FROM entity "
                                "ORDER BY scene, id").fetchall()
         return [row_to_entity(r) for r in rows]
+
+    def entity_scene(self, entity_id: str) -> str | None:
+        """The scene an entity is in."""
+        with self.connect() as con:
+            row = con.execute("SELECT scene FROM entity WHERE id = ?", (entity_id,)).fetchone()
+        return row[0] if row else None
 
     def entity(self, entity_id: str) -> Entity | None:
         with self.connect() as con:
@@ -368,8 +394,10 @@ class Project(QObject):
         numbers = [int(i[1:]) for i in ids if i[:1] == "e" and i[1:].isdigit()]
         return f"e{max(numbers, default=0) + 1:06d}"
 
-    def put_entity(self, entity: Entity, scene: str = MAIN_SCENE) -> None:
-        """Insert or replace an entity. Use the commands in undo.py from the UI."""
+    def put_entity(self, entity: Entity, scene: str | None = None) -> None:
+        """Insert or replace an entity (a new one goes in `scene`, the open one if none is
+        given; one already in a scene stays there). Use the commands in undo.py from the UI."""
+        scene = scene or self.scene
         with self.connect() as con:
             con.execute("INSERT INTO entity (id, scene, name, parent, components) "
                         "VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "

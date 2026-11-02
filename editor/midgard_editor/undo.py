@@ -7,7 +7,7 @@ from PySide6.QtGui import QUndoCommand
 
 from .objects import ObjectDef
 from .project import Project
-from .scene_model import MAIN_SCENE, Entity, descendants
+from .scene_model import Entity, descendants
 
 
 class SetConfigCommand(QUndoCommand):
@@ -44,8 +44,9 @@ class SetSceneSettingsCommand(QUndoCommand):
     """Replace a scene's settings (its world shape and fallback colours)."""
 
     def __init__(self, project: Project, settings: dict[str, Any], label: str,
-                 scene: str = MAIN_SCENE):
+                 scene: str | None = None):
         super().__init__(f"Change {label}")
+        scene = scene or project.scene
         self.project, self.scene, self.new = project, scene, settings
         self.old = project.scene_settings(scene)
 
@@ -75,9 +76,10 @@ class AddEntityCommand(QUndoCommand):
     def __init__(self, project: Project, entity: Entity):
         super().__init__(f"Add {entity.name}")
         self.project, self.entity = project, entity
+        self.scene = project.scene  # (undone and redone in its own scene, whichever is open)
 
     def redo(self) -> None:
-        self.project.put_entity(self.entity)
+        self.project.put_entity(self.entity, self.scene)
 
     def undo(self) -> None:
         self.project.delete_entity(self.entity.id)
@@ -90,14 +92,15 @@ class DeleteEntityCommand(QUndoCommand):
     def __init__(self, project: Project, entity: Entity):
         super().__init__(f"Delete {entity.name}")
         self.project, self.entity = project, entity
-        self.inside = descendants(project.entities(), entity.id)
+        self.scene = project.entity_scene(entity.id) or project.scene
+        self.inside = descendants(project.entities(self.scene), entity.id)
 
     def redo(self) -> None:
         self.project.delete_entity(self.entity.id)  # the database deletes the children too
 
     def undo(self) -> None:
         for entity in [self.entity, *self.inside]:
-            self.project.put_entity(entity)
+            self.project.put_entity(entity, self.scene)
 
 
 class SetEntityCommand(QUndoCommand):
