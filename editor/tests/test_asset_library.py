@@ -140,6 +140,25 @@ def test_files_a_folder_and_a_zip_are_copied_in(project, tmp_path):
     assert {a.name for a in assets} == {"Superhero", "Rusty Plates", "Dawn"}
 
 
+def test_files_it_cant_use_are_skipped_not_fatal(project, tmp_path):
+    """A pack of many kinds of file: what the type can use comes in; the rest is skipped and
+    said (by ending), text about it kept."""
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    (pack / "song.ogg").write_bytes(OGG)
+    (pack / "tool.exe").write_bytes(b"MZ")
+    (pack / "source.blend").write_bytes(b"BLENDER")
+    (pack / "fake.wav").write_bytes(b"not a sound")
+    (pack / "LICENSE.txt").write_text("CC0", "utf-8")
+    (pack / "manual.pdf").write_bytes(b"%PDF")
+    asset = lib.import_asset(project, [pack], "music", "Song")
+    assert sorted(f["path"] for f in asset.files) == ["LICENSE.txt", "manual.pdf", "song.ogg"]
+    assert sorted(rel for rel, _why in asset.skipped) == ["fake.wav", "source.blend",
+                                                          "tool.exe"]
+    assert dict(asset.skipped)["fake.wav"] == "isn't a .wav file inside"
+    assert lib.skipped_summary(asset.skipped) == "skipped 3 files: 1 .blend, 1 .exe, 1 .wav"
+
+
 def test_imports_are_refused_with_a_reason_and_leave_nothing(project, tmp_path):
     import zipfile
 
@@ -149,17 +168,18 @@ def test_imports_are_refused_with_a_reason_and_leave_nothing(project, tmp_path):
         assert says in str(e.value), str(e.value)
 
     (tmp_path / "song.ogg").write_bytes(OGG)
-    (tmp_path / "tool.exe").write_bytes(b"MZ")
     (tmp_path / "fake.png").write_bytes(b"not a picture")
     (tmp_path / "notes.txt").write_text("hi", "utf-8")
-    refused([tmp_path / "song.ogg", tmp_path / "tool.exe"], "music", "can't hold tool.exe")
-    refused([tmp_path / "song.ogg"], "textures", "can't hold song.ogg", category="wood")
-    refused([tmp_path / "fake.png"], "images", "fake.png isn't a .png file inside")
-    refused([tmp_path / "notes.txt"], "images", "only text files")
+    # Nothing usable: refused, saying what was skipped.
+    refused([tmp_path / "song.ogg"], "textures", "nothing usable (only text, or files it can't "
+            "use) (skipped 1 file: 1 .ogg)", category="wood")
+    refused([tmp_path / "fake.png"], "images", "skipped 1 file: 1 .png")
+    refused([tmp_path / "notes.txt"], "images", "nothing usable")
     refused([tmp_path / "song.ogg"], "music", "its author is needed", licence="CC-BY-4.0")
     refused([tmp_path / "song.ogg"], "music", "isn't allowed", licence="GPL-3.0")
-    escape = tmp_path / "escape.zip"
+    escape = tmp_path / "escape.zip"  # (a zip writing outside: the whole zip refused)
     with zipfile.ZipFile(escape, "w") as z:
+        z.writestr("song.ogg", OGG)
         z.writestr("../../evil.ogg", OGG)
     refused([escape], "music", "would land outside the library")
     assert not (tmp_path.parent / "evil.ogg").exists()
@@ -169,3 +189,45 @@ def test_imports_are_refused_with_a_reason_and_leave_nothing(project, tmp_path):
     assets, _ = lib.scan(project)
     assert [a.name for a in assets] == ["Chime"]  # (nothing else got in)
     assert not (lib.library_dir(project) / "music").exists()
+
+
+def test_a_gltf_naming_files_it_hasnt_got_is_warned_about(project, tmp_path):
+    from test_characters import chain_gltf
+    folder = tmp_path / "model"
+    folder.mkdir()
+    gltf = chain_gltf(folder)  # (names chain.bin, there, and skin.png, not there)
+    asset = lib.import_asset(project, [gltf, folder / "chain.bin"], "models", "Chain")
+    assert asset.warnings == ["chain.gltf names skin.png, which isn't with it"]
+
+
+def test_a_pack_of_models_split_one_asset_each(project, tmp_path):
+    import zipfile
+
+    from test_characters import SAMPLES
+    pack = tmp_path / "pack.zip"
+    with zipfile.ZipFile(pack, "w") as z:
+        z.write(SAMPLES / "superhero_male.glb", "Pack/hero/superhero_male.glb")
+        z.write(SAMPLES / "superhero_male_basecolor.png", "Pack/hero/superhero_male_basecolor.png")
+        z.write(SAMPLES / "animation_library.glb", "Pack/moves/animation_library.glb")
+        z.writestr("Pack/LICENSE.txt", "CC0 1.0")
+        z.writestr("Pack/hero/hero.fbx", "FBX")
+        z.writestr("Pack/stray.png", PNG)
+    assert lib.model_count([pack]) == 2
+    result = lib.import_assets(project, [pack], "models", "Heroes", author="Quaternius",
+                               split=True)
+    by_name = {a.name: a for a in result.assets}
+    assert set(by_name) == {"Heroes: Superhero male", "Heroes: Animation library"}
+    hero = by_name["Heroes: Superhero male"]
+    assert sorted(f["path"] for f in hero.files) == [
+        "LICENSE.txt", "hero/superhero_male.glb", "hero/superhero_male_basecolor.png"]
+    moves = by_name["Heroes: Animation library"]
+    assert sorted(f["path"] for f in moves.files) == ["LICENSE.txt",
+                                                      "moves/animation_library.glb"]
+    assert dict(result.skipped) == {"hero/hero.fbx": "models can't use .fbx",
+                                    "stray.png": "with no one model"}
+    assert result.summary() == ("Imported 2 assets; skipped 2 files: 1 .fbx, 1 .png.")
+    # Not split: one asset of them all.
+    lib.remove(hero)
+    lib.remove(moves)
+    whole = lib.import_assets(project, [pack], "models", "Heroes", split=False)
+    assert len(whole.assets) == 1 and len(whole.assets[0].files) == 5

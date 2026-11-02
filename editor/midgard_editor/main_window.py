@@ -55,6 +55,7 @@ from .docks.script_editor import ScriptEditorPanel
 from .docks.terrain_panel import TerrainPanel
 from .docks.viewport import ViewportPanel
 from .docks.world_type_editor import WorldTypePanel
+from .error_log import ErrorLog
 from .export_dialog import ExportDialog
 from .live_link import LinkError, PlaySession, State
 from .physics_dialogs import PhysicsLayersDialog, WorldShapeDialog
@@ -172,6 +173,7 @@ class MainWindow(QMainWindow):
         self.world_type_panel = WorldTypePanel()
         self.animation_panel = AnimationPanel()
         self.asset_window: AssetWindow | None = None  # (Assets ▸ Asset Library, when opened)
+        self.error_log = ErrorLog(settings.dir, self)  # error.log (on unless turned off)
         self.scenes_panel = ScenesPanel()
         self.scenes_panel.set_can_open(True)
         self.scenes_panel.open_requested.connect(self.open_scene)
@@ -507,6 +509,7 @@ class MainWindow(QMainWindow):
     def show_preferences(self) -> None:
         PreferencesDialog(self.settings, self).exec()
         self.assistant.refresh_state()
+        self.apply_error_log()
 
     def _fill_recent_menu(self) -> None:
         self.recent_menu.clear()
@@ -664,6 +667,13 @@ class MainWindow(QMainWindow):
             self.panels["viewport"].toggleView(True)
             self.panels["viewport"].setAsCurrentTab()
 
+    def apply_error_log(self) -> None:
+        """error.log on when Preferences and the open project (if any) both say so."""
+        on = bool(self.settings.get("error_log", True))
+        if self.project is not None:
+            on = on and bool(self.project.config.get("error_log", True))
+        self.error_log.set_enabled(on)
+
     def library_window(self) -> AssetWindow:
         """The Asset Library's own window (made when first wanted)."""
         if self.asset_window is None:
@@ -787,6 +797,11 @@ class MainWindow(QMainWindow):
             action.setEnabled(project is not None)
         if self.asset_window is not None:
             self.asset_window.set_project(project)
+        self.error_log.set_folder(project.root if project is not None else None)
+        if project is not None:
+            project.config_changed.connect(lambda key: key == "error_log" and
+                                           self.apply_error_log())
+        self.apply_error_log()
         if project is not None:
             self.session = PlaySession(project, self)
             self.session.state_changed.connect(self._play_state_changed)
@@ -915,4 +930,5 @@ class MainWindow(QMainWindow):
         self.save_session_layout()
         if self.backups is not None:
             self.backups.backup_if_needed()
+        self.error_log.set_enabled(False)  # (its hooks go with the window)
         super().closeEvent(event)

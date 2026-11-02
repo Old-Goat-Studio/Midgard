@@ -75,6 +75,9 @@ class Asset:
     title: str = ""
     imported: str = ""
     files: list[dict] = field(default_factory=list)  # {"path", "sha256", "bytes"}
+    # From its import (not saved): files left out, and what to know.
+    skipped: list[tuple[str, str]] = field(default_factory=list, compare=False, repr=False)
+    warnings: list[str] = field(default_factory=list, compare=False, repr=False)
 
     @property
     def id(self) -> str:
@@ -362,67 +365,222 @@ def find_duplicate(project, file: Path) -> Asset | None:
     return None
 
 
+@dataclass
+class ImportResult:
+    """What an import made, and what it left out."""
+    assets: list[Asset] = field(default_factory=list)
+    skipped: list[tuple[str, str]] = field(default_factory=list)  # (file, why)
+    warnings: list[str] = field(default_factory=list)
+    refused: list[tuple[str, str]] = field(default_factory=list)  # (an asset's name, why)
+
+    def summary(self) -> str:
+        """'Imported 2 assets; skipped 14 files: 9 .fbx, 4 .blend, 1 .exe.'"""
+        made = f"Imported {len(self.assets)} asset{'' if len(self.assets) == 1 else 's'}"
+        parts = [made]
+        if self.skipped:
+            parts.append(skipped_summary(self.skipped))
+        for name, why in self.refused:
+            parts.append(f"{name} not imported: {why}")
+        return "; ".join(parts) + "."
+
+
+def skipped_summary(skipped: list[tuple[str, str]]) -> str:
+    """'skipped 14 files: 9 .fbx, 4 .blend, 1 .exe' (by ending, most first)."""
+    counts: dict[str, int] = {}
+    for rel, _why in skipped:
+        ext = Path(rel).suffix.lower() or "(no ending)"
+        counts[ext] = counts.get(ext, 0) + 1
+    listed = ", ".join(f"{n} {ext}" for ext, n in sorted(counts.items(),
+                                                          key=lambda kv: (-kv[1], kv[0])))
+    return f"skipped {len(skipped)} file{'' if len(skipped) == 1 else 's'}: {listed}"
+
+
+def _sorted(files: list[tuple[Path, str]], type_: str) -> tuple[list[tuple[Path, str]],
+                                                                list[tuple[str, str]]]:
+    """The files an asset of the type keeps (text about it always), and those it leaves out,
+    each with why: a type it can't hold, or contents that aren't what the name says."""
+    allowed = ALLOWED[type_]
+    kept, skipped = [], []
+    for p, rel in files:
+        ext = p.suffix.lower()
+        if ext in TEXT:
+            kept.append((p, rel))
+        elif ext not in allowed:
+            skipped.append((rel, f"{TYPES[type_][0].lower()} can't use {ext or 'it'}"))
+        elif (why := _looks_like(p)) is not None:
+            skipped.append((rel, why))
+        else:
+            kept.append((p, rel))
+    return kept, skipped
+
+
+def _make(project, files: list[tuple[Path, str]], type_: str, name: str, *, category: str,
+          description: str, licence: str, author: str, source: str, title: str,
+          today: str) -> Asset:
+    """An asset from files already sorted (their content first). LibraryError if it can't
+    be made (nothing usable, already in the library, its licence): nothing is left behind."""
+    import datetime
+    content = [(p, rel) for p, rel in files if p.suffix.lower() not in TEXT]
+    if not content:
+        raise LibraryError("there is nothing usable (only text, or files it can't use)")
+    if (twin := find_duplicate(project, content[0][0])) is not None:
+        raise LibraryError(f"{content[0][1]} is in the library already, as "
+                           f"'{twin.name}' ({twin.id})")
+    parent = type_folder(project, type_, category)
+    folder = parent / slug(name)
+    n = 2
+    while folder.exists():  # (never over another's)
+        folder = parent / f"{slug(name)}_{n}"
+        n += 1
+    asset = Asset(folder=folder, name=name, type=type_, category=category,
+                  description=description.strip(), licence=licence, author=author.strip(),
+                  source=source.strip(), title=title.strip(),
+                  imported=today or datetime.date.today().isoformat())
+    try:
+        for p, rel in files:
+            dest = folder / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, dest)
+        record_files(asset)
+        said = problems(asset)
+        if said:
+            raise LibraryError("; ".join(said))
+        write(asset)
+    except BaseException:
+        if folder.exists():
+            remove(asset)
+        raise
+    # A .gltf naming files that aren't with it (left out, or never there).
+    from urllib.parse import unquote
+
+    from .objects import gltf_dependencies
+    for gltf in folder.rglob("*.gltf"):
+        for uri in gltf_dependencies(gltf):
+            if not (gltf.parent / unquote(uri)).is_file():
+                asset.warnings.append(f"{gltf.relative_to(folder).as_posix()} names "
+                                      f"{unquote(uri)}, which isn't with it")
+    return asset
+
+
 def import_asset(project, sources: list[Path], type_: str, name: str, *, category: str = "",
                  description: str = "", licence: str = "CC0-1.0", author: str = "",
                  source: str = "", title: str = "", today: str = "") -> Asset:
-    """An asset copied into the library from files, a folder or a zip (never linked). Every
-    file must suit the type (and look like what its name says); text about it (a licence, a
-    read-me) is kept too. LibraryError says why it was refused: nothing is left behind then."""
-    import datetime
+    """An asset copied into the library from files, a folder or a zip (never linked). Files it
+    can't use (another type, or not what their name says) are left out (asset.skipped says
+    which); text about it (a licence, a read-me) is kept. LibraryError says why nothing could
+    be imported: nothing is left behind then."""
+    result = import_assets(project, sources, type_, name, category=category,
+                           description=description, licence=licence, author=author,
+                           source=source, title=title, today=today, split=False)
+    if not result.assets:
+        why = result.refused[0][1] if result.refused else "there is nothing to import"
+        if result.skipped:
+            why += f" ({skipped_summary(result.skipped)})"
+        raise LibraryError(why)
+    asset = result.assets[0]
+    asset.skipped = result.skipped
+    return asset
+
+
+def _model_groups(kept: list[tuple[Path, str]]) -> list[tuple[str, list[tuple[Path, str]]]]:
+    """The models among the files, each with what goes with it: the files a .gltf names, the
+    pictures named after it (or all of its folder's, when the folder has no other model), and
+    the text about them all. Files with no one model are left over (the last group, "")."""
+    from urllib.parse import unquote
+
+    from .objects import gltf_dependencies
+    text = [(p, rel) for p, rel in kept if p.suffix.lower() in TEXT]
+    models = [(p, rel) for p, rel in kept if p.suffix.lower() in MODEL_SUFFIXES]
+    taken: set[str] = set()
+    groups = []
+    for p, rel in models:
+        folder = rel.rsplit("/", 1)[0] if "/" in rel else ""
+        mine = [(p, rel)]
+        if p.suffix.lower() == ".gltf":
+            for uri in gltf_dependencies(p):
+                dep = (folder + "/" if folder else "") + unquote(uri)
+                mine += [(q, r) for q, r in kept if r == dep]
+        alone = sum(1 for _q, r in models
+                    if (r.rsplit("/", 1)[0] if "/" in r else "") == folder) == 1
+        for q, r in kept:
+            r_folder = r.rsplit("/", 1)[0] if "/" in r else ""
+            if q.suffix.lower() in IMAGES and r_folder == folder and \
+                    (alone or q.stem.lower().startswith(p.stem.lower())) and \
+                    all(r != m for _m, m in mine):
+                mine.append((q, r))
+        taken |= {r for _q, r in mine}
+        groups.append((p.stem, mine + text))
+    left = [(q, r) for q, r in kept if r not in taken and q.suffix.lower() not in TEXT]
+    if left:
+        groups.append(("", left))
+    return groups
+
+
+def model_count(sources: list[Path]) -> int:
+    """How many models (.glb, .gltf) files, folders and zips hold (to ask about splitting)."""
+    import zipfile
+    n = 0
+    for s in (Path(s) for s in sources):
+        if s.is_dir():
+            n += sum(1 for p in s.rglob("*") if p.suffix.lower() in MODEL_SUFFIXES)
+        elif s.suffix.lower() == ".zip":
+            try:
+                with zipfile.ZipFile(s) as z:
+                    n += sum(1 for name in z.namelist()
+                             if Path(name).suffix.lower() in MODEL_SUFFIXES and
+                             not name.startswith("__MACOSX/"))
+            except (OSError, zipfile.BadZipFile):
+                pass
+        elif s.suffix.lower() in MODEL_SUFFIXES:
+            n += 1
+    return n
+
+
+def pretty(stem: str) -> str:
+    """'oak_tree-01' -> 'Oak tree 01'."""
+    words = re.sub(r"[_\-]+", " ", stem).strip()
+    return words[:1].upper() + words[1:] if words else stem
+
+
+def import_assets(project, sources: list[Path], type_: str, name: str, *, category: str = "",
+                  description: str = "", licence: str = "CC0-1.0", author: str = "",
+                  source: str = "", title: str = "", today: str = "",
+                  split: bool = False) -> ImportResult:
+    """Files, folders and zips into the library: one asset, or (split, for models) one for each
+    model with what goes with it and the pack's text. Files it can't use are skipped, and why;
+    an asset that can't be made is refused (and why) without stopping the rest."""
     import tempfile
     if type_ not in TYPES:
         raise LibraryError(f"there is no asset type '{type_}'")
     name = name.strip()
     if not name:
         raise LibraryError("an asset needs a name")
-    allowed = ALLOWED[type_]
+    result = ImportResult()
     work = Path(project.root) / ".midgard"
     work.mkdir(parents=True, exist_ok=True)
+    meta = {"category": category, "description": description, "licence": licence,
+            "author": author, "source": source, "title": title, "today": today}
     with tempfile.TemporaryDirectory(dir=work, prefix="import_") as scratch:
         files = _gathered([Path(s) for s in sources], Path(scratch))
         if not files:
             raise LibraryError("there is nothing to import")
-        content = [(p, rel) for p, rel in files if p.suffix.lower() not in TEXT]
-        if not content:
-            raise LibraryError("there are only text files: nothing to use")
-        wrong = sorted(rel for p, rel in content if p.suffix.lower() not in allowed)
-        if wrong:
-            raise LibraryError(f"{TYPES[type_][0].lower()} can't hold "
-                               f"{', '.join(wrong[:5])}" + (" ..." if len(wrong) > 5 else "") +
-                               f" (only {', '.join(allowed)})")
-        for p, rel in content:
-            if (why := _looks_like(p)) is not None:
-                raise LibraryError(f"{rel} {why}")
-        main = content[0][0]
-        if (twin := find_duplicate(project, main)) is not None:
-            raise LibraryError(f"{content[0][1]} is in the library already, as "
-                               f"'{twin.name}' ({twin.id})")
-        # Its own folder (never over another's).
-        parent = type_folder(project, type_, category)
-        folder = parent / slug(name)
-        n = 2
-        while folder.exists():
-            folder = parent / f"{slug(name)}_{n}"
-            n += 1
-        asset = Asset(folder=folder, name=name, type=type_, category=category,
-                      description=description.strip(), licence=licence, author=author.strip(),
-                      source=source.strip(), title=title.strip(),
-                      imported=today or datetime.date.today().isoformat())
-        try:
-            for p, rel in files:
-                dest = folder / rel
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(p, dest)
-            record_files(asset)
-            said = problems(asset)
-            if said:
-                raise LibraryError("; ".join(said))
-            write(asset)
-        except BaseException:
-            if folder.exists():
-                remove(asset)
-            raise
-    return asset
+        kept, result.skipped = _sorted(files, type_)
+        groups = [(name, kept)]
+        if split and type_ in ("models", "objects"):
+            found = _model_groups(kept)
+            if sum(1 for stem, _g in found if stem) > 1:
+                groups = [(f"{name}: {pretty(stem)}", g) for stem, g in found if stem]
+                leftover = next((g for stem, g in found if not stem), [])
+                result.skipped += [(r, "with no one model") for _q, r in leftover]
+        for asset_name, group in groups:
+            try:
+                asset = _make(project, group, type_, asset_name, **meta)
+            except LibraryError as e:
+                result.refused.append((asset_name, str(e)))
+                continue
+            result.assets.append(asset)
+            result.warnings += [f"{asset.name}: {w}" for w in asset.warnings]
+    return result
 
 
 # ---- using assets (step 5) -------------------------------------------------------------------

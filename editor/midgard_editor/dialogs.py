@@ -226,6 +226,12 @@ class PreferencesDialog(QDialog):
         row.addWidget(self.projects)
         row.addWidget(browse)
         form.addRow("Projects folder", row)
+        self.error_log = QCheckBox("Keep an error log (error.log in the project's folder)")
+        self.error_log.setToolTip("The last 100 keys and clicks, and errors, so a crash can be "
+                                  "understood. Turn it off for speed (each project can too, on "
+                                  "its Project Page).")
+        self.error_log.setChecked(bool(settings.get("error_log", True)))
+        form.addRow("Error log", self.error_log)
         self.keep = QSpinBox(minimum=1, maximum=100, value=int(settings.get("backup_keep")))
         self.minutes = QSpinBox(minimum=1, maximum=120, suffix=" min",
                                 value=int(settings.get("backup_minutes")))
@@ -275,6 +281,7 @@ class PreferencesDialog(QDialog):
                 return
             self.settings.set("projects_dir", folder)
         self.settings.set("open_last_project", self.open_last.isChecked())
+        self.settings.set("error_log", self.error_log.isChecked())
         self.settings.set("backup_keep", self.keep.value())
         self.settings.set("backup_minutes", self.minutes.value())
         self.settings.set("use_x11", self.x11.isChecked())

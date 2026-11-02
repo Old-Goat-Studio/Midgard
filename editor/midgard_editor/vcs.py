@@ -12,7 +12,7 @@ from pathlib import Path
 from .project import Project
 from .scripting import _git
 
-GITIGNORE = ".midgard/\nbuild/\n"
+GITIGNORE = ".midgard/\nbuild/\nerror.log\n"
 
 
 class VcsError(Exception):

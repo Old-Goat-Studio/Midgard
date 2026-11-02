@@ -325,3 +325,30 @@ def test_no_library_assets_no_credits_file(project, tmp_path):
     from midgard_editor.cook import cook
     result = cook(project, tmp_path / "pkg")
     assert result.credits == [] and not (result.out_dir / "CREDITS.txt").exists()
+
+
+# ---- a pack: what it can't use skipped, and split one asset per model (FixMe) --------------------
+def test_the_dialog_imports_a_pack_skipping_what_it_cant_use(project, qtbot, tmp_path):
+    import shutil
+
+    from test_characters import SAMPLES
+    pack = tmp_path / "pack"
+    (pack / "hero").mkdir(parents=True)
+    (pack / "moves").mkdir()
+    shutil.copy(SAMPLES / "superhero_male.glb", pack / "hero")
+    shutil.copy(SAMPLES / "animation_library.glb", pack / "moves")
+    (pack / "hero" / "hero.fbx").write_bytes(b"FBX")
+    (pack / "LICENSE.txt").write_text("CC0", "utf-8")
+    asked = []
+    dialog = ImportDialog(project, "models")
+    qtbot.addWidget(dialog)
+    dialog.quiet = True  # (the report, not shown)
+    dialog.ask_split = lambda n: asked.append(n) or True
+    dialog.add_sources([pack])
+    dialog.details.name.setText("Heroes")
+    assert dialog.do_import()
+    assert asked == [2]  # (it asked: two models)
+    assert sorted(a.name for a in dialog.imported.assets) == ["Heroes: Animation library",
+                                                              "Heroes: Superhero male"]
+    assert "skipped 1 file: 1 .fbx" in dialog.last_report
+    assert "hero/hero.fbx: models can't use .fbx" in dialog.last_report

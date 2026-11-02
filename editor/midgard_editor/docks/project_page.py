@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QRegularExpression, Qt, QTimer
 from PySide6.QtGui import QPixmap, QRegularExpressionValidator
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -142,6 +143,13 @@ class ProjectPage(QScrollArea):
         self.credits.setToolTip("The Asset Library's CC BY assets the game uses: the cook "
                                 "writes them into CREDITS.txt")
         form.addRow("Credits", self.credits)
+        self.error_log = QCheckBox("Keep an error log for this project (error.log in its "
+                                   "folder)")
+        self.error_log.setToolTip("The last 100 keys and clicks, and errors, so a crash can be "
+                                  "understood. Turn it off for speed. (Edit ▸ Preferences can "
+                                  "turn it off for every project.)")
+        self.error_log.toggled.connect(self._error_log_toggled)
+        form.addRow("Error log", self.error_log)
         layout = QVBoxLayout(body)
         layout.addWidget(self.heading)
         layout.addLayout(form)
@@ -189,9 +197,16 @@ class ProjectPage(QScrollArea):
         self.world_mode.setText(WORLD_MODES.get(p.config.get("world_mode"), "?") +
                                 "  (chosen when the project was created)")
         self.folder.setText(str(p.root))
+        self.error_log.blockSignals(True)
+        self.error_log.setChecked(bool(p.config.get("error_log", True)))
+        self.error_log.blockSignals(False)
         self.show_credits()
         self.logo.refresh()
         self.icon.refresh()
+
+    def _error_log_toggled(self, on: bool) -> None:
+        if self.project is not None and bool(self.project.config.get("error_log", True)) != on:
+            self.project.set_config("error_log", on)
 
     def showEvent(self, e) -> None:  # noqa: N802 (Qt's name)
         if self.project is not None:  # (the scenes may use other assets by now)

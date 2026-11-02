@@ -139,6 +139,8 @@ class ImportDialog(QDialog):
         self.setWindowTitle("Import Into the Library")
         self.project = project
         self.asset: lib.Asset | None = None
+        self.imported: lib.ImportResult | None = None
+        self.last_report = ""
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Files (copied into the library: the originals stay where "
                                 "they are)"))
@@ -159,7 +161,7 @@ class ImportDialog(QDialog):
         layout.addWidget(self.details)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         self.import_button = buttons.addButton("Import", QDialogButtonBox.ButtonRole.AcceptRole)
-        buttons.accepted.connect(self.do_import)
+        buttons.accepted.connect(lambda: self.do_import())
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.resize(520, 560)
@@ -188,19 +190,69 @@ class ImportDialog(QDialog):
     def source_paths(self) -> list[Path]:
         return [Path(self.sources.item(i).text()) for i in range(self.sources.count())]
 
-    def do_import(self) -> bool:
+    def ask_split(self, models: int) -> bool:
+        """A pack of several models: one asset, or one for each? (True: one each.)"""
+        box = QMessageBox(QMessageBox.Icon.Question, "Import",
+                          f"These files hold {models} models. Import them as one asset, or as "
+                          f"one asset for each model (each with its own textures, and the "
+                          f"pack's licence)?", parent=self)
+        each = box.addButton(f"One for Each ({models})", QMessageBox.ButtonRole.YesRole)
+        box.addButton("One Asset", QMessageBox.ButtonRole.NoRole)
+        box.setDefaultButton(each)
+        box.exec()
+        return box.clickedButton() is each
+
+    def do_import(self, split: bool | None = None) -> bool:
+        """Imports what is chosen (asking, for a pack of models, whether to split it unless
+        `split` says), then says what came in and what was left out."""
         v = self.details.values()
+        sources = self.source_paths()
+        if split is None:
+            models = lib.model_count(sources) if v["type"] in ("models", "objects") else 0
+            split = models > 1 and self.ask_split(models)
         try:
-            self.asset = lib.import_asset(
-                self.project, self.source_paths(), v["type"], v["name"], category=v["category"],
+            self.imported = lib.import_assets(
+                self.project, sources, v["type"], v["name"], category=v["category"],
                 description=v["description"], licence=v["licence"], author=v["author"],
-                source=v["source"], title=v["title"])
+                source=v["source"], title=v["title"], split=split)
         except (lib.LibraryError, OSError) as e:
             QMessageBox.warning(self, "Import", f"Not imported: {e}")
             return False
-        log.info("Imported '%s' into the library (%s)", self.asset.name, self.asset.id)
+        result = self.imported
+        if not result.assets:
+            why = result.refused[0][1] if result.refused else "there is nothing to import"
+            if result.skipped:
+                why += f" ({lib.skipped_summary(result.skipped)})"
+            QMessageBox.warning(self, "Import", f"Not imported: {why}")
+            return False
+        self.asset = result.assets[0]
+        for asset in result.assets:
+            log.info("Imported '%s' into the library (%s)", asset.name, asset.id)
+        if result.skipped or result.refused or result.warnings:
+            log.warning("Import: %s", result.summary())
+            for rel, why in result.skipped:
+                log.info("Import: skipped %s (%s)", rel, why)
+            for warning in result.warnings:
+                log.warning("Import: %s", warning)
+            self.report(result)
         self.accept()
         return True
+
+    def report(self, result) -> None:
+        """What came in, and what was left out (and why)."""
+        lines = [result.summary()]
+        if result.skipped:
+            lines += ["", "Left out:"] + [f"  {rel}: {why}" for rel, why in result.skipped[:30]]
+            if len(result.skipped) > 30:
+                lines.append(f"  … and {len(result.skipped) - 30} more (in the Log)")
+        if result.warnings:
+            lines += ["", "To know:"] + [f"  {w}" for w in result.warnings]
+        box = QMessageBox(QMessageBox.Icon.Information, "Import", "\n".join(lines),
+                          parent=self)
+        box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.last_report = box.text()
+        if not getattr(self, "quiet", False):
+            box.exec()
 
 
 class DetailsDialog(QDialog):
