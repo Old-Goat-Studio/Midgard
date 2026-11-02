@@ -68,6 +68,8 @@ def build_editor() -> None:
             *data(ROOT / "schema", "schema"),
             *data(ROOT / "midgard512.png", "."),
             *data(ROOT / "icons", "icons"),
+            # Midgard's CC0 sample assets (Assets ▸ Add Sample Assets), with their sources.
+            *data(ROOT / "assets" / "third_party", "assets/third_party"),
             *data(source_info, "."),
             ROOT / "tools" / "midgard_launcher.py")
 

@@ -25,7 +25,17 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import asset_library, contract, engine, gltf_pack, meshes, objects, scenes, textures
+from . import (
+    asset_library,
+    contract,
+    engine,
+    gltf_pack,
+    meshes,
+    model_materials,
+    objects,
+    scenes,
+    textures,
+)
 from .project import Project
 from .version import BUILD, VERSION
 
@@ -90,6 +100,13 @@ def _cook_database(project: Project, out: Path) -> int:
             schema_version = contract.schema_version(dst)
             for table in EDITOR_ONLY_TABLES:  # the game never reads these
                 dst.execute(f"DROP TABLE IF EXISTS {table}")
+            # A model used as a mesh brings its own material, under the entity's (5.13a).
+            for entity_id, text in dst.execute("SELECT id, components FROM entity").fetchall():
+                components = json.loads(text)
+                drawn = model_materials.effective(project, components)
+                if drawn is not components:
+                    dst.execute("UPDATE entity SET components = ? WHERE id = ?",
+                                (json.dumps(drawn), entity_id))
             dst.commit()
             dst.execute("VACUUM")
         finally:
@@ -134,7 +151,8 @@ def used_mesh_assets(project: Project) -> set[str]:
             not a.startswith(BUILTIN_PREFIX)} | {
         a for e in entities for a in character_assets_used(e.components)} | {
         t for e in entities for t in textures.components_textures(e.components)
-        if textures.parse(t) is not None}
+        if textures.parse(t) is not None} | {
+        t for e in entities for t in model_materials.textures_of(project, e.components)}
 
 
 @dataclass
@@ -239,6 +257,10 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
                                 "not in the project (or can't be read); it is drawn without it.")
             else:
                 files[texture] = (textures.pak_path(texture), data)
+    # Models used as meshes: their own textures (milestone 5.13a).
+    for e in all_entities:
+        for texture, data in model_materials.textures_of(project, e.components).items():
+            files[texture] = (model_materials.pak_path(texture), data)
     content: list[dict[str, str]] = []
     tmp = out / "game.pak.tmp"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as pak:

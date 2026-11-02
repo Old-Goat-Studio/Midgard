@@ -504,3 +504,63 @@ def credits_text(game_title: str, used: list[Asset]) -> str:
         lines += ["And these, given to the public domain (CC0), with thanks:", ""]
         lines += [f"- {c}" for c in free] + [""]
     return "\n".join(lines)
+
+
+# ---- sample assets (step 7) ----------------------------------------------------------------------
+# The CC0 assets that come with Midgard (assets/third_party, listed with their sources in its
+# SOURCES.toml), as library assets: (type, name, description, files from that folder).
+SAMPLES = (
+    ("models", "Superhero",
+     "A humanoid character (65 joints) to animate with the Universal Animation Library's clips.",
+     ("characters/quaternius/superhero_male.glb",
+      "characters/quaternius/superhero_male_basecolor.png")),
+    ("models", "Universal Animation Library",
+     "43 humanoid clips (idle, walk, run, jump, sit, swim...) on a mannequin, for characters "
+     "with the same joints.",
+     ("characters/quaternius/animation_library.glb",)),
+    ("models", "Avocado",
+     "A small textured model (base colour, normal and roughness/metallic maps).",
+     ("models/avocado/Avocado.gltf", "models/avocado/Avocado.bin",
+      "models/avocado/Avocado_baseColor.png", "models/avocado/Avocado_normal.png",
+      "models/avocado/Avocado_roughnessMetallic.png")),
+)
+
+
+def samples_dir() -> Path:
+    """Where Midgard's own CC0 assets are (beside the editor, or in the repository)."""
+    from . import BUNDLE_DIR
+    return Path(BUNDLE_DIR) / "assets" / "third_party"
+
+
+def sample_source(path: str) -> dict:
+    """SOURCES.toml's entry for a file there (title, author, source, licence)."""
+    import tomllib
+    try:
+        doc = tomllib.loads((samples_dir() / "SOURCES.toml").read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    for entry in doc.get("asset", []):
+        listed = entry.get("path", "")
+        if path == listed or (listed.endswith("/") and path.startswith(listed)):
+            return entry
+    return {}
+
+
+def add_samples(project) -> tuple[list[Asset], list[str]]:
+    """Midgard's sample assets copied into the project's library (those it hasn't already).
+    Returns the assets added, and what was left out (with why)."""
+    added, left = [], []
+    for type_, name, description, files in SAMPLES:
+        paths = [samples_dir() / f for f in files]
+        if not all(p.is_file() for p in paths):
+            left.append(f"{name}: not with this editor")
+            continue
+        source = sample_source(files[0])
+        try:
+            added.append(import_asset(
+                project, paths, type_, name, description=description,
+                licence=source.get("license", ""), author=source.get("author", ""),
+                source=source.get("source", ""), title=source.get("title", "")))
+        except LibraryError as e:
+            left.append(f"{name}: {e}")
+    return added, left

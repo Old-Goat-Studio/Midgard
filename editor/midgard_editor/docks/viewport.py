@@ -30,7 +30,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
-from .. import engine, environments, terrain_stamps, textures, world_types
+from .. import engine, environments, model_materials, terrain_stamps, textures, world_types
 from ..cook import BUILTIN_PREFIX, character_assets_used, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
@@ -545,10 +545,20 @@ class ViewportPanel(QWidget):
                 except RuntimeError as e:
                     log.warning("Viewport: mesh %s: %s", asset, e)
                 self._sent_meshes.add(asset)
+        # A model used as a mesh: drawn with its own material under the entity's.
+        components = model_materials.effective(self.project, entity.components)
+        for texture, data in model_materials.textures_of(self.project,
+                                                         entity.components).items():
+            if self._sent_content.get(texture) != hash(data):
+                try:
+                    self.view.set_texture(texture, data)
+                except RuntimeError as e:
+                    log.warning("Viewport: texture %s: %s", texture, e)
+                self._sent_content[texture] = hash(data)
         try:
             self.view.put_entity(json.dumps({"id": entity.id, "name": entity.name,
                                              "parent": entity.parent,
-                                             "components": entity.components}))
+                                             "components": components}))
         except RuntimeError as e:
             log.warning("Viewport: %s: %s", entity.name, e)
 

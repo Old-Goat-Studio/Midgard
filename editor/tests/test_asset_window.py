@@ -5,9 +5,11 @@ licences and credits; importing with a description and licence (and refusals sai
 changed; an asset removed."""
 from pathlib import Path
 
+import pytest
 from PySide6.QtWidgets import QMessageBox
 
 from midgard_editor import asset_library as lib
+from midgard_editor import engine
 from midgard_editor.docks.asset_window import AssetWindow, DetailsDialog, ImportDialog
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
@@ -281,6 +283,8 @@ def test_an_entity_uses_a_library_model_as_its_mesh(project, tmp_path):
 
 
 # ---- credits (step 6) ---------------------------------------------------------------------------
+@pytest.mark.skipif(engine.module() is None,  # (the cook encodes the texture with it)
+                    reason="engine module not built")
 def test_the_game_credits_the_cc_by_assets_it_uses(project, qtbot, tmp_path):
     from test_characters import SAMPLES
 

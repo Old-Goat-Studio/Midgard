@@ -84,9 +84,10 @@ def entity_message(project: Project, entity_id: str) -> dict:
     entity = project.entity(entity_id)
     if entity is None:
         return {"type": "entity.delete", "entity": entity_id, "scene": project.scene}
+    from . import model_materials  # (a model used as a mesh brings its own material)
     return {"type": "entity.put", "scene": project.scene,
             "entity": {"id": entity.id, "name": entity.name, "parent": entity.parent,
-                       "components": entity.components}}
+                       "components": model_materials.effective(project, entity.components)}}
 
 
 class State(Enum):

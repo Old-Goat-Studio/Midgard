@@ -455,6 +455,8 @@ class MainWindow(QMainWindow):
                                          "Ctrl+Shift+L")
         self.import_asset_action = add_action(assets, "&Import Into Library…",
                                               self.import_into_library)
+        self.samples_action = add_action(assets, "Add &Sample Assets",
+                                         self.add_sample_assets)
 
         view = bar.addMenu("&View")
         # The viewport toolbar's switch, in the menu too.
@@ -675,6 +677,19 @@ class MainWindow(QMainWindow):
         window.raise_()
         window.activateWindow()
 
+    def add_sample_assets(self) -> tuple[list, list]:
+        """Midgard's CC0 samples (the Superhero, its animations, the Avocado) into the
+        project's library."""
+        from . import asset_library
+        added, left = asset_library.add_samples(self.project)
+        for asset in added:
+            log.info("Added the sample '%s' to the library (%s)", asset.name, asset.id)
+        for why in left:
+            log.info("Sample not added: %s", why)
+        self.show_asset_library()
+        self.asset_window.refresh()
+        return added, left
+
     def import_into_library(self) -> None:
         self.show_asset_library()
         self.asset_window.import_dialog()
@@ -768,7 +783,7 @@ class MainWindow(QMainWindow):
         self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action,
                        self.world_shape_action, self.physics_layers_action,
-                       self.library_action, self.import_asset_action):
+                       self.library_action, self.import_asset_action, self.samples_action):
             action.setEnabled(project is not None)
         if self.asset_window is not None:
             self.asset_window.set_project(project)

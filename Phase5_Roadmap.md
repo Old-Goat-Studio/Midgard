@@ -426,7 +426,7 @@ eight stops with both feet on the slope, a control run without IK failing by up 
 three views); the phone check is the self-test's Characters check (32 characters animated, with
 IK and skinned, within a frame), owed a run on the phone.
 
-### 5.13a Asset Library · L (added 2 November 2026, at the developer's request)
+### 5.13a Asset Library · L (added 2 November 2026, at the developer's request) · ✅ Done (2 November 2026)
 - Each project has its own **Asset Library** in its folder: GUI images, fonts, textures (by kind:
   metal, wood, stone, concrete, bark, brick, fabric, floor, ground, leather, road, roof, wall,
   miscellaneous; each texture in its own folder), images, icons, music, ambiance and effects (by
@@ -437,6 +437,15 @@ IK and skinned, within a frame), owed a run on the phone.
   a player below (models turning and playing their clips, textures, images, sounds, fonts).
 - New projects are made in the **projects folder** chosen in Preferences (done, 2 November).
 - Replaces the Character form's interim Import buttons.
+
+*As built:* `editor/midgard_editor/asset_library.py` (the library on disk, licences, importing,
+credits, samples), the Asset Library window with its player (`docks/asset_window.py`), library
+models as `lib:<path>` and textures as `tex:library/...` used in place, `CREDITS.txt` from the
+cook, Assets ▸ Add Sample Assets. A model used as a plain mesh (from the library or objects/)
+brings its own material and textures under the entity's (`model_materials.py`). Known limits: a
+model with several materials, used as a plain mesh, is drawn with its first (objects imported
+through the Objects panel keep them all); on Linux, sound preview needs the system's audio
+libraries (H:\Sandbox\errata.md).
 
 ### 5.14 Audio · L
 - **miniaudio** on every target; audio cooked to Ogg Vorbis (music, ambience) and Opus (effects,

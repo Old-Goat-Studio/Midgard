@@ -109,6 +109,9 @@ def test_exports_carry_the_games_python(project, tmp_path):
 
 
 def test_an_export_carries_the_credits_beside_the_game(project, tmp_path):
+    from midgard_editor import engine
+    if engine.module() is None:  # (the cook encodes the texture with it)
+        pytest.skip("engine module not built")
     """The Asset Library's CC BY assets the game uses are credited in CREDITS.txt, at the top
     of the exported game (milestone 5.13a)."""
     from PySide6.QtGui import QColor, QImage
