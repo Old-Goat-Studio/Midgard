@@ -2758,3 +2758,43 @@ TEST_CASE("many scene changes leave nothing behind") {
         CHECK(grown < 16.0);
     }
 }
+
+TEST_CASE("a flat scene's navigation comes from its static colliders and follows edits") {
+    TestPackage pkg({
+        {"e1_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0], "scale": [60, 1, 60]},
+                        "collider": {"shape": "box"}}')"},
+        {"e2_wall", R"(NULL, '{"transform": {"position": [0, 1.5, 0]},
+                      "collider": {"shape": "box", "size": [30, 3, 1]}}')"},
+        {"e3_crate", R"(NULL, '{"transform": {"position": [0, 0.5, -20], "scale": [4, 1, 4]},
+                       "collider": {"shape": "box"}, "rigidbody": {"motion": "dynamic"}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    const midgard::NavMesh* nav = game.navmesh();
+    REQUIRE(nav != nullptr);
+    CHECK(nav->tile_count() >= 4);
+    const auto around = game.find_path({0, 0, -10}, {0, 0, 10});
+    REQUIRE(around);
+    CHECK(around->complete);
+    CHECK(around->points.size() >= 3);  // round the wall
+    // A crate that moves isn't scenery: a path runs straight over where it stands.
+    const auto past_crate = game.find_path({-5, 0, -20}, {5, 0, -20});
+    REQUIRE(past_crate);
+    CHECK(past_crate->points.size() == 2);
+    // The wall taken away (a live edit): straight through.
+    game.remove_entity("e2_wall");
+    const auto straight = game.find_path({0, 0, -10}, {0, 0, 10});
+    REQUIRE(straight);
+    CHECK(straight->points.size() == 2);
+    // Its edges join the debug lines when asked for.
+    const size_t without = game.debug_lines(glm::dvec3(0.0)).size();
+    game.set_show_navigation(true);
+    CHECK(game.debug_lines(glm::dvec3(0.0)).size() > without);
+}
+
+TEST_CASE("a planet has no flat navigation") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {}, "player": {}}')"}},
+                    R"({"body": {"id": "p", "shape": "sphere_outside", "radius": 1000}})");
+    midgard::Game game(pkg.dir);
+    CHECK(game.navmesh() == nullptr);
+    CHECK_FALSE(game.find_path({0, 0, 0}, {10, 0, 0}));
+}

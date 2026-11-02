@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/game.h"
 
+#include "midgard/scene_nav.h"
+
 #include <algorithm>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -140,7 +142,8 @@ void Game::save_world() {
 }
 
 void Game::rebuild_physics() {
-    ground_.reset();  // its bodies were in the old world
+    nav_stale_ = true;  // (the scenery may have changed too)
+    ground_.reset();    // its bodies were in the old world
     physics_ = std::make_unique<ScenePhysics>(
         scene_, layers_, [this](const std::string& asset) { return load_mesh(asset); });
 }
@@ -283,6 +286,7 @@ std::vector<std::string> Game::upload_new_meshes(render::Renderer& renderer) {
 }
 
 void Game::put_entity(const nlohmann::json& entity) {
+    nav_stale_ = true;
     const auto text = [&](const char* key) {
         const auto it = entity.find(key);
         return it != entity.end() && it->is_string() ? it->get<std::string>() : std::string();
@@ -320,6 +324,7 @@ void Game::set_object(const std::string& object_id, const std::string& parts_jso
 
 void Game::set_component(const std::string& entity_id, const std::string& component,
                          const nlohmann::json& value) {
+    nav_stale_ = true;
     const entt::entity e = scene_.find(entity_id);
     if (e == entt::null) throw SceneError("entity '" + entity_id + "' is not in the scene");
     scene_.set_component(e, component, value);
@@ -328,6 +333,7 @@ void Game::set_component(const std::string& entity_id, const std::string& compon
 }
 
 void Game::remove_entity(const std::string& entity_id) {
+    nav_stale_ = true;
     physics_->remove(scene_.find(entity_id));
     scene_.remove_entity(entity_id);
     physics_->prune(scene_);  // an instance's parts went with it
@@ -534,19 +540,51 @@ render::TerrainLook Game::terrain_look() const {
     return terrain_ ? terrain_->look() : render::TerrainLook{};
 }
 
-std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const {
-    return collider_outlines(scene_, origin, [this](const std::string& asset) {
-        auto it = outline_meshes_.find(asset);
-        if (it == outline_meshes_.end()) {
-            std::unique_ptr<render::MeshData> data;
-            try {
-                data = std::make_unique<render::MeshData>(load_mesh(asset));
-            } catch (const std::exception&) {  // reported when the scene loaded
-            }
-            it = outline_meshes_.emplace(asset, std::move(data)).first;
+const render::MeshData* Game::outline_mesh(const std::string& asset) const {
+    auto it = outline_meshes_.find(asset);
+    if (it == outline_meshes_.end()) {
+        std::unique_ptr<render::MeshData> data;
+        try {
+            data = std::make_unique<render::MeshData>(load_mesh(asset));
+        } catch (const std::exception&) {  // reported when the scene loaded
         }
-        return it->second.get();
-    });
+        it = outline_meshes_.emplace(asset, std::move(data)).first;
+    }
+    return it->second.get();
+}
+
+std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const {
+    std::vector<render::DebugLine> lines = collider_outlines(
+        scene_, origin, [this](const std::string& asset) { return outline_mesh(asset); });
+    if (show_navigation_)
+        if (const NavMesh* nav = navmesh()) {
+            const glm::vec4 colour(0.2f, 0.95f, 0.75f, 1.0f);
+            const glm::vec3 lift(0.0f, 0.05f, 0.0f);  // (just over the ground)
+            for (const auto& [a, b] : nav->edges())
+                lines.push_back({glm::vec3(glm::dvec3(a) - origin) + lift,
+                                 glm::vec3(glm::dvec3(b) - origin) + lift, colour});
+        }
+    return lines;
+}
+
+const NavMesh* Game::navmesh() const {
+    if (nav_stale_) {
+        nav_stale_ = false;
+        nav_.reset();
+        if (flat_world(scene_)) {
+            const NavGeometry g =
+                nav_geometry(scene_, glm::dvec3(0.0),
+                             [this](const std::string& asset) { return outline_mesh(asset); });
+            nav_ = build_navmesh(NavSettings{}, g, jobs_.get());
+        }
+    }
+    return nav_.get();
+}
+
+std::optional<NavMesh::Path> Game::find_path(const glm::dvec3& from, const glm::dvec3& to) const {
+    const NavMesh* nav = navmesh();
+    if (!nav) return std::nullopt;
+    return nav->find_path(glm::vec3(from), glm::vec3(to));
 }
 
 render::Camera Game::camera(float aspect) const {

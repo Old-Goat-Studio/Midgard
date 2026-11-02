@@ -323,6 +323,7 @@ public:
         say("%s %s: scene '%s', %zu entities, built by editor %s\n", m.game_name.c_str(),
             m.game_version.c_str(), m.entry_scene.c_str(),
             game_.scene().registry.view<midgard::EntityInfo>().size(), m.editor_build.c_str());
+        game_.set_show_navigation(true);  // (with the collider outlines: F4)
     }
     ~GameSource() override {
         try {

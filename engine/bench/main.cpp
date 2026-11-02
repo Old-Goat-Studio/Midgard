@@ -24,6 +24,7 @@
 
 #include "midgard/det.h"
 #include "midgard/jobs.h"
+#include "midgard/navmesh.h"
 #include "midgard/physics.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/overlay.h"
@@ -200,6 +201,44 @@ std::vector<Benchmark> benchmarks() {
                             const auto placed =
                                 terrain->placements_in({0, terrain->placement_level(), 12, 9});
                             g_sink = g_sink + placed.size();
+                        };
+                    }});
+    list.push_back({"nav.tile_32m",
+                    "a 32 m navigation tile over rolling ground (0.5 m grid) with 12 boxes on it "
+                    "(one thread)",
+                    20, [](std::string&) -> std::function<void()> {
+                        auto g = std::make_shared<midgard::NavGeometry>();
+                        const auto h = [](float x, float z) {
+                            return 0.6f * std::sin(x * 0.21f) * std::cos(z * 0.17f);
+                        };
+                        for (int j = 0; j < 80; ++j)
+                            for (int i = 0; i < 80; ++i) {
+                                const float x = i * 0.5f - 4.0f, z = j * 0.5f - 4.0f;
+                                const glm::vec3 a(x, h(x, z), z), b(x + 0.5f, h(x + 0.5f, z), z),
+                                    c(x, h(x, z + 0.5f), z + 0.5f),
+                                    d(x + 0.5f, h(x + 0.5f, z + 0.5f), z + 0.5f);
+                                g->add_triangle(a, c, b);
+                                g->add_triangle(b, c, d);
+                            }
+                        for (int k = 0; k < 12; ++k) {  // boxes as walls (their tops and sides)
+                            const float x = 2.0f + float(k % 4) * 8.0f,
+                                        z = 3.0f + float(k / 4) * 9.0f;
+                            const glm::vec3 lo(x, -1.0f, z), hi(x + 2.0f, 2.0f, z + 1.0f);
+                            const auto at = [&](int c) {
+                                return glm::vec3(c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y,
+                                                 c & 4 ? hi.z : lo.z);
+                            };
+                            const int faces[6][4] = {{0, 1, 3, 2}, {4, 6, 7, 5}, {0, 4, 5, 1},
+                                                     {2, 3, 7, 6}, {0, 2, 6, 4}, {1, 5, 7, 3}};
+                            for (const auto& f : faces) {
+                                g->add_triangle(at(f[0]), at(f[2]), at(f[1]));
+                                g->add_triangle(at(f[0]), at(f[3]), at(f[2]));
+                            }
+                        }
+                        return [g] {
+                            const midgard::NavTileData t = midgard::build_nav_tile(
+                                midgard::NavSettings{}, glm::vec3(0.0f), {0, 0}, *g);
+                            g_sink = g_sink + t.size();
                         };
                     }});
     list.push_back({"shape.sphere_64x64_positions",

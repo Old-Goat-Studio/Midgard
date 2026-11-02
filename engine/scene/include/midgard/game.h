@@ -17,6 +17,7 @@
 #include "midgard/camera_rig.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
+#include "midgard/navmesh.h"
 #include "midgard/package.h"
 #include "midgard/pak.h"
 #include "midgard/placed_objects.h"
@@ -150,6 +151,17 @@ public:
     void save_world();
     const WorldSave* world() const { return world_ ? &*world_ : nullptr; }
 
+    // ---- navigation (milestone 5.12) ----
+    // Where agents can walk in the scene: built from its static colliders when first asked for,
+    // and again after the scene changes (live edits, a scene change). None where "up" isn't
+    // the same everywhere (planets, cylinders: their ground's navigation comes with terrain).
+    const NavMesh* navmesh() const;
+    // The way from one place to another, in the scene's frame, or none (either too far from
+    // anywhere walkable, or no navigation in this scene).
+    std::optional<NavMesh::Path> find_path(const glm::dvec3& from, const glm::dvec3& to) const;
+    // Whether debug_lines() includes the navigation mesh's edges.
+    void set_show_navigation(bool show) { show_navigation_ = show; }
+
     // ---- moving between scenes (milestone 5.11a) ----
     // Takes the player to another scene: the picture fades out over `fade` seconds, the scene
     // being left is unloaded and the target loaded with the player at the arrival (an entity
@@ -238,6 +250,11 @@ private:
     std::string previous_scene_;
     std::function<void(const std::string&)> leaving_;
     std::unordered_set<entt::entity> exits_inside_;  // scene exits the player is in
+    // Navigation, made when asked for after it went stale.
+    mutable std::unique_ptr<NavMesh> nav_;
+    mutable bool nav_stale_ = true;
+    bool show_navigation_ = false;
+    const render::MeshData* outline_mesh(const std::string& asset) const;
     void load_scene(const std::string& scene, const std::string& arrival);
     void update_scene_change(float dt);
     void update_exits(const Actions& actions);

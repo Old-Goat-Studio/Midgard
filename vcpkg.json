@@ -30,6 +30,7 @@
     { "name": "ktx", "default-features": false },
     "entt",
     "joltphysics",
+    "recastnavigation",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]
 }

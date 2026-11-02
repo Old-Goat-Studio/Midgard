@@ -115,6 +115,13 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
     endif()
 endif()
 
+# ---- nav: navigation meshes and paths (Recast & Detour; milestone 5.12) ---------------------
+find_package(recastnavigation CONFIG REQUIRED)
+add_library(midgard_nav STATIC nav/src/navmesh.cpp)
+target_include_directories(midgard_nav PUBLIC nav/include)
+target_link_libraries(midgard_nav PUBLIC midgard_core glm::glm
+                      PRIVATE RecastNavigation::Recast RecastNavigation::Detour midgard_options)
+
 # ---- scene: game.pak, glTF meshes and the EnTT scene built from the database ----------------
 find_package(miniz CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
@@ -137,6 +144,7 @@ add_library(midgard_scene STATIC
     scene/src/validate.cpp
     scene/src/scene_physics.cpp
     scene/src/collider_outlines.cpp
+    scene/src/scene_nav.cpp
     scene/src/world_surface.cpp
     scene/src/model.cpp
     scene/src/materials.cpp
@@ -145,7 +153,8 @@ add_library(midgard_scene STATIC
 target_include_directories(midgard_scene PUBLIC scene/include
                            PRIVATE "${CGLTF_INCLUDE_DIR}" ${Stb_INCLUDE_DIR})
 target_link_libraries(midgard_scene
-    PUBLIC midgard_core midgard_render midgard_input midgard_physics EnTT::EnTT glm::glm
+    PUBLIC midgard_core midgard_render midgard_input midgard_physics midgard_nav EnTT::EnTT
+           glm::glm
            nlohmann_json::nlohmann_json
     PRIVATE miniz::miniz unofficial::sqlite3::sqlite3 midgard_options
 )
@@ -340,6 +349,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_terrain_streamer.cpp
         tests/test_world_type.cpp
         tests/test_worldgen.cpp
+        tests/test_navmesh.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp
