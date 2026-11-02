@@ -5,13 +5,14 @@ type's assets in their folders (textures by kind, sounds by album), and below th
 asset: what it is, its licence and credit, its files and anything wrong with it. Import brings
 files, a folder or a zip in (copied, never linked), with a description and licence; Details
 changes those; Remove deletes an asset's folder, after asking (it can't be undone)."""
+import contextlib
 import logging
 import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -26,6 +27,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
+    QSlider,
     QSplitter,
     QTreeWidget,
     QTreeWidgetItem,
@@ -232,6 +235,254 @@ class DetailsDialog(QDialog):
         return True
 
 
+# ---- the player (step 4) -------------------------------------------------------------------------
+PLAYER_SIZE = (320, 240)
+MODEL_KEY = "library-model"
+
+
+def model_bounds(glb: bytes) -> tuple[list[float], list[float]] | None:
+    """A glTF binary's extent, from its meshes' positions' min and max (its nodes' moves left
+    out: enough to frame it)."""
+    import json
+    import struct
+    try:
+        length = struct.unpack_from("<I", glb, 12)[0]
+        doc = json.loads(glb[20:20 + length])
+    except (struct.error, ValueError):
+        return None
+    lo, hi = [float("inf")] * 3, [float("-inf")] * 3
+    for mesh in doc.get("meshes", []):
+        for prim in mesh.get("primitives", []):
+            index = prim.get("attributes", {}).get("POSITION")
+            if index is None or index >= len(doc.get("accessors", [])):
+                continue
+            acc = doc["accessors"][index]
+            if "min" in acc and "max" in acc:
+                lo = [min(a, b) for a, b in zip(lo, acc["min"], strict=False)]
+                hi = [max(a, b) for a, b in zip(hi, acc["max"], strict=False)]
+    return (lo, hi) if lo[0] != float("inf") else None
+
+
+class AssetPlayer(QWidget):
+    """The selected asset, shown or played: a picture; a model turning (a skinned one playing
+    its clips) through the engine; a sound; a font's sample."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(PLAYER_SIZE[0])
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.picture = QLabel()
+        self.picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.picture.setMinimumSize(*PLAYER_SIZE)
+        layout.addWidget(self.picture, 1)
+        controls = QHBoxLayout()
+        self.play_button = QPushButton("Play")
+        self.play_button.setCheckable(True)
+        self.play_button.toggled.connect(self._play)
+        controls.addWidget(self.play_button)
+        self.clip = QComboBox()
+        self.clip.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.clip.currentIndexChanged.connect(lambda _i: self._show_model_clip())
+        controls.addWidget(self.clip, 1)
+        self.position = QSlider(Qt.Orientation.Horizontal)
+        self.position.sliderMoved.connect(self._seek)
+        controls.addWidget(self.position, 1)
+        self.time = QLabel()
+        controls.addWidget(self.time)
+        layout.addLayout(controls)
+        self.kind = ""  # "", "picture", "model", "sound", "font"
+        self.asset: lib.Asset | None = None
+        self._view = None
+        self._angle = 0.0
+        self._frame = None  # (centre, size) of the model shown
+        self._skinned = False
+        self._audio = None
+        self.timer = QTimer(self)
+        self.timer.setInterval(33)
+        self.timer.timeout.connect(lambda: self.tick(0.033))
+        self.show_asset(None)
+
+    # ---- what it shows ----------------------------------------------------------------------
+    def show_asset(self, asset: lib.Asset | None) -> None:
+        self.stop()
+        self.asset = asset
+        self.kind = ""
+        self.picture.clear()
+        self.clip.clear()
+        files = asset.file_paths() if asset else []
+        by_ext = {p.suffix.lower(): p for p in reversed(files)}  # (the first of each)
+        if asset is None:
+            self.picture.setText("")
+        elif asset.type in ("models", "objects") and (by_ext.get(".glb") or by_ext.get(".gltf")):
+            self._show_model(by_ext.get(".glb") or by_ext.get(".gltf"))
+        elif any(e in by_ext for e in lib.AUDIO):
+            self._show_sound(next(by_ext[e] for e in lib.AUDIO if e in by_ext))
+        elif asset.type == "fonts" and (by_ext.get(".ttf") or by_ext.get(".otf")):
+            self._show_font(by_ext.get(".ttf") or by_ext.get(".otf"))
+        elif any(e in by_ext for e in (".png", ".jpg", ".jpeg")):
+            self._show_picture(next(by_ext[e] for e in (".png", ".jpg", ".jpeg") if e in by_ext))
+        else:
+            self.picture.setText("(nothing to show)")
+        self.play_button.setVisible(self.kind in ("model", "sound"))
+        self.clip.setVisible(self.kind == "model" and self.clip.count() > 0)
+        self.position.setVisible(self.kind == "sound")
+        self.time.setVisible(self.kind == "sound")
+
+    def _show_picture(self, path: Path) -> None:
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            self.picture.setText(f"{path.name} can't be shown")
+            return
+        self.kind = "picture"
+        self.picture.setPixmap(pixmap.scaled(*PLAYER_SIZE, Qt.AspectRatioMode.KeepAspectRatio,
+                                             Qt.TransformationMode.SmoothTransformation))
+
+    def _show_font(self, path: Path) -> None:
+        from PySide6.QtGui import QFont, QFontDatabase
+        family_id = QFontDatabase.addApplicationFont(str(path))
+        families = QFontDatabase.applicationFontFamilies(family_id) if family_id >= 0 else []
+        if not families:
+            self.picture.setText(f"{path.name} can't be read as a font")
+            return
+        self.kind = "font"
+        self.picture.setFont(QFont(families[0], 20))
+        self.picture.setWordWrap(True)
+        self.picture.setText(f"{families[0]}\nThe quick brown fox jumps over the lazy dog.\n"
+                             "0123456789")
+
+    def _show_sound(self, path: Path) -> None:
+        from PySide6.QtCore import QUrl
+        try:
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        except ImportError:
+            self.picture.setText("(sounds can't be played here)")
+            return
+        self.kind = "sound"
+        if self._audio is None:
+            player, output = QMediaPlayer(self), QAudioOutput(self)
+            player.setAudioOutput(output)
+            player.durationChanged.connect(lambda ms: self.position.setRange(0, int(ms)))
+            player.positionChanged.connect(self._audio_moved)
+            self._audio = (player, output)
+        self._audio[0].setSource(QUrl.fromLocalFile(str(path)))
+        self.picture.setText(f"♪  {path.name}")
+        self._audio_moved(0)
+
+    def _audio_moved(self, ms: int) -> None:
+        if not self.position.isSliderDown():
+            self.position.setValue(int(ms))
+        total = self._audio[0].duration() if self._audio else 0
+        self.time.setText(f"{ms / 1000:.1f} / {total / 1000:.1f} s")
+
+    def _seek(self, ms: int) -> None:
+        if self._audio is not None:
+            self._audio[0].setPosition(ms)
+
+    def _show_model(self, path: Path) -> None:
+        import json
+
+        from .. import engine
+        from ..gltf_pack import PackError, pack
+        midgard = engine.module()
+        if midgard is None:
+            self.picture.setText("(models are shown by the engine, not built here)")
+            return
+        try:
+            glb = pack(path) if path.suffix.lower() == ".gltf" else path.read_bytes()
+        except (OSError, PackError) as e:
+            self.picture.setText(f"{path.name} can't be read: {e}")
+            return
+        try:
+            if self._view is None:
+                self._view = midgard.Viewport()
+                self._view.attach_offscreen(*PLAYER_SIZE)
+                self._view.set_settings(json.dumps({"sky": [0.16, 0.18, 0.22]}))
+                self._view.put_entity(json.dumps({"id": "sun", "name": "Sun", "components": {
+                    "transform": {"rotation": [-40, 30, 0]}, "light": {"type": "directional"}}}))
+            self._view.remove_entity("model")
+            self._view.set_mesh(MODEL_KEY, glb)
+        except RuntimeError as e:  # (no Vulkan, or not a model)
+            self._view = None if "Vulkan" in str(e) else self._view
+            self.picture.setText(f"Not shown: {e}")
+            return
+        self.kind = "model"
+        clips = []
+        try:
+            clips = [c["name"] for c in midgard.skinned_info(glb)["clips"]]
+            self._skinned = True
+        except ValueError:
+            self._skinned = False
+        for name in clips:
+            self.clip.addItem(name, name)
+        bounds = model_bounds(glb) or ([-0.5, 0, -0.5], [0.5, 1, 0.5])
+        lo, hi = bounds
+        centre = [(a + b) / 2 for a, b in zip(lo, hi, strict=True)]
+        size = max(max(b - a for a, b in zip(lo, hi, strict=True)), 0.01)
+        self._frame = (centre, size)
+        self._angle = 0.0
+        self._show_model_clip()
+
+    def _show_model_clip(self) -> None:
+        import json
+        if self.kind != "model" or self._view is None:
+            return
+        components = {"transform": {}, "material": {"color": [0.85, 0.85, 0.85, 1]}}
+        if self._skinned:
+            components["character"] = {"model": MODEL_KEY, "clip": self.clip.currentData() or ""}
+        else:
+            components["mesh"] = {"asset": MODEL_KEY}
+        self._view.put_entity(json.dumps({"id": "model", "name": "Model",
+                                          "components": components}))
+        self.tick(0.0)
+
+    # ---- playing ----------------------------------------------------------------------------
+    def _play(self, on: bool) -> None:
+        self.play_button.setText("Stop" if on else "Play")
+        if self.kind == "sound" and self._audio is not None:
+            (self._audio[0].play if on else self._audio[0].stop)()
+        elif self.kind == "model":
+            (self.timer.start if on else self.timer.stop)()
+
+    def stop(self) -> None:
+        self.timer.stop()
+        if self._audio is not None:
+            self._audio[0].stop()
+        self.play_button.blockSignals(True)
+        self.play_button.setChecked(False)
+        self.play_button.setText("Play")
+        self.play_button.blockSignals(False)
+
+    def tick(self, dt: float) -> None:
+        """The model moved on by dt (its clip, and the camera round it) and drawn."""
+        import math
+        if self.kind != "model" or self._view is None or self._frame is None:
+            return
+        (cx, cy, cz), size = self._frame
+        self._angle += dt * 0.6
+        distance = size * 1.9
+        eye = [cx + math.sin(self._angle) * distance, cy + size * 0.35,
+               cz + math.cos(self._angle) * distance]
+        try:
+            self._view.set_camera(eye, [cx, cy, cz], 40.0)
+            self._view.animate(dt)
+            self._view.render()
+            pixels = self._view.read_pixels()
+        except RuntimeError as e:
+            self.picture.setText(f"Not shown: {e}")
+            return
+        image = QImage(pixels, *PLAYER_SIZE, QImage.Format.Format_RGBA8888).copy()
+        self.picture.setPixmap(QPixmap.fromImage(image))
+
+    def drop(self) -> None:
+        """Its engine view let go (the window closing)."""
+        self.stop()
+        if self._view is not None:
+            with contextlib.suppress(RuntimeError):
+                self._view.detach()
+            self._view = None
+
+
 class AssetWindow(QWidget):
     """The library's window (one for the editor; it follows the open project)."""
 
@@ -278,7 +529,7 @@ class AssetWindow(QWidget):
         self.info.setWordWrap(True)
         self.info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.player = QWidget()  # (the player: step 4)
+        self.player = AssetPlayer()
         pane = QWidget()
         pane_layout = QHBoxLayout(pane)
         pane_layout.addWidget(self.info, 1)
@@ -294,6 +545,9 @@ class AssetWindow(QWidget):
     # ---- what it shows ----------------------------------------------------------------------
     def set_project(self, project: Project | None) -> None:
         self.project = project
+        self.player.show_asset(None)
+        if project is None:
+            self.player.drop()
         self.refresh()
 
     def refresh(self) -> None:
@@ -375,6 +629,9 @@ class AssetWindow(QWidget):
 
     def show_selected(self) -> None:
         asset = self.selected()
+        shown = self.player.asset
+        if (asset.id if asset else None) != (shown.id if shown else None):
+            self.player.show_asset(asset)
         for b in (self.details_button, self.remove_button):
             b.setEnabled(asset is not None)
         if asset is None:
@@ -442,6 +699,11 @@ class AssetWindow(QWidget):
             import subprocess
             subprocess.Popen(["xdg-open", str(folder)])
 
+    def closeEvent(self, e) -> None:  # noqa: N802 (Qt's name)
+        self.player.drop()
+        super().closeEvent(e)
+
     def showEvent(self, e) -> None:  # noqa: N802 (Qt's name)
         self.refresh()  # (files may have changed while it was hidden)
         super().showEvent(e)
+

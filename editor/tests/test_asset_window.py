@@ -120,3 +120,62 @@ def test_the_assets_menu_opens_the_library(qtbot, settings, project):
     window.set_project(None)
     assert window.asset_window.project is None
     window.asset_window.close()
+
+
+# ---- the player (step 4) -----------------------------------------------------------------------
+def test_the_player_shows_pictures_sounds_and_fonts(project, qtbot, tmp_path):
+    from pathlib import Path
+
+    import pytest
+
+    from midgard_editor.docks.asset_window import AssetPlayer
+    player = AssetPlayer()
+    qtbot.addWidget(player)
+    picture = lib.import_asset(project, [a_picture(tmp_path, "slate.png")], "textures", "Slate",
+                               category="stone")
+    player.show_asset(picture)
+    assert player.kind == "picture" and not player.picture.pixmap().isNull()
+    assert not player.play_button.isVisible()
+    (tmp_path / "chime.ogg").write_bytes(OGG)
+    sound = lib.import_asset(project, [tmp_path / "chime.ogg"], "effects", "Chime")
+    player.show()
+    player.show_asset(sound)
+    assert player.kind == "sound" and player.play_button.isVisible()
+    assert player._audio[0].source().toLocalFile().endswith("chime.ogg")
+    fonts = [Path(p) for p in ("C:/Windows/Fonts/arial.ttf",
+                               "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+             if Path(p).is_file()]
+    if not fonts:
+        pytest.skip("no font file on this system to try")
+    font = lib.import_asset(project, [fonts[0]], "fonts", "Sans")
+    player.show_asset(font)
+    assert player.kind == "font" and "quick brown fox" in player.picture.text()
+
+
+def test_the_player_turns_a_model_and_plays_its_clips(project, qtbot):
+    import pytest
+    from test_characters import SAMPLES
+
+    from midgard_editor import engine
+    from midgard_editor.docks.asset_window import AssetPlayer
+    if engine.module() is None:
+        pytest.skip("engine module not built")
+    mannequin = lib.import_asset(project, [SAMPLES / "animation_library.glb"], "models",
+                                 "Mannequin")
+    player = AssetPlayer()
+    qtbot.addWidget(player)
+    player.show()
+    player.show_asset(mannequin)
+    if player._view is None:
+        pytest.skip(f"no Vulkan here: {player.picture.text()}")
+    assert player.kind == "model"
+    assert player.clip.isVisible() and player.clip.findData("Walk_Loop") >= 0
+    first = player.picture.pixmap().toImage()
+    player.clip.setCurrentIndex(player.clip.findData("Walk_Loop"))
+    player.play_button.setChecked(True)
+    assert player.timer.isActive()
+    for _ in range(8):
+        player.tick(0.1)
+    assert player.picture.pixmap().toImage() != first  # (turned, and walking)
+    player.drop()
+    assert player._view is None and not player.timer.isActive()
