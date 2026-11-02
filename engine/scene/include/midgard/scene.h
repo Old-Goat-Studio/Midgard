@@ -170,6 +170,15 @@ struct Trigger {
 struct Arrival {
     std::string name;
 };
+// A character (milestone 5.13; midgard/characters.h): a skinned model playing a clip.
+struct CharacterRef {
+    std::string model;  // a skinned glTF's content id
+    std::string clips;  // where its clips come from (empty: the model)
+    std::string clip;   // the clip it plays (empty: the first)
+    float speed = 1.0f;
+    bool loop = true;
+};
+
 enum class ExitActivation { Enter, Use, Script };
 const char* exit_activation_name(ExitActivation a);
 struct SceneExit {

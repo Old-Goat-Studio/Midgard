@@ -15,6 +15,7 @@
 
 #include "midgard/calendar.h"
 #include "midgard/camera_rig.h"
+#include "midgard/characters.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
 #include "midgard/nav_world.h"
@@ -160,6 +161,10 @@ public:
     // A scene with terrain: its navigation, a mesh per face made round the player as they go
     // (midgard/nav_world.h). Update moves it on; stream_navigation(true) makes it all now.
     const NavWorld* nav_world() const { return nav_world_.get(); }
+    // The scene's characters (midgard/characters.h).
+    const Characters& characters() const { return characters_; }
+    // What went wrong reading characters' models and clips (each once, as it happened).
+    const std::vector<std::string>& character_problems() const { return character_problems_; }
     void stream_navigation(bool wait = false);
     // The player walks along these points at its speed (instead of following the controls)
     // until it reaches the last; an empty list stops it. Tests, cutscenes, click-to-move.
@@ -266,6 +271,9 @@ private:
     const render::MeshData* outline_mesh(const std::string& asset) const;
     // (Last: made from the terrain and the job system, so it goes before them.)
     std::unique_ptr<NavWorld> nav_world_;
+    Characters characters_;
+    std::vector<std::string> character_problems_;
+    void load_characters();
     std::vector<glm::dvec3> route_;  // follow_path's points still ahead
     glm::vec3 route_walk(entt::entity player);
     void load_scene(const std::string& scene, const std::string& arrival);

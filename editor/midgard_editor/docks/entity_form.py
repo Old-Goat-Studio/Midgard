@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import environments, scenes, scripting, transforms
+from .. import engine, environments, scenes, scripting, transforms
 from ..group_objects import ask_save_group_as_object
 from ..project import Project
 from ..scene_model import Entity, sky_component
@@ -98,7 +98,8 @@ class EntityForm(QWidget):
 
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
                "rigidbody": "Rigid body", "physics_material": "Physics material",
-               "scene_exit": "Scene exit", "arrival": "Arrival point"}
+               "scene_exit": "Scene exit", "arrival": "Arrival point",
+               "character": "Character"}
     ACTIVATIONS = {"enter": "Walking into it", "use": "Using it (Use: E or gamepad X, inside it)",
                    "script": "Only from a script"}
     SKY_COLOURS = {"color": "Sky colour", "ambient": "Ambient light"}
@@ -210,6 +211,7 @@ class EntityForm(QWidget):
             form.addRow("Trigger size", _row(self.trigger, _remove_button(
                 "Remove the trigger", lambda: self.remove_component("trigger"))))
         self._build_scene_exit(entity, form)
+        self._build_character(entity, form)
         self.object = None
         if "object" in entity.components:
             self.object = QComboBox()
@@ -480,6 +482,7 @@ class EntityForm(QWidget):
             self.trigger.set_value(entity.components["trigger"].get("size", [1.0, 1.0, 1.0]))
         self._refresh_physics(entity)
         self._refresh_scene_exit(entity)
+        self._refresh_character(entity)
         if self.follows_clock is not None:
             self.follows_clock.blockSignals(True)
             self.follows_clock.setChecked(bool(entity.components["light"].get("follows_clock")))
@@ -547,6 +550,10 @@ class EntityForm(QWidget):
                                                "size": [2.0, 2.5, 1.0], "fade": 0.5}
         elif kind == "arrival":
             entity.components["arrival"] = {"name": entity.name}
+        elif kind == "character":
+            models = list(self.project.character_assets())
+            entity.components["character"] = {"model": models[0] if models else "",
+                                              "clip": "", "speed": 1.0}
         self._push(entity, self.ADDABLE[kind].lower())
         if kind == "script":
             self.open_script.emit(entity.components["script"]["module"])
@@ -561,6 +568,98 @@ class EntityForm(QWidget):
         if module and entity.components["script"].get("module") != module:
             entity.components["script"] = {**entity.components["script"], "module": module}
             self._push(entity, "script")
+
+    # ---- characters (milestone 5.13) --------------------------------------------------------
+    def _build_character(self, entity, form: QFormLayout) -> None:
+        self.character_model = self.character_clips = self.character_clip = None
+        self.character_speed = None
+        if "character" not in entity.components:
+            return
+        models = self.project.character_assets()
+        self.character_model = QComboBox()
+        self.character_model.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.character_model.addItem("(choose a model)", "")
+        for asset, label in models.items():
+            self.character_model.addItem(label, asset)
+        self.character_model.setToolTip("A skinned .glb or .gltf in the project's objects/ "
+                                        "folder")
+        self.character_model.currentIndexChanged.connect(lambda _i: self._character_value(
+            "model", self.character_model.currentData() or "", "model"))
+        form.addRow("Character", _row(self.character_model, _remove_button(
+            "No longer a character", lambda: self.remove_component("character"))))
+        self.character_clips = QComboBox()
+        self.character_clips.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.character_clips.addItem("Its own", "")
+        for asset, label in models.items():
+            self.character_clips.addItem(label, asset)
+        self.character_clips.setToolTip("Where its animations come from: its own file, or "
+                                        "another (an animation library) with the same joints")
+        self.character_clips.currentIndexChanged.connect(lambda _i: self._character_value(
+            "clips", self.character_clips.currentData() or "", "animations"))
+        form.addRow("Animations from", self.character_clips)
+        self.character_clip = QComboBox()
+        self.character_clip.currentIndexChanged.connect(lambda _i: self._character_value(
+            "clip", self.character_clip.currentData() or "", "clip"))
+        form.addRow("Playing", self.character_clip)
+        self.character_speed = QDoubleSpinBox()
+        self.character_speed.setRange(0.0, 10.0)
+        self.character_speed.setSingleStep(0.1)
+        self.character_speed.setKeyboardTracking(False)
+        self.character_speed.valueChanged.connect(lambda v: self._set_value(
+            "character", "speed", round(v, 3), "animation speed"))
+        form.addRow("Speed", self.character_speed)
+        self._refresh_character(entity)
+
+    def clips_in(self, asset: str) -> list[str]:
+        """The clips in a model file (none if it can't be read, or isn't skinned)."""
+        from ..cook import mesh_asset_data
+        module = engine.module()
+        data = mesh_asset_data(self.project, asset) if asset else None
+        if module is None or data is None:
+            return []
+        try:
+            return [c["name"] for c in module.skinned_info(data)["clips"]]
+        except ValueError:
+            return []
+
+    def _character_value(self, key: str, value, label: str) -> None:
+        entity = self._entity()
+        if "character" not in entity.components or entity.components["character"].get(key) == value:
+            return
+        character = {**entity.components["character"], key: value}
+        if key in ("model", "clips"):  # (another file: its clips, the first of them playing)
+            clips = self.clips_in(character.get("clips") or character.get("model", ""))
+            if character.get("clip") not in clips:
+                character["clip"] = clips[0] if clips else ""
+        entity.components["character"] = character
+        self._push(entity, label)
+
+    def _refresh_character(self, entity) -> None:
+        if self.character_model is None or "character" not in entity.components:
+            return
+        c = entity.components["character"]
+        for combo, value in ((self.character_model, c.get("model", "")),
+                             (self.character_clips, c.get("clips", ""))):
+            combo.blockSignals(True)
+            if combo.findData(value) < 0:
+                combo.addItem(f"{value} (missing)", value)
+            combo.setCurrentIndex(combo.findData(value))
+            combo.blockSignals(False)
+        self.character_clip.blockSignals(True)
+        self.character_clip.clear()
+        clips = self.clips_in(c.get("clips") or c.get("model", ""))
+        if not clips:
+            self.character_clip.addItem("(its first, or none)", "")
+        for name in clips:
+            self.character_clip.addItem(name, name)
+        current = c.get("clip", "")
+        if self.character_clip.findData(current) < 0:
+            self.character_clip.addItem(f"{current} (missing)", current)
+        self.character_clip.setCurrentIndex(self.character_clip.findData(current))
+        self.character_clip.blockSignals(False)
+        self.character_speed.blockSignals(True)
+        self.character_speed.setValue(float(c.get("speed", 1.0)))
+        self.character_speed.blockSignals(False)
 
     # ---- moving between scenes (milestone 5.11a) -------------------------------------------
     def _build_scene_exit(self, entity, form: QFormLayout) -> None:

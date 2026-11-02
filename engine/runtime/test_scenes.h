@@ -20,6 +20,8 @@
 //              ocean band, a flat-wrap cylinder's end wall, a habitat's far side overhead
 //   terrain_shore  low over the water by a coast: waves, the shallows and the shore
 //   terrain_winter, terrain_autumn  terrain_area in deep winter (snow) and in autumn
+//   skinned    three skinned tubes (GPU skinning): at rest, bent sideways, bent towards the
+//              camera, with their shadows
 #pragma once
 
 #include <memory>

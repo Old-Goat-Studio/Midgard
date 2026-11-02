@@ -31,6 +31,7 @@
 #include "midgard/calendar.h"
 #include "midgard/environment.h"
 #include "midgard/gltf.h"
+#include "midgard/gltf_skin.h"
 #include "midgard/link.h"
 #include "midgard/model.h"
 #include "midgard/pak.h"
@@ -278,6 +279,32 @@ PYBIND11_MODULE(_midgard, m) {
         "A world's map (midgard/world_map.h) from scene settings with a body and the ground's "
         "settings themselves, in a projection (none: the shape's usual one): RGBA8, top row "
         "first.");
+    m.def(
+        "skinned_info",
+        [](const py::bytes& glb) {
+            const std::string_view data(glb);
+            try {
+                const midgard::SkinnedModel model = midgard::load_skinned_glb(
+                    {reinterpret_cast<const std::uint8_t*>(data.data()), data.size()});
+                py::list clips;
+                for (const midgard::RawClip& c : model.clips) {
+                    py::dict clip;
+                    clip["name"] = c.name;
+                    clip["duration"] = c.duration;
+                    clips.append(clip);
+                }
+                py::dict out;
+                out["joints"] = model.skeleton.names;
+                out["clips"] = clips;
+                out["vertices"] = model.mesh.vertices.size();
+                return out;
+            } catch (const std::exception& e) {
+                throw py::value_error(e.what());
+            }
+        },
+        py::arg("glb"),
+        "A skinned glTF's skeleton and clips (midgard/gltf_skin.h): {joints: [names], clips: "
+        "[{name, duration}], vertices}. ValueError if it isn't one.");
     m.def(
         "world_hash",
         [map_terrain](const std::string& settings_json) {

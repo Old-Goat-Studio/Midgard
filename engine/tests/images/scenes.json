@@ -87,6 +87,12 @@
       "max_bad": 0.02
     },
     {
+      "name": "skinned",
+      "_about": "GPU skinning (milestone 5.13): three tubes skinned to a three-joint chain, at rest, bent 60 degrees sideways and bent 90 degrees towards the camera (posed through the animation library), with their shadows skinned too. Shadow edges differ a little between drivers: up to 1% of pixels may differ.",
+      "args": ["--size", "480x270", "--scene", "skinned"],
+      "max_bad": 0.01
+    },
+    {
       "name": "overlay",
       "args": ["--size", "320x180", "--overlay-text", "Midgard image test|PASS 3 of 3|0123456789 !?#%()+-/:<=>@[]_{}"]
     },

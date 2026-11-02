@@ -26,9 +26,11 @@
 #include "line_frag.h"
 #include "line_vert.h"
 #include "mesh_frag.h"
+#include "mesh_skinned_vert.h"
 #include "mesh_vert.h"
 #include "overlay_frag.h"
 #include "overlay_vert.h"
+#include "shadow_skinned_vert.h"
 #include "shadow_vert.h"
 #include "sky_frag.h"
 #include "sky_vert.h"
@@ -107,6 +109,9 @@ glm::vec4 to_linear(const glm::vec4& srgb) {
 }
 
 constexpr uint32_t kMaterialsPerPool = 64;
+// How far a skinned mesh's limbs may reach past its bind pose's bounding sphere, as a multiple of
+// its radius (for culling: a character raising its arms, a tail swinging).
+constexpr float kSkinReach = 1.6f;
 constexpr uint32_t kMaterialBindings = 5;
 
 struct Buffer {
@@ -121,9 +126,24 @@ struct Image {
     VkImageView view = VK_NULL_HANDLE;
 };
 
+// A skinned mesh's second vertex stream (shaders/mesh_skinned.vert's locations 4 and 5).
+struct SkinVertex {
+    std::uint16_t joints[4];
+    float weights[4];
+};
+constexpr std::uint32_t kPaletteStart = 1024;  // joint matrices a frame's palette holds at first
+
+// Must match shaders/shadow_skinned.vert's push constants.
+struct ShadowSkinPush {
+    glm::mat4 model_light;
+    std::uint32_t first;
+};
+
 struct GpuMesh {
     Buffer vertices;
     Buffer indices;
+    Buffer skin;  // SkinVertex a vertex, for skinned meshes
+    bool skinned = false;
     uint32_t index_count = 0;
     glm::vec3 center{0.0f};  // a bounding sphere, in the mesh's own space
     float radius = 0.0f;
@@ -198,6 +218,7 @@ struct Renderer::Impl {
     VkPipeline water_pipeline = VK_NULL_HANDLE;    // after the sky: blended, no depth writes
     VkPipeline terrain_pipeline = VK_NULL_HANDLE;  // opaque, with the terrain's material
     VkPipeline line_pipeline = VK_NULL_HANDLE;     // debug lines, after the sky
+    VkPipeline skinned_pipeline = VK_NULL_HANDLE;  // skinned meshes (as meshes, deformed)
     std::vector<DebugLine> debug_lines;
     Environment environment;
     TerrainLook terrain_look;
@@ -219,6 +240,11 @@ struct Renderer::Impl {
         Buffer lines;  // the debug lines' ends, rewritten each frame
         VkDeviceSize lines_capacity = 0;
         uint32_t line_vertices = 0;
+        // Skinned draws' joint matrices, one after another (set 0, binding 2), and where each
+        // draw's start (by its index in the frame's draws).
+        Buffer palette;
+        std::uint32_t palette_capacity = 0;  // matrices
+        std::vector<std::uint32_t> skin_first;
     };
     std::array<Frame, kFramesInFlight> frames{};
     uint32_t frame_index = 0;
@@ -227,7 +253,7 @@ struct Renderer::Impl {
     // no frame in flight can still be drawing them.
     std::vector<MeshId> free_meshes;
     struct Retired {
-        Buffer vertices, indices;
+        Buffer vertices, indices, skin;
         uint64_t freed_at = 0;  // frames_submitted when it was freed
     };
     std::vector<Retired> retired;
@@ -238,6 +264,7 @@ struct Renderer::Impl {
             if (!all && r.freed_at + kFramesInFlight > frames_submitted) return false;
             destroy_buffer(r.vertices);
             destroy_buffer(r.indices);
+            destroy_buffer(r.skin);
             return true;
         });
     }
@@ -267,6 +294,8 @@ struct Renderer::Impl {
     VkSampler shadow_sampler = VK_NULL_HANDLE;
     VkPipelineLayout shadow_layout = VK_NULL_HANDLE;
     VkPipeline shadow_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout shadow_skinned_layout = VK_NULL_HANDLE;
+    VkPipeline shadow_skinned_pipeline = VK_NULL_HANDLE;
 
     // ---- setup -------------------------------------------------------------------------
     void create_instance(const RendererDesc& desc) {
@@ -749,8 +778,8 @@ struct Renderer::Impl {
     }
 
     void create_pipeline() {
-        // Set 0: the frame's data, and the shadow map.
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+        // Set 0: the frame's data, the shadow map, and the skinned draws' joint matrices.
+        std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[0].descriptorCount = 1;
@@ -759,6 +788,10 @@ struct Renderer::Impl {
         bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[1].descriptorCount = 1;
         bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[2].binding = 2;
+        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[2].descriptorCount = 1;
+        bindings[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         VkDescriptorSetLayoutCreateInfo linfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
         linfo.bindingCount = static_cast<uint32_t>(bindings.size());
         linfo.pBindings = bindings.data();
@@ -867,6 +900,39 @@ struct Renderer::Impl {
         vkDestroyShaderModule(device, vert, nullptr);
         vkDestroyShaderModule(device, frag, nullptr);
         check(result, "Creating the graphics pipeline");
+
+        // Skinned meshes: as the meshes, with their joints and weights in a second stream.
+        {
+            const std::array<VkVertexInputBindingDescription, 2> sbinds{{
+                {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
+                {1, sizeof(SkinVertex), VK_VERTEX_INPUT_RATE_VERTEX},
+            }};
+            const std::array<VkVertexInputAttributeDescription, 6> sattrs{{
+                attrs[0],
+                attrs[1],
+                attrs[2],
+                attrs[3],
+                {4, 1, VK_FORMAT_R16G16B16A16_UINT, offsetof(SkinVertex, joints)},
+                {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(SkinVertex, weights)},
+            }};
+            VkPipelineVertexInputStateCreateInfo sinput{
+                VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+            sinput.vertexBindingDescriptionCount = static_cast<uint32_t>(sbinds.size());
+            sinput.pVertexBindingDescriptions = sbinds.data();
+            sinput.vertexAttributeDescriptionCount = static_cast<uint32_t>(sattrs.size());
+            sinput.pVertexAttributeDescriptions = sattrs.data();
+            VkShaderModule sv = shader(mesh_skinned_vert, sizeof(mesh_skinned_vert));
+            VkShaderModule sf = shader(mesh_frag, sizeof(mesh_frag));
+            stages[0].module = sv;
+            stages[1].module = sf;
+            info.pVertexInputState = &sinput;
+            const VkResult skinned_result = vkCreateGraphicsPipelines(
+                device, VK_NULL_HANDLE, 1, &info, nullptr, &skinned_pipeline);
+            vkDestroyShaderModule(device, sv, nullptr);
+            vkDestroyShaderModule(device, sf, nullptr);
+            check(skinned_result, "Creating the skinned pipeline");
+            info.pVertexInputState = &vinput;
+        }
 
         // Terrain: as the meshes, with its own material.
         VkShaderModule terrain_v = shader(mesh_vert, sizeof(mesh_vert));
@@ -1339,11 +1405,44 @@ struct Renderer::Impl {
             vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &shadow_pipeline);
         vkDestroyShaderModule(device, vert, nullptr);
         check(result, "Creating the shadow pipeline");
+
+        // Skinned meshes: their joints and weights, and the frame's palette (set 0).
+        VkPushConstantRange skin_push{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShadowSkinPush)};
+        VkPipelineLayoutCreateInfo slinfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        slinfo.setLayoutCount = 1;
+        slinfo.pSetLayouts = &set_layout;
+        slinfo.pushConstantRangeCount = 1;
+        slinfo.pPushConstantRanges = &skin_push;
+        check(vkCreatePipelineLayout(device, &slinfo, nullptr, &shadow_skinned_layout),
+              "Creating the skinned shadow pipeline layout");
+        const std::array<VkVertexInputBindingDescription, 2> sbinds{{
+            vbind,
+            {1, sizeof(SkinVertex), VK_VERTEX_INPUT_RATE_VERTEX},
+        }};
+        const std::array<VkVertexInputAttributeDescription, 3> sattrs{{
+            attr,
+            {4, 1, VK_FORMAT_R16G16B16A16_UINT, offsetof(SkinVertex, joints)},
+            {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(SkinVertex, weights)},
+        }};
+        VkPipelineVertexInputStateCreateInfo sinput{
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        sinput.vertexBindingDescriptionCount = static_cast<uint32_t>(sbinds.size());
+        sinput.pVertexBindingDescriptions = sbinds.data();
+        sinput.vertexAttributeDescriptionCount = static_cast<uint32_t>(sattrs.size());
+        sinput.pVertexAttributeDescriptions = sattrs.data();
+        VkShaderModule svert = shader(shadow_skinned_vert, sizeof(shadow_skinned_vert));
+        stage.module = svert;
+        info.pVertexInputState = &sinput;
+        info.layout = shadow_skinned_layout;
+        const VkResult skinned_result = vkCreateGraphicsPipelines(
+            device, VK_NULL_HANDLE, 1, &info, nullptr, &shadow_skinned_pipeline);
+        vkDestroyShaderModule(device, svert, nullptr);
+        check(skinned_result, "Creating the skinned shadow pipeline");
     }
 
     // Each cascade's map: every draw whose bounding sphere can cast into it.
     void record_shadows(VkCommandBuffer cmd, const std::span<const DrawItem> draws,
-                        const ShadowCascades& cascades) {
+                        const ShadowCascades& cascades, VkDescriptorSet set, const Frame& frame) {
         const uint32_t size = shadow_settings.resolution;
         for (int c = 0; c < cascades.count; ++c) {
             VkClearValue clear{};
@@ -1360,10 +1459,15 @@ struct Renderer::Impl {
             vkCmdSetViewport(cmd, 0, 1, &vp);
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline);
+            bool any_skinned = false;
             for (const DrawItem& d : draws) {
                 if (d.mesh >= meshes.size() || !d.casts_shadow || d.water) continue;
                 const GpuMesh& m = meshes[d.mesh];
                 if (m.index_count == 0) continue;
+                if (m.skinned && !d.skin.empty()) {
+                    any_skinned = true;
+                    continue;
+                }
                 const glm::vec3 center(d.model * glm::vec4(m.center, 1.0f));
                 const float scale = std::max({glm::length(glm::vec3(d.model[0])),
                                               glm::length(glm::vec3(d.model[1])),
@@ -1377,8 +1481,68 @@ struct Renderer::Impl {
                 vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
                 vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
             }
+            if (any_skinned) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_skinned_pipeline);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_skinned_layout,
+                                        0, 1, &set, 0, nullptr);
+                for (size_t i = 0; i < draws.size(); ++i) {
+                    const DrawItem& d = draws[i];
+                    if (d.mesh >= meshes.size() || !d.casts_shadow || d.skin.empty()) continue;
+                    const GpuMesh& m = meshes[d.mesh];
+                    if (m.index_count == 0 || !m.skinned) continue;
+                    const glm::vec3 center(d.model * glm::vec4(m.center, 1.0f));
+                    const float scale = std::max({glm::length(glm::vec3(d.model[0])),
+                                                  glm::length(glm::vec3(d.model[1])),
+                                                  glm::length(glm::vec3(d.model[2]))});
+                    if (!casts_into(cascades, c, center, kSkinReach * m.radius * scale)) continue;
+                    const ShadowSkinPush push{cascades.view_proj[size_t(c)] * d.model,
+                                              frame.skin_first[i]};
+                    vkCmdPushConstants(cmd, shadow_skinned_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                       sizeof(push), &push);
+                    const std::array<VkBuffer, 2> buffers{m.vertices.buffer, m.skin.buffer};
+                    const std::array<VkDeviceSize, 2> offsets{0, 0};
+                    vkCmdBindVertexBuffers(cmd, 0, 2, buffers.data(), offsets.data());
+                    vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+                }
+            }
             vkCmdEndRenderPass(cmd);
         }
+    }
+
+    // The skinned draws' joint matrices, into the frame's palette (made larger when needed:
+    // its fence has passed, so the old one is unused), and where each draw's start.
+    void prepare_palette(Frame& f, const std::span<const DrawItem> draws) {
+        f.skin_first.assign(draws.size(), 0);
+        std::uint32_t total = 0;
+        for (size_t i = 0; i < draws.size(); ++i) {
+            f.skin_first[i] = total;
+            total += static_cast<std::uint32_t>(draws[i].skin.size());
+        }
+        if (total > f.palette_capacity) {
+            destroy_buffer(f.palette);
+            f.palette_capacity = std::max(total * 2, kPaletteStart);
+            f.palette = create_buffer(VkDeviceSize(f.palette_capacity) * sizeof(glm::mat4),
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+            write_palette_set(f);
+        }
+        auto* out = static_cast<glm::mat4*>(f.palette.mapped);
+        for (size_t i = 0; i < draws.size(); ++i)
+            std::copy(draws[i].skin.begin(), draws[i].skin.end(), out + f.skin_first[i]);
+        if (total > 0)
+            vmaFlushAllocation(allocator, f.palette.allocation, 0,
+                               VkDeviceSize(total) * sizeof(glm::mat4));
+    }
+
+    void write_palette_set(Frame& f) {
+        VkDescriptorBufferInfo pinfo{f.palette.buffer, 0, VK_WHOLE_SIZE};
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = f.set;
+        write.dstBinding = 2;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.pBufferInfo = &pinfo;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
     }
 
     // Lays out the overlay for this frame into the frame's own vertex buffer.
@@ -1430,9 +1594,10 @@ struct Renderer::Impl {
     }
 
     void create_frames() {
-        const std::array<VkDescriptorPoolSize, 2> sizes{{
+        const std::array<VkDescriptorPoolSize, 3> sizes{{
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFramesInFlight},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 + kFramesInFlight},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFramesInFlight},
         }};
         VkDescriptorPoolCreateInfo pinfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         pinfo.maxSets = kFramesInFlight + 1;
@@ -1485,6 +1650,10 @@ struct Renderer::Impl {
             writes[1].pImageInfo = &shadow;
             vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0,
                                    nullptr);
+            f.palette_capacity = kPaletteStart;
+            f.palette = create_buffer(VkDeviceSize(kPaletteStart) * sizeof(glm::mat4),
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+            write_palette_set(f);
         }
     }
 
@@ -1696,12 +1865,14 @@ struct Renderer::Impl {
     // ---- drawing -----------------------------------------------------------------------
     // Whether a draw's bounding sphere can be in view (the camera's frustum planes, from its
     // view-projection; Vulkan's clip depth runs 0 to w). Draws out of view aren't recorded.
+    // (reach: how far past its bind pose a mesh may move, as a multiple of its radius.)
     static bool in_view(const std::array<glm::vec4, 6>& planes, const glm::mat4& model,
-                        const GpuMesh& m) {
+                        const GpuMesh& m, float reach = 1.0f) {
         const glm::vec3 center(model * glm::vec4(m.center, 1.0f));
         const float radius =
-            m.radius * std::max({glm::length(glm::vec3(model[0])), glm::length(glm::vec3(model[1])),
-                                 glm::length(glm::vec3(model[2]))});
+            reach * m.radius *
+            std::max({glm::length(glm::vec3(model[0])), glm::length(glm::vec3(model[1])),
+                      glm::length(glm::vec3(model[2]))});
         for (const glm::vec4& plane : planes)
             if (glm::dot(glm::vec3(plane), center) + plane.w < -radius) return false;
         return true;
@@ -1721,7 +1892,7 @@ struct Renderer::Impl {
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         check(vkBeginCommandBuffer(cmd, &begin), "Beginning a command buffer");
-        record_shadows(cmd, draws, cascades);
+        record_shadows(cmd, draws, cascades, set, frame);
         std::array<VkClearValue, 2> clears{};
         const glm::vec4 clear = to_linear(clear_color);
         clears[0].color = {{clear.r, clear.g, clear.b, clear.a}};
@@ -1742,6 +1913,7 @@ struct Renderer::Impl {
                                 0, nullptr);
         MaterialId bound = ~0u;
         bool any_water = false, any_terrain = false;
+        bool any_skinned = false;
         for (const DrawItem& d : draws) {
             if (d.mesh >= meshes.size()) continue;
             if (d.water || d.terrain) {
@@ -1750,6 +1922,10 @@ struct Renderer::Impl {
                 continue;
             }
             const GpuMesh& m = meshes[d.mesh];
+            if (m.skinned && !d.skin.empty()) {
+                any_skinned = true;
+                continue;
+            }
             if (m.index_count == 0 || !in_view(planes, d.model, m)) continue;
             const MaterialId material = d.material < materials.size() ? d.material : 0;
             if (material != bound) {
@@ -1767,6 +1943,35 @@ struct Renderer::Impl {
             vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
             vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+        }
+        if (any_skinned) {  // (the same layout: set 0 and the materials stay bound)
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skinned_pipeline);
+            for (size_t i = 0; i < draws.size(); ++i) {
+                const DrawItem& d = draws[i];
+                if (d.mesh >= meshes.size() || d.skin.empty() || d.water || d.terrain) continue;
+                const GpuMesh& m = meshes[d.mesh];
+                if (m.index_count == 0 || !m.skinned) continue;
+                if (!in_view(planes, d.model, m, kSkinReach)) continue;
+                const MaterialId material = d.material < materials.size() ? d.material : 0;
+                if (material != bound) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
+                                            1, 1, &materials[material], 0, nullptr);
+                    bound = material;
+                }
+                PushData push{
+                    d.model, to_linear(d.color),
+                    glm::vec4(to_linear(d.emissive) * d.emissive_strength,
+                              float(frame.skin_first[i])),
+                    glm::vec4(d.metallic, d.roughness, d.normal_scale, d.occlusion_strength)};
+                vkCmdPushConstants(cmd, pipeline_layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(push), &push);
+                const std::array<VkBuffer, 2> buffers{m.vertices.buffer, m.skin.buffer};
+                const std::array<VkDeviceSize, 2> offsets{0, 0};
+                vkCmdBindVertexBuffers(cmd, 0, 2, buffers.data(), offsets.data());
+                vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+            }
         }
         if (any_terrain) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrain_pipeline);
@@ -1882,6 +2087,7 @@ struct Renderer::Impl {
                 destroy_buffer(f.ubo);
                 destroy_buffer(f.overlay);
                 destroy_buffer(f.lines);
+                destroy_buffer(f.palette);
                 if (f.fence) vkDestroyFence(device, f.fence, nullptr);
                 if (f.image_ready) vkDestroySemaphore(device, f.image_ready, nullptr);
             }
@@ -1895,6 +2101,11 @@ struct Renderer::Impl {
             if (line_pipeline) vkDestroyPipeline(device, line_pipeline, nullptr);
             if (shadow_pipeline) vkDestroyPipeline(device, shadow_pipeline, nullptr);
             if (shadow_layout) vkDestroyPipelineLayout(device, shadow_layout, nullptr);
+            if (shadow_skinned_pipeline)
+                vkDestroyPipeline(device, shadow_skinned_pipeline, nullptr);
+            if (shadow_skinned_layout)
+                vkDestroyPipelineLayout(device, shadow_skinned_layout, nullptr);
+            if (skinned_pipeline) vkDestroyPipeline(device, skinned_pipeline, nullptr);
             for (VkFramebuffer fb : shadow_framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
             for (VkImageView v : shadow_layer_views) vkDestroyImageView(device, v, nullptr);
             destroy_image(shadow_map);
@@ -1984,11 +2195,32 @@ MeshId Renderer::upload_mesh(const MeshData& mesh) {
     return id;
 }
 
+MeshId Renderer::upload_skinned_mesh(const MeshData& mesh, std::span<const glm::u16vec4> joints,
+                                     std::span<const glm::vec4> weights) {
+    if (joints.size() != mesh.vertices.size() || weights.size() != mesh.vertices.size())
+        throw RenderError("upload_skinned_mesh: joints and weights for every vertex");
+    const MeshId id = upload_mesh(mesh);
+    Impl& r = *impl_;
+    GpuMesh& m = r.meshes[id];
+    std::vector<SkinVertex> skin(mesh.vertices.size());
+    for (size_t i = 0; i < skin.size(); ++i)
+        for (int k = 0; k < 4; ++k) {
+            skin[i].joints[k] = joints[i][k];
+            skin[i].weights[k] = weights[i][k];
+        }
+    const VkDeviceSize bytes = skin.size() * sizeof(SkinVertex);
+    m.skin = r.create_buffer(bytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false);
+    std::memcpy(m.skin.mapped, skin.data(), bytes);
+    vmaFlushAllocation(r.allocator, m.skin.allocation, 0, VK_WHOLE_SIZE);
+    m.skinned = true;
+    return id;
+}
+
 void Renderer::free_mesh(MeshId id) {
     Impl& r = *impl_;
     if (id >= r.meshes.size() || !r.meshes[id].vertices.buffer) return;
     GpuMesh& m = r.meshes[id];
-    r.retired.push_back({m.vertices, m.indices, r.frames_submitted});
+    r.retired.push_back({m.vertices, m.indices, m.skin, r.frames_submitted});
     m = GpuMesh{};
     r.free_meshes.push_back(id);
 }
@@ -2005,6 +2237,7 @@ void Renderer::replace_mesh(MeshId id, const MeshData& mesh) {
         vkDeviceWaitIdle(r.device);
         r.destroy_buffer(old.vertices);
         r.destroy_buffer(old.indices);
+        r.destroy_buffer(old.skin);
     }
     GpuMesh gpu;
     const VkDeviceSize vbytes = mesh.vertices.size() * sizeof(Vertex);
@@ -2140,6 +2373,7 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
 
     r.prepare_overlay(f);
     r.prepare_lines(f);
+    r.prepare_palette(f, draws);
     check(vkResetCommandBuffer(f.cmd, 0), "Resetting a command buffer");
     r.record(f.cmd, r.framebuffers[r.offscreen ? 0 : image], draws, clear_color, f.set, f, cascades,
              data.view_proj);

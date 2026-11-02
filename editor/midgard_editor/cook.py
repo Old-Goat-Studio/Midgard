@@ -25,7 +25,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import contract, engine, meshes, objects, scenes, textures
+from . import contract, engine, gltf_pack, meshes, objects, scenes, textures
 from .project import Project
 from .version import BUILD, VERSION
 
@@ -106,7 +106,18 @@ def mesh_asset_data(project: Project, asset: str) -> bytes | None:
         file = project.objects_dir / asset[len(PROJECT_ASSET_PREFIX):]
         if file.is_file() and file.suffix.lower() == ".glb":
             return file.read_bytes()
+        if file.is_file() and file.suffix.lower() == ".gltf":  # (with its .bin: one .glb)
+            try:
+                return gltf_pack.pack(file)
+            except gltf_pack.PackError:
+                return None
     return None
+
+
+def character_assets_used(components: dict) -> list[str]:
+    """The model and clip files a character component names (milestone 5.13)."""
+    character = components.get("character", {})
+    return [a for a in (character.get("model"), character.get("clips")) if a]
 
 
 def used_mesh_assets(project: Project) -> set[str]:
@@ -116,6 +127,7 @@ def used_mesh_assets(project: Project) -> set[str]:
     return {a for e in entities
             if (a := e.components.get("mesh", {}).get("asset")) and
             not a.startswith(BUILTIN_PREFIX)} | {
+        a for e in entities for a in character_assets_used(e.components)} | {
         t for e in entities for t in textures.components_textures(e.components)
         if textures.parse(t) is not None}
 
@@ -186,6 +198,8 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
     all_entities = project.all_entities()
     users = [(f"Entity '{e.name}'", e.components.get("mesh", {}).get("asset"))
              for e in all_entities]
+    users += [(f"Character '{e.name}'", a) for e in all_entities
+              for a in character_assets_used(e.components)]
     users += [(f"Object '{name}'", asset) for name, asset in _template_meshes(project)]
     for user, asset in users:
         if not asset or asset.startswith(BUILTIN_PREFIX) or asset in assets:

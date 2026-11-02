@@ -9,87 +9,17 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "midgard/animation.h"
+#include "midgard/characters.h"
 #include "midgard/gltf_skin.h"
 #include "midgard/pak.h"
+#include "skinned_chain.h"
 
 namespace {
-
-// A three-joint chain (j0 at the origin, j1 a metre up, j2 a metre above that) under an
-// armature moved 5 m along X, one triangle skinned to it (a vertex on each joint), and a clip
-// "Bend" turning j1 from rest to 90 degrees about Z over a second.
-std::vector<std::uint8_t> chain_glb() {
-    std::vector<std::uint8_t> bin;
-    const auto put = [&](const void* p, size_t n) {
-        const auto* b = static_cast<const std::uint8_t*>(p);
-        bin.insert(bin.end(), b, b + n);
-    };
-    const float positions[9] = {0, 0, 0, 0.1f, 1, 0, 0, 2, 0};  // 0: 36 bytes
-    put(positions, sizeof positions);
-    const std::uint16_t joints[12] = {0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0};  // 36: 24
-    put(joints, sizeof joints);
-    const float weights[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0};  // 60: 48
-    put(weights, sizeof weights);
-    for (int j = 0; j < 3; ++j) {  // 108: 192 (inverse binds: translate by -j up)
-        const glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(0, -float(j), 0));
-        put(&m[0][0], 64);
-    }
-    const float times[2] = {0, 1};  // 300: 8
-    put(times, sizeof times);
-    const float s = std::sqrt(0.5f);
-    const float turns[8] = {0, 0, 0, 1, 0, 0, s, s};  // 308: 32
-    put(turns, sizeof turns);
-    const std::string json = R"({
-      "asset": {"version": "2.0"},
-      "scene": 0, "scenes": [{"nodes": [0]}],
-      "nodes": [
-        {"name": "Armature", "translation": [5, 0, 0], "children": [1, 4]},
-        {"name": "j0", "children": [2]},
-        {"name": "j1", "translation": [0, 1, 0], "children": [3]},
-        {"name": "j2", "translation": [0, 1, 0]},
-        {"name": "Body", "mesh": 0, "skin": 0}],
-      "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 1,
-                                                  "WEIGHTS_0": 2}}]}],
-      "skins": [{"joints": [1, 2, 3], "inverseBindMatrices": 3}],
-      "animations": [{"name": "Bend", "channels": [{"sampler": 0,
-                       "target": {"node": 2, "path": "rotation"}}],
-                      "samplers": [{"input": 4, "output": 5, "interpolation": "LINEAR"}]}],
-      "accessors": [
-        {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
-         "min": [0, 0, 0], "max": [0.1, 2, 0]},
-        {"bufferView": 1, "componentType": 5123, "count": 3, "type": "VEC4"},
-        {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4"},
-        {"bufferView": 3, "componentType": 5126, "count": 3, "type": "MAT4"},
-        {"bufferView": 4, "componentType": 5126, "count": 2, "type": "SCALAR",
-         "min": [0], "max": [1]},
-        {"bufferView": 5, "componentType": 5126, "count": 2, "type": "VEC4"}],
-      "bufferViews": [
-        {"buffer": 0, "byteOffset": 0, "byteLength": 36},
-        {"buffer": 0, "byteOffset": 36, "byteLength": 24},
-        {"buffer": 0, "byteOffset": 60, "byteLength": 48},
-        {"buffer": 0, "byteOffset": 108, "byteLength": 192},
-        {"buffer": 0, "byteOffset": 300, "byteLength": 8},
-        {"buffer": 0, "byteOffset": 308, "byteLength": 32}],
-      "buffers": [{"byteLength": 340}]})";
-    std::string padded = json;
-    while (padded.size() % 4) padded += ' ';
-    std::vector<std::uint8_t> out;
-    const auto u32 = [&](std::uint32_t v) {
-        for (int i = 0; i < 4; ++i) out.push_back(std::uint8_t(v >> (8 * i)));
-    };
-    u32(0x46546C67);  // glTF
-    u32(2);
-    u32(std::uint32_t(12 + 8 + padded.size() + 8 + bin.size()));
-    u32(std::uint32_t(padded.size()));
-    u32(0x4E4F534A);  // JSON
-    out.insert(out.end(), padded.begin(), padded.end());
-    u32(std::uint32_t(bin.size()));
-    u32(0x004E4942);  // BIN
-    out.insert(out.end(), bin.begin(), bin.end());
-    return out;
-}
 
 glm::vec3 position(const midgard::Pose& pose, const midgard::Skeleton& s, const char* joint) {
     return glm::vec3(pose.model()[size_t(s.find(joint))][3]);
@@ -178,4 +108,61 @@ TEST_CASE("bad skeletons and clips are refused") {
     CHECK_THROWS_AS(midgard::Clip::build(one, backwards), midgard::AnimationError);
     midgard::RawClip empty{"none", 0.0f, {}};
     CHECK_THROWS_AS(midgard::Clip::build(one, empty), midgard::AnimationError);
+}
+
+TEST_CASE("characters play their clips, from their model or another file") {
+    const std::vector<std::uint8_t> glb = chain_glb();
+    const midgard::Characters::Bytes bytes = [&](const std::string& asset) {
+        if (asset == "asset:chain.glb" || asset == "asset:moves.glb") return glb;
+        if (asset == "asset:static.glb") return std::vector<std::uint8_t>{1, 2, 3};
+        throw midgard::AssetError("not in the package");
+    };
+    midgard::Scene scene;
+    const auto add = [&](const char* id, const nlohmann::json& character) {
+        scene.put_entity(id, id, "", {{"transform", {}}, {"character", character}});
+        return scene.find(id);
+    };
+    const entt::entity bend = add("e1", {{"model", "asset:chain.glb"}, {"clip", "Bend"}});
+    const entt::entity fast = add("e2", {{"model", "asset:chain.glb"},
+                                         {"clips", "asset:moves.glb"},
+                                         {"clip", "Bend"},
+                                         {"speed", 2.0}});
+    add("e3", {{"model", "asset:missing.glb"}});
+    add("e4", {{"model", "asset:static.glb"}});
+    midgard::Characters characters;
+    const std::vector<std::string> problems = characters.load(scene, bytes);
+    REQUIRE(problems.size() == 2);                 // the missing file and the one that isn't glTF
+    CHECK(characters.load(scene, bytes).empty());  // (each said once)
+    characters.update(scene, 0.25f);
+    REQUIRE(characters.pose(bend));
+    CHECK(characters.clip_of(bend) == "Bend");
+    CHECK(characters.clip_of(fast) == "Bend");
+    // A quarter of a second in: a quarter of the way from rest to 90 degrees; the fast one half
+    // way (45). ozz blends rotations linearly and normalises (not spherically), so between keys
+    // the angle is that blend's.
+    const midgard::Skeleton& s = midgard::Skeleton::build(
+        midgard::load_skinned_glb(glb).skeleton);  // (the same order as theirs)
+    const auto j2 = [&](entt::entity e) {
+        return glm::vec3(characters.pose(e)->model()[size_t(s.find("j2"))][3]);
+    };
+    const auto blended = [](float t) {  // the angle ozz's blend gives t of the way to 90
+        const glm::quat q =
+            glm::normalize(glm::quat(1, 0, 0, 0) * (1.0f - t) +
+                           glm::angleAxis(glm::radians(90.0f), glm::vec3(0, 0, 1)) * t);
+        return glm::angle(q);
+    };
+    const float a = blended(0.25f), b = blended(0.5f);
+    CHECK(b == doctest::Approx(glm::radians(45.0f)));
+    CHECK(glm::length(j2(bend) - glm::vec3(-std::sin(a), 1 + std::cos(a), 0)) < 2e-3f);
+    CHECK(glm::length(j2(fast) - glm::vec3(-std::sin(b), 1 + std::cos(b), 0)) < 2e-3f);
+    CHECK_FALSE(characters.pose(scene.find("e3")));  // (its model is missing: not animated)
+    // Not drawn until uploaded.
+    std::vector<midgard::render::DrawItem> draws;
+    characters.draws(scene, glm::dvec3(0.0), midgard::MaterialCache{}, entt::null, draws);
+    CHECK(draws.empty());
+    // A character removed goes; others carry on.
+    scene.remove_entity("e2");
+    characters.update(scene, 0.25f);
+    CHECK_FALSE(characters.pose(fast));
+    CHECK(characters.clip_of(bend) == "Bend");
 }

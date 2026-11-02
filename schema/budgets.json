@@ -22,6 +22,7 @@
       "ci-linux-release": 30,
       "ci-linux-arm64-release": 30
     },
+    "render.skinned_32_phone": {"default": 200, "_about": "32 skinned characters (8,500 vertices on 65 joints each) with sun shadows, phone quality: 0.35 ms on the development PC's GPU; CI draws on software Vulkan, far slower at vertex work (a first, generous budget, to tighten from CI's timings)."},
     "render.terrain_hollow_phone": {
       "default": 16.7,
       "_about": "Inside a 20 km hollow world (milestone 5.10): about 800 chunks and 700 of water, the far side in about 120 coarse ones. 8.7 ms on an RTX 4070 until the main pass culled draws out of view and drew the ground nearest first; 0.9 ms after (render.cubes_400_phone: 0.24 ms). Lavapipe: 61 ms on linux-release and 113 ms on linux-arm64 (CI run 41317155990), so 150 and 250.",

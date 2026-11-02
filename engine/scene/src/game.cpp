@@ -182,6 +182,8 @@ void Game::update(const Actions& actions, float dt) {
     camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
     update_exits(actions);
+    load_characters();  // (new ones from live edits; read once each)
+    characters_.update(scene_, dt);
     stream_navigation();
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
@@ -250,7 +252,16 @@ render::MeshData Game::load_mesh(const std::string& asset) const {
     throw AssetError("mesh '" + asset + "' is not in the package's content list");
 }
 
+void Game::load_characters() {
+    for (std::string& p :
+         characters_.load(scene_, [this](const std::string& asset) { return read_texture(asset); }))
+        character_problems_.push_back(std::move(p));
+}
+
 void Game::upload_meshes(render::Renderer& renderer) {
+    load_characters();
+    characters_.upload(renderer);
+    characters_.update(scene_, 0.0f);  // (posed from the start: a first frame draws them)
     for (entt::entity e : scene_.registry.view<const MeshRef>())
         for (const std::string& asset : scene_.registry.get<MeshRef>(e).assets())
             if (!meshes_.contains(asset))
@@ -271,6 +282,11 @@ std::vector<uint8_t> Game::read_texture(const std::string& asset) const {
 
 std::vector<std::string> Game::upload_new_meshes(render::Renderer& renderer) {
     std::vector<std::string> errors;
+    const size_t known = character_problems_.size();
+    load_characters();
+    errors.insert(errors.end(), character_problems_.begin() + std::ptrdiff_t(known),
+                  character_problems_.end());
+    characters_.upload(renderer);
     for (entt::entity e : scene_.registry.view<const MeshRef>()) {
         for (const std::string& asset : scene_.registry.get<MeshRef>(e).assets()) {
             if (meshes_.contains(asset) || failed_meshes_.contains(asset)) continue;
@@ -532,6 +548,7 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
         if (const Material* m = scene_.registry.try_get<Material>(e)) materials_.apply(*m, d);
         out.push_back(d);
     }
+    characters_.draws(scene_, origin, materials_, hidden, out);
     if (terrain_) {
         // The season where the camera is (a tilted planet's hemispheres differ).
         const std::optional<LocalSun> sun = scene_.local_sun(origin);
@@ -720,6 +737,7 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     exits_inside_.clear();
     trigger_events_.clear();
     outline_meshes_.clear();
+    characters_.clear_states();
     scene_ = std::move(next);
 
     // The player at the arrival, facing the way it does (level: "up" comes from the world).

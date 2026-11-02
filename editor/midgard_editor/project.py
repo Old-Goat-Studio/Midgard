@@ -361,6 +361,17 @@ class Project(QObject):
                 found[f"asset:{relative}"] = relative
         return found
 
+    def character_assets(self) -> dict[str, str]:
+        """Models a character can use (milestone 5.13): the .glb and .gltf files in the
+        project's objects/ folder, id -> label (the cook packs a .gltf into a .glb)."""
+        found: dict[str, str] = {}
+        objects = self.objects_dir
+        if objects.is_dir():
+            for file in sorted([*objects.rglob("*.glb"), *objects.rglob("*.gltf")]):
+                relative = file.relative_to(objects).as_posix()
+                found[f"asset:{relative}"] = relative
+        return found
+
     def entities(self, scene: str | None = None) -> list[Entity]:
         scene = scene or self.scene
         with self.connect() as con:

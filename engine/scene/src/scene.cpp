@@ -155,6 +155,14 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<ScriptRef>(e, c.at("module").get<std::string>());
     } else if (name == "trigger") {
         reg.emplace_or_replace<Trigger>(e, vec3(c, "size", glm::vec3(1.0f)));
+    } else if (name == "character") {
+        CharacterRef ch;
+        ch.model = c.value("model", std::string());
+        ch.clips = c.value("clips", std::string());
+        ch.clip = c.value("clip", std::string());
+        ch.speed = std::clamp(c.value("speed", 1.0f), 0.0f, 10.0f);
+        ch.loop = c.value("loop", true);
+        reg.emplace_or_replace<CharacterRef>(e, ch);
     } else if (name == "arrival") {
         reg.emplace_or_replace<Arrival>(e, Arrival{c.value("name", std::string())});
     } else if (name == "scene_exit") {
@@ -267,6 +275,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<Trigger>(e);
     else if (name == "arrival")
         reg.remove<Arrival>(e);
+    else if (name == "character")
+        reg.remove<CharacterRef>(e);
     else if (name == "scene_exit")
         reg.remove<SceneExit>(e);
     else if (name == "sky")
@@ -286,7 +296,7 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
-               ScriptRef, Trigger, Arrival, SceneExit, Sky, RigidBody, ColliderShape,
+               ScriptRef, Trigger, Arrival, SceneExit, CharacterRef, Sky, RigidBody, ColliderShape,
                PhysicsMaterial, Group, ObjectRef>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);

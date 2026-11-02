@@ -129,6 +129,10 @@ struct DrawItem {
     // are. frame 1: up is encoded as it is; 2 to 7: in the frame of axis (frame - 2) / 2,
     // negative if odd (midgard/terrain_streamer.h's up_frame, for spheres).
     bool terrain = false;
+    // A skinned mesh's joint matrices (each joint's pose times its inverse bind matrix, in the
+    // mesh's own space; milestone 5.13), indexed by the mesh's vertex joints. Empty: not
+    // skinned. The caller keeps them until render_frame returns.
+    std::span<const glm::mat4> skin;
 };
 
 // The textures of a material (kNoTexture: none, a neutral default).
@@ -164,6 +168,9 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     MeshId upload_mesh(const MeshData& mesh);
+    // A skinned mesh: four joints (indices into a draw's `skin`) and their weights a vertex.
+    MeshId upload_skinned_mesh(const MeshData& mesh, std::span<const glm::u16vec4> joints,
+                               std::span<const glm::vec4> weights);
     // A texture with its mipmaps (render::make_texture builds them), on the GPU.
     TextureId upload_texture(const TextureData& texture);
     // A KTX2 texture (render::encode_ktx2), transcoded to texture_format(). Throws RenderError.

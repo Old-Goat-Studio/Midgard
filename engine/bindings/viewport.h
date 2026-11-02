@@ -20,6 +20,7 @@
 #include <glm/glm.hpp>
 
 #include "midgard/camera_rig.h"
+#include "midgard/characters.h"
 #include "midgard/materials.h"
 #include "midgard/nav_world.h"
 #include "midgard/navmesh.h"
@@ -141,7 +142,12 @@ private:
     WorldLight world_light_;  // a curved cylinder's light rod or a hollow world's light sphere
     std::unique_ptr<PlacedObjects> placed_;  // the world type's objects round the camera
     std::unique_ptr<NavWorld> nav_world_;    // the terrain's navigation (made when shown)
+    // Characters (milestone 5.13), shown at the start of their clips: read from the files the
+    // editor sent (set_mesh keeps their bytes).
+    Characters characters_;
+    std::unordered_map<std::string, std::vector<uint8_t>> files_;
     void drop_terrain();
+    void drop_characters();
     struct Platform;
     std::unique_ptr<Platform> platform_;  // per-window-system state (the X11 connection)
 };

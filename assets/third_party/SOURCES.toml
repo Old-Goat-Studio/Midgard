@@ -17,3 +17,10 @@ title = "Avocado (glTF Sample Assets), textures reduced from 2048 to 512 pixels"
 author = "Microsoft"
 source = "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Avocado"
 license = "CC0-1.0"
+
+[[asset]]
+path = "characters/quaternius/"
+title = "Universal Base Characters (Superhero Male, packed from .gltf + .bin into .glb, base colour texture reduced from 2048 to 512 pixels) and Universal Animation Library (UAL1_Standard.glb, as is)"
+author = "Quaternius"
+source = "https://quaternius.com"
+license = "CC0-1.0"

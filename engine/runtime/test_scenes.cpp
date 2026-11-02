@@ -12,6 +12,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "midgard/animation.h"
 #include "midgard/collider_outlines.h"
 #include "midgard/environment.h"
 #include "midgard/placed_objects.h"
@@ -268,6 +269,95 @@ public:
 
 private:
     render::MeshId cube_ = 0, sphere_ = 0;
+};
+
+// Skinned meshes (milestone 5.13): three tubes skinned to a three-joint chain (2 m tall, joints
+// at 0, 1 and 2 m), at rest, bent 60 degrees sideways and bent 90 degrees towards the camera,
+// posed through the animation library (a clip sampled at its end), on ground with the sun's
+// shadows (skinned too).
+class Skinned : public TestScene {
+public:
+    Skinned() {
+        midgard::RawSkeleton raw{
+            {"j0", "j1", "j2"},
+            {-1, 0, 1},
+            {{}, {{0, 1, 0}, {1, 0, 0, 0}, {1, 1, 1}}, {{0, 1, 0}, {1, 0, 0, 0}, {1, 1, 1}}}};
+        skeleton_ = std::make_unique<midgard::Skeleton>(midgard::Skeleton::build(raw));
+        const auto bend = [&](const glm::quat& to) {
+            midgard::RawClip c{"bend", 1.0f, {{"j1", {}, {{0.0f, {1, 0, 0, 0}}, {1.0f, to}}, {}}}};
+            midgard::Pose pose(*skeleton_);
+            pose.sample(midgard::Clip::build(*skeleton_, c), 1.0f, false);
+            std::vector<glm::mat4> palette(3);
+            for (int j = 0; j < 3; ++j)  // (inverse binds: down by the joint's rest height)
+                palette[size_t(j)] =
+                    pose.model()[size_t(skeleton_->find("j" + std::to_string(j)))] *
+                    glm::translate(glm::mat4(1.0f), glm::vec3(0, -float(j), 0));
+            return palette;
+        };
+        poses_.push_back(bend(glm::quat(1, 0, 0, 0)));
+        poses_.push_back(bend(glm::angleAxis(glm::radians(60.0f), glm::vec3(0, 0, 1))));
+        poses_.push_back(bend(glm::angleAxis(glm::radians(-90.0f), glm::vec3(1, 0, 0))));
+    }
+    void upload(render::Renderer& r) override {
+        cube_ = r.upload_mesh(render::make_cube());
+        // A tube 2 m tall and 0.15 m across, 32 segments round, rings every 10 cm: each ring
+        // shared between the two joints it lies between, by height.
+        render::MeshData tube;
+        std::vector<glm::u16vec4> joints;
+        std::vector<glm::vec4> weights;
+        const int rings = 21, segments = 32;
+        for (int i = 0; i < rings; ++i) {
+            const float y = 0.1f * float(i);
+            const float t = std::clamp(y - 0.5f, 0.0f, 1.0f);  // j0 to j1 between 0.5 and 1.5 m
+            for (int k = 0; k <= segments; ++k) {
+                const float a = 6.2831853f * float(k) / float(segments);
+                const glm::vec3 n(std::cos(a), 0.0f, std::sin(a));
+                render::Vertex v{{0.15f * n.x, y, 0.15f * n.z},
+                                 {n.x, 0.0f, n.z},
+                                 {float(k) / float(segments), y / 2.0f},
+                                 {-n.z, 0.0f, n.x, 1.0f}};
+                tube.vertices.push_back(v);
+                const bool upper = y > 1.0f;
+                const float w = upper ? std::clamp(y - 1.0f, 0.0f, 1.0f) : t;
+                joints.emplace_back(upper ? 1 : 0, upper ? 2 : 1, 0, 0);
+                weights.emplace_back(1.0f - w, w, 0.0f, 0.0f);
+            }
+        }
+        for (int i = 0; i + 1 < rings; ++i)
+            for (int k = 0; k < segments; ++k) {
+                const auto a = std::uint32_t(i * (segments + 1) + k), b = a + 1,
+                           c = a + std::uint32_t(segments + 1), d = c + 1;
+                tube.indices.insert(tube.indices.end(), {a, c, b, b, c, d});
+            }
+        tube_ = r.upload_skinned_mesh(tube, joints, weights);
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        std::vector<DrawItem> out;
+        out.push_back({cube_, at({0, -0.05f, 0}, {12, 0.1f, 8}), glm::vec4(0.55f, 0.58f, 0.5f, 1)});
+        const glm::vec4 colours[3] = {
+            {0.85f, 0.5f, 0.25f, 1}, {0.3f, 0.6f, 0.85f, 1}, {0.75f, 0.3f, 0.6f, 1}};
+        for (int i = 0; i < 3; ++i) {
+            DrawItem d{tube_, at({-1.8f + 1.8f * float(i), 0.0f, 0.0f}), colours[i]};
+            d.roughness = 0.5f;
+            d.skin = poses_[size_t(i)];
+            out.push_back(d);
+        }
+        return relative(out, origin);
+    }
+    render::Camera camera(float aspect) const override {
+        return look({0, 1.6f, 5.0f}, {0, 1.0f, 0}, aspect, 50.0f);
+    }
+    render::Light light(const glm::dvec3&) const override {
+        render::Light l;
+        l.direction = glm::normalize(glm::vec3(0.6f, -0.7f, -0.4f));
+        return l;
+    }
+    glm::vec4 sky() const override { return {0.35f, 0.45f, 0.6f, 1.0f}; }
+
+private:
+    std::unique_ptr<midgard::Skeleton> skeleton_;
+    std::vector<std::vector<glm::mat4>> poses_;
+    render::MeshId cube_ = 0, tube_ = 0;
 };
 
 // Sun shadows on a small planet (radius 60 m), standing where "up" leans 50 degrees from the
@@ -781,9 +871,9 @@ const std::pair<const char*, double> kDayTimes[] = {
 }  // namespace
 
 std::vector<std::string> names() {
-    std::vector<std::string> out = {"materials", "textures",   "compressed",
-                                    "lights",    "shadows",    "shadows_curved",
-                                    "sky_day",   "sky_sunset", "colliders"};
+    std::vector<std::string> out = {"materials", "textures",       "compressed", "lights",
+                                    "shadows",   "shadows_curved", "sky_day",    "sky_sunset",
+                                    "colliders", "skinned"};
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
@@ -798,6 +888,7 @@ std::vector<std::string> names() {
 
 std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "materials") return std::make_unique<Materials>();
+    if (name == "skinned") return std::make_unique<Skinned>();
     if (name == "textures") return std::make_unique<Textures>();
     if (name == "compressed") return std::make_unique<Textures>(true);
     if (name == "lights") return std::make_unique<Lights>();

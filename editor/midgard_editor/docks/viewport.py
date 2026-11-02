@@ -31,7 +31,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
 from .. import engine, environments, terrain_stamps, textures, world_types
-from ..cook import BUILTIN_PREFIX, mesh_asset_data
+from ..cook import BUILTIN_PREFIX, character_assets_used, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
 from ..scene_model import parents_first
@@ -531,8 +531,11 @@ class ViewportPanel(QWidget):
                 except RuntimeError as e:
                     log.warning("Viewport: texture %s: %s", texture, e)
                 self._sent_content[texture] = hash(data)
-        asset = entity.components.get("mesh", {}).get("asset")
-        if asset and not asset.startswith(BUILTIN_PREFIX) and asset not in self._sent_meshes:
+        assets = [entity.components.get("mesh", {}).get("asset"),
+                  *character_assets_used(entity.components)]  # (a character's files too)
+        for asset in assets:
+            if not asset or asset.startswith(BUILTIN_PREFIX) or asset in self._sent_meshes:
+                continue
             data = mesh_asset_data(self.project, asset)
             if data is not None:
                 try:

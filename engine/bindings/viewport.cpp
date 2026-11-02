@@ -160,7 +160,9 @@ void Viewport::set_settings(const std::string& settings_json) {
 }
 
 void Viewport::set_mesh(const std::string& asset, std::span<const uint8_t> glb) {
-    render::MeshData mesh = load_glb(glb);  // throws AssetError on a bad file
+    render::MeshData mesh = load_glb(glb);         // throws AssetError on a bad file
+    files_[asset].assign(glb.begin(), glb.end());  // (a character's model or clips, maybe)
+    characters_.forget(asset);
     if (renderer_) {
         if (auto it = meshes_.find(asset); it != meshes_.end())
             renderer_->replace_mesh(it->second, mesh);
@@ -307,6 +309,10 @@ std::optional<Viewport::TerrainHit> Viewport::terrain_hit(const glm::dvec3& orig
     return TerrainHit{s.face, s.u, s.v, *p, s.height};
 }
 
+void Viewport::drop_characters() {
+    characters_.renderer_gone();
+}
+
 void Viewport::drop_terrain() {
     nav_world_.reset();  // (its jobs read the terrain)
     if (placed_) placed_->clear(scene_);
@@ -317,6 +323,7 @@ void Viewport::drop_terrain() {
 
 void Viewport::detach() {
     drop_terrain();
+    drop_characters();
     world_light_ = WorldLight{};  // (its meshes go with the renderer)
     renderer_.reset();            // the renderer waits for the GPU before it lets go of the surface
     meshes_.clear();
@@ -413,6 +420,15 @@ bool Viewport::render() {
         }
         far_plane = kTerrainViewDistance;
     }
+    // Characters, at the start of their clips.
+    characters_.load(scene_, [this](const std::string& asset) {
+        const auto it = files_.find(asset);
+        if (it == files_.end()) throw AssetError("the editor hasn't sent it");
+        return it->second;
+    });
+    characters_.upload(*renderer_);
+    characters_.update(scene_, 0.0f);
+    characters_.draws(scene_, camera.origin, materials_, entt::null, draws);
     if (show_navigation_)  // (after the terrain: its navigation is made from it)
         for (const render::DebugLine& l : navigation_lines(camera.origin)) lines.push_back(l);
     renderer_->set_debug_lines(lines);

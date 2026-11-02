@@ -376,6 +376,81 @@ std::vector<Benchmark> benchmarks() {
                  };
              }});
     }
+    // Skinned characters (milestone 5.13): 32 of them, each about 8,500 vertices on 65 joints
+    // (the Quaternius characters' size), with sun shadows, at the phone's quality.
+    list.push_back(
+        {"render.skinned_32_phone",
+         "32 skinned characters (8,500 vertices, 65 joints each) with sun shadows drawn offscreen "
+         "at 640x360, phone quality (GPU)",
+         60, [](std::string& skip) -> std::function<void()> {
+             using namespace midgard::render;
+             std::shared_ptr<Renderer> renderer;
+             try {
+                 RendererDesc desc;
+                 desc.offscreen = true;
+                 desc.width = 640;
+                 desc.height = 360;
+                 desc.quality = quality_settings(Quality::Phone);
+                 renderer = std::make_shared<Renderer>(desc);
+             } catch (const std::exception& e) {
+                 skip = std::string("no Vulkan: ") + e.what();
+                 return {};
+             }
+             // A tube 1.8 m tall, 257 rings of 33 vertices, skinned to a chain of 65 joints.
+             MeshData tube;
+             std::vector<glm::u16vec4> joints;
+             std::vector<glm::vec4> weights;
+             const int rings = 257, segments = 32, chain = 65;
+             for (int i = 0; i < rings; ++i) {
+                 const float y = 1.8f * float(i) / float(rings - 1);
+                 const float at = float(i) / float(rings - 1) * float(chain - 1);
+                 const int j = std::min(int(at), chain - 2);
+                 for (int k = 0; k <= segments; ++k) {
+                     const float a = 6.2831853f * float(k) / float(segments);
+                     tube.vertices.push_back({{0.2f * std::cos(a), y, 0.2f * std::sin(a)},
+                                              {std::cos(a), 0, std::sin(a)},
+                                              {0, 0},
+                                              {1, 0, 0, 1}});
+                     joints.emplace_back(j, j + 1, 0, 0);
+                     weights.emplace_back(1.0f - (at - float(j)), at - float(j), 0.0f, 0.0f);
+                 }
+             }
+             for (int i = 0; i + 1 < rings; ++i)
+                 for (int k = 0; k < segments; ++k) {
+                     const auto a = std::uint32_t(i * (segments + 1) + k), b = a + 1,
+                                c = a + std::uint32_t(segments + 1), d = c + 1;
+                     tube.indices.insert(tube.indices.end(), {a, c, b, b, c, d});
+                 }
+             const MeshId mesh = renderer->upload_skinned_mesh(tube, joints, weights);
+             // Each a little bent: every joint turned a little about Z.
+             auto palettes = std::make_shared<std::vector<std::vector<glm::mat4>>>(32);
+             for (int c = 0; c < 32; ++c) {
+                 glm::mat4 m(1.0f);
+                 for (int j = 0; j < chain; ++j) {
+                     const float y = 1.8f * float(j) / float(chain - 1);
+                     (*palettes)[size_t(c)].push_back(
+                         m * glm::translate(glm::mat4(1.0f), glm::vec3(0, -y, 0)));
+                     m = m * glm::translate(glm::mat4(1.0f), glm::vec3(0, 1.8f / (chain - 1), 0)) *
+                         glm::rotate(glm::mat4(1.0f), 0.01f * float(c % 5), glm::vec3(0, 0, 1));
+                 }
+             }
+             auto draws = std::make_shared<std::vector<DrawItem>>();
+             for (int c = 0; c < 32; ++c) {
+                 DrawItem d{mesh,
+                            glm::translate(glm::mat4(1.0f),
+                                           glm::vec3((c % 8) * 1.5f - 5.25f, 0, (c / 8) * -2.0f)),
+                            glm::vec4(0.7f, 0.5f, 0.4f, 1.0f)};
+                 d.skin = (*palettes)[size_t(c)];
+                 draws->push_back(d);
+             }
+             Camera camera;
+             camera.view =
+                 glm::lookAt(glm::vec3(0, 4, 8), glm::vec3(0, 0.8f, -3), glm::vec3(0, 1, 0));
+             camera.projection = perspective(glm::radians(55.0f), 640.0f / 360.0f, 0.1f, 100.0f);
+             return [renderer, draws, palettes, camera] {
+                 renderer->render_frame(camera, Light{}, *draws, glm::vec4(0.1f, 0.1f, 0.2f, 1));
+             };
+         }});
     // Inside the largest hollow world (radius 20 km), standing on the ground looking up: all of
     // it is in view, the far side overhead in a few coarse chunks (milestone 5.10).
     list.push_back(
