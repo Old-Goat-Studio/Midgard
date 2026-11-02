@@ -46,6 +46,7 @@ class CookResult:
     out_dir: Path
     manifest: dict
     warnings: list[str] = field(default_factory=list)
+    credits: list[str] = field(default_factory=list)  # (CC BY assets', in CREDITS.txt)
 
 
 def host_target() -> dict[str, str]:
@@ -366,6 +367,7 @@ def cook(project: Project, out_dir: Path | None = None,
     cooked = _cook_objects(project, warnings)
     _write_object_parts(project, out, cooked)
     content = _cook_assets(project, out, warnings, cooked)
+    credits = _cook_credits(project, out, content, warnings)
     warnings += _script_warnings(project, _cook_scripts(project, out))
     _cook_icon(project, out)
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
@@ -378,7 +380,22 @@ def cook(project: Project, out_dir: Path | None = None,
             raise CookError("The engine can't load the cooked package:\n" +
                             "\n".join(report["errors"]))
         warnings += [w for w in report["warnings"] if not _already_warned(w, warnings)]
-    return CookResult(out, manifest, warnings)
+    return CookResult(out, manifest, warnings, credits)
+
+
+def _cook_credits(project: Project, out: Path, content: list[dict[str, str]],
+                  warnings: list[str]) -> list[str]:
+    """CREDITS.txt for the Asset Library's assets the game uses (milestone 5.13a): the credits
+    CC BY ones need, and thanks for the CC0 ones; a warning for any whose licence or files
+    aren't right."""
+    used = asset_library.used_by(project, [c["id"] for c in content])
+    for asset in used:
+        for problem in asset_library.problems(asset):
+            warnings.append(f"Library asset '{asset.name}' ({asset.id}): {problem}.")
+    if used:
+        (out / asset_library.CREDITS_FILE).write_text(
+            asset_library.credits_text(project.game_title, used), "utf-8")
+    return asset_library.credits(used)
 
 
 def _already_warned(engine_warning: str, warnings: list[str]) -> bool:

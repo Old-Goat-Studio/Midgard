@@ -278,3 +278,46 @@ def test_an_entity_uses_a_library_model_as_its_mesh(project, tmp_path):
                               {"transform": {}, "mesh": {"asset": asset}}))
     result = cook(project, tmp_path / "pkg")
     assert asset in {c["id"] for c in result.manifest["content"]}
+
+
+# ---- credits (step 6) ---------------------------------------------------------------------------
+def test_the_game_credits_the_cc_by_assets_it_uses(project, qtbot, tmp_path):
+    from test_characters import SAMPLES
+
+    from midgard_editor.cook import cook
+    from midgard_editor.docks.project_page import ProjectPage
+    from midgard_editor.scene_model import Entity
+    lib.import_asset(project, [SAMPLES / "superhero_male.glb"], "models", "Superhero",
+                     author="Quaternius")  # CC0
+    plates = lib.import_asset(project, [a_picture(tmp_path, "plates.png")], "textures",
+                              "Rusty Plates", category="metal", licence="CC-BY-4.0",
+                              author="Ana Ruiz", source="https://example.org/rusty",
+                              title="Rusty Plates")
+    lib.import_asset(project, [a_picture(tmp_path, "unused.png")], "textures", "Unused",
+                     category="wood", licence="CC-BY-4.0", author="Bo", title="Unused")
+    page = ProjectPage()
+    qtbot.addWidget(page)
+    page.set_project(project)
+    assert page.credits.text() == "None: the game uses no CC BY assets."
+    project.put_entity(Entity(project.next_entity_id(), "Statue", None, {
+        "transform": {}, "mesh": {"asset": "lib:models/superhero/superhero_male.glb"},
+        "material": {"textures": {"base_color": "tex:library/textures/metal/rusty_plates/"
+                                                "plates.png"}}}))
+    page.show_credits()
+    assert page.credits.text() == lib.credit(plates)  # (only what the game uses)
+    result = cook(project, tmp_path / "pkg")
+    assert result.credits == [lib.credit(plates)]
+    text = (result.out_dir / "CREDITS.txt").read_text("utf-8")
+    assert lib.credit(plates) in text
+    assert "Superhero by Quaternius" in text  # (CC0: thanked)
+    assert "Unused" not in text
+    # A used asset whose file changed since it was imported: the cook says so.
+    (plates.folder / "plates.png").write_bytes((plates.folder / "plates.png").read_bytes() + b"x")
+    warnings = cook(project, tmp_path / "pkg2").warnings
+    assert any("Rusty Plates" in w and "has changed since it was imported" in w for w in warnings)
+
+
+def test_no_library_assets_no_credits_file(project, tmp_path):
+    from midgard_editor.cook import cook
+    result = cook(project, tmp_path / "pkg")
+    assert result.credits == [] and not (result.out_dir / "CREDITS.txt").exists()

@@ -459,3 +459,48 @@ def models(project) -> dict[str, str]:
     """The library's models (and objects'), content id -> label."""
     return {model_id(project, p): f"{a.name} ({p.name})"
             for a, p in files_of(project, ("models", "objects"), MODEL_SUFFIXES)}
+
+
+# ---- credits in the game (step 6) --------------------------------------------------------------
+CREDITS_FILE = "CREDITS.txt"
+
+
+def asset_of(project, file: Path, assets: list[Asset] | None = None) -> Asset | None:
+    """The library asset a file belongs to (None: it isn't in the library)."""
+    file = Path(file).resolve()
+    if assets is None:
+        assets, _ = scan(project)
+    for a in assets:
+        if file.is_relative_to(a.folder.resolve()):
+            return a
+    return None
+
+
+def used_by(project, content_ids) -> list[Asset]:
+    """The library assets a game's content uses: models ("lib:") and images ("tex:" paths
+    inside library/), each once, by name."""
+    from . import textures
+    assets, _ = scan(project)
+    found: dict[str, Asset] = {}
+    for content in content_ids:
+        file = model_file(project, content) if content.startswith(MODEL_PREFIX) else None
+        if file is None and (parsed := textures.parse(content)) is not None:
+            file = Path(project.root) / parsed[0]
+        if file is not None and (asset := asset_of(project, file, assets)) is not None:
+            found[asset.id] = asset
+    return sorted(found.values(), key=lambda a: a.name.lower())
+
+
+def credits_text(game_title: str, used: list[Asset]) -> str:
+    """CREDITS.txt: the credits CC BY assets need, and thanks for the CC0 ones."""
+    lines = [f"{game_title}: credits", ""]
+    needed = credits(used)
+    if needed:
+        lines += ["This game uses these works under Creative Commons Attribution licences:", ""]
+        lines += [f"- {c}" for c in needed] + [""]
+    free = sorted({f"{a.title or a.name}" + (f" by {a.author}" if a.author else "")
+                   for a in used if not needs_credit(a)})
+    if free:
+        lines += ["And these, given to the public domain (CC0), with thanks:", ""]
+        lines += [f"- {c}" for c in free] + [""]
+    return "\n".join(lines)

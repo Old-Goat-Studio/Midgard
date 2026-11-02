@@ -106,3 +106,27 @@ def test_exports_carry_the_games_python(project, tmp_path):
     with tarfile.open(result) as tar:
         names = set(tar.getnames())
     assert {"HelloCube/python/python314.zip", "HelloCube/python/lib/libpython3.14.so.1.0"} <= names
+
+
+def test_an_export_carries_the_credits_beside_the_game(project, tmp_path):
+    """The Asset Library's CC BY assets the game uses are credited in CREDITS.txt, at the top
+    of the exported game (milestone 5.13a)."""
+    from PySide6.QtGui import QColor, QImage
+
+    from midgard_editor import asset_library as lib
+    from midgard_editor.scene_model import Entity
+    image = QImage(8, 8, QImage.Format.Format_RGB32)  # (a real picture: the cook encodes it)
+    image.fill(QColor(150, 90, 60))
+    picture = tmp_path / "plates.png"
+    image.save(str(picture))
+    plates = lib.import_asset(project, [picture], "textures", "Plates", category="metal",
+                              licence="CC-BY-4.0", author="Ana Ruiz", title="Plates")
+    project.put_entity(Entity(project.next_entity_id(), "Floor", None, {
+        "transform": {}, "mesh": {"asset": "prim_cube"},
+        "material": {"textures": {"base_color": "tex:library/textures/metal/plates/plates.png"}}}))
+    settings = tmp_path / "settings"
+    exporter.install_template(fake_template(tmp_path, "windows"), settings)
+    archive = exporter.export(project, "windows-x86_64", tmp_path / "out", settings)
+    with zipfile.ZipFile(archive) as z:
+        credits = z.read("HelloCube/CREDITS.txt").decode()
+    assert lib.credit(plates) in credits

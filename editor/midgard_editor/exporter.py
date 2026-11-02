@@ -183,6 +183,9 @@ def export(project: Project, target: str, out_dir: Path, settings_dir: Path,
         elif source.is_file():
             shutil.copy2(source, game_dir / extra)
     (game_dir / "THIRD_PARTY_NOTICES.txt").write_text(_notices(template), "utf-8")
+    credits = game_dir / "data" / "CREDITS.txt"  # (the Asset Library's, beside the game)
+    if credits.is_file():
+        shutil.copy2(credits, game_dir / "CREDITS.txt")
     for doc in ("LICENSE", "NOTICE"):
         src = template.folder / doc if (template.folder / doc).is_file() else BUNDLE_DIR / doc
         if src.is_file():

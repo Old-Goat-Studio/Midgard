@@ -136,6 +136,12 @@ class ProjectPage(QScrollArea):
         form.addRow("Logo", self.logo)
         form.addRow("Application icon", self.icon)
         form.addRow("Folder", self.folder)
+        self.credits = QLabel()
+        self.credits.setWordWrap(True)
+        self.credits.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.credits.setToolTip("The Asset Library's CC BY assets the game uses: the cook "
+                                "writes them into CREDITS.txt")
+        form.addRow("Credits", self.credits)
         layout = QVBoxLayout(body)
         layout.addWidget(self.heading)
         layout.addLayout(form)
@@ -183,8 +189,29 @@ class ProjectPage(QScrollArea):
         self.world_mode.setText(WORLD_MODES.get(p.config.get("world_mode"), "?") +
                                 "  (chosen when the project was created)")
         self.folder.setText(str(p.root))
+        self.show_credits()
         self.logo.refresh()
         self.icon.refresh()
+
+    def showEvent(self, e) -> None:  # noqa: N802 (Qt's name)
+        if self.project is not None:  # (the scenes may use other assets by now)
+            self.show_credits()
+        super().showEvent(e)
+
+    def show_credits(self) -> None:
+        """The credits the game needs (the library's CC BY assets its scenes use)."""
+        from .. import asset_library
+        from ..cook import used_mesh_assets
+        used = asset_library.used_by(self.project, used_mesh_assets(self.project))
+        needed = asset_library.credits(used)
+        if needed:
+            self.credits.setText("<br>".join(needed))
+        elif used:
+            self.credits.setText(f"None needed: the {len(used)} library asset"
+                                 f"{'' if len(used) == 1 else 's'} the game uses "
+                                 f"{'is' if len(used) == 1 else 'are'} CC0.")
+        else:
+            self.credits.setText("None: the game uses no CC BY assets.")
 
     # ---- edits ----------------------------------------------------------------------------
     def _text_edited(self, key: str, text: str, label: str, required: bool = False) -> None:
