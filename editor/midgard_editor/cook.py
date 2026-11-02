@@ -25,9 +25,8 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import contract, engine, meshes, objects, textures
+from . import contract, engine, meshes, objects, scenes, textures
 from .project import Project
-from .scene_model import MAIN_SCENE
 from .version import BUILD, VERSION
 
 ENGINE_ABI = 0
@@ -111,12 +110,13 @@ def mesh_asset_data(project: Project, asset: str) -> bytes | None:
 
 
 def used_mesh_assets(project: Project) -> set[str]:
-    """Mesh asset ids the main scene uses that live in game.pak, and the image files its
+    """Mesh asset ids the game's scenes use that live in game.pak, and the image files their
     materials use (the live link cooks them in before sending an entity that uses them)."""
-    return {a for e in project.entities(MAIN_SCENE)
+    entities = project.all_entities()
+    return {a for e in entities
             if (a := e.components.get("mesh", {}).get("asset")) and
             not a.startswith(BUILTIN_PREFIX)} | {
-        t for e in project.entities(MAIN_SCENE) for t in textures.components_textures(e.components)
+        t for e in entities for t in textures.components_textures(e.components)
         if textures.parse(t) is not None}
 
 
@@ -127,12 +127,12 @@ class CookedObjects:
 
 
 def _cook_objects(project: Project, warnings: list[str]) -> CookedObjects:
-    """The objects the main scene places: imported ones made from their model files by the
+    """The objects the game's scenes place: imported ones made from their model files by the
     engine. Those made in the editor need nothing (their meshes are cooked with the rest)."""
     library = {o.id: o for o in project.objects()}
     cooked = CookedObjects()
     done: set[str] = set()
-    for entity in project.entities(MAIN_SCENE):
+    for entity in project.all_entities():
         object_id = entity.components.get("object", {}).get("id")
         if not object_id or object_id in done:
             continue
@@ -180,11 +180,12 @@ def _template_meshes(project: Project) -> list[tuple[str, str]]:
 
 def _cook_assets(project: Project, out: Path, warnings: list[str],
                  cooked: CookedObjects | None = None) -> list[dict[str, str]]:
-    """game.pak: every mesh the main scene and its objects use, as .glb files, and imported
+    """game.pak: every mesh the game's scenes and objects use, as .glb files, and imported
     objects' content. Returns the content list."""
     assets: dict[str, bytes] = {}
+    all_entities = project.all_entities()
     users = [(f"Entity '{e.name}'", e.components.get("mesh", {}).get("asset"))
-             for e in project.entities(MAIN_SCENE)]
+             for e in all_entities]
     users += [(f"Object '{name}'", asset) for name, asset in _template_meshes(project)]
     for user, asset in users:
         if not asset or asset.startswith(BUILTIN_PREFIX) or asset in assets:
@@ -203,8 +204,8 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
         files[asset] = (path, data)
     if cooked:
         files |= cooked.files
-    # Image files the scene's materials, and templates made in the editor, use.
-    texture_users = [(f"Entity '{e.name}'", e.components) for e in project.entities(MAIN_SCENE)]
+    # Image files the scenes' materials, and templates made in the editor, use.
+    texture_users = [(f"Entity '{e.name}'", e.components) for e in all_entities]
     texture_users += [(f"Object '{o.name}'", p.get("components", {})) for o in project.objects()
                       if not o.source for p in o.parts]
     for user, components in texture_users:
@@ -272,7 +273,7 @@ def _cook_scripts(project: Project, out: Path) -> dict[str, str]:
 def _script_warnings(project: Project, modules: dict[str, str]) -> list[str]:
     return [f"Entity '{e.name}' uses script '{m}', which is not in the project's scripts/ "
             "folder; it will not run."
-            for e in project.entities(MAIN_SCENE)
+            for e in project.all_entities()
             if (m := e.components.get("script", {}).get("module")) and m not in modules]
 
 
@@ -315,7 +316,7 @@ def _write_manifest(project: Project, out: Path, target: dict[str, str],
         "built_with": {"editor": f"{VERSION}+{BUILD}", "engine_abi": ENGINE_ABI},
         "target": target,
         "world_mode": project.config.get("world_mode", "system_map"),
-        "entry": {"scene": MAIN_SCENE},
+        "entry": {"scene": scenes.start_scene(project)},
         "database": f"{project.name}.db",
         "schema_version": schema_version,
         "content_hash": "sha256:" + content_hash.hexdigest(),

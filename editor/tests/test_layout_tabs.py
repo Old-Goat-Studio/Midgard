@@ -63,4 +63,4 @@ def test_the_layout_is_kept_without_a_tidy_exit(qtbot, settings):
     qtbot.waitUntil(lambda: settings.get("layout_last") is not None, timeout=5000)
     # No close: as if the editor crashed. The next one still has the new order.
     again = open_window(qtbot, settings)
-    assert tab_order(again, "project") == ["Scene", "Project"]
+    assert tab_order(again, "project") == ["Scene", "Scenes", "Project"]

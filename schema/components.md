@@ -30,6 +30,11 @@ mapping instead, from Phase 5).
 
 ## Scene settings
 
+A game has one or more scenes (the `scene` table; from milestone 5.11a, made in the editor's
+Scenes panel), each with its own entities, settings and terrain stamps. The package's manifest
+names the one the game starts in (`entry.scene`; the editor's starting scene), and the cook checks
+every scene, naming it in each problem when there is more than one.
+
 The `scene.settings` column (migration 2) holds a JSON object. A `sky` entity outranks it; the
 editor creates one in every scene's World folder.
 

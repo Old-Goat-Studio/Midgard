@@ -13,7 +13,7 @@ namespace midgard {
 struct ValidationReport {
     std::vector<std::string> errors;    // the runtime would refuse the package
     std::vector<std::string> warnings;  // it would run, but something is missing
-    size_t entities = 0;                // in the entry scene
+    size_t entities = 0;                // in every scene
     size_t assets = 0;                  // content entries that loaded
     bool ok() const { return errors.empty(); }
 };

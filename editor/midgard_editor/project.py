@@ -69,6 +69,7 @@ class Project(QObject):
     environments_changed = Signal(str)  # environment id, or "" when added or removed
     terrain_changed = Signal(str)  # scene id: its terrain stamps (sculpting and painting)
     world_types_changed = Signal(str)  # world type id: its recipe or name
+    scenes_changed = Signal(str)  # scene id: added, removed, renamed or made the starting one
     files_changed = Signal(list)  # model and image files changed on disk (paths in the project)
 
     def __init__(self, root: Path, name: str, config: dict[str, Any]):
@@ -345,6 +346,13 @@ class Project(QObject):
         with self.connect() as con:
             rows = con.execute("SELECT id, name, parent, components FROM entity "
                                "WHERE scene = ? ORDER BY id", (scene,)).fetchall()
+        return [row_to_entity(r) for r in rows]
+
+    def all_entities(self) -> list[Entity]:
+        """Every scene's entities (what the cook gathers meshes, textures and objects for)."""
+        with self.connect() as con:
+            rows = con.execute("SELECT id, name, parent, components FROM entity "
+                               "ORDER BY scene, id").fetchall()
         return [row_to_entity(r) for r in rows]
 
     def entity(self, entity_id: str) -> Entity | None:

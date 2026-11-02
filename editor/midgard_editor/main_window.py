@@ -48,6 +48,7 @@ from .docks.objects_panel import ObjectsPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.project_page import ProjectPage
 from .docks.scene_panel import ScenePanel
+from .docks.scenes_panel import ScenesPanel
 from .docks.script_editor import ScriptEditorPanel
 from .docks.terrain_panel import TerrainPanel
 from .docks.viewport import ViewportPanel
@@ -68,7 +69,7 @@ PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
           "calendar": "Calendar", "environment": "Environment", "terrain": "Terrain",
-          "world_types": "World Types"}
+          "world_types": "World Types", "scenes": "Scenes"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -167,6 +168,7 @@ class MainWindow(QMainWindow):
         self.environment_panel.season_previewed.connect(self.viewport.set_season)
         self.terrain_panel = TerrainPanel()
         self.world_type_panel = WorldTypePanel()
+        self.scenes_panel = ScenesPanel()
         self.viewport.brush = self.terrain_panel.brush  # Sculpt on: the viewport's left button
         self.calendar_panel.season_scrubbed.connect(self.viewport.set_season)
         self.calendar_panel.time_scrubbed.connect(self._time_scrubbed)
@@ -189,7 +191,8 @@ class MainWindow(QMainWindow):
                    "scripts": self.script_editor, "assistant": self.assistant,
                    "project_page": self.project_page, "objects": self.objects_panel,
                    "calendar": self.calendar_panel, "environment": self.environment_panel,
-                   "terrain": self.terrain_panel, "world_types": self.world_type_panel}
+                   "terrain": self.terrain_panel, "world_types": self.world_type_panel,
+                   "scenes": self.scenes_panel}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -219,6 +222,7 @@ class MainWindow(QMainWindow):
         area = QtAds.DockWidgetArea
         left = self.dock_manager.addDockWidget(area.LeftDockWidgetArea, self.panels["project"])
         self.dock_manager.addDockWidgetTabToArea(self.panels["scene"], left)
+        self._tab_beside_scene("scenes")
         self.panels["scene"].setAsCurrentTab()
         self.dock_manager.addDockWidget(area.RightDockWidgetArea, self.panels["inspector"])
         bottom = self.dock_manager.addDockWidget(area.BottomDockWidgetArea, self.panels["log"])
@@ -263,6 +267,16 @@ class MainWindow(QMainWindow):
     def _place_script_editor(self) -> None:
         """The Script editor shares the Viewport's area, as a tab behind it."""
         self._tab_behind_viewport("scripts")
+
+    def _tab_beside_scene(self, key: str) -> None:
+        """A tab in the Scene panel's area (the left)."""
+        area = self.panels["scene"].dockAreaWidget()
+        if area is not None:
+            self.dock_manager.addDockWidgetTabToArea(self.panels[key], area)
+            self.panels["scene"].setAsCurrentTab()
+        else:
+            self.dock_manager.addDockWidget(QtAds.DockWidgetArea.LeftDockWidgetArea,
+                                            self.panels[key])
 
     def _tab_behind_viewport(self, key: str) -> None:
         area = self.panels["viewport"].dockAreaWidget()
@@ -331,6 +345,8 @@ class MainWindow(QMainWindow):
                 self._tab_behind_viewport("objects")
             if "world_types" not in saved:
                 self._tab_behind_viewport("world_types")
+            if "scenes" not in saved:
+                self._tab_beside_scene("scenes")
             if "calendar" not in saved:
                 self._tab_behind_inspector("calendar")
             if "environment" not in saved:
@@ -677,6 +693,7 @@ class MainWindow(QMainWindow):
         self.environment_panel.set_project(project)
         self.terrain_panel.set_project(project)
         self.world_type_panel.set_project(project)
+        self.scenes_panel.set_project(project)
         MaterialDialog.close_all()
         CameraDialog.close_all()
         if self.content_watcher is not None:
