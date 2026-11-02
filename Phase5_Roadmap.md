@@ -399,6 +399,11 @@ teleport pad, in the editor's Play and an exported game.
 a path all the way around each shape.
 **Exit:** a test agent walks a path that crosses a cube-sphere face edge and the cylinder join.
 
+*As built:* a navigation mesh per face of the world in the face's own frame (the ground level for
+Recast), made in tiles round the player as they go; a cylinder's frame runs round and round and a
+cube face's continues past its edges, so paths cross joins and face edges without linking
+separate meshes. Characters far from the player need tiles of their own (Phase 6 AI).
+
 ### 5.13 Character animation · XL
 - **Import** skinned characters and clips from glTF (CC0 humanoid from Quaternius as the sample).
 - **Humanoid rig** definition and **retargeting** between characters of different proportions.

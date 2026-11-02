@@ -414,15 +414,18 @@ Layout features:
 ```
 engine/
   core/       version, double-precision world positions, deterministic maths and hashes, job system,
-              profiling markers, package manifest, world shapes and bodies (the shape mapping layer)
+              profiling markers, package manifest, world shapes and bodies (the shape mapping layer),
+              terrain, world types and their generation graphs, world maps, calendars and light
   input/      action mapping on SDL3 input (keyboard, mouse, gamepad)
   render/     Vulkan via volk + VMA: HDR, PBR materials, KTX2/Basis textures, cascaded shadows, sky
               and fog, quality tiers, debug lines, the debug text overlay
   physics/    Jolt Physics (double precision): bodies, shapes, materials, layers, triggers,
               per-body gravity, the character controller
+  nav/        Recast and Detour: navigation mesh tiles and path queries
   scene/      package and pak loading, the scene (EnTT) from the database, objects and groups,
-              glTF import, materials, the third-person camera, validation, the world's surface,
-              collider outlines, the game loop
+              glTF import, materials, the camera rig, validation, the world's surface, terrain
+              streaming and collision, placed objects, navigation over each world shape, scene
+              changes, collider outlines, the game loop
   script/     embedded CPython (pybind11/embed.h); the `midgard` Python API
   link/       the live link (length-prefixed JSON over TCP)
   runtime/    main(): the game executable (also --selftest, --screenshot, --dump-scene)
@@ -466,7 +469,7 @@ Notes:
 
 - **One codebase, three front ends.** The dedicated server is the same engine without rendering, which is how "self-hosted in the game" and "dedicated server" share one implementation.
 - **Server authority.** Wallet, banking, inventory and quest completion are decided on the server and replicated to clients, never trusted from the client, even when the server is a player's own game.
-- **Python API.** Scripts reach engine systems only through the `midgard` module. Today it has entities (find, move, forces), raycasts and overlaps, gravity and "up", input actions, time, the sky, the player's camera (`midgard.camera`: its view, shakes and scripted looks), logging, and the `on_start`, `on_update`, `on_trigger_enter`/`exit` and `on_reload` callbacks. Later systems add their own (`midgard.quests.complete("q_wolves")`, `midgard.wallet.add(player, "gold", 50)`). The stubs in `schema/midgard.pyi` are checked against the engine (`midgard_runtime --dump-api`) and give the Script editor its completion.
+- **Python API.** Scripts reach engine systems only through the `midgard` module. Today it has entities (find, move, forces), raycasts and overlaps, gravity and "up", input actions, time, the sky, the player's camera (`midgard.camera`: its view, shakes and scripted looks), scene changes (`midgard.rooms`), navigation (`midgard.nav`), logging, and the `on_start`, `on_update`, `on_trigger_enter`/`exit`, `on_room_enter`/`exit` and `on_reload` callbacks. Later systems add their own (`midgard.quests.complete("q_wolves")`, `midgard.wallet.add(player, "gold", 50)`). The stubs in `schema/midgard.pyi` are checked against the engine (`midgard_runtime --dump-api`) and give the Script editor its completion.
 - **Version.** CMake reads the root `VERSION` file into `midgard/version.h`, so the engine and the editor report the same release (see the About Scheme section).
 
 ### Co-op networking (2–16 players per world)
@@ -997,12 +1000,14 @@ A room change:
 
 Scripts use `midgard.rooms.change(target, arrival)`, `on_room_enter` and `on_room_exit`.
 
+*As built (5.11a):* designers make rooms as **scenes** in the editor's Scenes panel, and doors and portals as **Scene Exits** (taken by walking in, by pressing Use inside them, or from a script) leading to **arrival points**. Room changes fade, unload the scene left, load the target and make its ground and meshes before fading in; the world save remembers the scene. Interiors are scenes; surfaces and system space (5.16) will be too.
+
 **Co-op: players can be on different bodies, in different systems, at the same time.** The host simulates every room that has a player in it, so there are at most 16 active rooms, one per player. Snapshots only cover each player's own room, and the calendar clock is shared by all rooms. Weak hardware can set an optional `max_active_rooms` in `server.json`. When that limit is reached, a teleport or flight into a new room is refused with a message. The Raspberry Pi 5 budget is measured with 16 players and 32 companions spread over 8 rooms.
 
 #### Teleportation: instant travel
 Players travel between bodies and systems **instantly**, by teleport, in the style of Star Trek's transporter. No calendar time passes.
 
-**Teleporting is always done by a game object.** A teleporter is a component that designers attach to any object:
+**Teleporting is always done by a game object.** (5.11a's Scene Exit taken by Use, a teleport pad between scenes, is its foundation; the device types, destination menu and costs below come in Phase 6.) A teleporter is a component that designers attach to any object:
 
 | Kind | Examples | Behaviour |
 |---|---|---|
@@ -1678,7 +1683,11 @@ Each phase ends with something that **runs**. Phases 0–3 are in strict order b
 **Status: done** (14 October 2026).
 
 ### Phase 5: World building
-**Status: in progress.** 5.0–5.10 are done (§0 lists what each milestone brought).
+**Status: in progress.** 5.0–5.12 are done, with 5.11a Scenes added on the way (§0 lists what
+each milestone brought). Still to come: 5.13 Animation, 5.14 Audio, 5.15 Weather, 5.16 System
+space, 5.17 Shaders and 5.18 the sample and exit. **Owed checks:** the phone self-test for
+5.9–5.12 (the self-test APK from CI), and the generation budgets on a Raspberry Pi (no Pi has
+been measured yet).
 
 **The detailed plan is in [`Phase5_Roadmap.md`](Phase5_Roadmap.md)** (approved 15 October 2026):
 19 milestones (5.0–5.18), foundation first (test tooling, deterministic maths and world
@@ -1700,10 +1709,10 @@ moved to Phase 6 (see there); Phase 5 builds their foundations.
 - Shader system: GLSL editor → SPIR-V, material editor, texture generator.
 - **Shape mapping layer** (§7, *World shapes*) built before any terrain feature, so nothing assumes "y is up": per-body gravity, character "up" vector, double-precision simulation, camera-relative rendering. *Built in 5.1, 5.2 and 5.4.*
 - Terrain in two steps. First **rectangular grids**: bounded area, then cylinder (flat wrap, then curved), with edges and cylinder ends (*built in 5.9, with sculpt and paint*). Then **cube-sphere** for the outside and inside of spheres (*built in 5.10*). Sculpt/paint in the viewport works on all shapes.
-- **World Type editor** v1 (§7): seed + node graph with shape-aware inputs, recipe versioning, run-time generation in the game, chunk streaming, and the cross-target check (identical chunk hashes on x86_64, arm64 and Android in CI), plus generation-time budgets measured on a phone and a Raspberry Pi.
-- **Rooms:** the room manager and room changes. A planet's atmosphere ceiling, habitat docks and hollow-world exit sites lead to a **system-space** room with a procedural sky.
+- ~~**World Type editor** v1 (§7): seed + node graph with shape-aware inputs, recipe versioning, run-time generation in the game, chunk streaming, and the cross-target check (identical chunk hashes on x86_64, arm64 and Android in CI).~~ Built in 5.11, with climate, biomes, placement rules, map projections and four sample world types. Generation-time budgets are checked in CI (desktop, arm64 Linux, Android builds); measuring them on a phone and a Raspberry Pi is owed (above).
+- **Rooms:** ~~the room manager and room changes~~ built in 5.11a as **scenes**: a game is many scenes (each a room), edited one at a time; **Scene Exits** (doors, portals, teleport pads, taken by walking in, by Use, or from a script) and **arrival points** move the player between them with a fade, loading the arrival area first; `midgard.rooms`, `on_room_enter` and `on_room_exit`. Still to come in 5.16: a planet's atmosphere ceiling, habitat docks and hollow-world exit sites leading to a **system-space** room with a procedural sky.
 - ~~**Light models per shape** (§6, *Day and night on each world shape*), plus the inside-world atmosphere preset.~~ Built in 5.8.
-- Per-chunk navigation meshes linked across chunk edges, cylinder joins and cube-sphere faces; map projections per shape as images (the in-game map screen is in Phase 6).
+- ~~Navigation meshes linked across cylinder joins and cube-sphere faces; map projections per shape as images (the in-game map screen is in Phase 6).~~ Navigation built in 5.12 (Recast and Detour), map projections in 5.11. **As built**, navigation is a mesh per face of the world in the face's own frame, made in tiles round the player (about 100 m each way) rather than per terrain chunk; characters far from the player will need tiles of their own, which comes with AI in Phase 6.
 - Testing foundation: image tests on software Vulkan in CI, cross-target generation hashes, performance budgets, and a self-test APK for phone checks. *Built in 5.0 and 5.1.*
 
 **Exit:** a game generates, on the player's device, one world type of each shape at fixed sizes. A player walks all the way around the cylinder and both spheres with correct gravity, sees no seams, and watches a full day/night cycle on each shape. They rise out of the planet's atmosphere into space and come back down. The game ships as a package. An animated character walks the planet in all three camera views, its feet planted on the slopes, with biome ambience and music.
