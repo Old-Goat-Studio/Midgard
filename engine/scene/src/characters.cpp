@@ -64,6 +64,32 @@ std::vector<std::string> Characters::load(const Scene& scene, const Bytes& bytes
                 fail(c.clips, "character clips '" + c.clips + "': " + ex.what());
             }
         }
+        // Its graph: read once; the clips it names that it hasn't got, said once.
+        if (c.graph.empty()) continue;
+        if (!graphs_.contains(c.graph)) {
+            try {
+                graphs_.emplace(c.graph,
+                                std::make_shared<const AnimGraph>(AnimGraph::parse(c.graph)));
+            } catch (const AnimationError& ex) {
+                graphs_.emplace(c.graph, nullptr);
+                problems.push_back("character model '" + c.model + "': " + ex.what());
+                continue;
+            }
+        }
+        const auto& graph = graphs_.at(c.graph);
+        if (!graph) continue;
+        State probe;
+        probe.model = c.model;
+        probe.clips = c.clips;
+        probe.rig = c.rig;
+        probe.m = m;
+        const std::string& source = c.clips.empty() || c.clips == c.model ? c.model : c.clips;
+        for (const std::string& clip : graph->clips())
+            if (!find_clip(probe, clip) &&
+                failed_.emplace(c.model + "|" + c.clips + "|clip:" + clip, "").second)
+                problems.push_back("character model '" + c.model +
+                                   "': its animation graph plays '" + clip + "', which " + source +
+                                   " hasn't got");
     }
     return problems;
 }
@@ -91,7 +117,7 @@ void Characters::forget(const std::string& asset) {
         if (s.model == asset || s.clips == asset) s = State{};
 }
 
-const Clip* Characters::find_clip(const State& s) {
+const Clip* Characters::find_clip(const State& s, const std::string& name) const {
     const std::vector<Clip>* from = &s.m->clips;
     if (!s.clips.empty() && s.clips != s.model) {
         const auto it = libraries_.find(LibraryKey{s.clips, s.model, s.rig});
@@ -99,12 +125,50 @@ const Clip* Characters::find_clip(const State& s) {
         from = &it->second;
     }
     for (const Clip& c : *from)
-        if (c.name() == s.clip) return &c;
-    return s.clip.empty() && !from->empty() ? &from->front() : nullptr;
+        if (c.name() == name) return &c;
+    return name.empty() && !from->empty() ? &from->front() : nullptr;
+}
+
+const Clip* Characters::find_clip(const State& s) {
+    return find_clip(s, s.clip);
+}
+
+void Characters::start_graph(const CharacterRef& c, State& s) {
+    s.player.reset();
+    s.graph = c.graph;
+    const auto it = graphs_.find(c.graph);
+    if (c.graph.empty() || it == graphs_.end() || !it->second) return;
+    // Root motion is its hips' (a humanoid's), else its first joint's.
+    int motion = 0;
+    try {
+        const HumanoidMap rig = map_humanoid(s.m->raw, c.rig);
+        if (const int hips = rig[HumanBone::Hips]; hips >= 0)
+            motion = std::max(0, s.m->skeleton.find(s.m->raw.names[size_t(hips)]));
+    } catch (const AnimationError&) {  // (said when loaded)
+    }
+    s.player = std::make_unique<AnimPlayer>(
+        it->second, s.m->skeleton,
+        [this, &s](const std::string& name) { return find_clip(s, name); }, motion, s.m->armature);
+    for (const auto& [name, value] : s.waiting) {
+        try {
+            s.player->set(name, value);
+        } catch (const AnimationError&) {  // (not this graph's: forgotten)
+        }
+    }
+    for (const std::string& name : s.triggered) {
+        try {
+            s.player->trigger(name);
+        } catch (const AnimationError&) {
+        }
+    }
+    s.waiting.clear();
+    s.triggered.clear();
 }
 
 void Characters::update(const Scene& scene, float dt) {
     const auto& reg = scene.registry;
+    events_.clear();
+    motions_.clear();
     std::erase_if(states_, [&](const auto& kv) {
         return !reg.valid(kv.first) || !reg.all_of<CharacterRef>(kv.first);
     });
@@ -114,23 +178,49 @@ void Characters::update(const Scene& scene, float dt) {
         if (it == models_.end()) continue;  // (not read, or it failed)
         State& s = states_[e];
         if (s.m != it->second || s.model != c.model) {  // a new character, or another model
+            auto waiting = std::move(s.waiting);        // (a script's, before it started)
+            auto triggered = std::move(s.triggered);
             s = State{};
+            s.waiting = std::move(waiting);
+            s.triggered = std::move(triggered);
             s.m = it->second;
             s.model = c.model;
             s.pose = std::make_unique<Pose>(s.m->skeleton);
         }
-        if (s.clips != c.clips || s.clip != c.clip || s.rig != c.rig || !s.playing) {
+        const bool changed = s.clips != c.clips || s.clip != c.clip || s.rig != c.rig;
+        if (changed || !s.playing) {
             s.clips = c.clips;
             s.clip = c.clip;
             s.rig = c.rig;
             s.playing = find_clip(s);
             s.time = 0.0f;
         }
-        s.time += dt * c.speed;
-        if (s.playing)
-            s.pose->sample(*s.playing, s.time, c.loop);
-        else
-            s.pose->rest();
+        if (changed || s.graph != c.graph || (!s.player && !c.graph.empty())) start_graph(c, s);
+        // How it moves: its speed along the ground and up (its own up), gently smoothed.
+        const glm::dvec3 at = scene.world_position(e);
+        if (s.placed && dt > 0.0f) {
+            const glm::dvec3 up = glm::normalize(glm::dvec3(scene.world_matrix(e)[1]));
+            const glm::dvec3 moved = at - s.last;
+            const double rise = glm::dot(moved, up);
+            const float k = std::min(1.0f, dt / 0.1f);
+            s.speed += (float(glm::length(moved - up * rise) / dt) - s.speed) * k;
+            s.vertical_speed += (float(rise / dt) - s.vertical_speed) * k;
+        }
+        s.last = at;
+        s.placed = true;
+        if (s.player) {
+            s.player->set(kSpeedParameter, s.speed);
+            s.player->set(kVerticalSpeedParameter, s.vertical_speed);
+            const AnimPlayer::Step step = s.player->update(dt * c.speed, *s.pose);
+            for (const std::string& name : step.events) events_.push_back({e, name});
+            if (step.motion != glm::vec3(0.0f)) motions_.emplace_back(e, step.motion);
+        } else {
+            s.time += dt * c.speed;
+            if (s.playing)
+                s.pose->sample(*s.playing, s.time, c.loop);
+            else
+                s.pose->rest();
+        }
         // The skin's joint matrices: each joint's pose times its inverse bind matrix.
         const std::vector<glm::mat4>& model = s.pose->model();
         s.palette.resize(s.m->inverse_binds.size());
@@ -157,6 +247,41 @@ void Characters::draws(const Scene& scene, const glm::dvec3& origin, const Mater
 const Pose* Characters::pose(entt::entity e) const {
     const auto it = states_.find(e);
     return it == states_.end() ? nullptr : it->second.pose.get();
+}
+
+Characters::State& Characters::graph_state(entt::entity e) {
+    return states_[e];  // (one not updated yet keeps what is set for its graph)
+}
+
+void Characters::set_parameter(entt::entity e, const std::string& name, float value) {
+    State& s = graph_state(e);
+    if (s.player)
+        s.player->set(name, value);
+    else
+        s.waiting[name] = value;
+}
+
+void Characters::trigger(entt::entity e, const std::string& name) {
+    State& s = graph_state(e);
+    if (s.player)
+        s.player->trigger(name);
+    else
+        s.triggered.insert(name);
+}
+
+float Characters::parameter(entt::entity e, const std::string& name) const {
+    const auto it = states_.find(e);
+    if (it != states_.end() && it->second.player) return it->second.player->get(name);
+    if (it != states_.end())
+        if (const auto w = it->second.waiting.find(name); w != it->second.waiting.end())
+            return w->second;
+    throw AnimationError("the character has no animation graph playing");
+}
+
+std::string Characters::state_of(entt::entity e, size_t layer) const {
+    const auto it = states_.find(e);
+    return it == states_.end() || !it->second.player ? std::string()
+                                                     : it->second.player->state(layer);
 }
 
 std::string Characters::clip_of(entt::entity e) const {

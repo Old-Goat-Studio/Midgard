@@ -181,6 +181,8 @@ struct CharacterRef {
     // The model's humanoid bones where its joint names don't say (bone name -> joint name; an
     // empty joint name: it hasn't that bone). Clips from another file are retargeted to it.
     std::map<std::string, std::string> rig;
+    // Its animation graph (midgard/anim_graph.h) as JSON text; empty: it plays `clip`.
+    std::string graph;
 };
 
 enum class ExitActivation { Enter, Use, Script };

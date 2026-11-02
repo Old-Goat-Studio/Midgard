@@ -127,11 +127,20 @@ public:
     // Each joint's transform relative to the model, in the skeleton's order.
     const std::vector<glm::mat4>& model() const { return model_; }
 
+    // For blending (midgard/anim_graph.h): a clip at `time`, each joint relative to its parent
+    // (the pose itself unchanged); the rest pose so; and a pose made from joints so.
+    void sample_local(const Clip& clip, float time, bool loop, std::vector<JointTransform>& out);
+    const std::vector<JointTransform>& rest_local() const { return rest_local_; }
+    void set_local(std::span<const JointTransform> joints);
+    // Moves the whole pose (the motion a clip's root has, kept out of it).
+    void shift(const glm::vec3& by);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
     const Skeleton* skeleton_;
     std::vector<glm::mat4> model_;
+    std::vector<JointTransform> rest_local_;
     void to_model();
 };
 

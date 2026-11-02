@@ -165,6 +165,8 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         if (const auto rig = c.find("rig"); rig != c.end() && rig->is_object())
             for (const auto& [bone, joint] : rig->items())
                 if (joint.is_string()) ch.rig[bone] = joint.get<std::string>();
+        if (const auto graph = c.find("graph"); graph != c.end() && graph->is_object())
+            ch.graph = graph->dump();
         reg.emplace_or_replace<CharacterRef>(e, ch);
     } else if (name == "arrival") {
         reg.emplace_or_replace<Arrival>(e, Arrival{c.value("name", std::string())});

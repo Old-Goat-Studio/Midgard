@@ -184,6 +184,7 @@ void Game::update(const Actions& actions, float dt) {
     update_exits(actions);
     load_characters();  // (new ones from live edits; read once each)
     characters_.update(scene_, dt);
+    apply_root_motion();
     stream_navigation();
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
@@ -598,6 +599,19 @@ std::vector<render::DebugLine> Game::debug_lines(const glm::dvec3& origin) const
                                  glm::vec3(glm::dvec3(b) - origin) + lift, colour});
         }
     return lines;
+}
+
+// Characters whose graphs have root motion move as their clips do (along their own frame: its
+// scale and rotation), except the player (it walks as its controls say) and physics bodies.
+void Game::apply_root_motion() {
+    auto& reg = scene_.registry;
+    const entt::entity player = physics_ ? physics_->player() : entt::entity(entt::null);
+    for (const auto& [e, motion] : characters_.motions()) {
+        if (!reg.valid(e) || e == player || reg.all_of<RigidBody>(e)) continue;
+        Transform& t = reg.get_or_emplace<Transform>(e);
+        const glm::mat3 r(rotation_matrix(t.rotation));
+        t.position += glm::dvec3(r * (t.scale * motion));
+    }
 }
 
 void Game::follow_path(std::vector<glm::dvec3> points) {

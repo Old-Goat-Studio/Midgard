@@ -51,6 +51,56 @@ void load_object(std::span<const std::uint8_t> bytes, T& object, const char* wha
     archive >> object;
 }
 
+// Joints four to a SoA transform, and back.
+void unpack(std::span<const ozz::math::SoaTransform> soa, int count,
+            std::vector<JointTransform>& out) {
+    out.resize(size_t(count));
+    for (size_t s = 0; s < soa.size(); ++s) {
+        float v[10][4];
+        const ozz::math::SoaTransform& t = soa[s];
+        ozz::math::StorePtrU(t.translation.x, v[0]);
+        ozz::math::StorePtrU(t.translation.y, v[1]);
+        ozz::math::StorePtrU(t.translation.z, v[2]);
+        ozz::math::StorePtrU(t.rotation.x, v[3]);
+        ozz::math::StorePtrU(t.rotation.y, v[4]);
+        ozz::math::StorePtrU(t.rotation.z, v[5]);
+        ozz::math::StorePtrU(t.rotation.w, v[6]);
+        ozz::math::StorePtrU(t.scale.x, v[7]);
+        ozz::math::StorePtrU(t.scale.y, v[8]);
+        ozz::math::StorePtrU(t.scale.z, v[9]);
+        for (int lane = 0; lane < 4; ++lane) {
+            const size_t j = s * 4 + size_t(lane);
+            if (j >= out.size()) break;
+            out[j] = {{v[0][lane], v[1][lane], v[2][lane]},
+                      glm::quat(v[6][lane], v[3][lane], v[4][lane], v[5][lane]),
+                      {v[7][lane], v[8][lane], v[9][lane]}};
+        }
+    }
+}
+
+void pack(std::span<const JointTransform> joints, std::vector<ozz::math::SoaTransform>& soa) {
+    const auto lane = [&](size_t s, int l) -> const JointTransform& {
+        const size_t j = s * 4 + size_t(l);
+        static const JointTransform kIdentity{};
+        return j < joints.size() ? joints[j] : kIdentity;
+    };
+    for (size_t s = 0; s < soa.size(); ++s) {
+        const JointTransform &a = lane(s, 0), &b = lane(s, 1), &c = lane(s, 2), &d = lane(s, 3);
+        using ozz::math::simd_float4::Load;
+        soa[s].translation = {
+            Load(a.translation.x, b.translation.x, c.translation.x, d.translation.x),
+            Load(a.translation.y, b.translation.y, c.translation.y, d.translation.y),
+            Load(a.translation.z, b.translation.z, c.translation.z, d.translation.z)};
+        soa[s].rotation = {Load(a.rotation.x, b.rotation.x, c.rotation.x, d.rotation.x),
+                           Load(a.rotation.y, b.rotation.y, c.rotation.y, d.rotation.y),
+                           Load(a.rotation.z, b.rotation.z, c.rotation.z, d.rotation.z),
+                           Load(a.rotation.w, b.rotation.w, c.rotation.w, d.rotation.w)};
+        soa[s].scale = {Load(a.scale.x, b.scale.x, c.scale.x, d.scale.x),
+                        Load(a.scale.y, b.scale.y, c.scale.y, d.scale.y),
+                        Load(a.scale.z, b.scale.z, c.scale.z, d.scale.z)};
+    }
+}
+
 }  // namespace
 
 // ---- skeletons ----------------------------------------------------------------------------
@@ -229,6 +279,11 @@ int Clip::joint_count() const {
 
 struct Pose::Impl {
     ozz::animation::SamplingJob::Context context;
+    // sample_local's: a context for each clip (they keep where the last sample was).
+    std::map<const ozz::animation::Animation*,
+             std::unique_ptr<ozz::animation::SamplingJob::Context>>
+        contexts;
+    std::vector<ozz::math::SoaTransform> scratch;
     std::vector<ozz::math::SoaTransform> locals;
     std::vector<ozz::math::Float4x4> models;
 };
@@ -238,7 +293,9 @@ Pose::Pose(const Skeleton& skeleton) : impl_(std::make_unique<Impl>()), skeleton
     impl_->context.Resize(s.num_joints());
     impl_->locals.resize(size_t(s.num_soa_joints()));
     impl_->models.resize(size_t(s.num_joints()));
+    impl_->scratch.resize(size_t(s.num_soa_joints()));
     rest();
+    unpack(impl_->locals, s.num_joints(), rest_local_);
 }
 Pose::Pose(Pose&&) noexcept = default;
 Pose& Pose::operator=(Pose&&) noexcept = default;
@@ -263,6 +320,40 @@ void Pose::sample(const Clip& clip, float time, bool loop) {
     job.output = ozz::make_span(impl_->locals);
     if (!job.Run()) throw AnimationError("clip '" + clip.name() + "' could not be sampled");
     to_model();
+}
+
+void Pose::sample_local(const Clip& clip, float time, bool loop, std::vector<JointTransform>& out) {
+    if (clip.joint_count() != skeleton_->joint_count())
+        throw AnimationError("clip '" + clip.name() + "' is for another skeleton");
+    auto& context = impl_->contexts[&clip.impl().animation];
+    if (!context) {
+        if (impl_->contexts.size() > 64) {  // (clips come and go: keep a few)
+            impl_->contexts.clear();
+            return sample_local(clip, time, loop, out);
+        }
+        context = std::make_unique<ozz::animation::SamplingJob::Context>(skeleton_->joint_count());
+    }
+    const float d = clip.duration();
+    float ratio = d > 0.0f ? time / d : 0.0f;
+    ratio = loop ? ratio - std::floor(ratio) : std::clamp(ratio, 0.0f, 1.0f);
+    ozz::animation::SamplingJob job;
+    job.animation = &clip.impl().animation;
+    job.context = context.get();
+    job.ratio = ratio;
+    job.output = ozz::make_span(impl_->scratch);
+    if (!job.Run()) throw AnimationError("clip '" + clip.name() + "' could not be sampled");
+    unpack(impl_->scratch, skeleton_->joint_count(), out);
+}
+
+void Pose::set_local(std::span<const JointTransform> joints) {
+    if (int(joints.size()) != skeleton_->joint_count())
+        throw AnimationError("a pose needs a transform for each joint");
+    pack(joints, impl_->locals);
+    to_model();
+}
+
+void Pose::shift(const glm::vec3& by) {
+    for (glm::mat4& m : model_) m[3] += glm::vec4(by, 0.0f);
 }
 
 void Pose::to_model() {

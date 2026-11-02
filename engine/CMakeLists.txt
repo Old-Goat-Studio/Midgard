@@ -139,6 +139,7 @@ add_library(midgard_scene STATIC
     scene/src/pak.cpp
     scene/src/gltf.cpp
     scene/src/gltf_skin.cpp
+    scene/src/anim_graph.cpp
     scene/src/characters.cpp
     scene/src/scene.cpp
     scene/src/game.cpp
@@ -365,6 +366,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_nav_world.cpp
         tests/test_animation.cpp
         tests/test_humanoid.cpp
+        tests/test_anim_graph.cpp
         tests/test_terrain_collision.cpp
         tests/test_time_service.cpp
         tests/test_shape.cpp

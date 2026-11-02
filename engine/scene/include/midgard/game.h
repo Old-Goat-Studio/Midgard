@@ -163,6 +163,7 @@ public:
     const NavWorld* nav_world() const { return nav_world_.get(); }
     // The scene's characters (midgard/characters.h).
     const Characters& characters() const { return characters_; }
+    Characters& characters() { return characters_; }
     // What went wrong reading characters' models and clips (each once, as it happened).
     const std::vector<std::string>& character_problems() const { return character_problems_; }
     void stream_navigation(bool wait = false);
@@ -274,6 +275,7 @@ private:
     Characters characters_;
     std::vector<std::string> character_problems_;
     void load_characters();
+    void apply_root_motion();
     std::vector<glm::dvec3> route_;  // follow_path's points still ahead
     glm::vec3 route_walk(entt::entity player);
     void load_scene(const std::string& scene, const std::string& arrival);

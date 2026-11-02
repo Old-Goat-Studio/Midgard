@@ -280,6 +280,47 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             },
             py::arg("x"), py::arg("y"), py::arg("z"),
             "Gives a dynamic body a sudden push (kg m/s): its speed changes by this over its mass.")
+        .def(
+            "set_animation",
+            [](const EntityHandle& h, const std::string& name, float value) {
+                try {
+                    current_game().characters().set_parameter(h.resolve(), name, value);
+                } catch (const AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("name"), py::arg("value"),
+            "Sets a parameter of the character's animation graph (True and False are 1 and 0).")
+        .def(
+            "trigger_animation",
+            [](const EntityHandle& h, const std::string& name) {
+                try {
+                    current_game().characters().trigger(h.resolve(), name);
+                } catch (const AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("name"),
+            "Sets a trigger of the character's animation graph (used up by the transition it "
+            "fires).")
+        .def(
+            "animation",
+            [](const EntityHandle& h, const std::string& name) {
+                try {
+                    return current_game().characters().parameter(h.resolve(), name);
+                } catch (const AnimationError& e) {
+                    throw py::value_error(e.what());
+                }
+            },
+            py::arg("name"), "A parameter of the character's animation graph.")
+        .def(
+            "animation_state",
+            [](const EntityHandle& h, int layer) {
+                return current_game().characters().state_of(h.resolve(),
+                                                            size_t(std::max(0, layer)));
+            },
+            py::arg("layer") = 0,
+            "The state a layer of the character's animation graph is in ('' without a graph).")
         .def("__eq__", [](const EntityHandle& a, const EntityHandle& b) { return a.id == b.id; })
         .def("__hash__", [](const EntityHandle& h) { return py::hash(py::str(h.id)); })
         .def("__repr__", [](const EntityHandle& h) {
@@ -794,6 +835,14 @@ void ScriptSystem::update(const Actions& actions, float dt) {
             if (s.started.contains({self, module}))
                 s.call(module, function, handle(self), handle(other));
         }
+    }
+
+    // Its character's animation events (a footstep), in the entity's own script.
+    for (const Characters::Event& ev : s.context.game->characters().events()) {
+        if (!reg.valid(ev.entity) || !reg.all_of<ScriptRef>(ev.entity)) continue;
+        const std::string module = reg.get<ScriptRef>(ev.entity).module;
+        if (s.started.contains({ev.entity, module}))
+            s.call(module, "on_animation_event", handle(ev.entity), ev.name);
     }
 
     // The clock's signals on the player's calendar (midgard.time.on).

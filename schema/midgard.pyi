@@ -14,6 +14,7 @@ script component ({"module": "door"} runs scripts/door.py). Every function is op
     def on_room_enter(entity, came_from): ...  the player arrived in this scene (after on_start;
                                                came_from is the scene left, by id)
     def on_room_exit(entity, going_to): ...    the player is leaving this scene (the last call)
+    def on_animation_event(entity, name): ...  its character's animation graph passed an event
 
 The player's own script also gets on_trigger_enter(player, trigger) and on_trigger_exit. A
 script that raises an error is paused, and the error (with its file and line) is shown in the
@@ -63,6 +64,21 @@ class Entity:
     def add_impulse(self, x: float, y: float, z: float) -> None:
         """Gives a dynamic rigid body a sudden push in kg m/s: its speed changes by this divided
         by its mass. ValueError if it has no dynamic rigid body."""
+
+    def set_animation(self, name: str, value: float) -> None:
+        """Sets a parameter of the character's animation graph (True and False are 1 and 0).
+        ValueError if it has no graph, or its graph no such parameter."""
+
+    def trigger_animation(self, name: str) -> None:
+        """Sets a trigger of the character's animation graph: the next transition it lets
+        through uses it up. ValueError if its graph has no such trigger."""
+
+    def animation(self, name: str) -> float:
+        """A parameter of the character's animation graph ("speed", how fast it moves along
+        the ground, is always there). ValueError if it has no graph playing."""
+
+    def animation_state(self, layer: int = 0) -> str:
+        """The state a layer of the character's animation graph is in ("" without a graph)."""
 
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...

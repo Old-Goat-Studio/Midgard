@@ -23,6 +23,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/anim_graph.h"
 #include "midgard/animation.h"
 #include "midgard/det.h"
 #include "midgard/humanoid.h"
@@ -87,6 +88,51 @@ Result measure(const Benchmark& b) {
 
 // Keeps the optimiser from removing work whose result is otherwise unused.
 volatile std::uint64_t g_sink = 0;
+
+// An Unreal-named humanoid of 55 joints: spine, neck and head; arms with fingers; legs.
+midgard::RawSkeleton bench_humanoid() {
+    midgard::RawSkeleton raw;
+    const auto add = [&](const std::string& name, int parent, glm::vec3 at) {
+        raw.names.push_back(name);
+        raw.parents.push_back(parent);
+        raw.rest.push_back({at, {1, 0, 0, 0}, {1, 1, 1}});
+        return int(raw.names.size()) - 1;
+    };
+    int spine = add("pelvis", -1, {0, 1, 0});
+    for (const char* n : {"spine_01", "spine_02", "spine_03", "neck_01"})
+        spine = add(n, spine, {0, 0.12f, 0});
+    add("head", spine, {0, 0.12f, 0});
+    for (const char* side : {"_l", "_r"}) {
+        const float x = side[1] == 'l' ? 1.0f : -1.0f;
+        int arm = add(std::string("clavicle") + side, 3, {x * 0.05f, 0, 0});
+        for (const char* n : {"upperarm", "lowerarm", "hand"})
+            arm = add(n + std::string(side), arm, {x * 0.25f, 0, 0});
+        for (int f = 0; f < 5; ++f) {
+            int finger = arm;
+            for (int i = 0; i < 3; ++i)
+                finger = add("finger_" + std::to_string(f) + "_" + std::to_string(i) + side, finger,
+                             {x * 0.03f, 0, 0});
+        }
+        int leg = add(std::string("thigh") + side, 0, {x * 0.1f, -0.05f, 0});
+        for (const char* n : {"calf", "foot", "ball"})
+            leg = add(n + std::string(side), leg, {0, -0.3f, 0});
+    }
+    return raw;
+}
+
+// A 1.3 s clip with 30 keys a second on every joint, swinging by `swing` radians.
+midgard::RawClip bench_walk(const midgard::RawSkeleton& raw, float swing,
+                            const std::string& name = "walk") {
+    midgard::RawClip clip{name, 4.0f / 3.0f, {}};
+    for (size_t j = 0; j < raw.names.size(); ++j) {
+        midgard::RawTrack t{raw.names[j], {}, {}, {}};
+        for (int k = 0; k <= 40; ++k)
+            t.rotations.push_back({k / 30.0f, glm::angleAxis(swing * std::sin(k * 0.3f + float(j)),
+                                                             glm::vec3(1, 0, 0))});
+        clip.tracks.push_back(t);
+    }
+    return clip;
+}
 
 std::uint64_t mix(std::uint64_t x) {
     x ^= x >> 33;
@@ -250,46 +296,10 @@ std::vector<Benchmark> benchmarks() {
          "a 1.3 s clip (30 keys a second on every joint) retargeted between two "
          "55-joint humanoids of other proportions (one thread)",
          20, [](std::string&) -> std::function<void()> {
-             // An Unreal-named humanoid: spine, neck and head; arms with fingers;
-             // legs.
-             midgard::RawSkeleton raw;
-             const auto add = [&](const std::string& name, int parent, glm::vec3 at) {
-                 raw.names.push_back(name);
-                 raw.parents.push_back(parent);
-                 raw.rest.push_back({at, {1, 0, 0, 0}, {1, 1, 1}});
-                 return int(raw.names.size()) - 1;
-             };
-             int spine = add("pelvis", -1, {0, 1, 0});
-             for (const char* n : {"spine_01", "spine_02", "spine_03", "neck_01"})
-                 spine = add(n, spine, {0, 0.12f, 0});
-             add("head", spine, {0, 0.12f, 0});
-             for (const char* side : {"_l", "_r"}) {
-                 const float x = side[1] == 'l' ? 1.0f : -1.0f;
-                 int arm = add(std::string("clavicle") + side, 3, {x * 0.05f, 0, 0});
-                 for (const char* n : {"upperarm", "lowerarm", "hand"})
-                     arm = add(n + std::string(side), arm, {x * 0.25f, 0, 0});
-                 for (int f = 0; f < 5; ++f) {
-                     int finger = arm;
-                     for (int i = 0; i < 3; ++i)
-                         finger =
-                             add("finger_" + std::to_string(f) + "_" + std::to_string(i) + side,
-                                 finger, {x * 0.03f, 0, 0});
-                 }
-                 int leg = add(std::string("thigh") + side, 0, {x * 0.1f, -0.05f, 0});
-                 for (const char* n : {"calf", "foot", "ball"})
-                     leg = add(n + std::string(side), leg, {0, -0.3f, 0});
-             }
+             const midgard::RawSkeleton raw = bench_humanoid();
              midgard::RawSkeleton tall = raw;
              for (auto& r : tall.rest) r.translation *= 1.3f;
-             midgard::RawClip clip{"walk", 4.0f / 3.0f, {}};
-             for (size_t j = 0; j < raw.names.size(); ++j) {
-                 midgard::RawTrack t{raw.names[j], {}, {}, {}};
-                 for (int k = 0; k <= 40; ++k)
-                     t.rotations.push_back(
-                         {k / 30.0f, glm::angleAxis(0.3f * std::sin(k * 0.3f + float(j)),
-                                                    glm::vec3(1, 0, 0))});
-                 clip.tracks.push_back(t);
-             }
+             const midgard::RawClip clip = bench_walk(raw, 0.3f);
              auto data = std::make_shared<
                  std::tuple<midgard::RawSkeleton, midgard::RawSkeleton, midgard::RawClip>>(
                  raw, tall, clip);
@@ -298,6 +308,48 @@ std::vector<Benchmark> benchmarks() {
                  const midgard::RawClip made = midgard::retarget(
                      c, from, midgard::map_humanoid(from), to, midgard::map_humanoid(to));
                  g_sink = g_sink + made.tracks.size();
+             };
+         }});
+    list.push_back(
+        {"anim.graph_32_characters",
+         "32 characters' animation graphs moved on a frame (55 joints: a walk/run blend space, "
+         "an upper-body layer, root motion and events; one thread)",
+         30, [](std::string&) -> std::function<void()> {
+             struct Crowd {
+                 midgard::Skeleton skeleton = midgard::Skeleton::build(bench_humanoid());
+                 std::vector<midgard::Clip> clips;
+                 std::vector<midgard::Pose> poses;
+                 std::vector<midgard::AnimPlayer> players;
+             };
+             auto crowd = std::make_shared<Crowd>();
+             const midgard::RawSkeleton raw = bench_humanoid();
+             for (const auto& [name, swing] :
+                  {std::pair{"walk", 0.3f}, std::pair{"run", 0.6f}, std::pair{"wave", 0.9f}})
+                 crowd->clips.push_back(
+                     midgard::Clip::build(crowd->skeleton, bench_walk(raw, swing, name)));
+             auto graph = std::make_shared<const midgard::AnimGraph>(midgard::AnimGraph::parse(
+                 nlohmann::json::parse(R"({"root_motion": true, "layers": [
+                   {"name": "base", "states": {"move": {"blend": "speed",
+                     "clips": [["walk", 1.4], ["run", 4.5]], "events": [[0, "step"]]}}},
+                   {"name": "upper", "mask": "spine_02", "weight": 0.7,
+                    "states": {"wave": {"clip": "wave"}}}]})")));
+             crowd->poses.reserve(32);
+             crowd->players.reserve(32);
+             const auto find = [c = crowd.get()](const std::string& name) -> const midgard::Clip* {
+                 for (const auto& clip : c->clips)
+                     if (clip.name() == name) return &clip;
+                 return nullptr;
+             };
+             for (int i = 0; i < 32; ++i) {
+                 crowd->poses.emplace_back(crowd->skeleton);
+                 crowd->players.emplace_back(graph, crowd->skeleton, find, 0);
+                 crowd->players.back().set("speed", 1.0f + 0.1f * float(i));
+             }
+             return [crowd] {
+                 for (size_t i = 0; i < crowd->players.size(); ++i) {
+                     const auto step = crowd->players[i].update(1.0f / 60.0f, crowd->poses[i]);
+                     g_sink = g_sink + step.events.size();
+                 }
              };
          }});
     list.push_back({"anim.pose_65_joints",
