@@ -107,6 +107,10 @@ class ScenePanel(QWidget):
         add_menu.aboutToShow.connect(self._update_add_menu)
         self.add.setMenu(add_menu)
         add_menu.insertAction(self.add_sky_action, add_menu.addAction("🧩  Group", self.add_group))
+        add_menu.insertAction(self.add_sky_action,
+                              add_menu.addAction("🚪  Scene Exit", self.add_scene_exit))
+        add_menu.insertAction(self.add_sky_action,
+                              add_menu.addAction("📍  Arrival Point", self.add_arrival))
         # Objects from the library, and model files in objects/ that aren't objects yet.
         self.object_menu = QMenu("🧱  Object", add_menu)
         add_menu.insertMenu(self.add_sky_action, self.object_menu)
@@ -272,6 +276,31 @@ class ScenePanel(QWidget):
         name, _count = self._unique_name("Group")
         self._add(Entity(self.project.next_entity_id(), name, self.target_folder(),
                          {"transform": {"position": [0.0, 0.0, 0.0]}, "group": {}}))
+
+    def add_scene_exit(self) -> str | None:
+        """Adds a scene exit (a door, a portal, a teleport pad): walking into its box takes the
+        player to another scene. Choose where in the Inspector."""
+        if self.project is None:
+            return None
+        name, count = self._unique_name("Scene Exit")
+        entity = Entity(self.project.next_entity_id(), name, self.target_folder(),
+                        {"transform": {"position": [1.5 * count, 1.25, -3.0]},
+                         "scene_exit": {"scene": "", "arrival": "", "activation": "enter",
+                                        "size": [2.0, 2.5, 1.0], "fade": 0.5}})
+        self._add(entity)
+        return entity.id
+
+    def add_arrival(self) -> str | None:
+        """Adds an arrival point: where players arrive through a scene exit, facing along its
+        -Z (the arrow in the viewport's outlines)."""
+        if self.project is None:
+            return None
+        name, count = self._unique_name("Arrival")
+        entity = Entity(self.project.next_entity_id(), name, self.target_folder(),
+                        {"transform": {"position": [1.5 * count, 0.0, 2.0]},
+                         "arrival": {"name": name}})
+        self._add(entity)
+        return entity.id
 
     def add_sky(self) -> None:
         if self.project is None:

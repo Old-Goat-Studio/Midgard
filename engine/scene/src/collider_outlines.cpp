@@ -14,6 +14,8 @@ const glm::vec4 kDynamic{1.0f, 0.6f, 0.2f, 1.0f};
 const glm::vec4 kKinematic{0.4f, 0.65f, 1.0f, 1.0f};
 const glm::vec4 kTrigger{1.0f, 0.85f, 0.2f, 1.0f};
 const glm::vec4 kPlayer{0.3f, 0.9f, 0.95f, 1.0f};
+const glm::vec4 kExit{0.85f, 0.4f, 1.0f, 1.0f};     // scene exits
+const glm::vec4 kArrival{0.4f, 1.0f, 0.55f, 1.0f};  // arrivals
 constexpr int kCircleSegments = 24;
 constexpr double kPi = 3.14159265358979323846;
 
@@ -180,8 +182,23 @@ std::vector<render::DebugLine> collider_outlines(const Scene& scene, const glm::
         const auto* shape = reg.try_get<ColliderShape>(e);
         const auto* trigger = reg.try_get<Trigger>(e);
         const auto* player = reg.try_get<Player>(e);
-        if (!shape && !trigger && !player) continue;
+        const auto* exit = reg.try_get<SceneExit>(e);
+        const auto* arrival = reg.try_get<Arrival>(e);
+        if (!shape && !trigger && !player && !exit && !arrival) continue;
         const Placement p(scene.world_matrix(e));
+        if (exit) box(lines, p, glm::vec3(0.0f), exit->size, kExit);
+        if (arrival) {  // a post a metre and a half tall, and an arrow along -Z at its foot
+            const glm::dvec3 at = glm::dvec3(p.m[3]);
+            const glm::dvec3 up =
+                scene.settings.body ? scene.settings.body->up(at) : glm::dvec3(0, 1, 0);
+            glm::dvec3 ahead = -p.axis[2] - glm::dot(-p.axis[2], up) * up;
+            ahead = glm::length(ahead) > 1e-6 ? glm::normalize(ahead) : across(up);
+            const glm::dvec3 side = glm::cross(ahead, up);
+            lines.add(at, at + 1.5 * up, kArrival);
+            lines.add(at, at + ahead, kArrival);
+            lines.add(at + ahead, at + 0.7 * ahead + 0.25 * side, kArrival);
+            lines.add(at + ahead, at + 0.7 * ahead - 0.25 * side, kArrival);
+        }
         if (player) {  // the character: an upright capsule (its own collider is left out)
             const glm::dvec3 at = glm::dvec3(p.m[3]);
             const glm::dvec3 up =

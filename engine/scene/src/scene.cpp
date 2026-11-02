@@ -155,6 +155,23 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<ScriptRef>(e, c.at("module").get<std::string>());
     } else if (name == "trigger") {
         reg.emplace_or_replace<Trigger>(e, vec3(c, "size", glm::vec3(1.0f)));
+    } else if (name == "arrival") {
+        reg.emplace_or_replace<Arrival>(e, Arrival{c.value("name", std::string())});
+    } else if (name == "scene_exit") {
+        SceneExit x;
+        x.scene = c.value("scene", std::string());
+        x.arrival = c.value("arrival", std::string());
+        const std::string how = c.value("activation", std::string("enter"));
+        if (how == "use")
+            x.activation = ExitActivation::Use;
+        else if (how == "script")
+            x.activation = ExitActivation::Script;
+        else if (how != "enter")
+            throw SceneError("a scene exit's activation is enter, use or script, not \"" + how +
+                             "\"");
+        x.size = glm::max(vec3(c, "size", x.size), glm::vec3(0.01f));
+        x.fade = std::clamp(c.value("fade", x.fade), 0.0f, 10.0f);
+        reg.emplace_or_replace<SceneExit>(e, x);
     } else if (name == "sky") {
         reg.emplace_or_replace<Sky>(e, vec3(c, "color", SceneSettings{}.sky),
                                     vec3(c, "ambient", SceneSettings{}.ambient),
@@ -248,6 +265,10 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<ScriptRef>(e);
     else if (name == "trigger")
         reg.remove<Trigger>(e);
+    else if (name == "arrival")
+        reg.remove<Arrival>(e);
+    else if (name == "scene_exit")
+        reg.remove<SceneExit>(e);
     else if (name == "sky")
         reg.remove<Sky>(e);
     else if (name == "rigidbody")
@@ -265,8 +286,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
 void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
-               ScriptRef, Trigger, Sky, RigidBody, ColliderShape, PhysicsMaterial, Group,
-               ObjectRef>(e);
+               ScriptRef, Trigger, Arrival, SceneExit, Sky, RigidBody, ColliderShape,
+               PhysicsMaterial, Group, ObjectRef>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
@@ -336,6 +357,18 @@ entt::entity first_with(const entt::registry& reg) {
 }
 
 }  // namespace
+
+const char* exit_activation_name(ExitActivation a) {
+    switch (a) {
+        case ExitActivation::Enter:
+            return "enter";
+        case ExitActivation::Use:
+            return "use";
+        case ExitActivation::Script:
+            return "script";
+    }
+    return "?";
+}
 
 glm::mat4 rotation_matrix(const glm::vec3& d) {
     const glm::mat4 ry = glm::rotate(glm::mat4(1.0f), glm::radians(d.y), glm::vec3(0, 1, 0));

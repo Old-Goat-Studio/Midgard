@@ -163,6 +163,23 @@ struct Trigger {
     glm::vec3 size{1.0f};
 };
 
+// Moving between scenes (milestone 5.11a). An arrival is a place players arrive at through a
+// scene exit: where its entity stands, facing along its -Z (as cameras look). A scene exit takes
+// the player to another scene's arrival (none: that scene's player start), when they walk into
+// its box (enter), press Use inside it (use), or only when a script says (script).
+struct Arrival {
+    std::string name;
+};
+enum class ExitActivation { Enter, Use, Script };
+const char* exit_activation_name(ExitActivation a);
+struct SceneExit {
+    std::string scene;    // the target scene's id
+    std::string arrival;  // an arrival's entity id in it; empty: its player start
+    ExitActivation activation = ExitActivation::Enter;
+    glm::vec3 size{2.0f, 2.5f, 1.0f};  // the box, centred on the entity (in its local units)
+    float fade = 0.5f;                 // seconds to fade out, and in again
+};
+
 // How the entity moves in the physics world. An entity with a collider and no rigid body is
 // static scenery.
 struct RigidBody {

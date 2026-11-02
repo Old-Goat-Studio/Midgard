@@ -2420,3 +2420,69 @@ TEST_CASE("a world type's objects: placed round the player, solid, and following
     CHECK(near_new > 5);
     CHECK(near_old == 0);
 }
+
+TEST_CASE("scene exits and arrivals: read, outlined, and checked by the cook") {
+    TestPackage pkg({
+        {"e1_player", R"(NULL, '{"transform": {}, "player": {}}')"},
+        {"e2_door", R"(NULL, '{"transform": {"position": [4, 1, 0]},
+                      "scene_exit": {"scene": "scn_cave", "arrival": "e9_in",
+                                     "activation": "use", "size": [1, 2, 0.5], "fade": 1}}')"},
+        {"e3_back", R"(NULL, '{"transform": {}, "arrival": {"name": "From the cave"}}')"},
+    });
+    {
+        midgard::Game game(pkg.dir);
+        const midgard::Scene& scene = game.scene();
+        const auto& door = scene.registry.get<midgard::SceneExit>(scene.find("e2_door"));
+        CHECK(door.scene == "scn_cave");
+        CHECK(door.arrival == "e9_in");
+        CHECK(door.activation == midgard::ExitActivation::Use);
+        CHECK(std::string(midgard::exit_activation_name(door.activation)) == "use");
+        CHECK(door.size == glm::vec3(1.0f, 2.0f, 0.5f));
+        CHECK(door.fade == 1.0f);
+        CHECK(scene.registry.get<midgard::Arrival>(scene.find("e3_back")).name == "From the cave");
+        // Outlined: the exit's box (12 edges) and the arrival's post and arrow (4), beside the
+        // player's capsule.
+        CHECK(game.debug_lines(glm::dvec3(0.0)).size() == 12 + 4 + 2 * 24 + 4 + 4 * 12);
+    }
+    const auto problems = [&] {
+        const midgard::ValidationReport r = midgard::validate_package(pkg.dir);
+        return r.errors;
+    };
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    // No cave yet.
+    auto errors = problems();
+    REQUIRE(errors.size() == 1);
+    CHECK(errors[0] ==
+          "entity 'e2_door' is a scene exit to scene 'scn_cave', which is not in "
+          "the package");
+    exec(db, "INSERT INTO string VALUES ('scn_cave.name', 'Cave', '')");
+    exec(db,
+         "INSERT INTO scene (id, name_key, settings) VALUES ('scn_cave', 'scn_cave.name', "
+         "'{}')");
+    exec(db,
+         "INSERT INTO entity (id, scene, name, parent, components) VALUES ('e9_in', "
+         "'scn_cave', 'In', NULL, '{\"transform\": {}}')");
+    errors = problems();  // (two scenes now: each problem names its scene)
+    REQUIRE(errors.size() == 1);
+    CHECK(errors[0] ==
+          "scene 'scn_main': entity 'e2_door' is a scene exit to arrival 'e9_in', "
+          "which is not an arrival in scene 'scn_cave'");
+    exec(db,
+         "UPDATE entity SET components = '{\"transform\": {}, \"arrival\": {}}' WHERE id = "
+         "'e9_in'");
+    CHECK(problems().empty());
+    exec(db,
+         "UPDATE entity SET components = '{\"transform\": {}, \"scene_exit\": "
+         "{\"activation\": \"wish\"}}' WHERE id = 'e2_door'");
+    errors = problems();
+    REQUIRE(errors.size() == 1);
+    CHECK(errors[0].find("enter, use or script") != std::string::npos);
+    exec(db,
+         "UPDATE entity SET components = '{\"transform\": {}, \"scene_exit\": {}}' WHERE id "
+         "= 'e2_door'");
+    errors = problems();
+    REQUIRE(errors.size() == 1);
+    CHECK(errors[0].find("leads nowhere") != std::string::npos);
+    sqlite3_close(db);
+}

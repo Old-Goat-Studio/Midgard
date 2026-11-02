@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <sqlite3.h>
+#include <nlohmann/json.hpp>
 
 #include "midgard/calendar.h"
 #include "midgard/game.h"
@@ -26,11 +27,53 @@ namespace midgard {
 
 namespace {
 
+// Whether an entity in a scene is an arrival.
+bool is_arrival(const std::filesystem::path& database, const std::string& scene,
+                const std::string& entity) {
+    bool found = false;
+    sqlite3* db = nullptr;
+    if (sqlite3_open_v2(database.string().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) ==
+        SQLITE_OK) {
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT components FROM entity WHERE id = ? AND scene = ?", -1,
+                               &st, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, entity.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, scene.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                const nlohmann::json c = nlohmann::json::parse(
+                    reinterpret_cast<const char*>(sqlite3_column_text(st, 0)), nullptr, false);
+                found = c.is_object() && c.contains("arrival");
+            }
+            sqlite3_finalize(st);
+        }
+    }
+    sqlite3_close(db);
+    return found;
+}
+
+// The scenes in a package's database, by id.
+std::vector<std::string> scene_ids(const std::filesystem::path& database) {
+    std::vector<std::string> out;
+    sqlite3* db = nullptr;
+    if (sqlite3_open_v2(database.string().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) ==
+        SQLITE_OK) {
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT id FROM scene ORDER BY id", -1, &st, nullptr) ==
+            SQLITE_OK) {
+            while (sqlite3_step(st) == SQLITE_ROW)
+                out.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(st, 0)));
+            sqlite3_finalize(st);
+        }
+    }
+    sqlite3_close(db);
+    return out;
+}
+
 // One scene's checks: its entities, terrain, environments, objects, textures and colliders.
 void validate_scene(const Manifest& m, const std::filesystem::path& dir,
                     const std::filesystem::path& database, const Pak* pak,
                     const std::set<std::string>& content_ids, const std::string& scene_id,
-                    ValidationReport& report) {
+                    const std::vector<std::string>& all_scenes, ValidationReport& report) {
     try {
         const Scene scene = Scene::load(database, scene_id);
         report.entities = scene.registry.view<const EntityInfo>().size();
@@ -114,6 +157,21 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
                                           "' places object '" + object +
                                           "', which is not in the package; nothing is shown");
         }
+        // Scene exits lead to a scene in the package, and to an arrival there.
+        for (entt::entity e : scene.registry.view<const SceneExit>()) {
+            const SceneExit& x = scene.registry.get<SceneExit>(e);
+            const std::string who = "entity '" + scene.registry.get<EntityInfo>(e).id + "'";
+            if (x.scene.empty())
+                report.errors.push_back(who +
+                                        " is a scene exit that leads nowhere: choose its "
+                                        "scene");
+            else if (std::find(all_scenes.begin(), all_scenes.end(), x.scene) == all_scenes.end())
+                report.errors.push_back(who + " is a scene exit to scene '" + x.scene +
+                                        "', which is not in the package");
+            else if (!x.arrival.empty() && !is_arrival(database, x.scene, x.arrival))
+                report.errors.push_back(who + " is a scene exit to arrival '" + x.arrival +
+                                        "', which is not an arrival in scene '" + x.scene + "'");
+        }
         for (entt::entity e : scene.registry.view<const Material>())
             for (const std::string& texture : scene.registry.get<Material>(e).textures)
                 if (!texture.empty() && !content_ids.contains(texture))
@@ -139,24 +197,6 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
     } catch (const std::exception& e) {
         report.errors.emplace_back(e.what());
     }
-}
-
-// The scenes in a package's database, by id.
-std::vector<std::string> scene_ids(const std::filesystem::path& database) {
-    std::vector<std::string> out;
-    sqlite3* db = nullptr;
-    if (sqlite3_open_v2(database.string().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) ==
-        SQLITE_OK) {
-        sqlite3_stmt* st = nullptr;
-        if (sqlite3_prepare_v2(db, "SELECT id FROM scene ORDER BY id", -1, &st, nullptr) ==
-            SQLITE_OK) {
-            while (sqlite3_step(st) == SQLITE_ROW)
-                out.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(st, 0)));
-            sqlite3_finalize(st);
-        }
-    }
-    sqlite3_close(db);
-    return out;
 }
 
 }  // namespace
@@ -232,7 +272,7 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
     }
     for (const std::string& id : scenes) {
         ValidationReport one;
-        validate_scene(m, dir, database, pak.get(), content_ids, id, one);
+        validate_scene(m, dir, database, pak.get(), content_ids, id, scenes, one);
         const std::string prefix = scenes.size() > 1 ? "scene '" + id + "': " : "";
         for (std::string& e : one.errors) report.errors.push_back(prefix + e);
         for (std::string& w : one.warnings) report.warnings.push_back(prefix + w);

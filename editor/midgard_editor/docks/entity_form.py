@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import environments, scripting, transforms
+from .. import environments, scenes, scripting, transforms
 from ..group_objects import ask_save_group_as_object
 from ..project import Project
 from ..scene_model import Entity, sky_component
@@ -97,7 +97,10 @@ class EntityForm(QWidget):
     rebuild = Signal(str)  # the entity's set of components changed: build the form again
 
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
-               "rigidbody": "Rigid body", "physics_material": "Physics material"}
+               "rigidbody": "Rigid body", "physics_material": "Physics material",
+               "scene_exit": "Scene exit", "arrival": "Arrival point"}
+    ACTIVATIONS = {"enter": "Walking into it", "use": "Using it (Use, inside it)",
+                   "script": "Only from a script"}
     SKY_COLOURS = {"color": "Sky colour", "ambient": "Ambient light"}
     COLLIDER_SHAPES = {"box": "Box", "sphere": "Sphere", "capsule": "Capsule",
                        "convex": "Convex (wraps its mesh)", "mesh": "Mesh (static only)"}
@@ -206,6 +209,7 @@ class EntityForm(QWidget):
                 box.valueChanged.connect(lambda _v: self._trigger_edited())
             form.addRow("Trigger size", _row(self.trigger, _remove_button(
                 "Remove the trigger", lambda: self.remove_component("trigger"))))
+        self._build_scene_exit(entity, form)
         self.object = None
         if "object" in entity.components:
             self.object = QComboBox()
@@ -475,6 +479,7 @@ class EntityForm(QWidget):
         if self.trigger is not None:
             self.trigger.set_value(entity.components["trigger"].get("size", [1.0, 1.0, 1.0]))
         self._refresh_physics(entity)
+        self._refresh_scene_exit(entity)
         if self.follows_clock is not None:
             self.follows_clock.blockSignals(True)
             self.follows_clock.setChecked(bool(entity.components["light"].get("follows_clock")))
@@ -537,6 +542,11 @@ class EntityForm(QWidget):
             entity.components.setdefault("collider", self.default_collider(entity))
         elif kind == "physics_material":
             entity.components["physics_material"] = {"friction": 0.5, "bounciness": 0.0}
+        elif kind == "scene_exit":
+            entity.components["scene_exit"] = {"scene": "", "arrival": "", "activation": "enter",
+                                               "size": [2.0, 2.5, 1.0], "fade": 0.5}
+        elif kind == "arrival":
+            entity.components["arrival"] = {"name": entity.name}
         self._push(entity, self.ADDABLE[kind].lower())
         if kind == "script":
             self.open_script.emit(entity.components["script"]["module"])
@@ -551,6 +561,109 @@ class EntityForm(QWidget):
         if module and entity.components["script"].get("module") != module:
             entity.components["script"] = {**entity.components["script"], "module": module}
             self._push(entity, "script")
+
+    # ---- moving between scenes (milestone 5.11a) -------------------------------------------
+    def _build_scene_exit(self, entity, form: QFormLayout) -> None:
+        self.arrival_name = self.exit_scene = self.exit_arrival = None
+        self.exit_activation = self.exit_size = self.exit_fade = None
+        if "arrival" in entity.components:
+            self.arrival_name = QLineEdit(entity.components["arrival"].get("name", ""))
+            self.arrival_name.setToolTip("What scene exits call this place (players arrive "
+                                         "here facing along the arrow)")
+            self.arrival_name.editingFinished.connect(lambda: self._set_value(
+                "arrival", "name", self.arrival_name.text().strip(), "arrival name"))
+            form.addRow("Arrival", _row(self.arrival_name, _remove_button(
+                "No longer an arrival point", lambda: self.remove_component("arrival"))))
+        if "scene_exit" in entity.components:
+            exit_ = entity.components["scene_exit"]
+            self.exit_scene = QComboBox()
+            self.exit_scene.addItem("(choose a scene)", "")
+            for s in scenes.load_all(self.project):
+                self.exit_scene.addItem(s["name"], s["id"])
+            if self.exit_scene.findData(exit_.get("scene", "")) < 0:
+                self.exit_scene.addItem(f"{exit_['scene']} (missing)", exit_["scene"])
+            self.exit_scene.setCurrentIndex(self.exit_scene.findData(exit_.get("scene", "")))
+            self.exit_scene.currentIndexChanged.connect(lambda _i: self._exit_scene_chosen())
+            form.addRow("Leads to", _row(self.exit_scene, _remove_button(
+                "No longer a scene exit", lambda: self.remove_component("scene_exit"))))
+            self.exit_arrival = QComboBox()
+            self._fill_arrivals(exit_.get("scene", ""), exit_.get("arrival", ""))
+            self.exit_arrival.currentIndexChanged.connect(lambda _i: self._set_value(
+                "scene_exit", "arrival", self.exit_arrival.currentData() or "", "arrival"))
+            form.addRow("Arriving at", self.exit_arrival)
+            self.exit_activation = QComboBox()
+            for key, label in self.ACTIVATIONS.items():
+                self.exit_activation.addItem(label, key)
+            self.exit_activation.setCurrentIndex(
+                max(self.exit_activation.findData(exit_.get("activation", "enter")), 0))
+            self.exit_activation.currentIndexChanged.connect(lambda _i: self._set_value(
+                "scene_exit", "activation", self.exit_activation.currentData(), "activation"))
+            form.addRow("Taken by", self.exit_activation)
+            self.exit_size = Vec3Editor(0.1, 0.01)
+            self.exit_size.set_value(exit_.get("size", [2.0, 2.5, 1.0]))
+            for box in self.exit_size.boxes:
+                box.valueChanged.connect(lambda _v: self._exit_size_edited())
+            form.addRow("Exit size", self.exit_size)
+            self.exit_fade = QDoubleSpinBox()
+            self.exit_fade.setRange(0.0, 10.0)
+            self.exit_fade.setSingleStep(0.1)
+            self.exit_fade.setSuffix(" s")
+            self.exit_fade.setValue(float(exit_.get("fade", 0.5)))
+            self.exit_fade.setKeyboardTracking(False)
+            self.exit_fade.valueChanged.connect(lambda v: self._set_value(
+                "scene_exit", "fade", round(v, 2), "fade"))
+            form.addRow("Fade", self.exit_fade)
+
+    def _refresh_scene_exit(self, entity) -> None:
+        """The arrival and scene exit rows as the entity has them (after an undo, say)."""
+        if self.arrival_name is not None and "arrival" in entity.components:
+            self.arrival_name.setText(entity.components["arrival"].get("name", ""))
+        if self.exit_scene is None or "scene_exit" not in entity.components:
+            return
+        exit_ = entity.components["scene_exit"]
+        for combo, value in ((self.exit_scene, exit_.get("scene", "")),
+                             (self.exit_activation, exit_.get("activation", "enter"))):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(max(combo.findData(value), 0))
+            combo.blockSignals(False)
+        self._fill_arrivals(exit_.get("scene", ""), exit_.get("arrival", ""))
+        self.exit_size.set_value(exit_.get("size", [2.0, 2.5, 1.0]))
+        self.exit_fade.blockSignals(True)
+        self.exit_fade.setValue(float(exit_.get("fade", 0.5)))
+        self.exit_fade.blockSignals(False)
+
+    def _fill_arrivals(self, scene: str, current: str) -> None:
+        """The arrival points in the exit's target scene, and its player start."""
+        self.exit_arrival.blockSignals(True)
+        self.exit_arrival.clear()
+        self.exit_arrival.addItem("The scene's player start", "")
+        if scene:
+            for e in self.project.entities(scene):
+                if "arrival" in e.components:
+                    self.exit_arrival.addItem(e.components["arrival"].get("name") or e.name,
+                                              e.id)
+        if self.exit_arrival.findData(current) < 0:
+            self.exit_arrival.addItem(f"{current} (missing)", current)
+        self.exit_arrival.setCurrentIndex(self.exit_arrival.findData(current))
+        self.exit_arrival.blockSignals(False)
+
+    def _exit_scene_chosen(self) -> None:
+        """Another target scene: its player start, until an arrival there is chosen."""
+        entity = self._entity()
+        scene = self.exit_scene.currentData() or ""
+        exit_ = entity.components["scene_exit"]
+        if exit_.get("scene") == scene:
+            return
+        entity.components["scene_exit"] = {**exit_, "scene": scene, "arrival": ""}
+        self._push(entity, "scene exit's scene")
+        self._fill_arrivals(scene, "")
+
+    def _exit_size_edited(self) -> None:
+        entity = self._entity()
+        size = self.exit_size.value()
+        if entity.components["scene_exit"].get("size") != size:
+            entity.components["scene_exit"] = {**entity.components["scene_exit"], "size": size}
+            self._push(entity, "exit size")
 
     def _trigger_edited(self) -> None:
         entity = self._entity()

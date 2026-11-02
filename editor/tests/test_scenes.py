@@ -248,3 +248,57 @@ def test_play_cooks_the_open_scene_as_the_start_and_recook_keeps_it(project, tmp
     again, _changed = recook(project, result.out_dir, database=True)
     assert again.manifest["entry"]["scene"] == command.scene
     assert cook(project, tmp_path / "pkg2").manifest["entry"]["scene"] == MAIN_SCENE
+
+
+# ---- scene exits and arrival points (step 3) -------------------------------------------------
+def test_scene_exits_and_arrivals_are_added_and_edited_in_the_inspector(project, qtbot):
+    from midgard_editor.docks.entity_form import EntityForm
+    from midgard_editor.docks.scene_panel import ScenePanel
+    panel = ScenePanel()
+    qtbot.addWidget(panel)
+    project.undo_stack.push(scenes.AddSceneCommand(project, "Cave"))
+    project.open_scene("scn_cave")
+    panel.set_project(project)
+    arrival = panel.add_arrival()
+    assert project.entity(arrival).components["arrival"] == {"name": "Arrival"}
+    project.open_scene(MAIN_SCENE)
+    door = panel.add_scene_exit()
+    assert project.entity_scene(door) == MAIN_SCENE
+    assert project.entity(door).components["scene_exit"]["scene"] == ""
+
+    form = EntityForm(project, door)
+    qtbot.addWidget(form)
+    assert form.exit_arrival.count() == 1  # no scene yet: only "the player start"
+    form.exit_scene.setCurrentIndex(form.exit_scene.findData("scn_cave"))
+    exit_ = project.entity(door).components["scene_exit"]
+    assert exit_["scene"] == "scn_cave" and exit_["arrival"] == ""
+    assert form.exit_arrival.findData(arrival) > 0  # the cave's arrival point is offered
+    form.exit_arrival.setCurrentIndex(form.exit_arrival.findData(arrival))
+    form.exit_activation.setCurrentIndex(form.exit_activation.findData("use"))
+    form.exit_fade.setValue(1.5)
+    exit_ = project.entity(door).components["scene_exit"]
+    assert (exit_["arrival"], exit_["activation"], exit_["fade"]) == (arrival, "use", 1.5)
+    for _ in range(4):
+        project.undo_stack.undo()
+    assert project.entity(door).components["scene_exit"]["scene"] == ""
+    assert form.exit_scene.currentData() == ""  # the form follows the undo
+
+
+@needs_engine
+def test_the_cook_refuses_an_exit_to_nowhere_and_takes_a_sound_one(project, tmp_path):
+    from midgard_editor.cook import CookError
+    exit_entity = Entity(project.next_entity_id(), "Door", None, {
+        "transform": {}, "scene_exit": {"scene": "scn_nowhere", "arrival": "",
+                                        "activation": "enter"}})
+    project.put_entity(exit_entity)
+    with pytest.raises(CookError, match="scn_nowhere"):
+        cook(project, tmp_path / "bad")
+    command = scenes.AddSceneCommand(project, "Cave")
+    project.undo_stack.push(command)
+    arrival = Entity(project.next_entity_id(), "In", None,
+                     {"transform": {}, "arrival": {"name": "In"}})
+    project.put_entity(arrival, command.scene)
+    exit_entity.components["scene_exit"] = {"scene": command.scene, "arrival": arrival.id,
+                                            "activation": "use"}
+    project.put_entity(exit_entity)
+    assert cook(project, tmp_path / "good").manifest
