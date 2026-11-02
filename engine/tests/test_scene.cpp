@@ -2580,3 +2580,43 @@ TEST_CASE("walking into a scene exit fades out, swaps the scene and arrives") {
     CHECK(glm::length(again.scene().world_position(again.scene().find("e8_cave_player")) -
                       glm::dvec3(10.0, 1.0, 5.0)) < 0.2);
 }
+
+TEST_CASE("a scene exit set to use is taken by pressing Use inside it, or by a script") {
+    TestPackage pkg({
+        {"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]}, "player": {}}')"},
+        {"e2_pad", R"(NULL, '{"transform": {"position": [0, 1, 0]},
+                     "scene_exit": {"scene": "scn_main", "activation": "use", "fade": 0}}')"},
+        {"e3_lever", R"(NULL, '{"transform": {"position": [50, 1, 0]},
+                       "scene_exit": {"scene": "scn_main", "activation": "script", "fade": 0}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    // Standing on the pad (from the start): nothing until Use is pressed.
+    for (int i = 0; i < 3; ++i) {
+        actions.begin_frame();
+        game.update(actions, 0.016f);
+    }
+    CHECK_FALSE(game.changing_scene());
+    actions.begin_frame();
+    actions.set("keyboard", "E", 1.0f);
+    game.update(actions, 0.016f);
+    CHECK(game.changing_scene());
+    while (game.changing_scene()) {
+        actions.begin_frame();
+        actions.set("keyboard", "E", 0.0f);
+        game.update(actions, 0.016f);
+    }
+    CHECK(game.previous_scene() == "scn_main");
+    // A script-only exit: walking in does nothing; take_exit takes it.
+    midgard::Scene& s = game.scene();
+    s.registry.get<midgard::Transform>(s.find("e1_player")).position = {50.0, 1.0, 0.0};
+    actions.begin_frame();
+    game.update(actions, 0.016f);
+    CHECK_FALSE(game.changing_scene());
+    CHECK(game.take_exit(game.scene().find("e3_lever")));
+    CHECK_FALSE(game.take_exit(game.scene().find("e1_player")));  // not an exit
+    CHECK(game.changing_scene());
+    CHECK(game.arrival_problem("scn_main", "e2_pad").find("no arrival") != std::string::npos);
+    CHECK(game.arrival_problem("scn_gone", "").find("no scene") != std::string::npos);
+    CHECK(game.arrival_problem("scn_main", "").empty());
+}

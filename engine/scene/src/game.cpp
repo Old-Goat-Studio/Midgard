@@ -176,7 +176,7 @@ void Game::update(const Actions& actions, float dt) {
     physics_->update(scene_, dt);  // the player walks
     camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
-    update_exits();
+    update_exits(actions);
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
             save_profile();
@@ -553,8 +553,12 @@ render::Camera Game::camera(float aspect) const {
 // ---- moving between scenes (milestone 5.11a) ---------------------------------------------------
 
 void Game::change_scene(const std::string& scene, const std::string& arrival, float fade) {
-    if (change_) return;
-    change_ = SceneChange{scene, arrival, std::clamp(fade, 0.0f, 10.0f)};
+    if (change_ && !change_->swapped) return;  // already on the way out
+    // (Asked while fading in, say by a script's on_room_enter: it fades out again from as dark
+    // as it is now.)
+    SceneChange next{scene, arrival, std::clamp(fade, 0.0f, 10.0f)};
+    next.t = change_ ? fade_ * next.fade : 0.0f;
+    change_ = next;
     scene_change_error_.clear();
 }
 
@@ -568,7 +572,13 @@ void Game::update_scene_change(float dt) {
         fade_ = part;
         if (part < 1.0f) return;
         try {
+            // (Checked first: the scene's scripts hear they are leaving only if they are.)
+            if (const std::string problem = arrival_problem(c.scene, c.arrival); !problem.empty())
+                throw SceneError(problem);
+            const std::string left = scene_.id;
+            if (leaving_) leaving_(c.scene);
             load_scene(c.scene, c.arrival);
+            previous_scene_ = left;
             scene_changed_ = true;
         } catch (const std::exception& e) {  // (the cook checks exits; scripts may still ask)
             scene_change_error_ = e.what();
@@ -653,7 +663,59 @@ bool Game::inside_exit(entt::entity exit, const glm::dvec3& p) const {
            std::abs(local.z) <= half.z;
 }
 
-void Game::update_exits() {
+bool Game::take_exit(entt::entity exit) {
+    if (!scene_.registry.valid(exit) || !scene_.registry.all_of<SceneExit>(exit)) return false;
+    const SceneExit& x = scene_.registry.get<SceneExit>(exit);
+    if (x.scene.empty()) return false;
+    change_scene(x.scene, x.arrival, x.fade);
+    return true;
+}
+
+bool Game::has_scene(const std::string& scene) const {
+    bool found = false;
+    sqlite3* db = nullptr;
+    const std::u8string u8 = (package_.root / package_.manifest.database).u8string();
+    if (sqlite3_open_v2(std::string(u8.begin(), u8.end()).c_str(), &db, SQLITE_OPEN_READONLY,
+                        nullptr) == SQLITE_OK) {
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT 1 FROM scene WHERE id = ?", -1, &st, nullptr) ==
+            SQLITE_OK) {
+            sqlite3_bind_text(st, 1, scene.c_str(), -1, SQLITE_TRANSIENT);
+            found = sqlite3_step(st) == SQLITE_ROW;
+            sqlite3_finalize(st);
+        }
+    }
+    sqlite3_close(db);
+    return found;
+}
+
+std::string Game::arrival_problem(const std::string& scene, const std::string& arrival) const {
+    if (!has_scene(scene)) return "there is no scene '" + scene + "' in the game";
+    if (arrival.empty()) return "";
+    bool found = false;
+    sqlite3* db = nullptr;
+    const std::u8string u8 = (package_.root / package_.manifest.database).u8string();
+    if (sqlite3_open_v2(std::string(u8.begin(), u8.end()).c_str(), &db, SQLITE_OPEN_READONLY,
+                        nullptr) == SQLITE_OK) {
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT components FROM entity WHERE id = ? AND scene = ?", -1,
+                               &st, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, arrival.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, scene.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                const auto* text = sqlite3_column_text(st, 0);
+                const nlohmann::json c = nlohmann::json::parse(
+                    text ? reinterpret_cast<const char*>(text) : "", nullptr, false);
+                found = c.is_object() && c.contains("arrival");
+            }
+            sqlite3_finalize(st);
+        }
+    }
+    sqlite3_close(db);
+    return found ? "" : "scene '" + scene + "' has no arrival '" + arrival + "'";
+}
+
+void Game::update_exits(const Actions& actions) {
     if (change_) return;
     entt::entity player = entt::null;
     for (entt::entity e : scene_.registry.view<const Player>()) player = e;
@@ -662,16 +724,16 @@ void Game::update_exits() {
     for (entt::entity e : scene_.registry.view<const SceneExit>()) {
         const bool inside = inside_exit(e, p);
         const bool was = exits_inside_.contains(e);
+        const SceneExit& x = scene_.registry.get<SceneExit>(e);
         if (inside && !was) {
             exits_inside_.insert(e);
-            const SceneExit& x = scene_.registry.get<SceneExit>(e);
-            if (x.activation == ExitActivation::Enter && !x.scene.empty()) {
-                change_scene(x.scene, x.arrival, x.fade);
-                return;
-            }
+            if (x.activation == ExitActivation::Enter && take_exit(e)) return;
         } else if (!inside && was) {
             exits_inside_.erase(e);
         }
+        // Use: pressed inside (arriving inside one counts: the player is there to use it).
+        if (inside && x.activation == ExitActivation::Use && actions.pressed("use") && take_exit(e))
+            return;
     }
 }
 

@@ -11,6 +11,9 @@ script component ({"module": "door"} runs scripts/door.py). Every function is op
     def on_trigger_enter(entity, other): ...   the player entered this entity's trigger
     def on_trigger_exit(entity, other): ...    ... or left it
     def on_reload(entity): ...                 the script was edited and reloaded while playing
+    def on_room_enter(entity, came_from): ...  the player arrived in this scene (after on_start;
+                                               came_from is the scene left, by id)
+    def on_room_exit(entity, going_to): ...    the player is leaving this scene (the last call)
 
 The player's own script also gets on_trigger_enter(player, trigger) and on_trigger_exit. A
 script that raises an error is paused, and the error (with its file and line) is shown in the
@@ -245,6 +248,34 @@ class Time:
 
 time: Time
 """The game's clock."""
+
+
+class Rooms:
+    """Moving between scenes (midgard.rooms). The player is in one scene at a time; a change
+    fades the picture out, swaps the scene (the one left stops: its scripts get on_room_exit,
+    the new one's start, then get on_room_enter) and fades in."""
+
+    current: str
+    """The scene the player is in, by id (read-only)."""
+    previous: str
+    """The scene the player came from, or "" before the first change (read-only)."""
+    changing: bool
+    """True while a change is under way (read-only)."""
+
+    def change(self, scene: str, arrival: str = "", fade: float = 0.5) -> None:
+        """Takes the player to a scene (its id, such as "scn_cave"), standing at an arrival point
+        there (its entity id; "": where the scene puts the player), fading out and in over `fade`
+        seconds. ValueError if the game has no such scene. Ignored while the picture is already
+        fading out for another change; asked while it fades in (in on_room_enter, say), the
+        player goes on to this scene."""
+
+    def take_exit(self, exit: Entity) -> None:
+        """Takes a scene exit (an entity with a scene_exit), whatever its activation: how a door
+        set to "Only from a script" opens. ValueError if the entity isn't one."""
+
+
+rooms: Rooms
+"""Moving between scenes."""
 
 
 def action(name: str) -> float:

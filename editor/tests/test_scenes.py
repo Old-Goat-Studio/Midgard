@@ -8,6 +8,7 @@ import json
 import subprocess
 
 import pytest
+from test_scripting import needs_scripting, simulate, write_script
 
 from midgard_editor import engine, scenes, terrain_stamps
 from midgard_editor.about import runtime_candidates
@@ -339,3 +340,69 @@ def test_the_game_goes_through_a_scene_exit_to_the_arrival(project, tmp_path):
     cave_player = next(e for e in after["entities"] if e["name"] == "Player")
     assert abs(cave_player["position"][0] - 6.0) < 0.3
     assert abs(cave_player["position"][2] + 2.0) < 0.3
+
+
+# ---- scripts move between scenes (step 5) ---------------------------------------------------
+GUIDE = '''
+import midgard
+
+gone = False  # (the module stays loaded across scenes: once is enough)
+
+def on_start(entity):
+    midgard.log("main start; in", midgard.rooms.current, "from", repr(midgard.rooms.previous))
+    try:
+        midgard.rooms.change("scn_nowhere")
+    except ValueError as e:
+        midgard.log("refused:", e)
+
+def on_update(entity, dt):
+    global gone
+    if midgard.time() > 0.3 and not gone:
+        gone = True
+        midgard.rooms.change("scn_cave", ARRIVAL, fade=0.1)
+
+def on_room_exit(entity, going_to):
+    midgard.log("leaving main for", going_to)
+'''
+
+CAVE = '''
+import midgard
+
+def on_start(entity):
+    midgard.log("cave start")
+
+def on_room_enter(entity, came_from):
+    midgard.log("arrived in", midgard.rooms.current, "from", came_from)
+    midgard.rooms.take_exit(midgard.find("Lever"))  # a script-only exit, straight back
+'''
+
+
+@needs_scripting
+def test_scripts_change_scenes_and_hear_about_it(project, tmp_path):
+    command = scenes.AddSceneCommand(project, "Cave")
+    project.undo_stack.push(command)
+    cave = command.scene
+    arrival = Entity(project.next_entity_id(), "In", None,
+                     {"transform": {"position": [5.0, 0.6, 5.0]}, "arrival": {"name": "In"}})
+    project.put_entity(arrival, cave)
+    project.put_entity(Entity(project.next_entity_id(), "Cave Script", None,
+                              {"transform": {}, "script": {"module": "cave"}}), cave)
+    project.put_entity(Entity(project.next_entity_id(), "Lever", None, {
+        "transform": {"position": [9.0, 1.0, 9.0]},
+        "scene_exit": {"scene": MAIN_SCENE, "activation": "script", "fade": 0.1}}), cave)
+    player = next(e for e in project.entities(MAIN_SCENE) if e.name == "Player")
+    player.components["script"] = {"module": "guide"}
+    project.put_entity(player)
+    write_script(project, "guide", GUIDE.replace("ARRIVAL", repr(arrival.id)))
+    write_script(project, "cave", CAVE)
+    package = cook(project, tmp_path / "pkg").out_dir
+    dumped, run = simulate(package, 90)
+    assert run.returncode == 0, run.stderr
+    log = run.stdout
+    assert "main start; in scn_main from ''" in log
+    assert "refused: there is no scene 'scn_nowhere' in the game" in log
+    assert "leaving main for scn_cave" in log
+    assert log.index("cave start") < log.index("arrived in scn_cave from scn_main")
+    # The cave's script took its lever straight back: main started again.
+    assert log.count("main start; in scn_main") == 2
+    assert dumped["scene"] == MAIN_SCENE

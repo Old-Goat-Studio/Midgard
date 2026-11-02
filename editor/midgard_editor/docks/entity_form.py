@@ -99,7 +99,7 @@ class EntityForm(QWidget):
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
                "rigidbody": "Rigid body", "physics_material": "Physics material",
                "scene_exit": "Scene exit", "arrival": "Arrival point"}
-    ACTIVATIONS = {"enter": "Walking into it", "use": "Using it (Use, inside it)",
+    ACTIVATIONS = {"enter": "Walking into it", "use": "Using it (Use: E or gamepad X, inside it)",
                    "script": "Only from a script"}
     SKY_COLOURS = {"color": "Sky colour", "ambient": "Ambient light"}
     COLLIDER_SHAPES = {"box": "Box", "sphere": "Sphere", "capsule": "Capsule",

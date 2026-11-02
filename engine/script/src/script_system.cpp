@@ -48,6 +48,8 @@ entt::registry& registry() {
 }
 
 // midgard.Entity: a handle on an entity of the running scene, by id.
+struct RoomsHandle {};  // midgard.rooms
+
 struct EntityHandle {
     entt::entity entity = entt::null;
     std::string id;
@@ -520,6 +522,43 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             py::arg("signal"), py::arg("callback"))
         .def("__repr__", [](const TimeHandle&) { return std::string("<midgard.time>"); });
     m.attr("time") = TimeHandle{};
+
+    py::class_<RoomsHandle>(m, "Rooms",
+                            "Moving between scenes (midgard.rooms; milestone 5.11a): the player "
+                            "is in one scene at a time.")
+        .def(
+            "change",
+            [](const RoomsHandle&, const std::string& scene, const std::string& arrival,
+               float fade) {
+                Game& g = current_game();
+                if (!g.has_scene(scene))
+                    throw py::value_error("there is no scene '" + scene + "' in the game");
+                g.change_scene(scene, arrival, fade);
+            },
+            py::arg("scene"), py::arg("arrival") = "", py::arg("fade") = 0.5f,
+            "Takes the player to a scene (its id), at an arrival (an entity id there; none: where "
+            "the scene puts the player), fading out and in over `fade` seconds. Ignored while "
+            "already fading out for another; while fading in (on_room_enter), it goes on.")
+        .def(
+            "take_exit",
+            [](const RoomsHandle&, const EntityHandle& exit) {
+                if (!current_game().take_exit(exit.resolve()))
+                    throw py::value_error("entity '" + exit.id + "' is not a scene exit");
+            },
+            py::arg("exit"),
+            "Takes a scene exit (an entity with a scene_exit), whatever its activation: the way "
+            "an exit set to 'script' is taken.")
+        .def_property_readonly(
+            "current", [](const RoomsHandle&) { return current_game().scene().id; },
+            "The scene the player is in (its id).")
+        .def_property_readonly(
+            "previous", [](const RoomsHandle&) { return current_game().previous_scene(); },
+            "The scene the player came from (empty until the first change).")
+        .def_property_readonly(
+            "changing", [](const RoomsHandle&) { return current_game().changing_scene(); },
+            "Whether a change is under way (fading out or in).")
+        .def("__repr__", [](const RoomsHandle&) { return std::string("<midgard.rooms>"); });
+    m.attr("rooms") = RoomsHandle{};
     m.def(
         "action",
         [](const std::string& name) {
@@ -573,6 +612,7 @@ struct ScriptSystem::Impl {
     std::map<std::string, py::object> modules;
     std::set<std::string> paused;  // raised an error; waiting for a reload
     std::set<std::pair<entt::entity, std::string>> started;
+    std::string reported_change_error;  // (each failed change reported once)
 
     // Reports a Python error from a module and pauses the module.
     void fail(const std::string& module, py::error_already_set& e, const std::string& during) {
@@ -647,9 +687,20 @@ ScriptSystem::ScriptSystem(Game& game, std::function<void(const Report&)> report
     impl_->scripts_dir = game.package().root / "scripts";
     g_context = &impl_->context;
     py::exec(kRedirectOutput);
+    // Leaving a scene: its scripts hear on_room_exit, then stop (the next scene's start).
+    game.on_leaving_scene([this](const std::string& to) {
+        Impl& s = *impl_;
+        g_context = &s.context;
+        entt::registry& reg = s.context.game->scene().registry;
+        for (const auto& [e, module] : std::vector(s.started.begin(), s.started.end()))
+            if (reg.valid(e)) s.call(module, "on_room_exit", handle(e), to);
+        s.started.clear();
+        s.context.time_callbacks.clear();  // (made by the scene's scripts)
+    });
 }
 
 ScriptSystem::~ScriptSystem() {
+    impl_->context.game->on_leaving_scene(nullptr);
     if (g_context == &impl_->context) g_context = nullptr;
 }
 
@@ -677,6 +728,17 @@ void ScriptSystem::update(const Actions& actions, float dt) {
         if (s.started.contains(key) || s.load(key.second).is_none()) continue;
         s.started.insert(key);
         s.call(key.second, "on_start", handle(key.first));
+    }
+    // A new scene: its scripts (just started) hear where the player came from.
+    if (s.context.game->scene_changed()) {
+        const std::string from = s.context.game->previous_scene();
+        for (const auto& [e, module] : std::vector(s.started.begin(), s.started.end()))
+            if (reg.valid(e)) s.call(module, "on_room_enter", handle(e), from);
+    }
+    if (const std::string& error = s.context.game->scene_change_error();
+        !error.empty() && error != s.reported_change_error) {
+        s.reported_change_error = error;
+        if (s.context.report) s.context.report({"warn", "midgard.rooms: " + error, "", "", 0});
     }
 
     for (const TriggerEvent& ev : s.context.game->trigger_events()) {
@@ -752,6 +814,7 @@ result = json.dumps({
     "Camera": sorted(n for n in dir(midgard.Camera) if not n.startswith("_")),
     "Time": sorted(n for n in dir(midgard.Time) if not n.startswith("_")),
     "GameTime": sorted(n for n in dir(midgard.GameTime) if not n.startswith("_")),
+    "Rooms": sorted(n for n in dir(midgard.Rooms) if not n.startswith("_")),
 })
 )",
              scope);

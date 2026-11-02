@@ -9,6 +9,10 @@
 //   def on_trigger_enter(entity, other): ...       the player entered this entity's trigger
 //   def on_trigger_exit(entity, other): ...        ... or left it
 //   def on_reload(entity): ...                     the module was edited and reloaded
+//   def on_room_enter(entity, came_from): ...      the player arrived in this scene (from the
+//                                                  scene with that id), after on_start
+//   def on_room_exit(entity, going_to): ...        the player is leaving this scene (for that
+//                                                  one): the last call the script gets
 //
 // The player's own script gets on_trigger_enter(player, trigger) too. Every function is
 // optional. A script that raises an error is paused (with the error reported) until it is

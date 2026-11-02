@@ -3,6 +3,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -152,8 +153,23 @@ public:
     // being left is unloaded and the target loaded with the player at the arrival (an entity
     // with an arrival; empty: where the scene puts its player), its ground round the player is
     // made, and the picture fades in again. A scene exit the player walks into (activation
-    // "enter") calls this; so do scripts. Asked again while one is under way: ignored.
+    // "enter") calls this; so do scripts. Asked again while fading out: ignored; while fading in
+    // (a script's on_room_enter): it fades out again for the new one.
     void change_scene(const std::string& scene, const std::string& arrival = "", float fade = 0.5f);
+    // Takes a scene exit (an entity with a scene_exit, whatever its activation: a script's
+    // choice). False if the entity isn't one.
+    bool take_exit(entt::entity exit);
+    // Whether the package has a scene with this id.
+    bool has_scene(const std::string& scene) const;
+    // Why a change to this scene and arrival can't be made, or empty if it can.
+    std::string arrival_problem(const std::string& scene, const std::string& arrival) const;
+    // The scene the player came from (empty until the first change).
+    const std::string& previous_scene() const { return previous_scene_; }
+    // Called once the picture is dark, just before the scene is left, with the target's id
+    // (the scripts' on_room_exit).
+    void on_leaving_scene(std::function<void(const std::string&)> callback) {
+        leaving_ = std::move(callback);
+    }
     bool changing_scene() const { return change_.has_value(); }
     // How dark the picture is: 0 clear, 1 black (the renderer's exposure scales by 1 - fade).
     float fade() const { return fade_; }
@@ -217,10 +233,12 @@ private:
     bool scene_changed_ = false;
     bool stream_all_ = false;  // a scene was just loaded: its view is made in full, at once
     std::string scene_change_error_;
+    std::string previous_scene_;
+    std::function<void(const std::string&)> leaving_;
     std::unordered_set<entt::entity> exits_inside_;  // scene exits the player is in
     void load_scene(const std::string& scene, const std::string& arrival);
     void update_scene_change(float dt);
-    void update_exits();
+    void update_exits(const Actions& actions);
     void note_exits_inside();
     bool inside_exit(entt::entity exit, const glm::dvec3& p) const;
 };

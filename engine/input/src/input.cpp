@@ -19,8 +19,8 @@ std::string key(const std::string& device, const std::string& control) {
 }  // namespace
 
 InputMap InputMap::defaults() {
-    // The same defaults as schema/migrations/0003_input.sql, 0007_camera_view.sql and
-    // 0008_run.sql, for older packages.
+    // The same defaults as schema/migrations/0003_input.sql, 0007_camera_view.sql,
+    // 0008_run.sql and 0013_use.sql, for older packages.
     // (A plain array: MSVC 19.40 crashes on a range-for over a braced initializer list here.)
     static const Binding kDefaults[] = {
         {"move_x", "keyboard", "D", 1.0f},      {"move_x", "keyboard", "A", -1.0f},
@@ -32,7 +32,8 @@ InputMap InputMap::defaults() {
         {"jump", "gamepad", "a", 1.0f},         {"view", "keyboard", "V", 1.0f},
         {"view", "gamepad", "y", 1.0f},         {"run", "keyboard", "Left Shift", 1.0f},
         {"run", "gamepad", "leftstick", 1.0f},  {"menu", "keyboard", "Escape", 1.0f},
-        {"menu", "gamepad", "start", 1.0f},
+        {"menu", "gamepad", "start", 1.0f},     {"use", "keyboard", "E", 1.0f},
+        {"use", "gamepad", "x", 1.0f},
     };
     InputMap m;
     for (const Binding& b : kDefaults) m.add(b);
