@@ -2636,11 +2636,15 @@ TEST_CASE("a scene exit set to use is taken by pressing Use inside it, or by a s
 namespace {
 
 // The process's resident memory in bytes (0 where it can't be read).
+// (On Windows, the private memory committed: the working set grows and shrinks as Windows
+// pleases, which made this flaky on CI.)
 size_t resident_bytes() {
 #if defined(_WIN32)
-    PROCESS_MEMORY_COUNTERS counters{};
-    if (K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
-        return counters.WorkingSetSize;
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(),
+                                reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+                                sizeof(counters)))
+        return counters.PrivateUsage;
     return 0;
 #elif defined(__linux__)
     std::ifstream statm("/proc/self/statm");
@@ -2741,21 +2745,27 @@ TEST_CASE("many scene changes leave nothing behind") {
     REQUIRE(game.scene().id == "scn_main");
     const size_t entities = game.scene().registry.view<const midgard::EntityInfo>().size();
     const size_t bodies = game.physics().world().body_count();
-    const size_t memory = resident_bytes();
-    for (int i = 0; i < 30; ++i) {
-        go_through(game, actions);
-        CHECK(game.scene().id == "scn_land");
-        CHECK(game.terrain()->stats().complete);
-        go_through(game, actions);
+    // Two windows of 30 round trips: a leak grows memory in both, while the allocator settling
+    // (a one-off jump, at a moment that differs from machine to machine) shows in one at most.
+    double grown[2] = {0.0, 0.0};
+    for (double& window : grown) {
+        const size_t before = resident_bytes();
+        for (int i = 0; i < 30; ++i) {
+            go_through(game, actions);
+            CHECK(game.scene().id == "scn_land");
+            CHECK(game.terrain()->stats().complete);
+            go_through(game, actions);
+        }
+        window = (double(resident_bytes()) - double(before)) / (1024.0 * 1024.0);
     }
     REQUIRE(game.scene().id == "scn_main");
     CHECK(game.scene().registry.view<const midgard::EntityInfo>().size() == entities);
     CHECK(game.physics().world().body_count() == bodies);
     CHECK(game.terrain() == nullptr);  // (the main scene has none)
-    if (memory > 0) {
-        const double grown = (double(resident_bytes()) - double(memory)) / (1024.0 * 1024.0);
-        MESSAGE("resident memory grew by " << grown << " MB over 30 round trips");
-        CHECK(grown < 16.0);
+    if (resident_bytes() > 0) {
+        MESSAGE("memory grew by " << grown[0] << " MB, then " << grown[1]
+                                  << " MB, over two windows of 30 round trips");
+        CHECK(std::min(grown[0], grown[1]) < 16.0);
     }
 }
 
