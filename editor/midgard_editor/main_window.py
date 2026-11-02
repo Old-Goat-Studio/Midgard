@@ -38,6 +38,7 @@ from .backup import BackupScheduler
 from .cook import CookError, cook
 from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_project_under_git
 from .docks.animation_editor import AnimationPanel
+from .docks.asset_window import AssetWindow
 from .docks.assistant import AssistantPanel
 from .docks.calendar_panel import CalendarPanel
 from .docks.camera_editor import CameraDialog
@@ -170,6 +171,7 @@ class MainWindow(QMainWindow):
         self.terrain_panel = TerrainPanel()
         self.world_type_panel = WorldTypePanel()
         self.animation_panel = AnimationPanel()
+        self.asset_window: AssetWindow | None = None  # (Assets ▸ Asset Library, when opened)
         self.scenes_panel = ScenesPanel()
         self.scenes_panel.set_can_open(True)
         self.scenes_panel.open_requested.connect(self.open_scene)
@@ -448,6 +450,12 @@ class MainWindow(QMainWindow):
         self.physics_layers_action = add_action(world, "&Physics Layers…",
                                                 self.edit_physics_layers)
 
+        assets = bar.addMenu("&Assets")
+        self.library_action = add_action(assets, "Asset &Library…", self.show_asset_library,
+                                         "Ctrl+Shift+L")
+        self.import_asset_action = add_action(assets, "&Import Into Library…",
+                                              self.import_into_library)
+
         view = bar.addMenu("&View")
         # The viewport toolbar's switch, in the menu too.
         colliders = self.viewport.colliders_action
@@ -654,6 +662,23 @@ class MainWindow(QMainWindow):
             self.panels["viewport"].toggleView(True)
             self.panels["viewport"].setAsCurrentTab()
 
+    def library_window(self) -> AssetWindow:
+        """The Asset Library's own window (made when first wanted)."""
+        if self.asset_window is None:
+            self.asset_window = AssetWindow(self)
+            self.asset_window.set_project(self.project)
+        return self.asset_window
+
+    def show_asset_library(self) -> None:
+        window = self.library_window()
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def import_into_library(self) -> None:
+        self.show_asset_library()
+        self.asset_window.import_dialog()
+
     def edit_animation(self, entity_id: str) -> None:
         """Shows a character's animation graph in the Animation editor (the Inspector's)."""
         self.panels["animation"].toggleView(True)
@@ -742,8 +767,11 @@ class MainWindow(QMainWindow):
             self.content_watcher.start()
         self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action,
-                       self.world_shape_action, self.physics_layers_action):
+                       self.world_shape_action, self.physics_layers_action,
+                       self.library_action, self.import_asset_action):
             action.setEnabled(project is not None)
+        if self.asset_window is not None:
+            self.asset_window.set_project(project)
         if project is not None:
             self.session = PlaySession(project, self)
             self.session.state_changed.connect(self._play_state_changed)
