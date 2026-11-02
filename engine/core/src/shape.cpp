@@ -94,6 +94,17 @@ SurfacePoint cube_surface(const glm::dvec3& d) {
     return {face, (unwarp(wu) + 1.0) * 0.5, (unwarp(wv) + 1.0) * 0.5, 0.0};
 }
 
+glm::dvec2 cube_face_uv(int face, const glm::dvec3& d) {
+    if (face < 0 || face > 5) throw std::out_of_range("cube faces are 0 to 5");
+    const Face& f = kFaces[face];
+    const double scale = d[f.n.axis] * f.n.sign;
+    if (!(scale > 0.0)) throw std::domain_error("cube_face_uv: the direction faces away");
+    const double wu = d[f.t.axis] * f.t.sign / scale;
+    const double wv = d[f.b.axis] * f.b.sign / scale;
+    // (unwarp without its clamp at the edges)
+    return {(det::atan(wu) * kFourOverPi + 1.0) * 0.5, (det::atan(wv) * kFourOverPi + 1.0) * 0.5};
+}
+
 CubeLink cube_link(int face, int edge) {
     if (face < 0 || face > 5) throw std::out_of_range("cube faces are 0 to 5");
     if (edge < 0 || edge > 3) throw std::out_of_range("a face's edges are 0 to 3");

@@ -7,9 +7,14 @@
 //
 // so the ground is level and "up" is +Y on every shape (a curved cylinder unrolls exactly; a
 // cube-sphere face is stretched a little toward its edges). Tiles are made round a point (the
-// player) on the job system as it moves, from the terrain (not below the sea) and the scene's
-// scenery, and made again when the ground is sculpted or the scenery changes; far ones go.
-// Paths come back as world positions, following the surface.
+// player) in its face's frame on the job system as it moves, from the terrain (not below the
+// sea) and the scene's scenery, and made again when the ground is sculpted or the scenery
+// changes; far ones go, and those of a face the point has left.
+//
+// The joins: a cylinder's frame is a strip round and round (tiles past its join are made from
+// the ground across it), and a cube face's frame goes on past its edges (the cube's projection
+// continued onto the faces beyond), so a path near a join or an edge simply crosses it. Paths
+// come back as world positions, following the surface.
 #pragma once
 
 #include <map>
@@ -68,11 +73,14 @@ public:
         glm::vec3 at{0.0f};
     };
     Place place(const glm::dvec3& world) const;
+    // In a given face's frame (a cube face's continued past its edges); none if it doesn't
+    // reach there.
+    std::optional<Place> place_on(int face, const glm::dvec3& world) const;
     glm::dvec3 world(int face, const glm::vec3& at) const;
 
     // The way between two world positions (each within `reach` metres of the walkable ground),
-    // or none (too far from it, or on different faces: crossing faces comes with milestone
-    // 5.12's joins). Points every few metres, on the surface.
+    // in the start's face's frame (across joins and face edges), or none (too far from the
+    // ground made so far). Points every few metres, on the surface.
     std::optional<NavMesh::Path> find_path(const glm::dvec3& from, const glm::dvec3& to,
                                            float reach = 3.0f) const;
 
@@ -87,10 +95,18 @@ private:
         int version = -1;           // the version on the mesh (-1: none)
     };
     using Key = std::tuple<int, int, int>;  // face, x, z
+    enum class Frame { Area, Strip, Cube };
+    struct Bounds {
+        double x0 = 0.0, x1 = 0.0, z0 = 0.0, z1 = 0.0;
+    };
     void collect(bool wait);
+    Bounds bounds() const;
+    double ground_height(int face, double x, double z) const;
+    NavTileData make_tile(int face, NavTileKey key, const NavGeometry& scenery) const;
 
     const Terrain& terrain_;
     JobSystem* jobs_;
+    Frame frame_ = Frame::Area;
     NavSettings settings_;
     double range_ = 96.0;
     glm::dvec2 face_size_;

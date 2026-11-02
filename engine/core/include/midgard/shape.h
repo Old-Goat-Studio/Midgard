@@ -85,6 +85,11 @@ inline constexpr std::uint64_t kShapeFingerprint = 0xca94b76690b1e465ULL;
 // The cube-sphere's mapping of a face point to a unit direction, and back.
 glm::dvec3 cube_direction(int face, double u, double v);
 SurfacePoint cube_surface(const glm::dvec3& direction);  // height 0
+// The (u, v) a direction has on one face's plane, continued past the face's edges (so u or v
+// may be outside 0..1): cube_direction's inverse on that face, for a direction less than 90
+// degrees from the face's middle. Navigation (milestone 5.12) extends a face's frame across
+// its edges this way. (Not on the bit-identical path: it may differ in the last bits.)
+glm::dvec2 cube_face_uv(int face, const glm::dvec3& direction);
 
 // How the cube's faces join. A face's edges are numbered 0 (u = 0), 1 (u = 1), 2 (v = 0) and
 // 3 (v = 1). Across an edge lies `face`, joined there by its edge `edge`; the coordinate along

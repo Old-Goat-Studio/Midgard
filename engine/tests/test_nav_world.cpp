@@ -119,3 +119,91 @@ TEST_CASE("navigation inside a cylinder and on a planet, in each face's frame") 
         CHECK(nav.mesh(0).tile_count() == 0);  // (only round the point)
     }
 }
+
+namespace {
+
+// A path in one piece: its points a few metres apart, on the ground, from start to end.
+void check_joined(const midgard::Terrain& t, const midgard::NavMesh::Path& path,
+                  const glm::dvec3& from, const glm::dvec3& to, double longest) {
+    CHECK(path.complete);
+    check_on_ground(t, path, to);
+    CHECK(glm::distance(glm::dvec3(path.points.front()), from) < 1.0);
+    double length = 0.0;
+    for (size_t i = 1; i < path.points.size(); ++i) {
+        const double step = glm::distance(path.points[i - 1], path.points[i]);
+        CHECK(step < 4.5);
+        length += step;
+    }
+    CHECK(length < longest);
+}
+
+}  // namespace
+
+TEST_CASE("paths cross a cylinder's join") {
+    midgard::JobSystem jobs;
+    SUBCASE("inside a cylinder") {
+        const midgard::Terrain t = make_terrain(
+            R"({"id": "h", "shape": "curved_cylinder", "radius": 1000, "length": 5000,
+                "seed": 8, "origin": [0, 1000, 0]})",
+            R"({"seed": 8, "height_scale": 6, "base": 6})");
+        midgard::NavWorld nav(t, &jobs);
+        // 12.6 m one side of the join to 31.4 m the other: about 44 m, not 6 km round.
+        const glm::dvec3 from = ground(t, 0, 0.002, 0.5), to = ground(t, 0, 0.995, 0.5);
+        nav.update(from, true);
+        const auto path = nav.find_path(from, to);
+        REQUIRE(path);
+        check_joined(t, *path, from, to, 60.0);
+        // And the other way.
+        nav.update(to, true);
+        const auto back = nav.find_path(to, from);
+        REQUIRE(back);
+        check_joined(t, *back, to, from, 60.0);
+    }
+    SUBCASE("a flat-wrap cylinder, from a place in the room past its edge") {
+        const midgard::Terrain t = make_terrain(
+            R"({"id": "s", "shape": "flat_cylinder", "circumference": 6000, "length": 5000,
+                "seed": 9})",
+            R"({"seed": 9, "height_scale": 6, "base": 6})");
+        midgard::NavWorld nav(t, &jobs);
+        // The room repeats: x = 3005 is u = 0.0008 (a player who walked over the edge).
+        const double h = t.height(0, 5.0 / 6000.0, 0.5);
+        const glm::dvec3 from(3005.0, h, 0.0);
+        const glm::dvec3 to(2970.0, t.height(0, 1.0 - 30.0 / 6000.0, 0.5), 0.0);
+        nav.update(from, true);
+        const auto path = nav.find_path(from, to);
+        REQUIRE(path);
+        check_joined(t, *path, from, to, 50.0);  // beside the start, in one piece
+    }
+}
+
+TEST_CASE("paths cross a planet's face edges and corners") {
+    midgard::JobSystem jobs;
+    const auto check_sphere = [&](const char* body) {
+        const midgard::Terrain t =
+            make_terrain(body, R"({"seed": 10, "height_scale": 6, "base": 6})");
+        midgard::NavWorld nav(t, &jobs);
+        const auto across = [&](double u, double v) {  // a face's frame continued past its edge
+            const midgard::SurfacePoint s = midgard::cube_surface(midgard::cube_direction(2, u, v));
+            return ground(t, s.face, s.u, s.v);
+        };
+        // Over an edge: 31 m from face 2's edge to 47 m onto the next face.
+        const glm::dvec3 from = ground(t, 2, 0.99, 0.5), to = across(1.015, 0.5);
+        CHECK(t.body().surface(to).face != 2);
+        nav.update(from, true);
+        const auto path = nav.find_path(from, to);
+        REQUIRE(path);
+        check_joined(t, *path, from, to, 95.0);
+        // Through a corner, where three faces meet.
+        const glm::dvec3 corner_from = ground(t, 2, 0.99, 0.99), corner_to = across(1.012, 1.012);
+        nav.update(corner_from, true);
+        const auto corner = nav.find_path(corner_from, corner_to);
+        REQUIRE(corner);
+        check_joined(t, *corner, corner_from, corner_to, 120.0);
+    };
+    SUBCASE("a planet") {
+        check_sphere(R"({"id": "p", "shape": "sphere_outside", "radius": 2000, "seed": 10})");
+    }
+    SUBCASE("a hollow world") {
+        check_sphere(R"({"id": "w", "shape": "sphere_inside", "radius": 2000, "seed": 10})");
+    }
+}
