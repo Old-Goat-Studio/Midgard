@@ -434,14 +434,23 @@ void Game::set_terrain_stamps(std::vector<TerrainStamp> stamps) {
 
 void Game::stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait) {
     terrain_renderer_ = &renderer;
+    stream(&renderer, camera, wait);
+}
+
+void Game::stream_terrain(const glm::dvec3& camera, bool wait) {
+    stream(nullptr, camera, wait);
+}
+
+void Game::stream(render::Renderer* renderer, const glm::dvec3& camera, bool wait) {
     if (stream_all_) {  // a scene just loaded: its meshes, and all of its ground in view
-        for (const std::string& problem : upload_new_meshes(renderer)) (void)problem;
+        if (renderer)
+            for (const std::string& problem : upload_new_meshes(*renderer)) (void)problem;
         wait = true;
         stream_all_ = false;
     }
-    if (terrain_) terrain_->update(camera, &renderer, wait);
-    if (placed_changed_) {  // the placed objects' meshes, as they come
-        upload_new_meshes(renderer);
+    if (terrain_) terrain_->update(camera, renderer, wait);
+    if (placed_changed_ && renderer) {  // the placed objects' meshes, as they come
+        upload_new_meshes(*renderer);
         placed_changed_ = false;
     }
 }

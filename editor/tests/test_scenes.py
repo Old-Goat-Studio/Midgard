@@ -406,3 +406,73 @@ def test_scripts_change_scenes_and_hear_about_it(project, tmp_path):
     # The cave's script took its lever straight back: main started again.
     assert log.count("main start; in scn_main") == 2
     assert dumped["scene"] == MAIN_SCENE
+
+
+# ---- the exit: the Scene Tour sample (step 6) -------------------------------------------------
+TOURIST = '''
+import midgard
+
+waited = 0.0
+done = False
+
+def on_room_enter(entity, came_from):
+    global waited
+    waited = 0.0
+    x, y, z = entity.position
+    midgard.log("tour:", midgard.rooms.current, "from", came_from, "at", round(x, 1), round(z, 1))
+
+def on_update(entity, dt):
+    global waited, done
+    waited += dt
+    if waited < 0.5 or midgard.rooms.changing:
+        return
+    here, before = midgard.rooms.current, midgard.rooms.previous
+    if here == "scn_main" and before == "":
+        entity.position = midgard.find("Cave Door").position  # walk through the door
+    elif here == "scn_cave":
+        entity.position = midgard.find("Way Out").position
+    elif here == "scn_main" and before == "scn_cave":
+        midgard.rooms.take_exit(midgard.find("Teleport Pad"))  # (as pressing Use on it)
+    elif here == "scn_island":
+        midgard.rooms.take_exit(midgard.find("Pad Home"))
+    elif not done:
+        done = True
+        midgard.log("tour: done")
+'''
+
+
+def test_the_scene_tour_sample_is_sound(tmp_path, qapp):
+    from midgard_editor.samples import make_scene_tour
+    tour = make_scene_tour(tmp_path)
+    assert [s["name"] for s in scenes.load_all(tour)] == ["Main", "Cave", "Island"]
+    exits = {e.name: e.components["scene_exit"] for e in tour.all_entities()
+             if "scene_exit" in e.components}
+    assert {n: (x["scene"], x["activation"]) for n, x in exits.items()} == {
+        "Cave Door": ("scn_cave", "enter"), "Teleport Pad": ("scn_island", "use"),
+        "Way Out": (MAIN_SCENE, "enter"), "Pad Home": (MAIN_SCENE, "use")}
+    for x in exits.values():  # every exit arrives at an arrival point in its scene
+        assert tour.entity_scene(x["arrival"]) == x["scene"]
+        assert "arrival" in tour.entity(x["arrival"]).components
+
+
+@needs_scripting
+def test_the_exit_a_tour_through_doors_and_pads(tmp_path, qapp):
+    """5.11a's exit: through a door into another scene and back, then a teleport pad there and
+    back, in the game the editor cooks (what Play runs and an export packs)."""
+    from midgard_editor.samples import make_scene_tour
+    tour = make_scene_tour(tmp_path)
+    for scene in ("scn_main", "scn_cave", "scn_island"):
+        player = next(e for e in tour.entities(scene) if "player" in e.components)
+        player.components["script"] = {"module": "tourist"}
+        tour.put_entity(player)
+    write_script(tour, "tourist", TOURIST)
+    package = cook(tour, tmp_path / "pkg").out_dir
+    dumped, run = simulate(package, 600)
+    assert run.returncode == 0, run.stderr
+    legs = [line for line in run.stdout.splitlines() if line.startswith("tour:")]
+    assert legs == ["tour: scn_cave from scn_main at 0.0 2.0",
+                    "tour: scn_main from scn_cave at 0.0 -3.5",
+                    "tour: scn_island from scn_main at 0.0 3.0",
+                    "tour: scn_main from scn_island at 5.0 3.0",
+                    "tour: done"], run.stdout
+    assert dumped["scene"] == MAIN_SCENE

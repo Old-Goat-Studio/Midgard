@@ -13,6 +13,17 @@
 #include <string>
 #include <tuple>
 
+#if defined(_WIN32)
+#define NOMINMAX
+#include <windows.h>
+// (after windows.h)
+#include <psapi.h>
+#undef near  // (windows.h's old macros)
+#undef far
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
+
 #include <miniz.h>
 #include <sqlite3.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -200,7 +211,8 @@ TEST_CASE("game.pak reads its files and reports missing ones") {
 
 TEST_CASE("the scene is built from the entity table") {
     TestPackage pkg({
-        {"e1_cube", R"(NULL, '{"transform": {"position": [1, 0, 0]}, "mesh": {"asset": "mesh_cube"},
+        {"e1_cube",
+         R"(NULL, '{"transform": {"position": [1, 0, 0]}, "mesh": {"asset": "mesh_cube"},
                        "material": {"color": [0.8, 0.6, 0.1]}}')"},
         {"e2_child",
          R"('e1_cube', '{"transform": {"position": [0, 2, 0]}, "mesh": {"asset": "mesh_cube"}}')"},
@@ -2619,4 +2631,130 @@ TEST_CASE("a scene exit set to use is taken by pressing Use inside it, or by a s
     CHECK(game.arrival_problem("scn_main", "e2_pad").find("no arrival") != std::string::npos);
     CHECK(game.arrival_problem("scn_gone", "").find("no scene") != std::string::npos);
     CHECK(game.arrival_problem("scn_main", "").empty());
+}
+
+namespace {
+
+// The process's resident memory in bytes (0 where it can't be read).
+size_t resident_bytes() {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS counters{};
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
+        return counters.WorkingSetSize;
+    return 0;
+#elif defined(__linux__)
+    std::ifstream statm("/proc/self/statm");
+    size_t pages = 0, resident = 0;
+    if (statm >> pages >> resident) return resident * size_t(sysconf(_SC_PAGESIZE));
+    return 0;
+#else
+    return 0;
+#endif
+}
+
+// A package with a flat main scene and a land with terrain (a bounded area), with a door each
+// way: the main scene's at x = 3, the land's beside its arrival.
+struct TwoScenes : TestPackage {
+    TwoScenes()
+        : TestPackage({
+              {"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]}, "player": {}}')"},
+              {"e2_door", R"(NULL, '{"transform": {"position": [3, 1, 0]},
+                            "scene_exit": {"scene": "scn_land", "arrival": "e9_in", "fade": 0.1,
+                                           "size": [1, 2, 2]}}')"},
+              {"e3_in", R"(NULL, '{"transform": {"position": [-3, 1, 0]}, "arrival": {}}')"},
+          }) {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(dir / "Game.db").c_str(), &db);
+        exec(db, "INSERT INTO string VALUES ('scn_land.name', 'Land', '')");
+        exec(db, R"(INSERT INTO scene (id, name_key, settings) VALUES ('scn_land', 'scn_land.name',
+                 '{"body": {"id": "land", "shape": "bounded_area", "width": 3000, "length": 3000,
+                            "seed": 5},
+                   "terrain": {"seed": 5, "height_scale": 40}}'))");
+        exec(db, R"(INSERT INTO entity (id, scene, name, parent, components) VALUES
+                 ('e8_player', 'scn_land', 'Player', NULL,
+                  '{"transform": {"position": [0, 60, 0]}, "player": {}}'),
+                 ('e9_in', 'scn_land', 'In', NULL,
+                  '{"transform": {"position": [200, 60, -150]}, "arrival": {}}'),
+                 ('e10_back', 'scn_land', 'Back', NULL,
+                  '{"transform": {"position": [210, 60, -150]},
+                    "scene_exit": {"scene": "scn_main", "arrival": "e3_in", "fade": 0.1,
+                                   "size": [1, 400, 1]}}'))");
+        sqlite3_close(db);
+    }
+};
+
+// Through the door and back: walks the player into the scene's exit and runs the change,
+// streaming the ground headlessly as a frame would.
+void go_through(midgard::Game& game, midgard::Actions& actions) {
+    midgard::Scene& s = game.scene();
+    entt::entity player = entt::null;
+    for (entt::entity e : s.registry.view<const midgard::Player>()) player = e;
+    entt::entity exit = entt::null;
+    for (entt::entity e : s.registry.view<const midgard::SceneExit>()) exit = e;
+    REQUIRE((player != entt::null));
+    REQUIRE((exit != entt::null));
+    s.registry.get<midgard::Transform>(player).position = s.world_position(exit);
+    for (int i = 0; i < 100 && !game.scene_changed(); ++i) {
+        game.update(actions, 0.02f);
+        game.stream_terrain(game.camera(1.6f).origin);
+    }
+    REQUIRE(game.scene_changed());
+    while (game.changing_scene()) {
+        game.update(actions, 0.02f);
+        game.stream_terrain(game.camera(1.6f).origin);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("arriving in a scene shows its ground at once, the player on it") {
+    TwoScenes pkg;
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    midgard::Scene& s = game.scene();
+    s.registry.get<midgard::Transform>(s.find("e1_player")).position = {3.0, 1.0, 0.0};
+    for (int i = 0; i < 100 && !game.scene_changed(); ++i) game.update(actions, 0.02f);
+    REQUIRE(game.scene().id == "scn_land");
+    // The first frame in the land (no waiting asked for): every chunk in view is ready.
+    game.stream_terrain(game.camera(1.6f).origin);
+    REQUIRE(game.terrain() != nullptr);
+    const midgard::TerrainStreamStats stats = game.terrain()->stats();
+    CHECK(stats.wanted > 0);
+    CHECK(stats.complete);
+    // On the ground, not under it, where the arrival is.
+    const glm::dvec3 at = game.scene().world_position(game.scene().find("e8_player"));
+    CHECK(game.terrain()->terrain().above_ground(at) > -0.01);
+    CHECK(std::abs(at.x - 200.0) < 0.5);
+    CHECK(std::abs(at.z + 150.0) < 0.5);
+}
+
+TEST_CASE("many scene changes leave nothing behind") {
+    TwoScenes pkg;
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    // Warm up: the heap and the working set settle after a few dozen changes (measured: up to
+    // 60 MB by 30 round trips, then flat to 60).
+    for (int i = 0; i < 30; ++i) {
+        go_through(game, actions);
+        go_through(game, actions);
+    }
+    REQUIRE(game.scene().id == "scn_main");
+    const size_t entities = game.scene().registry.view<const midgard::EntityInfo>().size();
+    const size_t bodies = game.physics().world().body_count();
+    const size_t memory = resident_bytes();
+    for (int i = 0; i < 30; ++i) {
+        go_through(game, actions);
+        CHECK(game.scene().id == "scn_land");
+        CHECK(game.terrain()->stats().complete);
+        go_through(game, actions);
+    }
+    REQUIRE(game.scene().id == "scn_main");
+    CHECK(game.scene().registry.view<const midgard::EntityInfo>().size() == entities);
+    CHECK(game.physics().world().body_count() == bodies);
+    CHECK(game.terrain() == nullptr);  // (the main scene has none)
+    if (memory > 0) {
+        const double grown = (double(resident_bytes()) - double(memory)) / (1024.0 * 1024.0);
+        MESSAGE("resident memory grew by " << grown << " MB over 30 round trips");
+        CHECK(grown < 16.0);
+    }
 }

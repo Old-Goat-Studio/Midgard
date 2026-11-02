@@ -81,6 +81,8 @@ public:
     // those missing on the game's job system and uploads them. Call once a frame before
     // draws(); wait: finish every chunk wanted now (the first frame, screenshots).
     void stream_terrain(render::Renderer& renderer, const glm::dvec3& camera, bool wait = false);
+    // The same without a renderer (headless runs and tests): chunks are made, not uploaded.
+    void stream_terrain(const glm::dvec3& camera, bool wait = false);
     const TerrainStreamer* terrain() const { return terrain_.get(); }
     const TerrainCollision* ground() const { return ground_.get(); }
     const PlacedObjects* placed() const { return placed_.get(); }
@@ -240,6 +242,7 @@ private:
     void update_scene_change(float dt);
     void update_exits(const Actions& actions);
     void note_exits_inside();
+    void stream(render::Renderer* renderer, const glm::dvec3& camera, bool wait);
     bool inside_exit(entt::entity exit, const glm::dvec3& p) const;
 };
 
