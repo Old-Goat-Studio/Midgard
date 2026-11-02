@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -86,7 +87,9 @@ CLIMATE_FIELDS = {"temperature": ("Temperature at sea level", -150, 150, 14, " �
                   "lapse_rate": ("Colder each km up by", 0, 50, 6.5, " °C"),
                   "variation": ("Variation", 0, 50, 3, " °C"),
                   "season_swing": ("Winter to summer", 0, 100, 12, " °C")}
-MAP_SIZE = (256, 128)
+MAP_BOX = (320, 160)  # the preview's map fits in this, in its world's proportions
+PROJECTIONS = {"top_down": "From above", "unrolled": "Unrolled",
+               "equirectangular": "Latitude and longitude", "cube_faces": "Cube faces"}
 VIEW_SIZE = (320, 180)
 PLACEMENT_COLUMNS = ["Object", "Spacing", "Chance", "Slope from", "to", "Height from", "to",
                      "Biomes", "Size from", "to", "Lean", "Distance"]
@@ -145,6 +148,18 @@ def main_size(shape: str) -> tuple[str, float, float]:
     return name, sizes[name][0], sizes[name][1]
 
 
+def map_image(settings: dict, projection: str, box: tuple[int, int]) -> QImage:
+    """A world's map (midgard/world_map.h) as large as fits in box, in its proportions. Raises
+    ValueError for settings the engine refuses."""
+    midgard = engine.module()
+    text = json.dumps(settings)
+    aspect = midgard.map_aspect(text, projection)
+    width = max(1, min(box[0], round(box[1] * aspect)))
+    height = max(1, min(box[1], round(width / aspect)))
+    pixels = midgard.world_map(text, width, height, projection)
+    return QImage(pixels, width, height, QImage.Format.Format_RGBA8888).copy()
+
+
 def preview_settings(recipe: dict, shape: str, size: float, seed: int) -> dict:
     """Scene settings for previewing a recipe: a body of that shape and size (kept in the
     shape's range; its other sizes their defaults), and the ground's settings with the recipe's
@@ -154,6 +169,8 @@ def preview_settings(recipe: dict, shape: str, size: float, seed: int) -> dict:
         body[name] = default
     main, low, high = main_size(shape)
     body[main] = min(max(size, low), high)
+    if shape == "bounded_area":
+        body["length"] = body["width"]  # a square
     body["origin"] = origin(shape, body)
     terrain = dict(recipe.get("terrain", {}))
     if recipe.get("graph"):
@@ -364,11 +381,26 @@ class WorldTypePanel(QWidget):
         self.seed.setValue(1)
         self.seed.valueChanged.connect(lambda _v: self._schedule())
         pform.addRow("Seed", self.seed)
+        self.projection = QComboBox()
+        self.projection.currentIndexChanged.connect(lambda _i: self._schedule())
+        pform.addRow("Map", self.projection)
         pv.addLayout(pform)
         self.map = QLabel()
         self.map.setMinimumSize(320, 160)
         self.map.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pv.addWidget(self.map)
+        save_row = QHBoxLayout()
+        self.save_size = QSpinBox()
+        self.save_size.setRange(64, 4096)
+        self.save_size.setValue(2048)
+        self.save_size.setSuffix(" px")
+        self.save_size.setToolTip("The saved map's longer side")
+        save = QPushButton("Save Map Image…")
+        save.clicked.connect(lambda: self._save_map_as())
+        save_row.addWidget(save)
+        save_row.addWidget(self.save_size)
+        save_row.addStretch(1)
+        pv.addLayout(save_row)
         self.view_image = QLabel()
         self.view_image.setMinimumSize(320, 180)
         self.view_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -805,6 +837,14 @@ class WorldTypePanel(QWidget):
             self.preview_size.setRange(low, high)
             self.preview_size.setPrefix(f"{name}: ")
             self.preview_size.blockSignals(False)
+            midgard = engine.module()
+            self.projection.blockSignals(True)
+            current = self.projection.currentData()
+            self.projection.clear()
+            for key in midgard.map_projections(shape) if midgard else []:
+                self.projection.addItem(PROJECTIONS.get(key, key), key)
+            self.projection.setCurrentIndex(max(self.projection.findData(current), 0))
+            self.projection.blockSignals(False)
         self._schedule()
 
     def _schedule(self) -> None:
@@ -841,14 +881,34 @@ class WorldTypePanel(QWidget):
         if self.problems.count():
             return
         try:
-            pixels = midgard.world_map(json.dumps(settings), *MAP_SIZE)
-            image = QImage(pixels, *MAP_SIZE, QImage.Format.Format_RGBA8888).copy()
-            self.map_image = image
-            self.map.setPixmap(QPixmap.fromImage(image))
+            self.map_image = map_image(settings, self.projection.currentData() or "", MAP_BOX)
+            self.map.setPixmap(QPixmap.fromImage(self.map_image))
         except (ValueError, RuntimeError) as e:
             self.problems.addItem(str(e))
             return
         self.render_view(settings)
+
+    def save_map(self, path: str, long_side: int) -> bool:
+        """The preview's world's map as an image file (PNG by its name), its longer side
+        long_side pixels."""
+        settings = self.preview_settings()
+        if settings is None or engine.module() is None:
+            return False
+        image = map_image(settings, self.projection.currentData() or "", (long_side, long_side))
+        return image.save(path)
+
+    def _save_map_as(self) -> None:
+        if self.preview_settings() is None:
+            return
+        name = f"{self.world_type}_{self.seed.value()}_{self.projection.currentData()}.png"
+        path, _ = QFileDialog.getSaveFileName(self, "Save Map Image", name, "PNG images (*.png)")
+        if path:
+            try:
+                ok = self.save_map(path, self.save_size.value())
+            except (ValueError, RuntimeError) as e:
+                ok, path = False, str(e)
+            if not ok:
+                QMessageBox.warning(self, "Save Map Image", f"The map wasn't saved: {path}")
 
     def render_view(self, settings: dict) -> None:
         """A view of the ground at the scene's origin from above, through the engine's own

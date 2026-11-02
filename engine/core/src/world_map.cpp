@@ -3,8 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
-
-#include "midgard/det.h"
+#include <stdexcept>
 
 namespace midgard {
 
@@ -21,53 +20,148 @@ float smooth(float lo, float hi, float x) {
     return t * t * (3.0f - 2.0f * t);
 }
 
+// The cube's cross: a cell's face, seen from outside: its middle (the face's normal), and the
+// directions of the cell's right and its top.
+struct CrossCell {
+    int col, row;
+    glm::dvec3 normal, right, top;
+};
+const CrossCell kCross[6] = {
+    {0, 1, {-1, 0, 0}, {0, 0, 1}, {0, 1, 0}},   // -X
+    {1, 1, {0, 0, 1}, {1, 0, 0}, {0, 1, 0}},    // +Z
+    {2, 1, {1, 0, 0}, {0, 0, -1}, {0, 1, 0}},   // +X
+    {3, 1, {0, 0, -1}, {-1, 0, 0}, {0, 1, 0}},  // -Z
+    {1, 0, {0, 1, 0}, {1, 0, 0}, {0, 0, -1}},   // +Y
+    {1, 2, {0, -1, 0}, {1, 0, 0}, {0, 0, 1}},   // -Y
+};
+
 }  // namespace
 
-SurfacePoint world_map_place(const Terrain& terrain, int width, int height, int x, int y) {
+std::vector<MapProjection> map_projections(Shape::Kind kind) {
+    switch (kind) {
+        case Shape::Kind::BoundedArea:
+            return {MapProjection::TopDown};
+        case Shape::Kind::FlatCylinder:
+        case Shape::Kind::CurvedCylinder:
+            return {MapProjection::Unrolled};
+        case Shape::Kind::SphereOutside:
+        case Shape::Kind::SphereInside:
+            return {MapProjection::Equirectangular, MapProjection::CubeFaces};
+    }
+    return {};
+}
+
+const char* map_projection_name(MapProjection p) {
+    switch (p) {
+        case MapProjection::TopDown:
+            return "top_down";
+        case MapProjection::Unrolled:
+            return "unrolled";
+        case MapProjection::Equirectangular:
+            return "equirectangular";
+        case MapProjection::CubeFaces:
+            return "cube_faces";
+    }
+    return "?";
+}
+
+std::optional<MapProjection> map_projection_from_name(const std::string& name) {
+    for (MapProjection p : {MapProjection::TopDown, MapProjection::Unrolled,
+                            MapProjection::Equirectangular, MapProjection::CubeFaces})
+        if (name == map_projection_name(p)) return p;
+    return std::nullopt;
+}
+
+double map_aspect(const Terrain& terrain, MapProjection p) {
+    const glm::dvec2 face = terrain.body().shape.face_size();
+    switch (p) {
+        case MapProjection::Equirectangular:
+            return 2.0;
+        case MapProjection::CubeFaces:
+            return 4.0 / 3.0;
+        default:
+            return face.x / face.y;
+    }
+}
+
+std::optional<SurfacePoint> world_map_place(const Terrain& terrain, int width, int height, int x,
+                                            int y, MapProjection p) {
+    (void)terrain;
     const double fx = (double(x) + 0.5) / double(width);
     const double fy = (double(y) + 0.5) / double(height);
-    const Shape& shape = terrain.body().shape;
-    if (shape.kind() == Shape::Kind::SphereOutside || shape.kind() == Shape::Kind::SphereInside) {
-        const double longitude = (fx * 2.0 - 1.0) * kPi;
-        const double latitude = (0.5 - fy) * kPi;
-        const glm::dvec3 d(std::cos(latitude) * std::sin(longitude), std::sin(latitude),
-                           std::cos(latitude) * std::cos(longitude));
-        return cube_surface(d);
+    switch (p) {
+        case MapProjection::Equirectangular: {
+            const double longitude = (fx * 2.0 - 1.0) * kPi;
+            const double latitude = (0.5 - fy) * kPi;
+            const glm::dvec3 d(std::cos(latitude) * std::sin(longitude), std::sin(latitude),
+                               std::cos(latitude) * std::cos(longitude));
+            return cube_surface(d);
+        }
+        case MapProjection::CubeFaces: {
+            const double cx = fx * 4.0, cy = fy * 3.0;
+            const int col = std::min(int(cx), 3), row = std::min(int(cy), 2);
+            for (const CrossCell& c : kCross) {
+                if (c.col != col || c.row != row) continue;
+                const double s = (cx - col) * 2.0 - 1.0;  // -1 at the cell's left
+                const double t = 1.0 - (cy - row) * 2.0;  // -1 at its bottom
+                return cube_surface(glm::normalize(c.normal + s * c.right + t * c.top));
+            }
+            return std::nullopt;
+        }
+        default:
+            return SurfacePoint{0, fx, fy, 0.0};
     }
-    return {0, fx, fy, 0.0};
 }
 
 std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int height) {
+    return world_map(terrain, width, height, map_projections(terrain.body().shape.kind())[0]);
+}
+
+std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int height,
+                                    MapProjection projection) {
+    const Shape& shape = terrain.body().shape;
+    const std::vector<MapProjection> allowed = map_projections(shape.kind());
+    if (std::find(allowed.begin(), allowed.end(), projection) == allowed.end())
+        throw std::invalid_argument(std::string("a ") + shape_name(shape.kind()) + " has no " +
+                                    map_projection_name(projection) + " map");
     width = std::clamp(width, 1, 4096);
     height = std::clamp(height, 1, 4096);
     const TerrainSettings& s = terrain.settings();
-    std::vector<double> heights(size_t(width) * size_t(height));
-    std::vector<SurfacePoint> places(heights.size());
+    const size_t count = size_t(width) * size_t(height);
+    std::vector<double> heights(count, s.sea_level);
+    std::vector<std::optional<SurfacePoint>> places(count);
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x) {
-            const SurfacePoint p = world_map_place(terrain, width, height, x, y);
-            places[size_t(y) * width + x] = p;
-            heights[size_t(y) * width + x] = terrain.height(p.face, p.u, p.v);
+            const size_t i = size_t(y) * width + x;
+            places[i] = world_map_place(terrain, width, height, x, y, projection);
+            if (places[i]) heights[i] = terrain.height(places[i]->face, places[i]->u, places[i]->v);
         }
     // Metres a pixel, along each axis, for the shading.
-    const glm::dvec2 face = terrain.body().shape.face_size();
-    const bool sphere = terrain.body().shape.kind() == Shape::Kind::SphereOutside ||
-                        terrain.body().shape.kind() == Shape::Kind::SphereInside;
-    const double across = sphere ? 4.0 * face.x / double(width) : face.x / double(width);
-    const double down = sphere ? 2.0 * face.x / double(height) : face.y / double(height);
-    const auto h_at = [&](int x, int y) {
-        x = std::clamp(x, 0, width - 1);
-        y = std::clamp(y, 0, height - 1);
-        return heights[size_t(y) * width + x];
+    const glm::dvec2 face = shape.face_size();
+    double across = face.x / double(width), down = face.y / double(height);
+    if (projection == MapProjection::Equirectangular) {
+        across = 4.0 * face.x / double(width);  // round the equator
+        down = 2.0 * face.x / double(height);   // pole to pole
+    } else if (projection == MapProjection::CubeFaces) {
+        across = 4.0 * face.x / double(width);
+        down = 3.0 * face.x / double(height);
+    }
+    // A neighbour's height, or this pixel's off the map's edge or off the cross.
+    const auto h_at = [&](int x, int y, double fallback) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return fallback;
+        const size_t i = size_t(y) * width + x;
+        return places[i] ? heights[i] : fallback;
     };
 
-    std::vector<std::uint8_t> out(size_t(width) * size_t(height) * 4);
+    std::vector<std::uint8_t> out(count * 4, 0);
     const glm::vec3 deep(0.05f, 0.12f, 0.28f), shallow(0.16f, 0.38f, 0.52f);
     const glm::vec3 sand(0.74f, 0.68f, 0.50f), rock(0.45f, 0.43f, 0.40f), snow(0.94f, 0.95f, 0.97f);
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x) {
-            const SurfacePoint& p = places[size_t(y) * width + x];
-            const double h = heights[size_t(y) * width + x];
+            const size_t i = size_t(y) * width + x;
+            if (!places[i]) continue;  // transparent
+            const SurfacePoint& p = *places[i];
+            const double h = heights[i];
             const float above = float(h - s.sea_level);
             glm::vec3 c;
             if (above < 0.0f) {
@@ -83,8 +177,8 @@ std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int heigh
                 }
                 c = lerp3(c, sand, 1.0f - smooth(1.0f, 2.5f, above));
                 // Rock where it's steep, snow where it's cold or high.
-                const double gx = (h_at(x + 1, y) - h_at(x - 1, y)) / (2.0 * across);
-                const double gy = (h_at(x, y + 1) - h_at(x, y - 1)) / (2.0 * down);
+                const double gx = (h_at(x + 1, y, h) - h_at(x - 1, y, h)) / (2.0 * across);
+                const double gy = (h_at(x, y + 1, h) - h_at(x, y - 1, h)) / (2.0 * down);
                 const float slope = float(std::sqrt(gx * gx + gy * gy));
                 c = lerp3(c, rock, smooth(0.6f, 1.0f, slope));
                 const float cold =
@@ -93,11 +187,10 @@ std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int heigh
                                         float(terrain.temperature_at(p.face, p.u, p.v, h)))
                         : smooth(float(s.snow_line) - 3.0f, float(s.snow_line) + 3.0f, float(h));
                 c = lerp3(c, snow, cold);
-                // Light from the north-west.
-                const float shade = float(std::clamp(1.0 - (gx - gy) * 0.8, 0.55, 1.35));
-                c *= shade;
+                // Light from the top left.
+                c *= float(std::clamp(1.0 - (gx - gy) * 0.8, 0.55, 1.35));
             }
-            std::uint8_t* px = &out[(size_t(y) * width + x) * 4];
+            std::uint8_t* px = &out[i * 4];
             px[0] = std::uint8_t(std::clamp(c.r, 0.0f, 1.0f) * 255.0f + 0.5f);
             px[1] = std::uint8_t(std::clamp(c.g, 0.0f, 1.0f) * 255.0f + 0.5f);
             px[2] = std::uint8_t(std::clamp(c.b, 0.0f, 1.0f) * 255.0f + 0.5f);

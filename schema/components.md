@@ -90,6 +90,15 @@ player comes within `distance` metres and takes them away once well beyond; they
 like any other (drawn, lit, solid), never saved. Migration 12 made each scene's terrain settings into its own Custom world
 type, with the same ground.
 
+A world's map (`midgard/world_map.h`; the World Type editor shows it and saves it as an image)
+is its whole ground, coloured by the sea's depth, biome, sand, rock and snow and shaded by its
+slopes, in a projection that suits its shape and in the world's own proportions:
+`top_down` for a bounded area (width across, length down), `unrolled` for a cylinder (round it
+across, along it down, cut at its join), and for a sphere `equirectangular` (longitude across,
+0 at +Z, the +Y pole at the top; 2:1) or `cube_faces` (the six faces as a 4 × 3 cross: -X, +Z,
++X and -Z along the middle, each seen from outside with +Y up, +Y above +Z and -Y below it; the
+corners transparent).
+
 The ground is hills and valleys on any shape (`midgard/terrain.h`; spheres from milestone
 5.10). Heights come from noise at points on the shape's
 surface, so they are the same on every device and a cylinder's join is seamless: `base` plus

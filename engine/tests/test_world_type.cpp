@@ -109,30 +109,64 @@ TEST_CASE("a recipe carries its graph, and the cook checks it") {
     CHECK(midgard::recipe_from_json(json::object()).graph.empty());
 }
 
-TEST_CASE("a world's map: one projection per shape, coloured by the ground") {
+TEST_CASE("a world's map: projections for each shape, coloured by the ground") {
+    using midgard::MapProjection;
     const auto body = [](const char* text) { return midgard::body_from_json(json::parse(text)); };
     midgard::TerrainSettings s;
     s.seed = 7;
-    // A bounded area: from above, the pixel's middle across and down the face.
+    // A bounded area: from above, the pixel's middle across and down the face, in proportion.
     const midgard::Terrain area(
-        body(R"({"id": "a", "shape": "bounded_area", "width": 2000, "length": 2000})"), s);
-    const midgard::SurfacePoint corner = midgard::world_map_place(area, 64, 32, 0, 0);
-    CHECK(corner.face == 0);
-    CHECK(corner.u == doctest::Approx(0.5 / 64));
-    CHECK(corner.v == doctest::Approx(0.5 / 32));
+        body(R"({"id": "a", "shape": "bounded_area", "width": 4000, "length": 2000})"), s);
+    CHECK(midgard::map_projections(midgard::Shape::Kind::BoundedArea) ==
+          std::vector<MapProjection>{MapProjection::TopDown});
+    CHECK(midgard::map_aspect(area, MapProjection::TopDown) == 2.0);
+    const auto corner = midgard::world_map_place(area, 64, 32, 0, 0, MapProjection::TopDown);
+    REQUIRE(corner);
+    CHECK(corner->face == 0);
+    CHECK(corner->u == doctest::Approx(0.5 / 64));
+    CHECK(corner->v == doctest::Approx(0.5 / 32));
     const std::vector<std::uint8_t> map = midgard::world_map(area, 64, 32);
     REQUIRE(map.size() == 64 * 32 * 4);
-    CHECK(map == midgard::world_map(area, 64, 32));  // the same every time
-    // Its ocean round the edge is blue, its middle land (5.9's ground: hills above the sea).
-    const auto pixel = [&](int x, int y) { return &map[(size_t(y) * 64 + x) * 4]; };
-    CHECK(pixel(0, 0)[2] > pixel(0, 0)[0]);
-    CHECK(pixel(0, 0)[3] == 255);
+    CHECK(map == midgard::world_map(area, 64, 32, MapProjection::TopDown));  // its usual one
+    // Its ocean round the edge is blue and opaque.
+    CHECK(map[2] > map[0]);
+    CHECK(map[3] == 255);
+    CHECK_THROWS_AS(midgard::world_map(area, 8, 8, MapProjection::CubeFaces),
+                    std::invalid_argument);
+    // A cylinder unrolled: round it across, along it down.
+    const midgard::Terrain habitat(
+        body(R"({"id": "h", "shape": "curved_cylinder", "radius": 1000, "length": 5000})"), s);
+    CHECK(midgard::map_aspect(habitat, MapProjection::Unrolled) ==
+          doctest::Approx(2.0 * 3.141592653589793 * 1000.0 / 5000.0));
     // A sphere: latitude and longitude, the +Y pole along the top row.
     const midgard::Terrain planet(body(R"({"id": "p", "shape": "sphere_outside", "radius": 2000})"),
                                   s);
-    const midgard::SurfacePoint top = midgard::world_map_place(planet, 64, 32, 10, 0);
-    CHECK(midgard::cube_direction(top.face, top.u, top.v).y > 0.99);
-    const midgard::SurfacePoint middle = midgard::world_map_place(planet, 64, 32, 32, 16);
-    CHECK(std::abs(midgard::cube_direction(middle.face, middle.u, middle.v).y) < 0.06);
-    CHECK(midgard::world_map(planet, 64, 32).size() == 64 * 32 * 4);
+    const auto top =
+        midgard::world_map_place(planet, 64, 32, 10, 0, MapProjection::Equirectangular);
+    CHECK(midgard::cube_direction(top->face, top->u, top->v).y > 0.99);
+    const auto middle =
+        midgard::world_map_place(planet, 64, 32, 32, 16, MapProjection::Equirectangular);
+    CHECK(std::abs(midgard::cube_direction(middle->face, middle->u, middle->v).y) < 0.06);
+    // The cube's cross: each face's middle in its cell, the corners off the map.
+    const auto at = [&](int x, int y) {
+        return midgard::world_map_place(planet, 400, 300, x, y, MapProjection::CubeFaces);
+    };
+    CHECK_FALSE(at(10, 10));
+    CHECK_FALSE(at(390, 290));
+    const glm::dvec3 middles[6] = {{-1, 0, 0}, {0, 0, 1}, {1, 0, 0},
+                                   {0, 0, -1}, {0, 1, 0}, {0, -1, 0}};
+    const int cells[6][2] = {{0, 1}, {1, 1}, {2, 1}, {3, 1}, {1, 0}, {1, 2}};
+    for (int i = 0; i < 6; ++i) {
+        const auto p = at(cells[i][0] * 100 + 50, cells[i][1] * 100 + 50);
+        REQUIRE(p);
+        CHECK(glm::dot(midgard::cube_direction(p->face, p->u, p->v), middles[i]) > 0.999);
+    }
+    // Neighbouring cells meet: the +Z cell's right edge is the +X cell's left edge.
+    const auto left = at(199, 150), right = at(200, 150);
+    CHECK(glm::distance(midgard::cube_direction(left->face, left->u, left->v),
+                        midgard::cube_direction(right->face, right->u, right->v)) < 0.02);
+    const std::vector<std::uint8_t> cross =
+        midgard::world_map(planet, 40, 30, MapProjection::CubeFaces);
+    CHECK(cross[3] == 0);                                 // a corner: transparent
+    CHECK(cross[(size_t(15) * 40 + 15) * 4 + 3] == 255);  // +Z's cell
 }

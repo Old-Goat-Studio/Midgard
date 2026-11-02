@@ -11,7 +11,7 @@ from PySide6.QtCore import QPointF
 
 from midgard_editor import engine, world_types
 from midgard_editor.docks.world_type_editor import (
-    MAP_SIZE,
+    MAP_BOX,
     SPECS,
     WorldTypePanel,
     classic_graph,
@@ -185,7 +185,11 @@ def test_world_types_are_made_duplicated_renamed_and_deleted(panel, project, mon
 @needs_engine
 def test_the_preview_shows_a_map_its_cost_and_the_cooks_problems(panel):
     panel.update_preview()
-    assert panel.map_image is not None and panel.map_image.width() == MAP_SIZE[0]
+    # The shape's usual map, in its proportions: a square area from above.
+    assert panel.preview_shape.currentData() == "bounded_area"
+    assert panel.projection.currentData() == "top_down"
+    assert panel.map_image is not None
+    assert (panel.map_image.width(), panel.map_image.height()) == (MAP_BOX[1], MAP_BOX[1])
     assert "costs" in panel.cost.text()
     assert panel.problems.count() == 0
     # A size the recipe doesn't suit: the cook's complaint, and no map.
@@ -195,3 +199,28 @@ def test_the_preview_shows_a_map_its_cost_and_the_cooks_problems(panel):
     panel.size_max.editingFinished.emit()
     panel.update_preview()
     assert panel.problems.count() >= 1
+
+
+@needs_engine
+def test_maps_in_each_projection_saved_as_images(panel, tmp_path):
+    panel.preview_shape.setCurrentIndex(panel.preview_shape.findData("sphere_outside"))
+    assert [panel.projection.itemData(i) for i in range(panel.projection.count())] == \
+        ["equirectangular", "cube_faces"]
+    panel.update_preview()
+    assert (panel.map_image.width(), panel.map_image.height()) == (320, 160)
+    panel.projection.setCurrentIndex(1)
+    panel.update_preview()
+    assert (panel.map_image.width(), panel.map_image.height()) == (213, 160)
+    assert panel.map_image.pixelColor(2, 2).alpha() == 0  # off the cross
+    path = tmp_path / "planet.png"
+    assert panel.save_map(str(path), 400)
+    from PySide6.QtGui import QImage
+    saved = QImage(str(path))
+    assert (saved.width(), saved.height()) == (400, 300)
+    # A cylinder unrolled: round it across, along it down (2 pi 1 km by 5 km).
+    panel.preview_shape.setCurrentIndex(panel.preview_shape.findData("curved_cylinder"))
+    panel.preview_size.setValue(1000)
+    assert panel.projection.currentData() == "unrolled"
+    panel.update_preview()
+    assert panel.map_image.height() == 160
+    assert abs(panel.map_image.width() - 160 * 2 * 3.14159 * 1000 / 5000) <= 1

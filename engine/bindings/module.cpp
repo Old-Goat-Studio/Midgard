@@ -16,7 +16,9 @@
 #include <array>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <span>
+#include <stdexcept>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -241,24 +243,63 @@ PYBIND11_MODULE(_midgard, m) {
             py::arg("x"), py::arg("y"), py::arg("z"), "(up, east, north) at a point.");
     m.def("shape_fingerprint", &midgard::shape_fingerprint,
           "The shapes' fingerprint (equal to schema/tests/shape_fingerprint.json everywhere).");
+    // A map's terrain, from scene settings with a body and the ground's settings themselves.
+    const auto map_terrain = [](const std::string& settings_json) {
+        const nlohmann::json s = nlohmann::json::parse(settings_json);
+        if (!s.contains("body") || !s.contains("terrain"))
+            throw py::value_error("a map needs a body and terrain settings");
+        return std::make_unique<midgard::Terrain>(midgard::body_from_json(s.at("body")),
+                                                  midgard::terrain_from_json(s.at("terrain")));
+    };
+    const auto projection_of = [](const midgard::Terrain& t, const std::string& name) {
+        if (name.empty()) return midgard::map_projections(t.body().shape.kind())[0];
+        const auto p = midgard::map_projection_from_name(name);
+        if (!p) throw py::value_error("no map projection \"" + name + "\"");
+        return *p;
+    };
     m.def(
         "world_map",
-        [](const std::string& settings_json, int width, int height) {
+        [map_terrain, projection_of](const std::string& settings_json, int width, int height,
+                                     const std::string& projection) {
+            const auto terrain = map_terrain(settings_json);
+            const midgard::MapProjection p = projection_of(*terrain, projection);
             std::vector<std::uint8_t> pixels;
-            {
-                const nlohmann::json s = nlohmann::json::parse(settings_json);
-                if (!s.contains("body") || !s.contains("terrain"))
-                    throw py::value_error("a map needs a body and terrain settings");
-                const midgard::Terrain terrain(midgard::body_from_json(s.at("body")),
-                                               midgard::terrain_from_json(s.at("terrain")));
+            try {
                 py::gil_scoped_release unlocked;
-                pixels = midgard::world_map(terrain, width, height);
+                pixels = midgard::world_map(*terrain, width, height, p);
+            } catch (const std::invalid_argument& e) {
+                throw py::value_error(e.what());
             }
             return py::bytes(reinterpret_cast<const char*>(pixels.data()), pixels.size());
         },
         py::arg("settings_json"), py::arg("width"), py::arg("height"),
+        py::arg("projection") = std::string(),
         "A world's map (midgard/world_map.h) from scene settings with a body and the ground's "
-        "settings themselves: RGBA8, top row first.");
+        "settings themselves, in a projection (none: the shape's usual one): RGBA8, top row "
+        "first.");
+    m.def(
+        "map_projections",
+        [](const std::string& shape) {
+            std::vector<std::string> out;
+            for (const auto kind :
+                 {midgard::Shape::Kind::BoundedArea, midgard::Shape::Kind::FlatCylinder,
+                  midgard::Shape::Kind::CurvedCylinder, midgard::Shape::Kind::SphereOutside,
+                  midgard::Shape::Kind::SphereInside})
+                if (shape == midgard::shape_name(kind))
+                    for (const midgard::MapProjection p : midgard::map_projections(kind))
+                        out.emplace_back(midgard::map_projection_name(p));
+            return out;
+        },
+        py::arg("shape"), "The map projections a shape's maps can use, its usual one first.");
+    m.def(
+        "map_aspect",
+        [map_terrain, projection_of](const std::string& settings_json,
+                                     const std::string& projection) {
+            const auto terrain = map_terrain(settings_json);
+            return midgard::map_aspect(*terrain, projection_of(*terrain, projection));
+        },
+        py::arg("settings_json"), py::arg("projection") = std::string(),
+        "Width over height of a world's map in a projection.");
     m.def(
         "graph_cost",
         [](const std::string& graph_json) {
