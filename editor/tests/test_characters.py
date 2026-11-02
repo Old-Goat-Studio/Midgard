@@ -213,3 +213,38 @@ def test_the_inspector_names_a_characters_rig(project, qtbot):
     assert "rig" not in project.entity(entity.id).components["character"]
     project.undo_stack.undo()
     assert project.entity(entity.id).components["character"]["rig"]["hips"] == ""
+
+
+@needs_engine
+def test_the_character_form_imports_a_model_from_anywhere(project, qtbot, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from midgard_editor.docks.entity_form import EntityForm
+    entity = Entity(project.next_entity_id(), "Hero", None, {"transform": {}})
+    project.put_entity(entity)
+    form = EntityForm(project, entity.id)
+    qtbot.addWidget(form)
+    form.add("character")
+    form = EntityForm(project, entity.id)
+    qtbot.addWidget(form)
+    assert form.character_model.count() == 1  # (nothing to choose yet)
+    hero = form.import_character_file("model", SAMPLES / "superhero_male.glb")
+    library = form.import_character_file("clips", SAMPLES / "animation_library.glb")
+    assert hero == "asset:characters/superhero_male/superhero_male.glb"
+    assert (project.objects_dir / "characters" / "superhero_male" / "superhero_male.glb").is_file()
+    character = project.entity(entity.id).components["character"]
+    assert character["model"] == hero and character["clips"] == library
+    assert character["clip"] == "A_TPose"  # (the first of its clips)
+    form = EntityForm(project, entity.id)  # (as the Inspector rebuilds it)
+    qtbot.addWidget(form)
+    assert form.character_model.currentData() == hero
+    assert form.character_clip.findData("Walk_Loop") >= 0
+    # Not a skinned model: refused, nothing copied.
+    said = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: said.append(a[2]))
+    junk = tmp_path / "junk.glb"
+    junk.write_bytes(b"not glTF")
+    assert form.import_character_file("model", junk) == ""
+    assert said and "isn't a skinned model" in said[0]
+    assert not (project.objects_dir / "characters" / "junk").exists()
+    assert project.entity(entity.id).components["character"]["model"] == hero
