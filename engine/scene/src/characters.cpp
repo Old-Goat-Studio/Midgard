@@ -21,6 +21,10 @@ glm::dmat4 standing(const Scene& scene, entt::entity e) {
              : world;
 }
 
+// A model's front (glTF's +Z) turned to the entity's front (-Z, which a player faces as it
+// walks, as cameras, spot lights and arrivals do): half a turn about its up.
+const glm::mat4 kFacing = glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0, 1, 0));
+
 glm::mat4 standing_offset(const Scene& scene, entt::entity e) {
     const Player* p = scene.registry.try_get<Player>(e);
     return p ? glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f * p->height, 0.0f))
@@ -41,11 +45,11 @@ std::vector<std::string> Characters::load(const Scene& scene, const Bytes& bytes
             const std::vector<std::uint8_t> data = bytes(asset);
             SkinnedModel skinned = load_skinned_glb(data);
             BuiltAnimation built = build_animation(skinned);
-            auto m = std::make_shared<Model>(
-                Model{std::move(built.skeleton), std::move(skinned.skeleton),
-                      std::move(built.clips), std::move(built.skin_to_skeleton),
-                      std::move(skinned.inverse_binds), skinned.armature, std::move(skinned.mesh),
-                      std::move(skinned.joints), std::move(skinned.weights)});
+            auto m = std::make_shared<Model>(Model{
+                std::move(built.skeleton), std::move(skinned.skeleton), std::move(built.clips),
+                std::move(built.skin_to_skeleton), std::move(skinned.inverse_binds),
+                kFacing * skinned.armature, std::move(skinned.mesh), std::move(skinned.joints),
+                std::move(skinned.weights)});
             models_.emplace(asset, m);
             return m;
         } catch (const std::exception& e) {
@@ -293,13 +297,12 @@ std::optional<Characters::FirstPersonView> Characters::first_person(const Scene&
     const Pose* pose = f.own ? f.pose.get() : s.pose.get();
     const std::span<const glm::mat4> palette = f.own ? f.palette : s.palette;
     if (!c || !pose || palette.empty() || f.mesh.vertices.empty()) return {};
-    // The eye at the camera: the model's +Z (forward) along the camera's -Z, its up the
-    // camera's up; moved by the offset in the camera's frame.
+    // The eye at the camera: the model's front (the entity's -Z, kFacing) along the camera's
+    // -Z, its up the camera's up; moved by the offset in the camera's frame.
     const glm::vec3 eye = glm::vec3(f.m->armature * pose->model()[size_t(f.eye)][3]);
-    const glm::mat4 turn = glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0, 1, 0));
     FirstPersonView view;
     view.mesh = &f.mesh;
-    view.model = camera * glm::translate(glm::mat4(1.0f), c->first_person.offset) * turn *
+    view.model = camera * glm::translate(glm::mat4(1.0f), c->first_person.offset) *
                  glm::translate(glm::mat4(1.0f), -eye) * f.m->armature;
     view.skin = palette;
     if (f.player) view.state = f.player->state();
@@ -618,8 +621,8 @@ void Characters::apply_ik(const Scene& scene, entt::entity e, const CharacterRef
         const glm::mat3 parent = hp < 0 ? glm::mat3(1.0f) : glm::mat3(model[size_t(hp)]);
         local[size_t(hips)].translation += glm::inverse(parent) * down;
         // Each foot to the ground under it, as high above it as its animation lifts it; its sole
-        // along the slope while it is down.
-        const glm::vec3 forward = joints_dir({0, 0, 1});
+        // along the slope while it is down. (Its knees bend forward: the entity's -Z.)
+        const glm::vec3 forward = joints_dir({0, 0, -1});
         for (int side = 0; side < 2; ++side) {
             if (bone(legs[side][2]) < 0 || bone(legs[side][1]) < 0) continue;
             const int thigh = bone(legs[side][0]), knee = bone(legs[side][1]),
@@ -639,10 +642,11 @@ void Characters::apply_ik(const Scene& scene, entt::entity e, const CharacterRef
     }
 
     // Looking: the neck a third of the way there, the head the rest, in all no further than
-    // the limit from where the animation has the head facing (forward, +Z, as animated).
+    // the limit from where the animation has the head facing (forward, the entity's -Z, as
+    // animated).
     if (look && s.look_weight > 1e-3f && bone(HumanBone::Head) >= 0) {
         const glm::vec3 target = joints_of(entity_from_world(*look));
-        const glm::vec3 forward = joints_dir({0, 0, 1});
+        const glm::vec3 forward = joints_dir({0, 0, -1});
         const float limit = glm::radians(c.look_limit);
         const int neck = bone(HumanBone::Neck), head = bone(HumanBone::Head);
         const glm::quat head_before = rotation_at(head);
@@ -656,14 +660,14 @@ void Characters::apply_ik(const Scene& scene, entt::entity e, const CharacterRef
         aim(local, parents, head, head_axis, target, std::max(0.0f, limit - used), s.look_weight);
     }
 
-    // Hands: the elbow bending down and back.
+    // Hands: the elbow bending down and back (behind: the entity's +Z).
     const HumanBone arms[2][3] = {
         {HumanBone::LeftUpperArm, HumanBone::LeftLowerArm, HumanBone::LeftHand},
         {HumanBone::RightUpperArm, HumanBone::RightLowerArm, HumanBone::RightHand}};
     for (int side = 0; side < 2; ++side) {
         const State::Reach& r = s.reach[side];
         if (r.blend < 1e-3f || !r.point || bone(arms[side][2]) < 0) continue;
-        const glm::vec3 pole = position_at(bone(arms[side][1])) + joints_dir({0, -1, -1}) * 0.5f;
+        const glm::vec3 pole = position_at(bone(arms[side][1])) + joints_dir({0, -1, 1}) * 0.5f;
         two_bone_ik(local, parents, bone(arms[side][0]), bone(arms[side][1]), bone(arms[side][2]),
                     joints_of(entity_from_world(*r.point)), pole, r.blend);
     }

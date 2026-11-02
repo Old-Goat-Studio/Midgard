@@ -181,6 +181,8 @@ class ViewportPanel(QWidget):
         self.camera = OrbitCamera()
         self.preview_view: str | None = None  # a game camera view shown (the Camera editor)
         self.view = None  # the engine's _midgard.Viewport, when there is one
+        self._models = model_materials.ModelPreparer(self)  # models' materials, made aside
+        self._models.ready.connect(self._model_ready)
         self._sent_meshes: set[str] = set()
         self._sent_content: dict[str, int] = {}  # object content id -> hash of what was sent
         self._sent_objects: dict[str, str] = {}  # object id -> the parts JSON sent
@@ -569,7 +571,15 @@ class ViewportPanel(QWidget):
                 except RuntimeError as e:
                     log.warning("Viewport: mesh %s: %s", asset, e)
                 self._sent_meshes.add(asset)
-        # A model used as a mesh: drawn with its own material under the entity's.
+        # A model used as a mesh: drawn with its own material under the entity's. Made the
+        # first time on a worker thread (a minute, for a character with big textures): the
+        # model is drawn plainly until then.
+        model = model_materials.model_of(entity.components)
+        if model and not model_materials.ready(self.project, model):
+            self._models.prepare(self.project, model)
+            components = entity.components
+            self._put_entity(entity, components)
+            return
         components = model_materials.effective(self.project, entity.components)
         for texture, data in model_materials.textures_of(self.project,
                                                          entity.components).items():
@@ -579,12 +589,25 @@ class ViewportPanel(QWidget):
                 except RuntimeError as e:
                     log.warning("Viewport: texture %s: %s", texture, e)
                 self._sent_content[texture] = hash(data)
+        self._put_entity(entity, components)
+
+    def _put_entity(self, entity, components: dict) -> None:
         try:
             self.view.put_entity(json.dumps({"id": entity.id, "name": entity.name,
                                              "parent": entity.parent,
                                              "components": components}))
         except RuntimeError as e:
             log.warning("Viewport: %s: %s", entity.name, e)
+
+    def _model_ready(self, asset: str) -> None:
+        """A model's material is made: the entities using it drawn with it."""
+        self._models.done(asset)
+        if self.view is None or self.project is None:
+            return
+        for entity in parents_first(self.project.entities()):
+            if model_materials.model_of(entity.components) == asset:
+                self._put(entity)
+        self.request_render()
 
     def _entities_changed(self, entity_id: str) -> None:
         if not entity_id:  # added or removed: start again (scenes are small for now)

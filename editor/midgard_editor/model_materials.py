@@ -6,16 +6,28 @@ An object imported through the Objects panel has its model's materials as parts;
 directly (from objects/ or the Asset Library) is one mesh, so it is drawn with its first
 material. The entity's own material component wins wherever it says something (a colour, a
 texture slot); the model's fills in the rest. Its textures are cooked to KTX2 by the engine's
-importer, as content "mdl:<model's content id>#<n>" (images/models/... in game.pak)."""
+importer, as content "mdl:<model's content id>#<n>" (images/models/... in game.pak).
+
+Importing a model and encoding its textures can take a minute for big ones (a character with
+4K maps), so the result is kept on disk (build/cache/models/, by the contents of the model and
+the files it names) and made once; the editor's views make it on a worker thread
+(ModelPreparer) and draw the model plainly meanwhile."""
+import contextlib
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
-from . import engine
+from PySide6.QtCore import QObject, Signal
+
+from . import content_cache, engine
 from .objects import _material
 
 PREFIX = "mdl:"
-_cache: dict[tuple[str, int, int], tuple[dict[str, Any] | None, dict[str, bytes]]] = {}
+Result = tuple[dict[str, Any] | None, dict[str, bytes]]
+_cache: dict[tuple[str, int, int], Result] = {}
+_lock = threading.Lock()
+_importing: dict[tuple[str, int, int], threading.Lock] = {}  # one import of a model at a time
 
 
 def texture_id(asset: str, index: int) -> str:
@@ -40,34 +52,135 @@ def model_file(project, asset: str) -> Path | None:
     return None
 
 
-def model_material(project, asset: str) -> tuple[dict[str, Any] | None, dict[str, bytes]]:
-    """The model's first material as a material component (None: it has none, or it can't be
-    read), and the KTX2 textures it names. Read once per change of the file."""
+def _files_named(file: Path) -> list[Path]:
+    """The files a .gltf names (its buffers and images, beside it); none for a .glb."""
+    if file.suffix.lower() != ".gltf":
+        return []
+    try:
+        doc = json.loads(file.read_text("utf-8"))
+    except (OSError, ValueError):
+        return []
+    uris = [x.get("uri", "") for x in doc.get("buffers", []) + doc.get("images", [])]
+    return sorted({file.parent / u for u in uris if u and not u.startswith("data:")})
+
+
+def _keys(project, asset: str) -> tuple[tuple[str, int, int], Path] | None:
     file = model_file(project, asset)
     module = engine.module()
     if file is None or module is None or not hasattr(module, "import_model"):
-        return None, {}
-    stat = file.stat()
-    key = (str(file), stat.st_mtime_ns, stat.st_size)
-    if key in _cache:
-        return _cache[key]
-    result: tuple[dict[str, Any] | None, dict[str, bytes]] = (None, {})
+        return None
     try:
-        model = module.import_model(file, json.dumps({}))
-    except RuntimeError:
-        model = None
-    if model is not None:
-        index = next((p["material"] for p in model["parts"] if p["material"] >= 0), -1)
-        if index >= 0:
-            m = model["materials"][index]
-            material = _material("x", m)  # (texture ids set below)
-            used = dict(m["textures"])  # slot -> the model's texture index
-            if used:
-                material["textures"] = {slot: texture_id(asset, i) for slot, i in used.items()}
-            result = (material, {texture_id(asset, i): model["textures"][i]["ktx2"]
-                                 for i in used.values()})
-    _cache[key] = result
+        stat = file.stat()
+    except OSError:
+        return None
+    return (str(file), stat.st_mtime_ns, stat.st_size), file
+
+
+def _disk(project, file: Path, asset: str) -> tuple[content_cache.DiskCache, str]:
+    disk = content_cache.DiskCache(content_cache.cache_dir(Path(project.root), "models"))
+    named = [content_cache.file_hash(f) for f in _files_named(file)]
+    return disk, content_cache.key_of("model-material", asset, content_cache.file_hash(file),
+                                      named)
+
+
+def _from_disk(found) -> Result:
+    data, blobs = found
+    return data["material"], {texture: blobs[name] for texture, name in data["textures"].items()
+                              if name in blobs}
+
+
+def ready(project, asset: str) -> bool:
+    """Whether the model's material can be had now, without importing it (in memory, on disk,
+    or nothing to import)."""
+    keys = _keys(project, asset)
+    if keys is None:
+        return True
+    key, file = keys
+    with _lock:
+        if key in _cache:
+            return True
+    disk, disk_key = _disk(project, file, asset)
+    found = disk.get(disk_key)
+    if found is None:
+        return False
+    with _lock:
+        _cache[key] = _from_disk(found)
+    return True
+
+
+def model_material(project, asset: str) -> Result:
+    """The model's first material as a material component (None: it has none, or it can't be
+    read), and the KTX2 textures it names. Made once per change of its files (kept on disk);
+    this waits for it (seconds, a minute for big ones): see ready() and ModelPreparer."""
+    keys = _keys(project, asset)
+    if keys is None:
+        return None, {}
+    key, file = keys
+    with _lock:
+        if key in _cache:
+            return _cache[key]
+        importing = _importing.setdefault(key, threading.Lock())
+    with importing:  # (another thread importing it: its result, when it's done)
+        with _lock:
+            if key in _cache:
+                return _cache[key]
+        disk, disk_key = _disk(project, file, asset)
+        found = disk.get(disk_key)
+        if found is not None:
+            result = _from_disk(found)
+        else:
+            result = _import(engine.module(), file, asset)
+            material, textures = result
+            names = {texture: f"t{n}" for n, texture in enumerate(textures)}
+            disk.put(disk_key, {"material": material, "textures": names},
+                     {names[t]: data for t, data in textures.items()})
+        with _lock:
+            _cache[key] = result
+            _importing.pop(key, None)
     return result
+
+
+def _import(module, file: Path, asset: str) -> Result:
+    try:
+        model = module.import_model(file, json.dumps({}))  # (without the GIL)
+    except RuntimeError:
+        return None, {}
+    index = next((p["material"] for p in model["parts"] if p["material"] >= 0), -1)
+    if index < 0:
+        return None, {}
+    m = model["materials"][index]
+    material = _material("x", m)  # (texture ids set below)
+    used = dict(m["textures"])  # slot -> the model's texture index
+    if used:
+        material["textures"] = {slot: texture_id(asset, i) for slot, i in used.items()}
+    return material, {texture_id(asset, i): model["textures"][i]["ktx2"] for i in used.values()}
+
+
+class ModelPreparer(QObject):
+    """Models' materials made on a worker thread, for a view that draws the model plainly
+    meanwhile: ready(asset) comes on the view's thread when one is done."""
+    ready = Signal(str)
+
+    def __init__(self, parent: QObject | None = None):
+        super().__init__(parent)
+        self._busy: set[str] = set()
+
+    def prepare(self, project, asset: str) -> None:
+        if asset in self._busy:
+            return
+        self._busy.add(asset)
+
+        def work() -> None:
+            try:
+                model_material(project, asset)
+            finally:
+                with contextlib.suppress(RuntimeError):  # (its view has gone)
+                    self.ready.emit(asset)
+
+        threading.Thread(target=work, name=f"prepare {asset}", daemon=True).start()
+
+    def done(self, asset: str) -> None:
+        self._busy.discard(asset)
 
 
 def _model_of(components: dict) -> str:
@@ -77,6 +190,10 @@ def _model_of(components: dict) -> str:
         return mesh
     model = components.get("character", {}).get("model", "")
     return model if model.startswith(("asset:", "lib:")) else ""
+
+
+def model_of(components: dict) -> str:
+    return _model_of(components)
 
 
 def effective(project, components: dict) -> dict:

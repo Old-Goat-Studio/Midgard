@@ -101,8 +101,37 @@ def test_the_viewport_shows_the_model_with_its_material(project, qtbot):
     view = panel.view = RecordingView()
     panel.set_project(project)
     with_avocado(project)
-    textures = [c[1] for c in view.calls if c[0] == "set_texture"]
-    assert len(textures) == 3 and all(t.startswith(f"mdl:{AVOCADO}#") for t in textures)
+    # The first time, the model's material is made on a worker thread (a big model takes a
+    # minute): the model is drawn plainly at once, then with its material.
     put = [json.loads(c[1]) for c in view.calls if c[0] == "put_entity"]
-    avocado = next(p for p in put if p["name"] == "Avocado")
+    first = next(p for p in put if p["name"] == "Avocado")
+    qtbot.waitUntil(lambda: sum(c[0] == "set_texture" for c in view.calls) == 3, timeout=60000)
+    textures = [c[1] for c in view.calls if c[0] == "set_texture"]
+    assert all(t.startswith(f"mdl:{AVOCADO}#") for t in textures)
+    put = [json.loads(c[1]) for c in view.calls if c[0] == "put_entity"]
+    avocado = [p for p in put if p["name"] == "Avocado"][-1]
     assert set(avocado["components"]["material"]["textures"].values()) == set(textures)
+    assert "textures" not in first["components"].get("material", {})
+    # Kept on disk: opened again, it's drawn with its material at once.
+    from midgard_editor import model_materials
+    model_materials._cache.clear()
+    again = ViewportPanel()
+    qtbot.addWidget(again)
+    view2 = again.view = RecordingView()
+    again.set_project(project)
+    assert sum(c[0] == "set_texture" for c in view2.calls) == 3
+
+
+def test_the_credits_never_wait_for_a_models_textures(project, monkeypatch):
+    """Opening a project shows its credits: they need the models, not their textures (made
+    from a big model, those can take a minute)."""
+    from midgard_editor import model_materials
+    from midgard_editor.cook import used_mesh_assets
+    with_avocado(project)
+
+    def no(*_args):
+        raise AssertionError("the credits imported a model")
+
+    monkeypatch.setattr(model_materials, "model_material", no)
+    used = used_mesh_assets(project, False)
+    assert AVOCADO in used and not any(u.startswith(model_materials.PREFIX) for u in used)

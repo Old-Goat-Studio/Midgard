@@ -37,16 +37,53 @@ def run(project: Path | None = None, smoke_test: Path | None = None) -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(ICON_PATH)))
 
+    # One editor at a time: started again, Midgard brings the running one to the front (with
+    # the project asked for) instead. (The smoke test runs beside it.)
+    instance = None
+    if smoke_test is None:
+        from .single_instance import SingleInstance
+        instance = SingleInstance(settings.dir)
+        if not instance.claim(project):
+            if not instance.reached:
+                _already_running()
+            return 0
+
     from .main_window import MainWindow  # import after QApplication exists
 
     window = MainWindow(settings)
     window.show()
+    if instance is not None:
+        instance.setParent(window)  # (kept, with its lock, while the window lives)
+        instance.asked.connect(lambda message: bring_forward(window, message))
     if smoke_test is not None:
         return _smoke_test(app, window, smoke_test)
     project = startup_project(settings, project)
     if project is not None:  # once the window is up, so a problem shows over it
         QTimer.singleShot(0, lambda: window.open_project(project))
     return app.exec()
+
+
+def bring_forward(window, message: dict) -> None:
+    """Midgard was started again: this editor comes to the front, and opens the project it
+    was asked for if that is another one."""
+    if window.isMinimized():
+        window.showNormal()
+    window.show()
+    window.raise_()
+    window.activateWindow()
+    asked = message.get("project")
+    if asked:
+        current = window.project.config_path.resolve() if window.project is not None else None
+        if Path(asked).resolve() != current:
+            QTimer.singleShot(0, lambda: window.open_project(Path(asked)))
+
+
+def _already_running() -> None:
+    """Started again while the running editor can't answer (busy): say so, start nothing."""
+    from PySide6.QtWidgets import QMessageBox
+    QMessageBox.information(
+        None, APP_NAME, "Midgard is already running. It may be busy (opening a project, say): "
+        "its window comes up when it's ready.")
 
 
 def startup_project(settings: Settings, asked_for: Path | None) -> Path | None:

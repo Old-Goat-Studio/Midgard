@@ -482,6 +482,9 @@ class MainWindow(QMainWindow):
         self.layouts_menu.aboutToShow.connect(self._fill_layouts_menu)
 
         help_ = bar.addMenu("&Help")
+        self.help_action = add_action(help_, f"{APP_NAME} &Help", self.show_help,
+                                      QKeySequence.StandardKey.HelpContents)
+        help_.addSeparator()
         add_action(help_, f"&About {APP_NAME}", self.show_about)
 
     def _build_play_toolbar(self) -> None:
@@ -566,6 +569,11 @@ class MainWindow(QMainWindow):
         if self.themes.apply(key):
             self.settings.set("theme", key)
             log.info("Theme: %s", key)
+
+    def show_help(self) -> None:
+        """The guide (docs/help/Midgard_Help.md) as a PDF, in the system's PDF viewer."""
+        from .help import show_help
+        show_help(self.settings.dir, self)
 
     def show_about(self) -> None:
         AboutDialog(self, engine_info()).exec()

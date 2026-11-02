@@ -1068,7 +1068,8 @@ class AnimationPanel(QWidget):
             self._preview_key = key
             self._view.put_entity(json.dumps({"id": PREVIEW_ID, "name": "Preview",
                                               "components": components}))
-            self._view.set_camera([0.0, 1.2, 3.6], [0.0, 0.9, 0.0], 40.0)
+            # From in front: a character faces -Z (as a player walking does).
+            self._view.set_camera([0.0, 1.2, -3.6], [0.0, 0.9, 0.0], 40.0)
         self.tick(0.0)
 
     def _build_preview_controls(self, graph: dict | None) -> None:

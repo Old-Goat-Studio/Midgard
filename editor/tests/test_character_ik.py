@@ -22,7 +22,7 @@ import midgard
 def on_update(entity, dt):
     x, y, z = entity.position
     entity.look_at((x + 1.0, y + 1.6, z + 1.0))       # 45 degrees to its left
-    entity.reach("right", (x - 0.2, y + 1.15, z + 0.15))  # (0.4 m from the shoulder)
+    entity.reach("right", (x + 0.2, y + 1.15, z - 0.15))  # (0.4 m from the shoulder)
     try:
         entity.reach("middle", None)
     except ValueError as e:
@@ -46,9 +46,10 @@ def add_box(project, name: str, centre, size) -> None:
 @needs_scripting
 def test_feet_stand_on_a_step_and_a_script_reaches_a_hand_out(project, tmp_path):
     with_samples(project)
-    # Flat ground far from the rest, and a 15 cm step under the stepping hero's left foot (+X).
+    # Flat ground far from the rest, and a 15 cm step under the stepping hero's left foot (it
+    # faces -Z: its left is -X).
     add_box(project, "Ground", (60.0, -0.5, 0.0), (40.0, 1.0, 20.0))
-    add_box(project, "Step", (50.93, STEP / 2, 0.0), (1.8, STEP, 2.0))  # (from x 50.03)
+    add_box(project, "Step", (49.07, STEP / 2, 0.0), (1.8, STEP, 2.0))  # (to x 49.97)
     add_hero(project, "Plain", 70.0, {})
     add_hero(project, "Stepping", 50.0, {"feet": True})
     add_hero(project, "Reaching", 75.0, {}, "reacher")
@@ -68,8 +69,8 @@ def test_feet_stand_on_a_step_and_a_script_reaches_a_hand_out(project, tmp_path)
     # The script's: the right hand at the point (where the head turns: test_character_ik.cpp).
     reaching = by_name(dumped, "Reaching")["character"]["bones"]
     hand = reaching["right_hand"]
-    assert math.dist(hand, (75.0 - 0.2, 1.15, 0.15)) < 0.02
-    assert math.dist(plain["right_hand"], (70.0 - 0.2, 1.15, 0.15)) > 0.2  # (it reached)
+    assert math.dist(hand, (75.0 + 0.2, 1.15, -0.15)) < 0.02
+    assert math.dist(plain["right_hand"], (70.0 + 0.2, 1.15, -0.15)) > 0.2  # (it reached)
 
 
 @needs_engine

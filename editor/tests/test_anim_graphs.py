@@ -71,8 +71,9 @@ def test_root_motion_moves_a_character_along_its_facing(project, tmp_path):
     dumped, run = simulate(package, 60)  # a second
     assert run.returncode == 0, run.stderr
     ahead, turned = by_name(dumped, "Ahead"), by_name(dumped, "Turned")
-    assert ahead["position"] == pytest.approx([0.0, 0.0, 2.0], abs=0.05)
-    assert turned["position"] == pytest.approx([12.0, 0.0, 0.0], abs=0.05)  # (facing +X)
+    # (A character faces its entity's -Z, as a player walking does.)
+    assert ahead["position"] == pytest.approx([0.0, 0.0, -2.0], abs=0.05)
+    assert turned["position"] == pytest.approx([8.0, 0.0, 0.0], abs=0.05)  # (facing -X)
 
 
 WALKER = """

@@ -217,7 +217,9 @@ class ProjectPage(QScrollArea):
         """The credits the game needs (the library's CC BY assets its scenes use)."""
         from .. import asset_library
         from ..cook import used_mesh_assets
-        used = asset_library.used_by(self.project, used_mesh_assets(self.project))
+        # (Not the models' own textures: they come with the models, and can take a minute to
+        # make the first time.)
+        used = asset_library.used_by(self.project, used_mesh_assets(self.project, False))
         needed = asset_library.credits(used)
         if needed:
             self.credits.setText("<br>".join(needed))

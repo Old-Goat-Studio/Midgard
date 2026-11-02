@@ -143,8 +143,8 @@ private:
         std::vector<Clip> clips;  // its own
         std::vector<int> skin_to_skeleton;
         std::vector<glm::mat4> inverse_binds;
-        glm::mat4 armature{1.0f};
-        render::MeshData mesh;  // (kept: a viewport's renderer comes and goes)
+        glm::mat4 armature{1.0f};  // (its file's, turned to face the entity's -Z: kFacing)
+        render::MeshData mesh;     // (kept: a viewport's renderer comes and goes)
         std::vector<glm::u16vec4> joints;
         std::vector<glm::vec4> weights;
         render::MeshId gpu = 0;

@@ -142,17 +142,20 @@ def character_assets_used(components: dict) -> list[str]:
     return [a for a in (character.get("model"), character.get("clips")) if a]
 
 
-def used_mesh_assets(project: Project) -> set[str]:
+def used_mesh_assets(project: Project, model_textures: bool = True) -> set[str]:
     """Mesh asset ids the game's scenes use that live in game.pak, and the image files their
-    materials use (the live link cooks them in before sending an entity that uses them)."""
+    materials use (the live link cooks them in before sending an entity that uses them).
+    model_textures=False leaves out the textures models bring ("mdl:"), which can take a
+    minute to make the first time (the credits only need the models)."""
     entities = project.all_entities()
-    return {a for e in entities
+    models = {t for e in entities for t in model_materials.textures_of(project, e.components)
+              } if model_textures else set()
+    return models | {a for e in entities
             if (a := e.components.get("mesh", {}).get("asset")) and
             not a.startswith(BUILTIN_PREFIX)} | {
         a for e in entities for a in character_assets_used(e.components)} | {
         t for e in entities for t in textures.components_textures(e.components)
-        if textures.parse(t) is not None} | {
-        t for e in entities for t in model_materials.textures_of(project, e.components)}
+        if textures.parse(t) is not None}
 
 
 @dataclass

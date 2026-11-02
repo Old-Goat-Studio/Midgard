@@ -15,6 +15,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "midgard/camera_rig.h"
 #include "midgard/characters.h"
 #include "midgard/gltf_skin.h"
 #include "midgard/humanoid.h"
@@ -35,7 +36,9 @@ struct World {
     midgard::Scene scene;
     midgard::Characters characters;
     midgard::Skeleton skeleton = midgard::Skeleton::build(midgard::load_skinned_glb(hero).skeleton);
-    glm::mat4 armature = midgard::load_skinned_glb(hero).armature;
+    // (As Characters has it: the model turned to face the entity's -Z.)
+    glm::mat4 armature = glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0, 1, 0)) *
+                         midgard::load_skinned_glb(hero).armature;
 
     entt::entity add(const char* id, const json& character, const glm::vec3& rotation = {}) {
         json c = character;
@@ -123,28 +126,29 @@ TEST_CASE("a character looks at a point within its limit, and reaches out a hand
         return glm::mat3(w.armature *
                          w.characters.pose(who)->model()[size_t(w.skeleton.find("Head"))]);
     };
-    // Where the head faces: its own axis that faces forward (+Z) as animated, now.
+    // Where the head faces: its own axis that faces forward (the entity's -Z) as animated, now.
     const auto facing = [&] {
-        const glm::vec3 axis = glm::inverse(rotation(twin)) * glm::vec3(0, 0, 1);
+        const glm::vec3 axis = glm::inverse(rotation(twin)) * glm::vec3(0, 0, -1);
         return glm::normalize(glm::dvec3(rotation(e) * axis));
     };
-    // A point 45 degrees to its left (+X), at head height: looked at, within 60.
-    const glm::dvec3 target = head + glm::dvec3(1.0, 0.0, 1.0);
+    // A point 45 degrees to its left (it faces -Z, so its left is -X), at head height: looked
+    // at, within 60.
+    const glm::dvec3 target = head + glm::dvec3(-1.0, 0.0, -1.0);
     w.characters.look_at(e, target);
     for (int i = 0; i < 60; ++i) w.characters.update(w.scene, 1.0f / 30.0f);  // (eased in)
     const glm::dvec3 wanted = glm::normalize(target - w.joint(e, "Head"));
     CHECK(glm::degrees(std::acos(std::clamp(glm::dot(facing(), wanted), -1.0, 1.0))) < 3.0);
     // Behind it: only as far as the limit allows.
-    w.characters.look_at(e, head + glm::dvec3(0.0, 0.0, -1.0));
+    w.characters.look_at(e, head + glm::dvec3(0.0, 0.0, 1.0));
     for (int i = 0; i < 60; ++i) w.characters.update(w.scene, 1.0f / 30.0f);
     const glm::dvec3 ahead = glm::normalize(
-        glm::dvec3(rotation(twin) * (glm::inverse(rotation(twin)) * glm::vec3(0, 0, 1))));
+        glm::dvec3(rotation(twin) * (glm::inverse(rotation(twin)) * glm::vec3(0, 0, -1))));
     const double turned = glm::degrees(std::acos(std::clamp(glm::dot(facing(), ahead), -1.0, 1.0)));
     CHECK(turned < 61.0);
     CHECK(turned > 40.0);
     // A hand to a point in front of its chest.
     const glm::dvec3 shoulder = w.joint(e, "upperarm_r");
-    const glm::dvec3 point = shoulder + glm::dvec3(0.1, -0.2, 0.35);
+    const glm::dvec3 point = shoulder + glm::dvec3(-0.1, -0.2, -0.35);
     w.characters.look_at(e, std::nullopt);
     w.characters.reach(e, true, point);
     for (int i = 0; i < 40; ++i) w.characters.update(w.scene, 1.0f / 30.0f);
@@ -152,4 +156,21 @@ TEST_CASE("a character looks at a point within its limit, and reaches out a hand
     w.characters.reach(e, true, std::nullopt);  // let go: back where the animation has it
     for (int i = 0; i < 60; ++i) w.characters.update(w.scene, 1.0f / 30.0f);
     CHECK(glm::length(w.joint(e, "hand_r") - point) > 0.1);
+}
+
+TEST_CASE("a character faces where its entity faces (-Z), as a walking player does") {
+    // A person facing f (up u) has its left hand on the side cross(u, f).
+    const auto left_side = [](World& w, entt::entity e) {
+        return glm::normalize(w.joint(e, "upperarm_l") - w.joint(e, "upperarm_r"));
+    };
+    World w;
+    const json idle = {{"clip", "Idle_Loop"}};
+    const entt::entity still = w.add("still", idle);  // facing -Z: its left is -X
+    w.characters.update(w.scene, 0.0f);
+    CHECK(glm::dot(left_side(w, still), glm::dvec3(-1, 0, 0)) > 0.9);
+    // Turned the way a player walking along +X is turned: its left is then -Z.
+    const glm::vec3 walking = midgard::upright_rotation(glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
+    const entt::entity walker = w.add("walker", idle, walking);
+    w.characters.update(w.scene, 0.0f);
+    CHECK(glm::dot(left_side(w, walker), glm::dvec3(0, 0, -1)) > 0.9);
 }

@@ -739,7 +739,10 @@ class AssetPlayer(QWidget):
         centre = [(a + b) / 2 for a, b in zip(lo, hi, strict=True)]
         size = max(max(b - a for a, b in zip(lo, hi, strict=True)), 0.01)
         self._frame = (centre, size)
-        self._angle = 0.0
+        # Seen from the front first: a character is turned to face -Z (as a player walking
+        # does), a plain model faces glTF's +Z.
+        import math
+        self._angle = math.pi if self._skinned else 0.0
         self._show_model_clip()
 
     def _show_model_clip(self) -> None:
