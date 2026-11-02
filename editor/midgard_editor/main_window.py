@@ -51,6 +51,7 @@ from .docks.scene_panel import ScenePanel
 from .docks.script_editor import ScriptEditorPanel
 from .docks.terrain_panel import TerrainPanel
 from .docks.viewport import ViewportPanel
+from .docks.world_type_editor import WorldTypePanel
 from .export_dialog import ExportDialog
 from .live_link import LinkError, PlaySession, State
 from .physics_dialogs import PhysicsLayersDialog, WorldShapeDialog
@@ -66,7 +67,8 @@ PLAY_ICON_SIZE = 32  # the Play, Pause and Stop buttons
 PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log": "Log",
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
-          "calendar": "Calendar", "environment": "Environment", "terrain": "Terrain"}
+          "calendar": "Calendar", "environment": "Environment", "terrain": "Terrain",
+          "world_types": "World Types"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -164,6 +166,7 @@ class MainWindow(QMainWindow):
         self.environment_panel.phase_previewed.connect(self.viewport.set_solar_phase)
         self.environment_panel.season_previewed.connect(self.viewport.set_season)
         self.terrain_panel = TerrainPanel()
+        self.world_type_panel = WorldTypePanel()
         self.viewport.brush = self.terrain_panel.brush  # Sculpt on: the viewport's left button
         self.calendar_panel.season_scrubbed.connect(self.viewport.set_season)
         self.calendar_panel.time_scrubbed.connect(self._time_scrubbed)
@@ -186,7 +189,7 @@ class MainWindow(QMainWindow):
                    "scripts": self.script_editor, "assistant": self.assistant,
                    "project_page": self.project_page, "objects": self.objects_panel,
                    "calendar": self.calendar_panel, "environment": self.environment_panel,
-                   "terrain": self.terrain_panel}
+                   "terrain": self.terrain_panel, "world_types": self.world_type_panel}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -225,6 +228,7 @@ class MainWindow(QMainWindow):
         self._place_script_editor()
         self._tab_behind_viewport("project_page")
         self._tab_behind_viewport("objects")
+        self._tab_behind_viewport("world_types")
         self._place_assistant()
         self._tab_behind_inspector("calendar")
         self._tab_behind_inspector("environment")
@@ -325,6 +329,8 @@ class MainWindow(QMainWindow):
                 self._tab_behind_viewport("project_page")
             if "objects" not in saved:
                 self._tab_behind_viewport("objects")
+            if "world_types" not in saved:
+                self._tab_behind_viewport("world_types")
             if "calendar" not in saved:
                 self._tab_behind_inspector("calendar")
             if "environment" not in saved:
@@ -670,6 +676,7 @@ class MainWindow(QMainWindow):
         self.calendar_panel.set_project(project)
         self.environment_panel.set_project(project)
         self.terrain_panel.set_project(project)
+        self.world_type_panel.set_project(project)
         MaterialDialog.close_all()
         CameraDialog.close_all()
         if self.content_watcher is not None:

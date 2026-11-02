@@ -44,7 +44,7 @@ SHAPES: dict[str, tuple[str, dict[str, tuple[float, float, float]]]] = {
     "": ("Flat ground (no shape)", {}),
     "bounded_area": ("Bounded area", {"width": (1, 200_000, 2_000), "length": (1, 200_000, 2_000)}),
     "flat_cylinder": ("Flat-wrap cylinder", {"circumference": (6_000, 32_000, 6_000),
-                                             "length": (1, 200_000, 2_000)}),
+                                             "length": (5_000, 50_000, 5_000)}),
     "curved_cylinder": ("Inside a cylinder", {"radius": (1_000, 5_000, 1_000),
                                               "length": (5_000, 50_000, 5_000)}),
     "sphere_outside": ("Planet (outside a sphere)", {"radius": (1_000, 20_000, 1_000)}),

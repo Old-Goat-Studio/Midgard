@@ -33,6 +33,7 @@ add_library(midgard_core STATIC
     core/src/terrain.cpp
     core/src/world_type.cpp
     core/src/worldgen.cpp
+    core/src/world_map.cpp
     core/src/calendar.cpp
     core/src/time_service.cpp
 )

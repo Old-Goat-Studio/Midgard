@@ -148,6 +148,46 @@ class SaveRecipeCommand(QUndoCommand):
         self.project.world_types_changed.emit(self.world_type)
 
 
+class WorldTypeError(Exception):
+    """A world type that can't be deleted (one of its versions shipped, or a scene uses it)."""
+
+
+class DeleteWorldTypeCommand(QUndoCommand):
+    """Delete a world type and every version of it (none shipped, no scene made with it). Undo
+    puts them all back."""
+
+    def __init__(self, project: Project, world_type: str):
+        super().__init__("Delete world type")
+        self.project, self.world_type = project, world_type
+        if world_type in {w for w, _v in used_versions(project)}:
+            raise WorldTypeError("A scene's world is made from this world type: choose another "
+                                 "there first.")
+        with project.connect() as con:
+            self.row = con.execute("SELECT name, version FROM world_type WHERE id = ?",
+                                   (world_type,)).fetchone()
+            self.versions = con.execute("SELECT version, recipe, shipped FROM world_type_version "
+                                        "WHERE world_type = ?", (world_type,)).fetchall()
+        if self.row is None:
+            raise WorldTypeError(f"There is no world type {world_type}.")
+        if any(shipped for _v, _r, shipped in self.versions):
+            raise WorldTypeError("A shipped game's worlds are made with this world type: it is "
+                                 "kept so they still generate the same.")
+
+    def redo(self) -> None:
+        with self.project.connect() as con:
+            con.execute("DELETE FROM world_type WHERE id = ?", (self.world_type,))
+        self.project.world_types_changed.emit(self.world_type)
+
+    def undo(self) -> None:
+        with self.project.connect() as con:
+            con.execute("INSERT INTO world_type (id, name, version) VALUES (?, ?, ?)",
+                        (self.world_type, *self.row))
+            con.executemany("INSERT INTO world_type_version (world_type, version, recipe, "
+                            "shipped) VALUES (?, ?, ?, ?)",
+                            [(self.world_type, *v) for v in self.versions])
+        self.project.world_types_changed.emit(self.world_type)
+
+
 def scene_world(project: Project, scene: str = MAIN_SCENE) -> dict[str, Any] | None:
     """The scene's world: {"world_type", "version", "seed"?}, or None (no terrain, or terrain
     settings from before world types)."""

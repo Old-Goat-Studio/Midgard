@@ -36,6 +36,9 @@
 #include "midgard/terrain.h"
 #include "midgard/validate.h"
 #include "midgard/version.h"
+#include "midgard/world_map.h"
+#include "midgard/world_type.h"
+#include "midgard/worldgen.h"
 #include "viewport.h"
 
 namespace py = pybind11;
@@ -238,6 +241,54 @@ PYBIND11_MODULE(_midgard, m) {
             py::arg("x"), py::arg("y"), py::arg("z"), "(up, east, north) at a point.");
     m.def("shape_fingerprint", &midgard::shape_fingerprint,
           "The shapes' fingerprint (equal to schema/tests/shape_fingerprint.json everywhere).");
+    m.def(
+        "world_map",
+        [](const std::string& settings_json, int width, int height) {
+            std::vector<std::uint8_t> pixels;
+            {
+                const nlohmann::json s = nlohmann::json::parse(settings_json);
+                if (!s.contains("body") || !s.contains("terrain"))
+                    throw py::value_error("a map needs a body and terrain settings");
+                const midgard::Terrain terrain(midgard::body_from_json(s.at("body")),
+                                               midgard::terrain_from_json(s.at("terrain")));
+                py::gil_scoped_release unlocked;
+                pixels = midgard::world_map(terrain, width, height);
+            }
+            return py::bytes(reinterpret_cast<const char*>(pixels.data()), pixels.size());
+        },
+        py::arg("settings_json"), py::arg("width"), py::arg("height"),
+        "A world's map (midgard/world_map.h) from scene settings with a body and the ground's "
+        "settings themselves: RGBA8, top row first.");
+    m.def(
+        "graph_cost",
+        [](const std::string& graph_json) {
+            try {
+                return midgard::WorldGraph::from_json(nlohmann::json::parse(graph_json)).cost();
+            } catch (const std::exception& e) {
+                throw py::value_error(e.what());
+            }
+        },
+        py::arg("graph_json"),
+        "A world graph's work per point, in 5.9 grounds (the cook warns above 4).");
+    m.def(
+        "recipe_problems",
+        [](const std::string& recipe_json, const std::string& body_json) {
+            try {
+                const midgard::WorldRecipe r =
+                    midgard::recipe_from_json(nlohmann::json::parse(recipe_json));
+                std::vector<std::string> out = midgard::recipe_problems(r);
+                if (!body_json.empty())
+                    for (std::string& m : midgard::recipe_misfits(
+                             r, midgard::body_from_json(nlohmann::json::parse(body_json))))
+                        out.push_back(std::move(m));
+                return out;
+            } catch (const std::exception& e) {
+                return std::vector<std::string>{e.what()};
+            }
+        },
+        py::arg("recipe_json"), py::arg("body_json") = std::string(),
+        "What the cook refuses in a world type's recipe (and, given a body, the shapes and sizes "
+        "it doesn't suit).");
     m.def(
         "terrain_problems",
         [](const std::string& settings_json) {
