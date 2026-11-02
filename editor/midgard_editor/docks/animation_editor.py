@@ -201,7 +201,7 @@ class StateMachineView(QGraphicsView):
         self._add_state(ag.ANY, "transitions from any state", False, any_pos)
         for name, state in layer.get("states", {}).items():
             if state.get("blend") is not None:
-                subtitle = f"blend by {state.get('blend')}"
+                subtitle = "blend by " + " and ".join(ag.blend_parameters(state))
             else:
                 subtitle = state.get("clip") or "(no clip)"
             self._add_state(name, subtitle, name == layer.get("start"), state.get("pos", [0, 0]))
@@ -744,19 +744,34 @@ class AnimationPanel(QWidget):
                 lambda _i: self._set_state(name, clip=clip.currentData()))
             form.addRow("Clip", clip)
         else:
-            by = _combo(ag.numbers(graph), state.get("blend", "speed"))
-            by.currentIndexChanged.connect(lambda _i: self._set_state(name, blend=by.currentData()))
+            params = ag.blend_parameters(state) or ["speed"]
+            two = len(params) == 2
+            by = _combo(ag.numbers(graph), params[0])
+            and_by = _combo(["(nothing: one way)", *ag.numbers(graph)], params[1] if two else "",
+                            data=["", *ag.numbers(graph)])
+            and_by.setToolTip("A second parameter makes a 2D blend space: each clip at a point "
+                              "(x, y), weighted by how near the parameters' point is")
+            by.currentIndexChanged.connect(lambda _i: self._blend_by(
+                name, by.currentData(), and_by.currentData() or ""))
+            and_by.currentIndexChanged.connect(lambda _i: self._blend_by(
+                name, by.currentData(), and_by.currentData() or ""))
             form.addRow("Blended by", by)
-            for i, (c, at) in enumerate(state.get("clips", [])):
-                clip = _combo(clips, c)
-                where = _spin(-1000, 1000, at)
+            form.addRow("and by", and_by)
+            for i, point in enumerate(state.get("clips", [])):
+                clip = _combo(clips, point[0])
+                where = _spin(-1000, 1000, point[1])
                 clip.currentIndexChanged.connect(
                     lambda _i, i=i, w=clip: self._blend_point(name, i, clip=w.currentData()))
                 where.valueChanged.connect(
                     lambda v, i=i: self._blend_point(name, i, at=round(v, 3)))
-                form.addRow(f"Clip {i + 1}", _row(clip, where,
-                                                  _remove(lambda i=i: self._blend_point(
-                                                      name, i, remove=True))))
+                widgets = [clip, where]
+                if two:
+                    where_y = _spin(-1000, 1000, point[2] if len(point) > 2 else 0.0)
+                    where_y.valueChanged.connect(
+                        lambda v, i=i: self._blend_point(name, i, at_y=round(v, 3)))
+                    widgets.append(where_y)
+                widgets.append(_remove(lambda i=i: self._blend_point(name, i, remove=True)))
+                form.addRow(f"Clip {i + 1}", _row(*widgets))
             add = QPushButton("Add Clip")
             add.clicked.connect(lambda: self._blend_point(name, -1, clip=clips[0] if clips
                                                           else ""))
@@ -815,15 +830,24 @@ class AnimationPanel(QWidget):
             state["clip"] = points[0][0] if points else ""
         self.commit(ag.set_state(graph, self.layer, name, state), "animation state")
 
-    def _blend_point(self, name: str, index: int, clip=None, at=None, remove=False) -> None:
+    def _blend_by(self, name: str, by: str, and_by: str) -> None:
+        graph = self.graph()
+        if graph is not None:
+            state = graph["layers"][self.layer]["states"][name]
+            self.commit(ag.set_state(graph, self.layer, name, ag.set_blend(state, by, and_by)),
+                        "animation blend")
+
+    def _blend_point(self, name: str, index: int, clip=None, at=None, remove=False,
+                     at_y=None) -> None:
         graph = self.graph()
         if graph is None:
             return
         state = copy.deepcopy(graph["layers"][self.layer]["states"][name])
         points = state.setdefault("clips", [])
+        two = len(ag.blend_parameters(state)) == 2
         if index < 0:
             last = points[-1][1] if points else -1.0
-            points.append([clip or "", round(last + 1.0, 3)])
+            points.append([clip or "", round(last + 1.0, 3), *([0.0] if two else [])])
         elif remove:
             del points[index]
         else:
@@ -831,6 +855,10 @@ class AnimationPanel(QWidget):
                 points[index][0] = clip
             if at is not None:
                 points[index][1] = at
+            if at_y is not None and two:
+                while len(points[index]) < 3:
+                    points[index].append(0.0)
+                points[index][2] = at_y
         self.commit(ag.set_state(graph, self.layer, name, state), "animation blend")
 
     def _event(self, name: str, index: int, point=None, text=None, remove=False) -> None:

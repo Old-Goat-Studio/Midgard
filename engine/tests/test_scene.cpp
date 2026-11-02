@@ -7,6 +7,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <numeric>
 #include <random>
 #include <set>
 #include <sstream>
@@ -119,12 +121,19 @@ void exec(sqlite3* db, const std::string& sql) {
 }
 
 // A package folder with the real migrations applied, a scene, and game.pak with a cube mesh.
+// Content a package carries besides the cube: its id, its path in game.pak, its bytes.
+struct PackageFile {
+    std::string id, path;
+    std::vector<std::uint8_t> bytes;
+};
+
 struct TestPackage {
     fs::path dir;
 
     explicit TestPackage(const std::vector<std::pair<std::string, std::string>>& entities,
                          const std::string& settings = R"({"sky": [0.1, 0.2, 0.3]})",
-                         const std::vector<std::pair<std::string, std::string>>& objects = {}) {
+                         const std::vector<std::pair<std::string, std::string>>& objects = {},
+                         const std::vector<PackageFile>& files = {}) {
         std::random_device rd;
         dir = fs::temp_directory_path() / ("midgard_scene_" + std::to_string(rd()));
         fs::create_directories(dir);
@@ -159,6 +168,13 @@ struct TestPackage {
         REQUIRE(mz_zip_writer_init_file(&zip, utf8(dir / "game.pak").c_str(), 0));
         REQUIRE(mz_zip_writer_add_mem(&zip, "meshes/cube.glb", glb.data(), glb.size(),
                                       MZ_DEFAULT_LEVEL));
+        json content = json::array(
+            {{{"id", "mesh_cube"}, {"path", "meshes/cube.glb"}, {"sha256", std::string(64, '0')}}});
+        for (const PackageFile& f : files) {
+            REQUIRE(mz_zip_writer_add_mem(&zip, f.path.c_str(), f.bytes.data(), f.bytes.size(),
+                                          MZ_DEFAULT_LEVEL));
+            content.push_back({{"id", f.id}, {"path", f.path}, {"sha256", std::string(64, '0')}});
+        }
         mz_zip_writer_finalize_archive(&zip);
         mz_zip_writer_end(&zip);
 
@@ -171,7 +187,7 @@ struct TestPackage {
             {"entry", {{"scene", "scn_main"}}},
             {"database", "Game.db"},
             {"schema_version", migrations.size()},
-            {"content", {{{"id", "mesh_cube"}, {"path", "meshes/cube.glb"}, {"sha256", std::string(64, '0')}}}},
+            {"content", content},
         }.dump();
     }
     ~TestPackage() {
@@ -2248,6 +2264,149 @@ TEST_CASE("terrain, the exit: all the way round inside a hollow world, no seams"
         CHECK(w.worst_gravity_strength < 1e-9);
         if (corners) CHECK(w.nearest_corner < 25.0);
     }
+}
+
+// ---- characters, the exit (milestone 5.13) ------------------------------------------------------
+
+namespace {
+
+std::vector<std::uint8_t> sample_file(const char* name) {
+    std::ifstream in(std::string(MIDGARD_ASSETS_DIR "/third_party/characters/quaternius/") + name,
+                     std::ios::binary);
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(in), {});
+}
+
+}  // namespace
+
+TEST_CASE("characters, the exit: the Superhero walks and runs round the planet, feet planted") {
+    // The hilly planet the terrain exits walk round; the player the Superhero, idle, walking or
+    // sprinting as fast as it goes (blended by its speed), its feet on the ground, its arms in
+    // first person. Half way round it walks, then runs; eight times it stops, and there its feet
+    // stand on the slope as an idle character's do, in each of the three views.
+    constexpr double kRadius = 1000.0, kPi = 3.14159265358979;
+    const glm::dvec3 centre(0.0, -kRadius, 0.0);
+    const std::string body_json =
+        R"({"shape": "sphere_outside", "radius": 1000, "seed": 13, "origin": [0, -1000, 0]})";
+    json body = json::parse(body_json);
+    body["id"] = "b";
+    const midgard::Terrain terrain(midgard::body_from_json(body),
+                                   midgard::terrain_from_json(json{{"height_scale", 20}}));
+    const glm::dvec3 ground = terrain.ground(centre + glm::dvec3(1, 0, 0) * kRadius);
+    const glm::dvec3 up = terrain.body().up(ground);
+    const glm::dvec3 at = ground + up * 1.0;
+    const glm::dvec3 camera = at - glm::dvec3(0, 0, 1) * 6.0 + up * 3.0;
+    const auto vec = [](const glm::dvec3& p) { return json{p.x, p.y, p.z}; };
+    const json graph = json::parse(R"({"layers": [{"name": "base", "start": "idle",
+        "states": {"idle": {"clip": "Idle_Loop"},
+                   "move": {"blend": "speed", "clips": [["Idle_Loop", 0], ["Walk_Loop", 10],
+                                                        ["Sprint_Loop", 40]]}},
+        "transitions": [{"from": "idle", "to": "move", "when": [["speed", ">", 0.5]]},
+                        {"from": "move", "to": "idle", "when": [["speed", "<=", 0.5]]}]}]})");
+    const json player = {{"transform", {{"position", vec(at)}}},
+                         {"player", {{"speed", 20}, {"run_multiplier", 2}, {"height", 1.8}}},
+                         {"character",
+                          {{"model", "asset:hero.glb"},
+                           {"clips", "asset:moves.glb"},
+                           {"graph", graph},
+                           {"ik", {{"feet", true}}},
+                           {"first_person", json::object()}}}};
+    const json cam = {{"transform", {{"position", vec(camera)}}}, {"camera", json::object()}};
+    TestPackage pkg(
+        {{"e1_player", "NULL, '" + player.dump() + "'"},
+         {"e2_camera", "NULL, '" + cam.dump() + "'"}},
+        R"({"body": )" + body_json + R"(, "terrain": {"height_scale": 20}})", {},
+        {{"asset:hero.glb", "characters/hero.glb", sample_file("superhero_male.glb")},
+         {"asset:moves.glb", "characters/moves.glb", sample_file("animation_library.glb")}});
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    const entt::entity e = scene.find("e1_player");
+    const midgard::Characters& characters = game.characters();
+    midgard::CameraRig& rig = game.camera_rig();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    int frames = 0;
+    const auto step = [&] {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+        ++frames;
+    };
+    for (int i = 0; i < 60; ++i) step();  // settle
+    REQUIRE(characters.pose(e));
+    CHECK(game.character_problems().empty());
+
+    // Each foot's ankle above the ground under it, along the local up.
+    const auto ankle = [&](midgard::HumanBone foot) {
+        const glm::dvec3 p = *characters.bone_position(scene, e, foot);
+        const glm::vec3 local_up(glm::normalize(p - centre));
+        const auto hit = game.physics().world().raycast(  // (not its own capsule)
+            p + glm::dvec3(local_up) * 0.6, -local_up, 2.0, midgard::physics::Touching::Solid,
+            game.physics().body(e));
+        REQUIRE(hit);
+        return std::pair{glm::dot(p - hit->point, glm::dvec3(local_up)), hit->point};
+    };
+    const glm::dvec3 start = glm::normalize(scene.world_position(e) - centre);
+    glm::dvec3 last = start;
+    double turned = 0.0, steepest = 0.0;
+    int stops = 0, moving_checked = 0;
+    std::vector<float> walk_speeds, run_speeds;
+    std::set<midgard::CameraView> seen;
+    while (turned < 2.0 * kPi && frames < 30000) {
+        const bool running = turned > kPi;
+        if (turned >= (stops + 0.5) * 2.0 * kPi / 8.0) {
+            // A stop: idle, both feet on the ground (on a slope too), in each view.
+            ++stops;
+            actions.set("keyboard", "W", 0.0f);
+            actions.set("keyboard", "Left Shift", 0.0f);
+            for (int i = 0; i < 90; ++i) step();
+            CHECK(characters.state_of(e) == "idle");
+            const auto [left, left_ground] = ankle(midgard::HumanBone::LeftFoot);
+            const auto [right, right_ground] = ankle(midgard::HumanBone::RightFoot);
+            CAPTURE(stops);
+            CHECK(left > 0.03);  // (above the ground, at an idle ankle's height: 8 cm or so)
+            CHECK(left < 0.15);
+            CHECK(right > 0.03);
+            CHECK(right < 0.15);
+            CHECK(std::abs(left - right) < 0.03);  // (as on flat ground: idle feet alike)
+            const glm::dvec3 here = glm::normalize(scene.world_position(e) - centre);
+            steepest = std::max(steepest, std::abs(glm::dot(left_ground - right_ground, here)));
+            for (int v = 0; v < 3; ++v) {
+                for (int i = 0; i < 30; ++i) step();  // the blend into the view
+                seen.insert(rig.view());
+                if (rig.view() == midgard::CameraView::First) {
+                    CHECK(rig.hides_player());
+                    CHECK(characters.first_person(scene, e, glm::mat4(1.0f)));  // its arms
+                } else {
+                    CHECK_FALSE(rig.hides_player());  // its whole body
+                }
+                actions.set("keyboard", "V", 1.0f);
+                step();
+                actions.set("keyboard", "V", 0.0f);
+            }
+        }
+        actions.set("keyboard", "W", 1.0f);
+        actions.set("keyboard", "Left Shift", running ? 1.0f : 0.0f);
+        step();
+        // Moving: in the blend, its speed along the ground (less up hills: on average, what
+        // the player's is).
+        if (frames % 600 == 0 && characters.state_of(e) == "move") {
+            (running ? run_speeds : walk_speeds).push_back(characters.parameter(e, "speed"));
+            ++moving_checked;
+        }
+        const glm::dvec3 now = glm::normalize(scene.world_position(e) - centre);
+        turned += std::acos(std::clamp(glm::dot(last, now), -1.0, 1.0));
+        last = now;
+    }
+    MESSAGE("round the planet in ", frames, " frames; the steepest ground between its feet ",
+            steepest * 100.0, " cm");
+    CHECK(turned >= 2.0 * kPi);  // all the way round
+    CHECK(stops == 8);
+    CHECK(seen.size() == 3);  // every view
+    CHECK(moving_checked > 10);
+    const auto mean = [](const std::vector<float>& v) {
+        return v.empty() ? 0.0 : std::accumulate(v.begin(), v.end(), 0.0) / double(v.size());
+    };
+    CHECK(mean(walk_speeds) == doctest::Approx(20.0).epsilon(0.1));
+    CHECK(mean(run_speeds) == doctest::Approx(40.0).epsilon(0.1));
+    CHECK(steepest > 0.02);  // (it did stand on slopes: one foot higher than the other)
 }
 
 TEST_CASE("inside worlds' lights: the rod's mesh, and how far the camera sees") {

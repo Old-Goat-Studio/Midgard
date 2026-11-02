@@ -4,17 +4,22 @@
 #include <algorithm>
 #include <chrono>
 #include <cinttypes>
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <numeric>
+#include <string>
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/anim_graph.h"
+#include "midgard/animation.h"
 #include "midgard/body.h"
 #include "midgard/det.h"
 #include "midgard/hash.h"
+#include "midgard/ik.h"
 #include "midgard/jobs.h"
 #include "midgard/package.h"
 #include "midgard/physics.h"
@@ -294,6 +299,170 @@ Check python_check([[maybe_unused]] const Options& options) {
 #endif
 }
 
+// Characters on this device (milestone 5.13): 32 humanoids of 65 joints animated by a graph (a
+// walk/run blend space under an upper-body layer), their feet put on the ground by IK, and drawn
+// skinned with sun shadows, all within a frame's budget.
+Check characters_check(const Options& options) {
+    const render::Quality tier = options.quality.value_or(render::default_quality());
+    try {
+        // The humanoid, as the Quaternius Superhero is made: a root; the hips, spine, neck and
+        // head; arms with five fingers of four; legs to the toes' tips (65 joints).
+        RawSkeleton raw;
+        const auto add = [&](const std::string& name, int parent, glm::vec3 at) {
+            raw.names.push_back(name);
+            raw.parents.push_back(parent);
+            raw.rest.push_back({at, {1, 0, 0, 0}, {1, 1, 1}});
+            return int(raw.names.size()) - 1;
+        };
+        const int root = add("root", -1, {0, 0, 0});
+        const int pelvis = add("pelvis", root, {0, 1, 0});
+        int spine = pelvis, chest = pelvis;
+        for (const char* n : {"spine_01", "spine_02", "spine_03", "neck_01"}) {
+            spine = add(n, spine, {0, 0.12f, 0});
+            if (std::string(n) == "spine_03") chest = spine;
+        }
+        add("head", spine, {0, 0.12f, 0});
+        for (const char* side : {"_l", "_r"}) {
+            const float x = side[1] == 'l' ? 1.0f : -1.0f;
+            int arm = add(std::string("clavicle") + side, chest, {x * 0.05f, 0, 0});
+            for (const char* n : {"upperarm", "lowerarm", "hand"})
+                arm = add(n + std::string(side), arm, {x * 0.25f, 0, 0});
+            for (int f = 0; f < 5; ++f) {
+                int finger = arm;
+                for (int i = 0; i < 4; ++i)
+                    finger = add("finger_" + std::to_string(f) + "_" + std::to_string(i) + side,
+                                 finger, {x * 0.03f, 0, 0});
+            }
+            int leg = add(std::string("thigh") + side, pelvis, {x * 0.1f, -0.05f, 0});
+            for (const char* n : {"calf", "foot"})
+                leg = add(n + std::string(side), leg, {0, -0.4f, 0});
+            leg = add(std::string("ball") + side, leg, {0, -0.05f, 0.1f});
+            add(std::string("ball_leaf") + side, leg, {0, 0, 0.05f});
+        }
+        if (raw.names.size() != 65)  // (the tubes drawn below hang from 65 joints)
+            return {"Characters", Status::Fail, "the test humanoid isn't 65 joints"};
+        const Skeleton skeleton = Skeleton::build(raw);
+        std::vector<Clip> clips;
+        for (const auto& [name, swing] :
+             {std::pair{"walk", 0.3f}, std::pair{"run", 0.6f}, std::pair{"wave", 0.9f}}) {
+            RawClip clip{name, 4.0f / 3.0f, {}};
+            for (size_t j = 0; j < raw.names.size(); ++j) {
+                RawTrack t{raw.names[j], {}, {}, {}};
+                for (int k = 0; k <= 40; ++k)
+                    t.rotations.push_back(
+                        {k / 30.0f, glm::angleAxis(swing * std::sin(k * 0.3f + float(j)),
+                                                   glm::vec3(1, 0, 0))});
+                clip.tracks.push_back(t);
+            }
+            clips.push_back(Clip::build(skeleton, clip));
+        }
+        const auto graph = std::make_shared<const AnimGraph>(AnimGraph::parse(std::string(
+            R"({"layers": [{"name": "base", "states": {"move": {"blend": "speed",
+                  "clips": [["walk", 1.4], ["run", 4.5]]}}},
+                {"name": "upper", "mask": "spine_02", "weight": 0.5,
+                 "states": {"wave": {"clip": "wave"}}}]})")));
+        const auto find = [&](const std::string& name) -> const Clip* {
+            for (const Clip& c : clips)
+                if (c.name() == name) return &c;
+            return nullptr;
+        };
+        std::vector<Pose> poses;
+        std::vector<AnimPlayer> players;
+        poses.reserve(32);
+        players.reserve(32);
+        for (int i = 0; i < 32; ++i) {
+            poses.emplace_back(skeleton);
+            players.emplace_back(graph, skeleton, find, skeleton.find("pelvis"));
+            players.back().set("speed", 1.0f + 0.1f * float(i));
+        }
+        const int thigh[2] = {skeleton.find("thigh_l"), skeleton.find("thigh_r")};
+        const int calf[2] = {skeleton.find("calf_l"), skeleton.find("calf_r")};
+        const int foot[2] = {skeleton.find("foot_l"), skeleton.find("foot_r")};
+
+        // Drawn as skinned tubes 1.8 m tall of 8,500 vertices on the 65 joints.
+        render::RendererDesc desc;
+        desc.offscreen = true;
+        desc.width = 1280;
+        desc.height = 720;
+        desc.quality = render::quality_settings(tier);
+        render::Renderer renderer(desc);
+        render::MeshData tube;
+        std::vector<glm::u16vec4> joints;
+        std::vector<glm::vec4> weights;
+        const int rings = 257, segments = 32, chain = 65;
+        for (int i = 0; i < rings; ++i) {
+            const float y = 1.8f * float(i) / float(rings - 1);
+            const float at = float(i) / float(rings - 1) * float(chain - 1);
+            const int j = std::min(int(at), chain - 2);
+            for (int k = 0; k <= segments; ++k) {
+                const float a = 6.2831853f * float(k) / float(segments);
+                tube.vertices.push_back({{0.2f * std::cos(a), y, 0.2f * std::sin(a)},
+                                         {std::cos(a), 0, std::sin(a)},
+                                         {0, 0},
+                                         {1, 0, 0, 1}});
+                joints.emplace_back(j, j + 1, 0, 0);
+                weights.emplace_back(1.0f - (at - float(j)), at - float(j), 0.0f, 0.0f);
+            }
+        }
+        for (int i = 0; i + 1 < rings; ++i)
+            for (int k = 0; k < segments; ++k) {
+                const auto a = std::uint32_t(i * (segments + 1) + k), b = a + 1,
+                           c = a + std::uint32_t(segments + 1), d = c + 1;
+                tube.indices.insert(tube.indices.end(), {a, c, b, b, c, d});
+            }
+        const render::MeshId mesh = renderer.upload_skinned_mesh(tube, joints, weights);
+        std::vector<std::vector<glm::mat4>> palettes(32);
+        std::vector<render::DrawItem> draws(32);
+        for (int c = 0; c < 32; ++c) {
+            draws[size_t(c)].mesh = mesh;
+            draws[size_t(c)].model = glm::translate(
+                glm::mat4(1.0f), glm::vec3((c % 8) * 1.5f - 5.25f, 0, (c / 8) * -2.0f));
+            draws[size_t(c)].color = glm::vec4(0.7f, 0.5f, 0.4f, 1.0f);
+        }
+        render::Camera camera;
+        camera.view = glm::lookAt(glm::vec3(0, 4, 8), glm::vec3(0, 0.8f, -3), glm::vec3(0, 1, 0));
+        camera.projection =
+            render::perspective(glm::radians(55.0f), 1280.0f / 720.0f, 0.1f, 100.0f);
+
+        std::vector<double> times;
+        for (int frame = 0; frame < 35; ++frame) {
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t c = 0; c < 32; ++c) {
+                players[c].update(1.0f / 60.0f, poses[c]);
+                std::vector<JointTransform> local = poses[c].local();
+                for (int side = 0; side < 2; ++side) {  // feet on uneven ground
+                    glm::vec3 target(joint_model(local, skeleton.parents(), foot[side])[3]);
+                    target.y += 0.05f * float((int(c) + side) % 3) - 0.05f;
+                    two_bone_ik(local, skeleton.parents(), thigh[side], calf[side], foot[side],
+                                target, target + glm::vec3(0, 0.5f, 0.5f));
+                    orient(local, skeleton.parents(), foot[side], {0, 1, 0},
+                           glm::normalize(glm::vec3(0, 1, -0.2f)), 0.6f);
+                }
+                poses[c].set_local(local);
+                palettes[c].assign(poses[c].model().begin(), poses[c].model().end());
+                draws[c].skin = palettes[c];
+            }
+            renderer.render_frame(camera, render::Light{}, draws, glm::vec4(0.1f, 0.1f, 0.2f, 1));
+            const auto end = std::chrono::steady_clock::now();
+            if (frame >= 5)
+                times.push_back(std::chrono::duration<double, std::milli>(end - start).count());
+        }
+        std::sort(times.begin(), times.end());
+        const double median = times[times.size() / 2];
+        const std::string detail = format(
+            "32 characters animated, IK and skinned: %.1f ms a frame (budget %.1f), %s "
+            "quality",
+            median, kFrameBudgetMs, render::quality_name(tier));
+        if (renderer.software())
+            return {"Characters", Status::Skip, detail + ", software renderer: not checked"};
+        return {"Characters", median <= kFrameBudgetMs ? Status::Pass : Status::Fail, detail};
+    } catch (const AnimationError& e) {
+        return {"Characters", Status::Fail, e.what()};
+    } catch (const std::exception& e) {
+        return no_vulkan("Characters", e, options.vulkan_required);
+    }
+}
+
 const char* label(Status s) {
     return s == Status::Pass ? "ok  " : s == Status::Fail ? "FAIL" : "skip";
 }
@@ -313,6 +482,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(physics_check());
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(frame_check(options));
+    checks.push_back(characters_check(options));
     checks.push_back(package_check(options.package));
     checks.push_back(python_check(options));
     return checks;

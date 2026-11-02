@@ -10,6 +10,25 @@
 
 namespace midgard {
 
+namespace {
+
+// Where a character stands: its entity's place, or for the player (whose entity is the middle of
+// its capsule) the bottom of the capsule, its feet on the ground.
+glm::dmat4 standing(const Scene& scene, entt::entity e) {
+    const glm::dmat4 world = scene.world_matrix(e);
+    const Player* p = scene.registry.try_get<Player>(e);
+    return p ? world * glm::translate(glm::dmat4(1.0), glm::dvec3(0.0, -0.5 * p->height, 0.0))
+             : world;
+}
+
+glm::mat4 standing_offset(const Scene& scene, entt::entity e) {
+    const Player* p = scene.registry.try_get<Player>(e);
+    return p ? glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f * p->height, 0.0f))
+             : glm::mat4(1.0f);
+}
+
+}  // namespace
+
 std::vector<std::string> Characters::load(const Scene& scene, const Bytes& bytes) {
     std::vector<std::string> problems;
     const auto fail = [&](const std::string& asset, const std::string& why) {
@@ -442,7 +461,7 @@ void Characters::draws(const Scene& scene, const glm::dvec3& origin, const Mater
         if (e == hidden || !s.m || !s.m->uploaded || s.palette.empty()) continue;
         if (!scene.registry.valid(e)) continue;
         render::DrawItem d = scene.draw_item(e, s.m->gpu, origin);
-        d.model = d.model * s.m->armature;
+        d.model = d.model * standing_offset(scene, e) * s.m->armature;
         if (const Material* m = scene.registry.try_get<Material>(e)) materials.apply(*m, d);
         d.skin = s.palette;
         out.push_back(d);
@@ -499,7 +518,7 @@ std::optional<glm::dvec3> Characters::look_target(const Scene& scene, const Char
     if (const auto it = states_.find(target);
         it != states_.end() && it->second.pose && it->second.bones[size_t(HumanBone::Head)] >= 0) {
         const State& t = it->second;
-        const glm::dmat4 w = scene.world_matrix(target);
+        const glm::dmat4 w = standing(scene, target);
         const glm::vec4 head =
             t.m->armature * t.pose->model()[size_t(t.bones[size_t(HumanBone::Head)])][3];
         return glm::dvec3(w * glm::dvec4(glm::dvec3(head), 1.0));
@@ -524,7 +543,7 @@ void Characters::apply_ik(const Scene& scene, entt::entity e, const CharacterRef
         return;
 
     // The model's frame in the world: around the entity's place (kept in doubles there).
-    const glm::dmat4 world = scene.world_matrix(e);
+    const glm::dmat4 world = standing(scene, e);
     const glm::dvec3 origin(world[3]);
     glm::mat4 frame(world);
     frame[3] = glm::vec4(0, 0, 0, 1);
@@ -688,7 +707,7 @@ std::optional<glm::dvec3> Characters::bone_position(const Scene& scene, entt::en
     const int j = s.bones[size_t(bone)];
     if (j < 0) return std::nullopt;
     const glm::vec4 p = s.m->armature * s.pose->model()[size_t(j)][3];
-    return glm::dvec3(scene.world_matrix(e) * glm::dvec4(glm::dvec3(p), 1.0));
+    return glm::dvec3(standing(scene, e) * glm::dvec4(glm::dvec3(p), 1.0));
 }
 
 std::string Characters::state_of(entt::entity e, size_t layer) const {

@@ -319,3 +319,37 @@ TEST_CASE("characters play graphs: their speed from how they move, scripts' para
     CHECK(characters.state_of(a) == "still");
     CHECK_THROWS_AS(characters.set_parameter(a, "nope", 1.0f), midgard::AnimationError);
 }
+
+TEST_CASE("a 2D blend space weighs its clips by how near their points are") {
+    Rig rig({turned("Ahead", "spine", 0.0f, 1.0f), turned("Side", "spine", 60.0f, 2.0f),
+             turned("Back", "spine", -60.0f, 1.0f)});
+    midgard::AnimPlayer p = rig.player(one_layer("move", R"({"move": {"blend": ["x", "y"],
+                    "clips": [["Ahead", 0, 1], ["Side", 1, 0], ["Back", 0, -1]]}})",
+                                                 "[]", R"({"parameters": {"x": 0, "y": 1}})"));
+    p.update(0.0f, rig.pose);
+    CHECK(rig.spine_turn() == doctest::Approx(0.0f).epsilon(0.01));  // on Ahead's point
+    p.set("x", 1.0f);
+    p.set("y", 0.0f);
+    p.update(0.0f, rig.pose);
+    CHECK(rig.spine_turn() == doctest::Approx(60.0f).epsilon(0.01));  // on Side's
+    // Half way between Ahead and Side: as near each (and Back far off, a little of it).
+    p.set("x", 0.5f);
+    p.set("y", 0.5f);
+    p.update(0.0f, rig.pose);
+    const float between = rig.spine_turn();
+    CHECK(between > 20.0f);
+    CHECK(between < 30.0f);  // (Back pulls it below the even 30)
+    // Refused: a blend by three, a clip without its y.
+    const auto refused = [](const char* states, const char* says) {
+        try {
+            (void)midgard::AnimGraph::parse(
+                one_layer("a", states, "[]", R"({"parameters": {"x": 0, "y": 0}})"));
+            FAIL("read");
+        } catch (const midgard::AnimationError& e) {
+            CHECK_MESSAGE(std::string(e.what()).find(says) != std::string::npos, e.what());
+        }
+    };
+    refused(R"({"a": {"blend": ["x", "y", "x"], "clips": [["A", 0, 0]]}})", "or two of them");
+    refused(R"({"a": {"blend": ["x", "y"], "clips": [["A", 0]]}})", "[clip, x, y]");
+    refused(R"({"a": {"blend": ["x", "z"], "clips": [["A", 0, 0]]}})", "no parameter 'z'");
+}

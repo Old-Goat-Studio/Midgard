@@ -194,3 +194,40 @@ def test_the_preview_plays_the_graph(project, qtbot):
     assert panel.timer.isActive()
     panel.set_project(None)  # (the preview goes with the project)
     assert panel._view is None and not panel.timer.isActive()
+
+
+def test_a_2d_blend_space_in_the_graph():
+    g = ag.new_graph(["Walk_Fwd", "Walk_Left"])
+    g, x = ag.add_parameter(g)
+    g, y = ag.add_parameter(g)
+    g, state = ag.add_state(g, 0, (200, 0), "Walk_Fwd", blend=x, name="Strafe")
+    s = g["layers"][0]["states"][state]
+    two = ag.set_blend(s, x, y)
+    assert two["blend"] == [x, y] and two["clips"] == [["Walk_Fwd", 0.0, 0.0]]
+    assert ag.blend_parameters(two) == [x, y]
+    assert ag.set_blend(two, x)["clips"] == [["Walk_Fwd", 0.0]]  # (back to one: y dropped)
+    g = ag.set_state(g, 0, state, two)
+    assert ag.uses(g, y) == 1 and ag.remove_parameter(g, y) == g
+    renamed = ag.rename_parameter(g, y, "ahead")
+    assert renamed["layers"][0]["states"][state]["blend"] == [x, "ahead"]
+    if engine.module() is not None:
+        assert engine_reads(renamed) == ""
+
+
+@needs_engine
+def test_the_dock_makes_a_2d_blend_space(project, qtbot):
+    from midgard_editor.docks.animation_editor import AnimationPanel
+    entity_id = make_character(project, ag.new_graph(["Idle_Loop"]))
+    panel = AnimationPanel()
+    qtbot.addWidget(panel)
+    panel.set_project(project)
+    panel.show_entity(entity_id)
+    side = panel.add_parameter(False)
+    state = panel.add_state((200.0, 0.0), blend=True)
+    panel._blend_by(state, "speed", side)
+    panel._blend_point(state, 0, clip="Walk_Loop", at=0.0, at_y=1.0)
+    panel._blend_point(state, -1, clip="Idle_Loop")
+    s = graph_of(project, entity_id)["layers"][0]["states"][state]
+    assert s["blend"] == ["speed", side]
+    assert s["clips"] == [["Walk_Loop", 0.0, 1.0], ["Idle_Loop", 1.0, 0.0]]
+    assert panel.problem.text() == ""

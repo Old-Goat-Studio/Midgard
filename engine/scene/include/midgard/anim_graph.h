@@ -17,6 +17,8 @@
 //        "move": {"blend": "speed", "clips": [["Idle_Loop", 0], ["Walk_Loop", 1.4],
 //                                             ["Sprint_Loop", 6.0]],
 //                 "events": [[0.0, "step"], [0.5, "step"]]},
+//        "strafe": {"blend": ["side", "ahead"], "clips": [["Walk_Fwd", 0, 1],      (2D: a point
+//                   ["Walk_Back", 0, -1], ["Walk_Left", -1, 0], ["Walk_Right", 1, 0]]},  each)
 //        "jump": {"clip": "Jump_Start", "loop": false, "speed": 1.2}},
 //      "transitions": [
 //        {"from": "move", "to": "jump", "when": [["jump"]], "blend": 0.1},
@@ -58,6 +60,10 @@ struct AnimState {
     std::string clip;  // a clip; or a blend of clips by a parameter:
     std::string blend;
     std::vector<std::pair<std::string, float>> clips;  // (clip, where on the parameter), sorted
+    // A 2D blend space (blend_y not empty): by two parameters, each clip at a point (clips' x,
+    // and clips_y), weighted by how near the parameters' point is to each (exact at one).
+    std::string blend_y;
+    std::vector<float> clips_y;
     float speed = 1.0f;
     std::string speed_parameter;  // (multiplies speed; empty: none)
     bool loop = true;

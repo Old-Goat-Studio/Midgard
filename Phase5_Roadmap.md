@@ -404,11 +404,12 @@ Recast), made in tiles round the player as they go; a cylinder's frame runs roun
 cube face's continues past its edges, so paths cross joins and face edges without linking
 separate meshes. Characters far from the player need tiles of their own (Phase 6 AI).
 
-### 5.13 Character animation · XL
+### 5.13 Character animation · XL · ✅ Done (2 November 2026)
 - **Import** skinned characters and clips from glTF (CC0 humanoid from Quaternius as the sample).
 - **Humanoid rig** definition and **retargeting** between characters of different proportions.
 - **Runtime** on ozz-animation with **GPU skinning**.
-- **Animation editor** (on the shared node-graph widget): **state machines** with conditions and
+- **Animation editor** (built: its own state-machine canvas, as a state machine isn't a dataflow
+  graph): **state machines** with conditions and
   blend times, **blend spaces** (1D and 2D) for locomotion, **layers and masks**, optional
   **root motion**, and **animation events** (footsteps, sounds, script calls).
 - **IK:** foot placement on slopes against the local "up", head look-at, hand IK.
@@ -420,6 +421,22 @@ below a set tolerance on every shape; events fire once per loop at the right fra
 of a posed character; skinning frame-time budget.
 **Exit:** the sample character walks and runs around the test planet with its feet planted on
 slopes, in all three camera views. 📱 It runs within budget on your phone.
+*As built:* the exit is the engine test "characters, the exit" (round the hilly 1 km planet,
+eight stops with both feet on the slope, a control run without IK failing by up to 9 cm, all
+three views); the phone check is the self-test's Characters check (32 characters animated, with
+IK and skinned, within a frame), owed a run on the phone.
+
+### 5.13a Asset Library · L (added 2 November 2026, at the developer's request)
+- Each project has its own **Asset Library** in its folder: GUI images, fonts, textures (by kind:
+  metal, wood, stone, concrete, bark, brick, fabric, floor, ground, leather, road, roof, wall,
+  miscellaneous; each texture in its own folder), images, icons, music, ambiance and effects (by
+  album, or miscellaneous), models (with their textures and animations) and objects, each with a
+  description and its licence.
+- **Copied in, never linked.** Licences: **CC0**, and **CC-BY** with credits made automatically.
+- Its own window from the **Assets** menu: the asset types on the left, the folder on the right,
+  a player below (models turning and playing their clips, textures, images, sounds, fonts).
+- New projects are made in the **projects folder** chosen in Preferences (done, 2 November).
+- Replaces the Character form's interim Import buttons.
 
 ### 5.14 Audio · L
 - **miniaudio** on every target; audio cooked to Ogg Vorbis (music, ambience) and Opus (effects,

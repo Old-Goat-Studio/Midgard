@@ -160,21 +160,39 @@ AnimGraph AnimGraph::parse(const json& j) {
             AnimState s;
             s.name = name;
             s.clip = text(sj, "clip", at);
-            s.blend = text(sj, "blend", at);
+            // A blend: by one parameter, or two (a 2D blend space).
+            if (const auto b = sj.find("blend"); b != sj.end()) {
+                if (b->is_string()) {
+                    s.blend = b->get<std::string>();
+                } else if (b->is_array() && b->size() == 2 && (*b)[0].is_string() &&
+                           (*b)[1].is_string()) {
+                    s.blend = (*b)[0].get<std::string>();
+                    s.blend_y = (*b)[1].get<std::string>();
+                } else {
+                    bad(at + ": 'blend' is a parameter, or two of them");
+                }
+            }
             if (s.clip.empty() == s.blend.empty())
                 bad(at + " plays a 'clip', or a 'blend' of clips by a parameter");
             if (!s.blend.empty()) {
                 parameter(s.blend, at);
+                const bool two = !s.blend_y.empty();
+                if (two) parameter(s.blend_y, at);
+                const char* shape = two ? "[clip, x, y]" : "[clip, where]";
                 const auto clips = sj.find("clips");
                 if (clips == sj.end() || !clips->is_array() || clips->empty())
-                    bad(at + ": a blend needs 'clips', a list of [clip, where]");
+                    bad(at + ": a blend needs 'clips', a list of " + shape);
                 for (const json& c : *clips) {
-                    if (!c.is_array() || c.size() != 2 || !c[0].is_string() || !c[1].is_number())
-                        bad(at + ": a blend's clips are [clip, where]");
+                    if (!c.is_array() || c.size() != (two ? 3u : 2u) || !c[0].is_string() ||
+                        !c[1].is_number() || (two && !c[2].is_number()))
+                        bad(at + ": a blend's clips are " + shape);
                     s.clips.emplace_back(c[0].get<std::string>(), c[1].get<float>());
+                    if (two) s.clips_y.push_back(c[2].get<float>());
                 }
-                std::stable_sort(s.clips.begin(), s.clips.end(),
-                                 [](const auto& a, const auto& b) { return a.second < b.second; });
+                if (!two)
+                    std::stable_sort(
+                        s.clips.begin(), s.clips.end(),
+                        [](const auto& a, const auto& b) { return a.second < b.second; });
             }
             if (const auto sp = sj.find("speed"); sp != sj.end() && sp->is_string()) {
                 s.speed_parameter = sp->get<std::string>();
@@ -326,6 +344,22 @@ std::vector<std::pair<const Clip*, float>> AnimPlayer::blend_weights(const AnimS
         return c ? std::vector<std::pair<const Clip*, float>>{{c, 1.0f}}
                  : std::vector<std::pair<const Clip*, float>>{};
     }
+    if (!s.blend_y.empty()) {  // 2D: by how near each clip's point is (inverse square distance)
+        const glm::vec2 v(values_.at(s.blend), values_.at(s.blend_y));
+        std::vector<std::pair<const Clip*, float>> out;
+        float total = 0.0f;
+        for (size_t i = 0; i < s.clips.size(); ++i) {
+            const Clip* c = find_(s.clips[i].first);
+            if (!c) continue;
+            const glm::vec2 d = glm::vec2(s.clips[i].second, s.clips_y[i]) - v;
+            const float near = glm::dot(d, d);
+            if (near < 1e-8f) return {{c, 1.0f}};  // (on its point: it alone)
+            out.emplace_back(c, 1.0f / near);
+            total += 1.0f / near;
+        }
+        for (auto& [c, w] : out) w /= total;
+        return out;
+    }
     // The two either side of the parameter's value (or the end one beyond them).
     std::vector<std::pair<const Clip*, float>> points;  // (clip, where), those there are
     for (const auto& [name, at] : s.clips)
@@ -367,10 +401,14 @@ void AnimPlayer::sample(const AnimState& s, double cycles, Pose& pose,
         return;
     }
     // In step: each clip at the same point in its own cycle.
+    // Mixed in one by one, each by its share of those so far (a weighted average of them all).
     pose.sample_local(*weights[0].first, clip_time(s, *weights[0].first, cycles), false, out);
+    float so_far = weights[0].second;
     for (size_t i = 1; i < weights.size(); ++i) {
+        so_far += weights[i].second;
+        if (weights[i].second <= 0.0f || so_far <= 0.0f) continue;
         pose.sample_local(*weights[i].first, clip_time(s, *weights[i].first, cycles), false, b_);
-        mix(out, b_, weights[i].second);
+        mix(out, b_, weights[i].second / so_far);
     }
 }
 

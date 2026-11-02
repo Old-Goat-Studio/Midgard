@@ -79,9 +79,28 @@ def clips_used(graph: dict) -> set[str]:
         for state in layer.get("states", {}).values():
             if state.get("clip"):
                 out.add(state["clip"])
-            for clip, _at in state.get("clips", []):
+            for clip, *_where in state.get("clips", []):  # ([clip, x] or [clip, x, y])
                 out.add(clip)
     return out
+
+
+def blend_parameters(state: dict) -> list[str]:
+    """What a blend state blends by: one parameter, or two (a 2D blend space)."""
+    blend = state.get("blend")
+    if blend is None:
+        return []
+    return list(blend) if isinstance(blend, list) else [blend]
+
+
+def set_blend(state: dict, by: str, and_by: str = "") -> dict:
+    """A blend state blending by one parameter, or two (and_by: a 2D blend space, its clips
+    given a y; back to one: their y dropped)."""
+    state = copy.deepcopy(state)
+    two = bool(and_by)
+    state["blend"] = [by, and_by] if two else by
+    state["clips"] = [[c[0], c[1], (c[2] if len(c) > 2 else 0.0)] if two else [c[0], c[1]]
+                      for c in state.get("clips", [])]
+    return state
 
 
 def names(graph: dict) -> list[str]:
@@ -278,7 +297,9 @@ def rename_parameter(graph: dict, old: str, new: str) -> dict:
         if isinstance(lay.get("weight"), str):
             lay["weight"] = _renamed(lay["weight"], old, new)
         for state in lay["states"].values():
-            if "blend" in state:
+            if isinstance(state.get("blend"), list):  # (a 2D blend: two parameters)
+                state["blend"] = [_renamed(b, old, new) for b in state["blend"]]
+            elif "blend" in state:
                 state["blend"] = _renamed(state["blend"], old, new)
             if isinstance(state.get("speed"), str):
                 state["speed"] = _renamed(state["speed"], old, new)
@@ -294,7 +315,8 @@ def uses(graph: dict, name: str) -> int:
     for lay in graph.get("layers", []):
         count += lay.get("weight") == name
         for state in lay.get("states", {}).values():
-            count += state.get("blend") == name
+            blend = state.get("blend")
+            count += (name in blend) if isinstance(blend, list) else blend == name
             count += state.get("speed") == name
         for t in lay.get("transitions", []):
             count += sum(1 for c in t.get("when", []) if c and c[0] == name)
