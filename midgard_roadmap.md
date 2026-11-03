@@ -21,7 +21,7 @@ This document answers the two questions in the plan, sets out an architecture fo
 | 2 Engine core and the vertical slice | **Done** (14 October): a cube placed in the editor runs on Windows, Linux and Android, all exported from one editor host. |
 | 3 Live link and engine bindings | **Done** (14 October): Play, Pause and Stop, hot reload, the `_midgard` module, the embedded Vulkan viewport. |
 | 4 Scripting | **Done** (14 October): games embed CPython 3.14 (Android too), the `midgard` API v1, the Script editor, Assistant v1. |
-| 5 World building | **In progress:** milestones 5.0–5.13a are done (below). |
+| 5 World building | **In progress:** milestones 5.0–5.14 are done (below); next is 5.15 Weather. A plain-language progress list is kept outside the repository, in `progress.md`. |
 | 6–9 | Not started. |
 
 **Phase 5 milestones**

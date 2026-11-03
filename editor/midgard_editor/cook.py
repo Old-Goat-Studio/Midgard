@@ -39,6 +39,7 @@ from . import (
     sound_events,
     sounds,
     textures,
+    weather,
 )
 from .project import Project
 from .version import BUILD, VERSION
@@ -281,6 +282,7 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
                             "doesn't have; it will be silent.")
     warnings += music.problems(project, events)  # (playlists: tracks no event plays)
     warnings += ambience.problems(project, events)
+    warnings += weather.problems(project, events)  # (weather types: their sounds, their numbers)
     sound_users = texture_users + [(f"Sound event '{e['name']}'", e["event"]) for e in events]
     for user, components in sound_users:
         for sound in sounds.sounds_in(components):

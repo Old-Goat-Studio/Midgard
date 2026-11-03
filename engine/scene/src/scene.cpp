@@ -519,6 +519,19 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
         while (sqlite3_step(v.get()) == SQLITE_ROW)
             scene.bus_volumes[column_text(v.get(), 0)] = float(sqlite3_column_double(v.get(), 1));
     }
+    // Weather types (migration 18).
+    if (has_column(db.get(), "weather_type", "weather")) {
+        Stmt v = prepare(db.get(), "SELECT id, name, weather FROM weather_type");
+        while (sqlite3_step(v.get()) == SQLITE_ROW) {
+            try {
+                weather::WeatherType w = weather::weather_type_from_json(
+                    column_text(v.get(), 0), column_text(v.get(), 1), column_text(v.get(), 2));
+                scene.weather_types.emplace(w.id, std::move(w));
+            } catch (const std::exception& ex) {
+                throw SceneError(ex.what());
+            }
+        }
+    }
     // Ambience sets (migration 16).
     if (has_column(db.get(), "ambience", "ambience")) {
         Stmt v = prepare(db.get(), "SELECT id, name, ambience FROM ambience");

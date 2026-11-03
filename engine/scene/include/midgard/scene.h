@@ -26,6 +26,7 @@
 #include "midgard/sound_events.h"
 #include "midgard/sunlight.h"
 #include "midgard/terrain.h"
+#include "midgard/weather.h"
 #include "midgard/world_type.h"
 
 namespace midgard {
@@ -358,6 +359,8 @@ public:
     std::map<std::string, audio::AmbienceSet> ambience;
     // The buses' volumes as a game starts (migration 17): a bus not here is at 1.
     std::map<std::string, float> bus_volumes;
+    // Its weather types (migration 18; midgard/weather.h), by id.
+    weather::WeatherTypes weather_types;
     // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
     std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.

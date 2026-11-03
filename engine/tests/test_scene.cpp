@@ -293,6 +293,44 @@ TEST_CASE("a missing entry scene is reported") {
                          midgard::SceneError);
 }
 
+TEST_CASE("a project starts with ten weather types, which the scene loads") {
+    TestPackage pkg({});
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, R"(INSERT INTO weather_type VALUES ('acid', 'Acid rain',
+                    '{"falls": "rain", "amount": 0.3, "tint": [0.8, 1, 0.7]}'))");
+        sqlite3_close(db);
+    }
+    midgard::Game game(pkg.dir);
+    const auto& types = game.scene().weather_types;
+    CHECK(types.size() == 11);
+    for (const char* id : {"clear", "cloudy", "rain", "thunderstorm", "snow", "blizzard", "fog",
+                           "wind", "sandstorm", "ash_fall", "acid"})
+        CHECK_MESSAGE(types.count(id) == 1, id);
+    const auto& blizzard = types.at("blizzard");
+    CHECK(blizzard.name == "Blizzard");
+    CHECK(blizzard.falls == midgard::weather::Falls::snow);
+    CHECK(blizzard.visibility == 120.0f);
+    CHECK(blizzard.temperature == -10.0f);
+    CHECK(types.at("thunderstorm").lightning > 0.0f);
+    CHECK(types.at("sandstorm").falls == midgard::weather::Falls::sand);
+    CHECK(types.at("ash_fall").falls == midgard::weather::Falls::ash);
+    CHECK(types.at("clear").darkness == 0.0f);
+    CHECK(types.at("acid").amount == doctest::Approx(0.3));
+}
+
+TEST_CASE("a weather type that isn't one is reported as the scene loads") {
+    TestPackage pkg({});
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, R"(INSERT INTO weather_type VALUES ('frogs', 'Frogs', '{"falls": "frogs"}'))");
+        sqlite3_close(db);
+    }
+    CHECK_THROWS_WITH_AS(midgard::Game(pkg.dir), doctest::Contains("Frogs"), midgard::SceneError);
+}
+
 TEST_CASE("live edits change the running scene") {
     TestPackage pkg({
         {"e1_cube",

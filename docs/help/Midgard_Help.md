@@ -559,6 +559,24 @@ world. Drag the Calendar panel's **scrubber** to preview any time of day in the 
 Scripts can read and change the time, speed it up, stop it, skip ahead (sleeping in an inn),
 and react at dawn, dusk or each new day (section 19, *Time*).
 
+### Weather (being built)
+
+Weather is arriving one piece at a time. So far, every project has a list of **weather types**:
+Clear, Cloudy, Rain, Thunderstorm, Snow, Blizzard, Fog, Windy, Sandstorm and Ash fall. Each
+one says:
+
+- **How it looks:** how cloudy the sky is, how much daylight it takes away, the colour of the
+  light, how far you can see (fog, dust or snow), what falls from the sky (rain, snow, ash or
+  sand) and how much, and how often lightning flashes.
+- **How it feels:** how strong the wind is and how gusty, how wet things get out in the open,
+  and how much warmer or colder it is than usual.
+- **How it sounds:** sounds that play while it lasts (rain, wind), and the thunder after each
+  flash.
+
+You'll be able to change these and make your own (acid rain, a sleet storm) in the **Weather**
+tab of the Calendar panel, which is coming. Next the weather will change by itself with the
+seasons and the land (more snow in the mountains in winter), and you'll see it in the sky.
+
 ---
 
 ## 14. Physics: things that are solid, fall and bounce
