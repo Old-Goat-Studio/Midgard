@@ -98,6 +98,16 @@ void MusicDirector::add(Playlist playlist) {
     playlists_[id] = std::move(playlist);
 }
 
+void MusicDirector::replace(std::vector<Playlist> playlists) {
+    std::map<std::string, Playlist> next;
+    for (Playlist& p : playlists) next[p.id] = std::move(p);
+    const auto old = playlists_.find(current_);
+    const auto now = next.find(current_);
+    const bool same = old != playlists_.end() && now != next.end() && old->second == now->second;
+    playlists_ = std::move(next);
+    if (!current_.empty() && !same) start(now != playlists_.end() ? &now->second : nullptr);
+}
+
 void MusicDirector::clear() {
     start(nullptr);
     playlists_.clear();

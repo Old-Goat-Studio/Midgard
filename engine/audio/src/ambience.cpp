@@ -98,6 +98,16 @@ void AmbienceDirector::add(AmbienceSet set) {
     sets_[id] = std::move(set);
 }
 
+void AmbienceDirector::replace(std::vector<AmbienceSet> sets) {
+    std::map<std::string, AmbienceSet> next;
+    for (AmbienceSet& a : sets) next[a.id] = std::move(a);
+    const auto old = sets_.find(current_);
+    const auto now = next.find(current_);
+    const bool same = old != sets_.end() && now != next.end() && old->second == now->second;
+    sets_ = std::move(next);
+    if (!current_.empty() && !same) start(now != sets_.end() ? &now->second : nullptr);
+}
+
 void AmbienceDirector::clear() {
     start(nullptr);
     sets_.clear();

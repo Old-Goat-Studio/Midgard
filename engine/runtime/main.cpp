@@ -539,6 +539,16 @@ public:
             acknowledge("applied terrain.stamps " + std::to_string(count));
             return;
         }
+        if (type == "audio.put") {  // the Audio panel
+            try {
+                game_.set_audio_data(message.at("audio"));
+            } catch (const std::exception& ex) {
+                warn("live link: %s\n", ex.what());
+                return;
+            }
+            acknowledge("applied audio.put");
+            return;
+        }
         if (type == "time.set") {  // the Calendar dock's scrubber
             game_.set_time(message.value("time", std::int64_t(0)));
             return;

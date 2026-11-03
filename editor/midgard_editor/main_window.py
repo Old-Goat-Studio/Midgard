@@ -40,6 +40,7 @@ from .dialogs import CommitDialog, NewProjectDialog, PreferencesDialog, put_proj
 from .docks.animation_editor import AnimationPanel
 from .docks.asset_window import AssetWindow
 from .docks.assistant import AssistantPanel
+from .docks.audio_panel import AudioPanel
 from .docks.calendar_panel import CalendarPanel
 from .docks.camera_editor import CameraDialog
 from .docks.environment_panel import EnvironmentPanel
@@ -72,7 +73,8 @@ PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log
           "history": "History", "viewport": "Viewport", "scripts": "Script Editor",
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
           "calendar": "Calendar", "environment": "Environment", "terrain": "Terrain",
-          "world_types": "World Types", "scenes": "Scenes", "animation": "Animation"}
+          "world_types": "World Types", "scenes": "Scenes", "animation": "Animation",
+          "audio": "Audio"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -172,6 +174,7 @@ class MainWindow(QMainWindow):
         self.terrain_panel = TerrainPanel()
         self.world_type_panel = WorldTypePanel()
         self.animation_panel = AnimationPanel()
+        self.audio_panel = AudioPanel()  # sounds, music, ambience, the mixer (5.14)
         self.asset_window: AssetWindow | None = None  # (Assets ▸ Asset Library, when opened)
         self.error_log = ErrorLog(settings.dir, self)  # error.log (on unless turned off)
         self.scenes_panel = ScenesPanel()
@@ -202,7 +205,8 @@ class MainWindow(QMainWindow):
                    "project_page": self.project_page, "objects": self.objects_panel,
                    "calendar": self.calendar_panel, "environment": self.environment_panel,
                    "terrain": self.terrain_panel, "world_types": self.world_type_panel,
-                   "scenes": self.scenes_panel, "animation": self.animation_panel}
+                   "scenes": self.scenes_panel, "animation": self.animation_panel,
+                   "audio": self.audio_panel}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -244,6 +248,7 @@ class MainWindow(QMainWindow):
         self._tab_behind_viewport("objects")
         self._tab_behind_viewport("world_types")
         self._tab_behind_viewport("animation")
+        self._tab_behind_viewport("audio")
         self._place_assistant()
         self._tab_behind_inspector("calendar")
         self._tab_behind_inspector("environment")
@@ -788,6 +793,7 @@ class MainWindow(QMainWindow):
         self.terrain_panel.set_project(project)
         self.world_type_panel.set_project(project)
         self.animation_panel.set_project(project)
+        self.audio_panel.set_project(project)
         self.scenes_panel.set_project(project)
         MaterialDialog.close_all()
         CameraDialog.close_all()

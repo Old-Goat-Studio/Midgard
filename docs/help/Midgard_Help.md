@@ -84,6 +84,7 @@ arrangements ("Two Monitors" is built in).
 | **Environment** | How the sky, sunlight, fog and water look through the day. |
 | **Calendar** | The game's calendar and clock; scrub through the day to preview it. |
 | **Animation** | The animation graph editor for characters. |
+| **Audio** | Sound events, music playlists, ambience and the mixer, with Play to hear them. |
 | **Project Page** | The game's title, version, credits and options. |
 | **Log** | Messages from the editor and, while it runs, from your game. |
 | **History** | Every change you've made; click one to go back to it. |
@@ -486,9 +487,35 @@ anywhere) and is chosen just as music is. It has:
 - **Sprinkles**: one-off sounds now and then (an owl's hoot, a twig snapping), every so many
   seconds, at a random spot around the player, so they're heard from different directions.
 
-*Making playlists and ambience sets in the editor comes with the Audio panel in a coming
-update. Until then they can be played from scripts, and your games already choose and
-crossfade them.*
+### The Audio panel
+
+The **Audio** panel (a tab behind the Viewport, or **Window ▸ Audio**) is where all of this is
+made. It has four tabs; each lists what you've made on the left and shows the chosen one's
+settings on the right, with **▶ Play** to hear it exactly as the game would play it and
+**■ Stop**.
+
+- **Sounds**: your sound events. **New from Library…** makes one from a sound file. Then:
+  - **Sounds**: its variations (**Add Sound…** for more) and how often each is picked
+    (**Weight**: 2 is twice as often as 1).
+  - **Bus**: music, effects, voice, ambience or interface.
+  - **Volume** and **Pitch**: each time it plays, a value is picked between the two numbers.
+    Make them a little different (0.9 to 1.1) so repeats don't sound mechanical.
+  - **Loops**; **Waits** (seconds before it can play again) and **at most** (how many can
+    play at once).
+  - **Heard from where it is (3D)**, **Full within** and **silent beyond**: how far it carries.
+- **Music**: your playlists. **New Playlist**, then add **Tracks** (sound events), choose the
+  **Order**, tick where it plays (**In scenes**, **World types**, **Biomes**; none ticked means
+  anywhere) and when (**At**: dawn, day, dusk, night), its **Priority**, **crossfade** and
+  **Gap**.
+- **Ambience**: your ambience sets. **New Ambience**, then **Layers** (a sound, the times of
+  day it plays, its volume) and **Sprinkles** (a sound, its times, about how many seconds apart
+  and how many metres away), where it plays, its priority and crossfade. **▶ Play** lets you
+  choose the time of day to hear.
+- **Mixer**: how loud each bus is when the game starts (master, music, effects, voice,
+  ambience, interface).
+
+Everything can be undone, and while your game is playing (**F5**), changes reach it at once:
+make a playlist and you hear it start.
 
 ### Footsteps
 
@@ -519,8 +546,7 @@ When the game is built, Midgard makes every sound it uses smaller: music and amb
 **Ogg Vorbis**, effects become **Opus**. Each is checked to be sure the game can play it. CC-BY
 sounds are credited automatically, like models and textures.
 
-*Coming in the next update:* an **Audio** panel to make playlists and ambience sets and edit
-sound events in detail (including how far each one is heard).
+
 
 ---
 

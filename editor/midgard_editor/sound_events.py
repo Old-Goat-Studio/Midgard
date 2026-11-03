@@ -132,3 +132,58 @@ class SoundEventCommand(QUndoCommand):
 
     def undo(self) -> None:
         self._set(self.old)
+
+
+# ---- the buses' volumes (migration 17) ------------------------------------------------------
+BUS_NAMES = {"master": "Master", **BUSES}
+
+
+def load_buses(project: Project) -> dict[str, float]:
+    """Each bus's volume as games start (1 for one not set; nothing before migration 17)."""
+    volumes = {bus: 1.0 for bus in BUS_NAMES}
+    with project.connect() as con:
+        if con.execute("SELECT 1 FROM sqlite_master WHERE name = 'audio_bus'").fetchone():
+            for bus, volume in con.execute("SELECT bus, volume FROM audio_bus"):
+                volumes[bus] = float(volume)
+    return volumes
+
+
+def put_buses(project: Project, volumes: dict[str, float]) -> None:
+    with project.connect() as con:
+        con.execute("DELETE FROM audio_bus")
+        con.executemany("INSERT INTO audio_bus (bus, volume) VALUES (?, ?)",
+                        [(b, round(float(v), 4)) for b, v in volumes.items()
+                         if b in BUS_NAMES and v != 1.0])
+    project.sound_events_changed.emit("")
+
+
+class BusesCommand(QUndoCommand):
+    """The buses' volumes changed (a fader dragged: its moves merge into one step)."""
+    ID = 5144
+
+    def __init__(self, project: Project, old: dict[str, float], new: dict[str, float],
+                 bus: str):
+        super().__init__(f"Change the {BUS_NAMES.get(bus, bus).lower()} volume")
+        self.project, self.old, self.new, self.bus = project, dict(old), dict(new), bus
+
+    def id(self) -> int:
+        return self.ID
+
+    def mergeWith(self, other: QUndoCommand) -> bool:
+        if not isinstance(other, BusesCommand) or other.bus != self.bus:
+            return False
+        self.new = other.new
+        return True
+
+    def redo(self) -> None:
+        put_buses(self.project, self.new)
+
+    def undo(self) -> None:
+        put_buses(self.project, self.old)
+
+
+def audio_message(project: Project) -> dict[str, Any]:
+    """Everything the Audio panel edits, as the live link's audio.put sends it."""
+    from . import ambience, music
+    return {"events": load_all(project), "playlists": music.load_all(project),
+            "ambience": ambience.load_all(project), "buses": load_buses(project)}

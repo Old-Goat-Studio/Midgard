@@ -60,7 +60,10 @@ glm::vec3 vec3(const std::array<float, 3>& v) {
 
 }  // namespace
 
+void bind_audio_preview(py::module_& m);  // (audio_preview.cpp)
+
 PYBIND11_MODULE(_midgard, m) {
+    bind_audio_preview(m);
     m.doc() = "The Midgard engine, for the Midgard editor.";
 
     m.def(

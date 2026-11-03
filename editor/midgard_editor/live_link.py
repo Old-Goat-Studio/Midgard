@@ -29,7 +29,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
-from . import environments, terrain_stamps
+from . import environments, sound_events, terrain_stamps
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .objects import ObjectError, object_content
 from .project import Project
@@ -126,6 +126,7 @@ class PlaySession(QObject):
         project.entities_changed.connect(self._entities_changed)
         project.objects_changed.connect(self._objects_changed)
         project.environments_changed.connect(self._environments_changed)
+        project.sound_events_changed.connect(self._audio_changed)
         project.terrain_changed.connect(self._terrain_changed)
         project.files_changed.connect(self._files_changed)
 
@@ -397,6 +398,15 @@ class PlaySession(QObject):
         for env in environments.load_all(self.project):
             if not environment_id or env["id"] == environment_id:
                 self.send({"type": "environment.put", "environment": env})
+
+    def _audio_changed(self, _event_id: str) -> None:
+        """The Audio panel's edits (sound events, playlists, ambience, buses): the running game
+        follows at once, any new sound files packed in first."""
+        if self.socket is None:
+            return
+        if used_mesh_assets(self.project) - self._cooked_assets:
+            self._reload_assets()
+        self.send({"type": "audio.put", "audio": sound_events.audio_message(self.project)})
 
     def _objects_changed(self, _object_id: str) -> None:
         """An object edited, re-imported, added or removed: the running game follows."""

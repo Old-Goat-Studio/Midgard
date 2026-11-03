@@ -25,6 +25,7 @@
 namespace midgard::audio {
 
 struct Playlist {
+    bool operator==(const Playlist&) const = default;
     std::string id, name;
     std::vector<std::string> tracks;  // sound events' ids (or names)
     bool shuffle = false;
@@ -62,6 +63,8 @@ public:
 
     void add(Playlist playlist);
     void clear();
+    // All of them at once (live editing): the one playing plays on if it's unchanged.
+    void replace(std::vector<Playlist> playlists);
     const std::map<std::string, Playlist>& playlists() const { return playlists_; }
     // The playlist that fits a context best (none fits: none).
     const Playlist* choose(const MusicContext& context) const;

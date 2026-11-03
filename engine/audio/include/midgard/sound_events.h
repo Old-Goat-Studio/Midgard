@@ -27,10 +27,12 @@
 namespace midgard::audio {
 
 struct SoundEvent {
+    bool operator==(const SoundEvent&) const = default;
     std::string id, name;
     struct Variant {
         std::string sound;  // a content id ("snd:<path>")
         float weight = 1.0f;
+        bool operator==(const Variant&) const = default;
     };
     std::vector<Variant> sounds;
     Bus bus = Bus::Effects;
@@ -112,6 +114,8 @@ public:
 
     // Time passes: cooldowns, and voices that have finished let go.
     void update(double dt);
+    // A sound read again next time (its file changed, or it's in the package now).
+    void forget(const std::string& content_id);
     // Problems since last asked (a sound that can't be read, an unknown event), once each.
     std::vector<std::string> take_problems();
 

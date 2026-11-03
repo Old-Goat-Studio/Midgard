@@ -25,11 +25,13 @@
 namespace midgard::audio {
 
 struct AmbienceSet {
+    bool operator==(const AmbienceSet&) const = default;
     std::string id, name;
     struct Layer {
         std::string event;
         std::vector<std::string> times;  // empty: always
         float volume = 1.0f;
+        bool operator==(const Layer&) const = default;
     };
     std::vector<Layer> layers;
     struct Sprinkle {
@@ -37,6 +39,7 @@ struct AmbienceSet {
         std::vector<std::string> times;
         float every_min = 10.0f, every_max = 30.0f;       // seconds between
         float distance_min = 5.0f, distance_max = 30.0f;  // metres from the listener
+        bool operator==(const Sprinkle&) const = default;
     };
     std::vector<Sprinkle> sprinkles;
     std::vector<std::string> scenes, world_types, biomes;
@@ -54,6 +57,8 @@ public:
 
     void add(AmbienceSet set);
     void clear();
+    // All of them at once (live editing): the one playing plays on if it's unchanged.
+    void replace(std::vector<AmbienceSet> sets);
     const std::map<std::string, AmbienceSet>& sets() const { return sets_; }
     const AmbienceSet* choose(const MusicContext& context) const;
 

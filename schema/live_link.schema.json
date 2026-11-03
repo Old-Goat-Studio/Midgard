@@ -88,6 +88,14 @@
       "required": ["type", "environment"]
     },
     {
+      "description": "Editor → runtime: the Audio panel's edits (milestone 5.14): every sound event, playlist and ambience set ({id, name, event | playlist | ambience} rows, as their tables have them) and the buses' volumes ({bus: volume}); the game's sounds, music and ambience follow at once.",
+      "properties": {
+        "type": { "const": "audio.put" },
+        "audio": { "type": "object" }
+      },
+      "required": ["type", "audio"]
+    },
+    {
       "description": "Editor → runtime: the scene's terrain stamps (sculpting and painting, every one in order, as the terrain_stamp table has them); the ground drawn and the solid ground follow at once.",
       "properties": {
         "type": { "const": "terrain.stamps" },

@@ -513,6 +513,12 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
             }
         }
     }
+    // Bus volumes (migration 17).
+    if (has_column(db.get(), "audio_bus", "volume")) {
+        Stmt v = prepare(db.get(), "SELECT bus, volume FROM audio_bus");
+        while (sqlite3_step(v.get()) == SQLITE_ROW)
+            scene.bus_volumes[column_text(v.get(), 0)] = float(sqlite3_column_double(v.get(), 1));
+    }
     // Ambience sets (migration 16).
     if (has_column(db.get(), "ambience", "ambience")) {
         Stmt v = prepare(db.get(), "SELECT id, name, ambience FROM ambience");

@@ -289,6 +289,11 @@ void SoundPlayer::update(double dt) {
     mixer_.update();
 }
 
+void SoundPlayer::forget(const std::string& content_id) {
+    failed_.erase(content_id);
+    if (const auto id = mixer_.find(content_id)) mixer_.unload(*id);  // (its voices stop)
+}
+
 std::vector<std::string> SoundPlayer::take_problems() {
     return std::exchange(problems_, {});
 }

@@ -172,6 +172,10 @@ public:
     // from the package; entities with a sound component play theirs (autoplay) while they're
     // in the scene.
     void set_audio(audio::Mixer* mixer);
+    // The Audio panel's edits while the game plays (the live link's audio.put): every sound
+    // event, playlist and ambience set, and the buses' volumes, at once. Throws SceneError for
+    // malformed ones (nothing changes then).
+    void set_audio_data(const nlohmann::json& audio);
     audio::SoundPlayer* sounds() { return sounds_.get(); }
     const audio::SoundPlayer* sounds() const { return sounds_.get(); }
     // Sounds that couldn't be read, events that aren't there (each once), since last asked.

@@ -356,6 +356,8 @@ public:
     std::map<std::string, audio::Playlist> playlists;
     // Its ambience sets (migration 16; midgard/ambience.h), by id.
     std::map<std::string, audio::AmbienceSet> ambience;
+    // The buses' volumes as a game starts (migration 17): a bus not here is at 1.
+    std::map<std::string, float> bus_volumes;
     // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
     std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.

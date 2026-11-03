@@ -284,6 +284,8 @@ void Game::set_audio(audio::Mixer* mixer) {
     for (const auto& [id, p] : scene_.playlists) music_->add(p);
     ambience_ = std::make_unique<audio::AmbienceDirector>(*sounds_);
     for (const auto& [id, a] : scene_.ambience) ambience_->add(a);
+    for (const auto& [bus, volume] : scene_.bus_volumes)
+        if (const auto b = audio::bus_from_name(bus)) mixer->set_volume(*b, volume);
     sounds_->set_blocked([this](audio::VoiceId voice, const glm::dvec3& from,
                                 const glm::dvec3& to) { return sound_blocked(voice, from, to); });
     listen();
@@ -353,6 +355,60 @@ void Game::update_reverb() {
     }
     reverb_ = chosen;
     if (sounds_) sounds_->mixer().set_reverb(chosen);
+}
+
+void Game::set_audio_data(const nlohmann::json& a) {
+    // Everything read first: a mistake changes nothing.
+    std::map<std::string, audio::SoundEvent> events;
+    std::vector<audio::Playlist> playlists;
+    std::vector<audio::AmbienceSet> sets;
+    std::map<std::string, float> buses;
+    try {
+        for (const nlohmann::json& e : a.value("events", nlohmann::json::array())) {
+            audio::SoundEvent ev = audio::sound_event_from_json(
+                e.at("id"), e.value("name", ""), e.value("event", nlohmann::json::object()).dump());
+            events[ev.id] = std::move(ev);
+        }
+        for (const nlohmann::json& p : a.value("playlists", nlohmann::json::array()))
+            playlists.push_back(
+                audio::playlist_from_json(p.at("id"), p.value("name", ""),
+                                          p.value("playlist", nlohmann::json::object()).dump()));
+        for (const nlohmann::json& s : a.value("ambience", nlohmann::json::array()))
+            sets.push_back(
+                audio::ambience_from_json(s.at("id"), s.value("name", ""),
+                                          s.value("ambience", nlohmann::json::object()).dump()));
+        const nlohmann::json volumes = a.value("buses", nlohmann::json::object());
+        for (const auto& [bus, volume] : volumes.items())  // (a named value: items() refers to it)
+            if (audio::bus_from_name(bus)) buses[bus] = volume.get<float>();
+    } catch (const std::exception& ex) {
+        throw SceneError(std::string("audio: ") + ex.what());
+    }
+    scene_.sound_events = events;
+    scene_.playlists.clear();
+    for (const auto& p : playlists) scene_.playlists[p.id] = p;
+    scene_.ambience.clear();
+    for (const auto& s : sets) scene_.ambience[s.id] = s;
+    scene_.bus_volumes = buses;
+    if (!sounds_) return;
+    // Events: changed ones replaced (their sounds read again: new ones may be in the package
+    // now), removed ones stopped.
+    std::vector<std::string> gone;
+    for (const auto& [id, e] : sounds_->events())
+        if (!events.contains(id)) gone.push_back(id);
+    for (const std::string& id : gone) sounds_->remove(id);
+    for (const auto& [id, e] : events) {
+        const audio::SoundEvent* had = sounds_->find(id);
+        if (had && *had == e) continue;
+        for (const auto& v : e.sounds) sounds_->forget(v.sound);
+        sounds_->add(e);
+    }
+    if (music_) music_->replace(std::move(playlists));
+    if (ambience_) ambience_->replace(std::move(sets));
+    for (const char* bus : {"master", "music", "effects", "voice", "ambience", "interface"}) {
+        const auto it = buses.find(bus);
+        sounds_->mixer().set_volume(*audio::bus_from_name(bus),
+                                    it == buses.end() ? 1.0f : it->second);
+    }
 }
 
 audio::MusicContext Game::music_context() const {
@@ -785,6 +841,10 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
     pak_ = std::filesystem::is_regular_file(pak_file) ? std::make_unique<Pak>(pak_file) : nullptr;
     failed_meshes_.erase(asset);
     outline_meshes_.erase(asset);
+    if (asset.starts_with("snd:")) {  // a sound: read again when it next plays
+        if (sounds_) sounds_->forget(asset);
+        return true;
+    }
     // A texture: the materials using it are made again from the new package.
     materials_.forget(asset);
     bool texture_used = false;
