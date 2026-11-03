@@ -187,3 +187,42 @@ def test_a_heat_source_is_added_and_set_in_the_inspector(project, qtbot):
     assert project.entity("e000082").components["heat_source"] == {"heat": 22.0, "radius": 4.5}
     project.undo_stack.undo()
     assert project.entity("e000082").components["heat_source"]["radius"] == 3.0
+
+
+SCRIPTED_STORM = """
+import midgard
+
+def on_start(entity):
+    midgard.time.set_scale(60)  # (a game minute a real second)
+    midgard.weather.force("thunderstorm", hours=0.5)
+"""
+
+
+@needs_scripting
+def test_the_exit_a_scripted_storm_in_a_game(project, tmp_path):
+    """Milestone 5.15's exit, in a game made in the editor: a script brings a storm; it darkens
+    the sky and soaks the ground; its half hour over, the weather the forecast had comes
+    back."""
+    from midgard_editor.scene_model import Entity
+
+    settings = project.scene_settings()
+    settings["weather"] = {"tables": [{"weather": {"clear": 1}}]}
+    project.set_scene_settings(settings)
+    project.put_entity(Entity("e000083", "Storm bringer", None, {
+        "transform": {}, "script": {"module": "storm_bringer"}}))
+    write_script(project, "storm_bringer", SCRIPTED_STORM)
+    package = cook(project, tmp_path / "pkg").out_dir
+    during, run = simulate(package, 900)  # fifteen real seconds: fifteen game minutes
+    assert run.returncode == 0, run.stderr
+    w = during["weather"]
+    assert w["now"] == "thunderstorm" and w["forced"]
+    assert w["look"]["clouds"] > 0.9 and w["look"]["darkness"] > 0.6
+    assert w["falling"]["kind"] == 1 and w["falling"]["amount"] > 0.8  # (rain)
+    assert w["ground"]["wetness"] > 0.4
+    assert w["forecast"][0]["weather"] == "thunderstorm" and w["forecast"][0]["forced"]
+    assert w["forecast"][1]["weather"] == "clear"
+    after, run = simulate(package, 2400)  # forty real seconds: forty game minutes
+    assert run.returncode == 0, run.stderr
+    w = after["weather"]
+    assert w["now"] == "clear" and not w["forced"]
+    assert w["ground"]["wetness"] > 0.3  # (still drying)

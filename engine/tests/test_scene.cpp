@@ -3944,3 +3944,134 @@ TEST_CASE(
     CHECK(hut.exposure.feels_like > hut.exposure.air + 10.0);
     CHECK(hut.falling == 0.0f);  // (indoors: none drawn)
 }
+
+// ---- weather, the exit (milestone 5.15) ------------------------------------------------------
+
+TEST_CASE(
+    "weather, the exit: the forecast comes true, a scripted storm rolls in over the planet, "
+    "darkens the sky and wets the ground, then the forecast weather resumes") {
+    // The audio exit's test planet: warm grassland round the equator, cold snowfields towards
+    // the pole, each with a weather table; the player stands at the equator.
+    constexpr double kRadius = 1000.0;
+    const glm::dvec3 centre(0.0, -kRadius, 0.0);
+    const std::string body_json =
+        R"({"shape": "sphere_outside", "radius": 1000, "seed": 13, "origin": [0, -1000, 0]})";
+    const json terrain_json = json::parse(R"({"height_scale": 12, "base": 8,
+        "climate": {"temperature": 14, "latitude_cooling": 60, "lapse_rate": 6.5,
+                    "variation": 1, "season_swing": 0},
+        "biomes": [{"name": "Warm", "temperature": [4, 60], "moisture": [0, 1],
+                    "color": [0.3, 0.5, 0.2], "dry_color": [0.5, 0.5, 0.3]},
+                   {"name": "Cold", "temperature": [-60, 4], "moisture": [0, 1],
+                    "color": [0.8, 0.8, 0.8], "dry_color": [0.7, 0.7, 0.7]}]})");
+    const json weather_json = json::parse(R"({"cell": 150,
+        "tables": [{"name": "Warm", "biomes": ["Warm"],
+                    "weather": {"clear": 3, "cloudy": 2, "rain": 2, "fog": 1}},
+                   {"name": "Cold", "biomes": ["Cold"],
+                    "weather": {"snow": 2, "cloudy": 1, "blizzard": 1}}],
+        "lasts": {"default": [0.5, 2]}})");
+    json body = json::parse(body_json);
+    body["id"] = "b";
+    const midgard::Terrain terrain(midgard::body_from_json(body),
+                                   midgard::terrain_from_json(terrain_json));
+    // (20 m off the face's middle each way: inside a weather cell, not on the edge between two,
+    // where settling onto the ground could take the player over into the next.)
+    const glm::dvec3 g =
+        terrain.ground(centre + glm::normalize(glm::dvec3(1.0, 0.02, 0.02)) * kRadius);
+    const glm::dvec3 start = g + terrain.body().up(g) * 1.0;
+    const json player = {{"transform", {{"position", {start.x, start.y, start.z}}}},
+                         {"player", {{"speed", 5}, {"height", 1.8}}}};
+    TestPackage pkg({{"e1_player", "NULL, '" + player.dump() + "'"}},
+                    R"({"body": )" + body_json + R"(, "terrain": )" + terrain_json.dump() +
+                        R"(, "weather": )" + weather_json.dump() + "}");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    REQUIRE(game.weather() != nullptr);
+    for (int i = 0; i < 20; ++i) game.update(actions, 1.0f / 60.0f);  // (settling)
+    const auto cell = game.weather_cell();
+    REQUIRE(cell.has_value());
+    CHECK(game.weather()->biome(*cell) == "Warm");
+    const glm::dvec3 origin = game.camera(1.0f).origin;
+    const std::int64_t hour = game.local_calendar().seconds_per_hour();
+
+    // The forecast, made at the start: the next fourteen hours.
+    const std::int64_t t0 = game.time().now();
+    const std::vector<midgard::weather::Spell> forecast = game.weather_forecast(14.0);
+    REQUIRE(!forecast.empty());
+    const auto forecast_at = [&](std::int64_t t) {
+        for (const auto& s : forecast)
+            if (t >= s.start && t < s.end) return s.weather;
+        return std::string("(none)");
+    };
+
+    // Eight hours of natural weather, the clock fast (ten game minutes a real second): each
+    // frame, the weather is what the forecast said.
+    game.time().set_scale(600.0);
+    std::set<std::string> seen;
+    int changes = 0, mismatches = 0;
+    while (game.time().now() < t0 + 8 * hour) {
+        game.update(actions, 0.25f);
+        const std::string now = game.weather_now().weather;
+        mismatches += now != forecast_at(game.time().now());
+        changes += int(game.weather_changes().size());
+        seen.insert(now);
+    }
+    CHECK(mismatches == 0);
+    CHECK(changes >= 2);
+    CHECK(seen.size() >= 2);
+    for (const std::string& w : seen)  // (the warm table's weather only)
+        CHECK_MESSAGE((w == "clear" || w == "cloudy" || w == "rain" || w == "fog"), w);
+
+    // A scripted storm (midgard.weather.force("thunderstorm", hours=2)), the clock at a minute
+    // a real second so its look, rain and lightning come as they would in play.
+    game.time().set_scale(60.0);
+    const std::int64_t storm_at = game.time().now();
+    REQUIRE(game.force_weather("thunderstorm", 2.0));
+    const auto storm_forecast = game.weather_forecast(3.0);
+    REQUIRE(storm_forecast.size() >= 2);
+    CHECK(storm_forecast[0].forced);
+    CHECK(storm_forecast[0].end == storm_at + 2 * hour);
+    CHECK(storm_forecast[1].weather == forecast_at(storm_at + 2 * hour));  // (as at the start)
+    const std::size_t flashes_before = game.lightning_flashes();
+    const auto frames = [&](double seconds) {
+        for (int i = 0; i < int(seconds * 4.0); ++i) game.update(actions, 0.25f);
+    };
+    frames(30.0);                                                     // half a game hour
+    for (int i = 0; i < 40 && game.weather_look().flash > 0.0f; ++i)  // (between flashes)
+        game.update(actions, 0.05f);
+    // It rolled in: the sky darker and greyer (under half as bright), the sun dimmed, rain
+    // falling.
+    const auto env = game.environment(origin);
+    const auto clear_env = game.scene().environment(origin);
+    CHECK(game.weather_look().clouds > 0.95f);
+    CHECK(env.clouds.cover > 0.95f);
+    CHECK(env.sky_colors.brightness < 0.5f * clear_env.sky_colors.brightness);
+    CHECK(env.sky_colors.sun_brightness < 0.01f * clear_env.sky_colors.sun_brightness + 1e-6f);
+    CHECK(game.light(origin).intensity < 0.3f * game.scene().light(origin).intensity + 1e-6f);
+    CHECK(env.falling.kind == midgard::render::Falls::Rain);
+    CHECK(env.falling.amount > 0.8f);
+    CHECK(env.fog.density > clear_env.fog.density);
+    // The ground soaks, and the player with it (out in the open).
+    CHECK(game.ground_cover().wetness > 0.6f);
+    CHECK(game.exposure().wetness > 0.6f);
+    CHECK_FALSE(game.exposure().sheltered);
+    CHECK(game.exposure().feels_like < game.exposure().air - 3.0);
+    frames(60.0);  // an hour and a half in
+    CHECK(game.weather_now() == midgard::weather::Now{"thunderstorm", -1, true});
+    CHECK(game.ground_cover().wetness > 0.9f);
+    CHECK(game.lightning_flashes() > flashes_before);
+
+    // Its two hours over: the weather the forecast at the start had for then.
+    while (game.time().now() < storm_at + 2 * hour) game.update(actions, 0.25f);
+    game.update(actions, 0.25f);
+    CHECK_FALSE(game.weather_now().forced);
+    CHECK(game.weather_now().weather == forecast_at(game.time().now()));
+    game.time().set_scale(600.0);
+    mismatches = 0;
+    while (game.time().now() < t0 + 13 * hour) {
+        game.update(actions, 0.25f);
+        mismatches += game.weather_now().weather != forecast_at(game.time().now());
+    }
+    CHECK(mismatches == 0);
+    // (Clear, cloudy or fog lets the ground dry; more rain keeps it wet.)
+    if (forecast_at(game.time().now()) != "rain") CHECK(game.ground_cover().wetness < 0.9f);
+}

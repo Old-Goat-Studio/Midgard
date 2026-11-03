@@ -503,6 +503,27 @@ feels-like temperature against the Python reference; particle budget on the phon
 **Exit:** a scripted storm rolls in over the test planet, darkens the sky and wets the ground,
 then normal weather resumes, and the forecast predicted the natural changes.
 
+*As built:* weather types in `midgard/weather.h` (migration 18, ten to start); the
+simulation in `midgard/weather_sim.h` (cells per face, tables by biome then season, "after"
+rules, spell lengths, fronts as great circles and across cylinder joins, controlled timetables;
+everything from the seed and the clock, so a forecast is what happens); in `Game` the weather
+where the player is, its sounds, forced weather, the look (`midgard/weather_look.h`: a cloud
+layer in the sky shader, darkness, tint, fog from visibility, lightning with thunder), what
+falls (`render::Falling`: particles made in the vertex shader, no buffers; 32,768 on desktops,
+8,192 on phones), the ground's wetness and snow (`render::GroundCover`), and the survival
+groundwork (`midgard/survival.h` and its twin `tools/reference/survival.py`; shelter by rays up
+and sideways; the heat_source component). Scripts: `midgard.weather`. Editor: the Calendar
+dock's Weather tab (`docks/weather_tab.py`), its forecast from `_midgard.weather_forecast`, live
+over weather.put; a scene's weather is its own, copied from its world type's on the first
+change. The exit is the engine test "weather, the exit" (the forecast taken at the start comes
+true frame by frame through eight hours; a forced storm rolls in over the test planet, darkens
+the sky to under half, dims the sun, rains, flashes and soaks the ground and the player; its two
+hours over, the weather is the start's forecast again) and the editor test of a scripted storm
+in a game. 📱 The self-test's Weather check (the heaviest rain at the phone tier against the
+frame budget) is the phone's part. Known limits: rain falls under porches and open roofs (none is
+drawn indoors); a world type's weather has no editor of its own yet (a scene's is edited);
+clothing and status effects, space weather and shared weather in multiplayer are for later.
+
 ### 5.16 Rooms and system space · M
 - (Scenes and the room-change core come in 5.11a; this adds system space and the exits to it.)
 - **Room manager:** one loaded play space at a time per player, and **room changes** that fade,
