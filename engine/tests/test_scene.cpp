@@ -3764,3 +3764,62 @@ TEST_CASE("in a game the storm rolls in over seconds, lightning flashes and thun
     for (int i = 0; i < 60 * 60; ++i) frame();
     CHECK(game.lightning_flashes() == after);
 }
+
+TEST_CASE("rain eases in, gives way to snow, blows with the wind, and stops") {
+    TestPackage pkg({}, R"({"sky": [0.1, 0.2, 0.3]})");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    using midgard::render::Falls;
+    const auto run = [&](double seconds) {
+        for (int i = 0; i < int(seconds * 60.0); ++i) game.update(actions, 1.0f / 60.0f);
+    };
+    run(0.1);
+    CHECK(game.falling().kind == Falls::None);
+    CHECK(game.environment(glm::dvec3(0.0)).falling.kind == Falls::None);
+
+    REQUIRE(game.force_weather("rain", 0.0));  // (0.6 of a downpour, wind 5 m/s)
+    run(1.0);
+    CHECK(game.falling().kind == Falls::Rain);
+    const float early = game.falling().amount;
+    CHECK(early > 0.05f);
+    CHECK(early < 0.4f);
+    run(20.0);
+    CHECK(game.falling().amount == doctest::Approx(0.6).epsilon(0.02));
+    const glm::vec3 v = game.falling().velocity;
+    CHECK(v.y == doctest::Approx(-9.0));  // (falling, down the world's up)
+    CHECK(v.x > 1.0f);                    // (blown east)
+    CHECK(v.x < 9.0f);
+    const auto env = game.environment(glm::dvec3(0.0));
+    CHECK(env.falling.kind == Falls::Rain);
+    CHECK(env.falling.amount == game.falling().amount);
+    // Moving: the rain carried by its velocity (wrapped far away).
+    const glm::dvec3 before = game.falling().moved;
+    run(1.0);
+    const glm::dvec3 moved = game.falling().moved - before;
+    CHECK(moved.y == doctest::Approx(-9.0).epsilon(0.02));
+
+    // Snow: the rain fades away first, then the snow comes.
+    REQUIRE(game.force_weather("snow", 0.0));
+    run(1.0);
+    CHECK(game.falling().kind == Falls::Rain);
+    CHECK(game.falling().amount < 0.5f);
+    run(20.0);
+    CHECK(game.falling().kind == Falls::Snow);
+    run(20.0);
+    CHECK(game.falling().amount == doctest::Approx(0.5).epsilon(0.02));
+    CHECK(game.falling().velocity.y == doctest::Approx(-1.2));
+
+    REQUIRE(game.force_weather("clear", 0.0));
+    run(30.0);
+    CHECK(game.falling().kind == Falls::None);
+    CHECK(game.falling().amount == 0.0f);
+}
+
+TEST_CASE("phones draw a quarter as much rain and snow") {
+    using namespace midgard::render;
+    CHECK(quality_settings(Quality::Desktop).falling == 32768);
+    CHECK(quality_settings(Quality::Phone).falling == 8192);
+    CHECK(falling_box(Falls::Rain) == 24.0f);
+    for (const Falls f : {Falls::Rain, Falls::Snow, Falls::Ash, Falls::Sand})
+        CHECK(std::fmod(480.0, double(falling_box(f))) == 0.0);  // (the game wraps at 480 m)
+}

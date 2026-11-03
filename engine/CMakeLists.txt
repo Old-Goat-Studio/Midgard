@@ -59,7 +59,7 @@ set(SHADER_HEADERS)
 # Each shader becomes a header with a C array named after it (mesh.vert -> mesh_vert).
 foreach(shader mesh.vert mesh_skinned.vert mesh.frag water.frag terrain.frag shadow.vert
         shadow_skinned.vert sky.vert sky.frag line.vert line.frag
-        overlay.vert overlay.frag fullscreen.vert tonemap.frag)
+        overlay.vert overlay.frag fullscreen.vert tonemap.frag falling.vert falling.frag)
     string(REPLACE "." "_" name "${shader}")
     set(src "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/${shader}")
     set(out "${SHADER_OUT}/${name}.h")

@@ -14,6 +14,7 @@ QualitySettings quality_settings(Quality tier) {
         q.shadows.split_blend = 0.6f;
         q.max_texture_size = 1024;
         q.soft_shadows = false;
+        q.falling = 8192;
     }
     return q;
 }

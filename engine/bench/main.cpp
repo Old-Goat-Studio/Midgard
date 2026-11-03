@@ -593,6 +593,46 @@ std::vector<Benchmark> benchmarks() {
                  };
              }});
     }
+    // Rain at its heaviest (milestone 5.15): the phone tier's most drops (8,192 streaks) over
+    // a plain with a sky, clouds and fog, drawn offscreen at 640x360.
+    list.push_back(
+        {"render.rain_phone",
+         "the heaviest rain at phone quality (8,192 streaks, blown by the wind) over a plain "
+         "under a cloudy sky with fog, drawn offscreen at 640x360 (GPU)",
+         60, [](std::string& skip) -> std::function<void()> {
+             using namespace midgard::render;
+             std::shared_ptr<Renderer> renderer;
+             try {
+                 RendererDesc desc;
+                 desc.offscreen = true;
+                 desc.width = 640;
+                 desc.height = 360;
+                 desc.quality = quality_settings(Quality::Phone);
+                 renderer = std::make_shared<Renderer>(desc);
+             } catch (const std::exception& e) {
+                 skip = std::string("no Vulkan: ") + e.what();
+                 return {};
+             }
+             const MeshId cube = renderer->upload_mesh(make_cube());
+             auto draws = std::make_shared<std::vector<DrawItem>>();
+             draws->push_back({cube, glm::scale(glm::mat4(1.0f), glm::vec3(400, 0.1f, 400)),
+                               glm::vec4(0.4f, 0.45f, 0.35f, 1.0f)});
+             Environment env;
+             env.sky = true;
+             env.fog.density = 0.002f;
+             env.clouds.cover = 0.9f;
+             env.falling.kind = Falls::Rain;
+             env.falling.amount = 1.0f;
+             env.falling.velocity = {3.0f, -9.0f, 0.0f};
+             renderer->set_environment(env);
+             Camera camera;
+             camera.view =
+                 glm::lookAt(glm::vec3(0, 1.7f, 0), glm::vec3(0, 1.5f, -10), glm::vec3(0, 1, 0));
+             camera.projection = perspective(glm::radians(60.0f), 640.0f / 360.0f, 0.1f, 500.0f);
+             return [renderer, draws, camera] {
+                 renderer->render_frame(camera, Light{}, *draws, glm::vec4(0.1f, 0.1f, 0.2f, 1));
+             };
+         }});
     // Skinned characters (milestone 5.13): 32 of them, each about 8,500 vertices on 65 joints
     // (the Quaternius characters' size), with sun shadows, at the phone's quality.
     list.push_back(

@@ -210,6 +210,7 @@ void Game::update(const Actions& actions, float dt) {
     update_weather();
     weather_changes_ = std::exchange(weather_pending_, {});  // (scripts' since the last, too)
     update_weather_look(dt);
+    update_falling(dt);
     update_sounds(dt);
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
@@ -600,10 +601,52 @@ void Game::update_weather_look(float dt) {
     }
 }
 
+// What falls eases in and out over a few seconds as the weather changes (one kind fading away
+// before the next comes), at its fall speed, carried by the wind (east, gusting).
+void Game::update_falling(float dt) {
+    const weather::WeatherType* type = weather_type();
+    using render::Falls;
+    Falls kind = Falls::None;
+    float amount = 0.0f;
+    if (type && type->falls != weather::Falls::none) {
+        kind = Falls(int(type->falls));  // (the same order: none, rain, snow, ash, sand)
+        amount = type->amount;
+    }
+    const float ease = 1.0f - std::exp(-std::max(dt, 0.0f) / 3.0f);
+    if (falling_.kind != kind) {
+        falling_.amount -= falling_.amount * ease + 0.01f * dt;  // (the last of it goes too)
+        if (falling_.amount <= 0.01f) {
+            falling_.kind = kind;
+            falling_.amount = 0.0f;
+        }
+    } else {
+        falling_.amount += (amount - falling_.amount) * ease;
+    }
+    falling_.time += dt;
+    if (falling_.kind == Falls::None) return;
+    const glm::dvec3 at = camera(1.0f).origin;
+    glm::dvec3 up(0.0, 1.0, 0.0), east(1.0, 0.0, 0.0);
+    if (scene_.settings.body) {
+        const SurfaceFrame f = scene_.settings.body->frame(at);
+        up = f.up;
+        east = f.east;
+    }
+    const double speeds[] = {0.0, 9.0, 1.2, 1.0, 0.4};  // metres a second, falling
+    const double t = falling_.time;
+    const double gusting =
+        type ? 1.0 + type->gusts * 0.6 * std::sin(t * 0.9) * std::sin(t * 0.37 + 1.0) : 1.0;
+    const double wind = type ? type->wind * gusting : 0.0;
+    const glm::dvec3 velocity = east * wind - up * speeds[size_t(falling_.kind)];
+    falling_.velocity = glm::vec3(velocity);
+    // (Wrapped at 480 m: a whole number of every kind's box, so nothing jumps.)
+    falling_.moved = glm::mod(falling_.moved + velocity * double(dt), glm::dvec3(480.0));
+}
+
 render::Environment Game::environment(const glm::dvec3& origin) const {
     render::Environment env = scene_.environment(origin);
     render::Light light;
     apply(look_, env, light);
+    env.falling = falling_;
     return env;
 }
 

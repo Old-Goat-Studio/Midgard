@@ -607,9 +607,19 @@ you can see". In a thunderstorm, lightning lights everything up for a moment, an
 rolls in a few seconds later (give the weather type a **thunder** sound). When the weather
 changes, the sky doesn't snap: a storm rolls in over several seconds.
 
+**What falls.** Rain falls in streaks, snow and ash drift down as flakes, and sand blows
+almost sideways, all pushed by the weather's wind and its gusts (a weather type's **falls** and
+**amount**). Walk through it and it stays where it is in the world; it doesn't follow you like a
+picture on the screen. It eases in and out as the weather changes; rain turning to snow fades
+out before the snow comes. Phones draw a quarter as many drops and flakes as a computer, so
+heavy weather stays smooth (the phone's self-test has a **Weather** check for this).
+
+*For now*, rain and snow also fall under roofs and inside buildings. Keeping them out comes
+with the shelter checks, later in this milestone.
+
 You'll be able to change all of this, and make your own weather types (acid rain, a sleet
-storm), in the **Weather** tab of the Calendar panel, which is coming. Next comes falling rain,
-snow and ash.
+storm), in the **Weather** tab of the Calendar panel, which is coming. Next: wet ground after
+rain, and snow that settles.
 
 ---
 

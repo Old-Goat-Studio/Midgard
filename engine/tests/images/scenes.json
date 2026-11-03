@@ -93,6 +93,18 @@
       "max_bad": 0.01
     },
     {
+      "name": "sky_rain",
+      "_about": "Rain (milestone 5.15 step 5): streaks blown sideways by the wind across a grey, cloudy day, fading out near the camera and with distance. Thin streaks rasterise a little differently between drivers: up to 3% of pixels may differ.",
+      "args": ["--size", "480x270", "--scene", "sky_rain"],
+      "max_bad": 0.03
+    },
+    {
+      "name": "sky_snow",
+      "_about": "Snow drifting down under an overcast sky: soft white flakes, larger near the camera. The same allowance as sky_rain.",
+      "args": ["--size", "480x270", "--scene", "sky_snow"],
+      "max_bad": 0.03
+    },
+    {
       "name": "colliders",
       "_about": "Collider outlines (--debug-physics) over the scene: static scenery grey-green, a dynamic crate and ball orange, a kinematic capsule blue, a trigger yellow, a static convex rock grey-green with its faces' diagonals, and the player's capsule cyan. Lines are thin, so drivers draw their pixels a little differently: up to 2% of pixels may differ.",
       "args": ["--size", "480x270", "--scene", "colliders", "--debug-physics"],

@@ -198,6 +198,21 @@ AnalyticSky analytic_sky(float sun_elevation) {
     return out;
 }
 
+float falling_box(Falls kind) {
+    switch (kind) {
+        case Falls::Rain:
+            return 24.0f;  // (streaks: seen farther)
+        case Falls::Snow:
+        case Falls::Ash:
+            return 16.0f;
+        case Falls::Sand:
+            return 12.0f;
+        case Falls::None:
+            break;
+    }
+    return 16.0f;
+}
+
 float fog_depth(const Fog& fog, const glm::vec3& offset, const glm::vec3& up) {
     if (fog.density <= 0.0f) return 0.0f;
     const float length = glm::length(offset);

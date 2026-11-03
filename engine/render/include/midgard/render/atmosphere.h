@@ -77,11 +77,26 @@ struct Clouds {
     glm::vec2 drift{0.0f};  // metres the clouds have moved (the wind times the time)
 };
 
+// What falls from the sky (the weather's; milestone 5.15): particles made on the GPU in a box
+// round the camera, fixed in the world as it moves, carried by the wind. Rain falls as streaks;
+// snow, ash and sand as small flakes. How many: `amount` times the quality tier's most.
+enum class Falls { None, Rain, Snow, Ash, Sand };
+struct Falling {
+    Falls kind = Falls::None;
+    float amount = 0.0f;       // 0 .. 1
+    glm::vec3 velocity{0.0f};  // metres a second (the fall and the wind), in the world's axes
+    glm::dvec3 moved{0.0};     // metres carried so far (velocity times time; any size)
+    float time = 0.0f;         // seconds, for the flakes' drifting
+};
+// The box round the camera each falls in (metres across): how far it's seen.
+float falling_box(Falls kind);
+
 struct Environment {
     bool sky = false;  // false: the frame's clear colour is the whole sky, flat
     SkyColors sky_colors;
     Fog fog;
     Clouds clouds;
+    Falling falling;
     // Radians: how far below level the visible horizon is, from a camera above a curved world
     // (a planet's ground falls away). The sky's horizon, and the sun setting behind it, are there.
     float horizon_dip = 0.0f;

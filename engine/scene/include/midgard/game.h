@@ -233,6 +233,10 @@ public:
     render::Light light(const glm::dvec3& origin) const;
     // Lightning flashes since the game started (each followed by its weather's thunder).
     std::size_t lightning_flashes() const { return flashes_; }
+    // What falls from the sky now (render::Falling): the weather's rain, snow, ash or sand,
+    // easing in and out as it changes (one kind giving way before the next), carried by its wind
+    // and gusts.
+    const render::Falling& falling() const { return falling_; }
     // What is underfoot of an entity (midgard/footsteps.h): an object's surface, the terrain's
     // ground, or "default".
     std::string ground_under(entt::entity e) const;
@@ -385,6 +389,8 @@ private:
     std::vector<double> strikes_;                          // when this flash's strikes came
     std::vector<std::pair<double, std::string>> thunder_;  // when, and the sound event
     std::size_t flashes_ = 0;
+    render::Falling falling_;
+    void update_falling(float dt);
     void update_weather_sounds();
     glm::dvec3 player_position() const;
     // Footsteps: how far each walker has come since its last step, and the steps taken.

@@ -45,4 +45,10 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 biome_color[8];
     vec4 biome_dry[8];
     vec4 clouds;             // the weather's: x cover (0 none .. 1 overcast), y shade, zw drift
+    // What falls (render::Falling): x its kind (0 none, 1 rain, 2 snow, 3 ash, 4 sand), y how
+    // many, z the box's size, w the time (wrapped); the motion so far less the camera's place,
+    // wrapped to the box (xyz), w a rain streak's seconds; the velocity (xyz), w the size.
+    vec4 fall;
+    vec4 fall_motion;
+    vec4 fall_velocity;
 } frame;

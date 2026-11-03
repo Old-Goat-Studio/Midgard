@@ -21,6 +21,8 @@ struct QualitySettings {
     uint32_t max_texture_size = 4096;
     // Shadow edges from 3 x 3 filtered lookups; otherwise one (the GPU still blends 2 x 2).
     bool soft_shadows = true;
+    // The most rain, snow, ash or sand particles drawn at once (the weather's; milestone 5.15).
+    uint32_t falling = 32768;
 };
 
 QualitySettings quality_settings(Quality tier);

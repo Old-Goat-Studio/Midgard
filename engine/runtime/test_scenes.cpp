@@ -445,8 +445,12 @@ public:
         float elevation, azimuth, density, falloff;
         glm::vec3 eye, target;
     };
-    explicit Sky(const Setup& s, std::optional<WeatherLook> weather = std::nullopt)
-        : setup_(s), sky_(render::analytic_sky(glm::radians(s.elevation))), weather_(weather) {}
+    explicit Sky(const Setup& s, std::optional<WeatherLook> weather = std::nullopt,
+                 render::Falling falling = {})
+        : setup_(s),
+          sky_(render::analytic_sky(glm::radians(s.elevation))),
+          weather_(weather),
+          falling_(falling) {}
     void upload(render::Renderer& r) override {
         cube_ = r.upload_mesh(render::make_cube());
         sphere_ = r.upload_mesh(render::make_sphere());
@@ -503,6 +507,7 @@ public:
             render::Light light;
             apply(*weather_, env, light);
         }
+        env.falling = falling_;
         return env;
     }
 
@@ -510,6 +515,7 @@ private:
     Setup setup_;
     render::AnalyticSky sky_;
     std::optional<WeatherLook> weather_;  // (milestone 5.15)
+    render::Falling falling_;
     render::MeshId cube_ = 0, sphere_ = 0;
 };
 
@@ -884,7 +890,8 @@ const std::pair<const char*, double> kDayTimes[] = {
 std::vector<std::string> names() {
     std::vector<std::string> out = {"materials", "textures",       "compressed", "lights",
                                     "shadows",   "shadows_curved", "sky_day",    "sky_sunset",
-                                    "colliders", "skinned",        "sky_cloudy", "sky_storm"};
+                                    "colliders", "skinned",        "sky_cloudy", "sky_storm",
+                                    "sky_rain",  "sky_snow"};
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
@@ -925,6 +932,25 @@ std::unique_ptr<TestScene> make(const std::string& name) {
         look.drift = {1234.0f, 567.0f};
         return std::make_unique<Sky>(
             Sky::Setup{35.0f, 140.0f, 0.004f, 0.02f, {0, 1.7f, 0}, {0, 1.2f, -20}}, look);
+    }
+    // Rain blown across, and snow drifting down (milestone 5.15 step 5).
+    if (name == "sky_rain" || name == "sky_snow") {
+        const bool rain = name == "sky_rain";
+        weather::WeatherType type = weather::weather_type_from_json(
+            name, name,
+            rain ? R"({"clouds": 0.95, "darkness": 0.5, "tint": [0.85, 0.88, 0.95],
+                       "visibility": 3000})"
+                 : R"({"clouds": 0.9, "darkness": 0.35, "tint": [0.95, 0.97, 1.0],
+                       "visibility": 2000})");
+        render::Falling falling;
+        falling.kind = rain ? render::Falls::Rain : render::Falls::Snow;
+        falling.amount = rain ? 1.0f : 0.8f;
+        falling.velocity = rain ? glm::vec3(2.5f, -9.0f, 0.0f) : glm::vec3(0.8f, -1.2f, 0.0f);
+        falling.moved = {123.4, 56.7, 89.0};
+        falling.time = 12.5f;
+        return std::make_unique<Sky>(
+            Sky::Setup{35.0f, 140.0f, 0.004f, 0.02f, {0, 1.7f, 0}, {0, 1.2f, -20}}, look_of(&type),
+            falling);
     }
     if (name == "terrain_area") return std::make_unique<TerrainScene>("area");
     if (name == "terrain_strip") return std::make_unique<TerrainScene>("strip");

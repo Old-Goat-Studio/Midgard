@@ -193,7 +193,11 @@ Check render_check(bool vulkan_required) {
 // renderers (CI's lavapipe) are far slower than any GPU, so they're timed but not held to it.
 constexpr double kFrameBudgetMs = 1000.0 / 60.0;
 
-Check frame_check(const Options& options) {
+// A scene drawn 30 times at 1280 x 720 on this device's quality tier: its median frame time
+// against the frame budget. "Frame time" draws the sunset; "Weather" the heaviest rain
+// (milestone 5.15: the tier's most streaks, under cloud and fog).
+Check frame_check(const Options& options, const char* name = "Frame time",
+                  const char* scene_name = "sky_sunset") {
     const render::Quality tier = options.quality.value_or(render::default_quality());
     try {
         render::RendererDesc desc;
@@ -202,7 +206,7 @@ Check frame_check(const Options& options) {
         desc.height = 720;
         desc.quality = render::quality_settings(tier);
         render::Renderer renderer(desc);
-        const auto scene = test_scenes::make("sky_sunset");
+        const auto scene = test_scenes::make(scene_name);
         scene->upload(renderer);
         renderer.set_environment(scene->environment());
         const render::Camera camera = scene->camera(1280.0f / 720.0f);
@@ -221,10 +225,10 @@ Check frame_check(const Options& options) {
         const std::string detail = format("%.1f ms a frame (budget %.1f), %s quality, 1280 x 720",
                                           median, kFrameBudgetMs, render::quality_name(tier));
         if (renderer.software())
-            return {"Frame time", Status::Skip, detail + ", software renderer: not checked"};
-        return {"Frame time", median <= kFrameBudgetMs ? Status::Pass : Status::Fail, detail};
+            return {name, Status::Skip, detail + ", software renderer: not checked"};
+        return {name, median <= kFrameBudgetMs ? Status::Pass : Status::Fail, detail};
     } catch (const std::exception& e) {
-        return no_vulkan("Frame time", e, options.vulkan_required);
+        return no_vulkan(name, e, options.vulkan_required);
     }
 }
 
@@ -537,6 +541,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(physics_check());
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(frame_check(options));
+    checks.push_back(frame_check(options, "Weather", "sky_rain"));
     checks.push_back(characters_check(options));
     checks.push_back(sound_check(options));
     checks.push_back(package_check(options.package));
