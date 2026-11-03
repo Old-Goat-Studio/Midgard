@@ -479,6 +479,32 @@ public:
                               midgard::Terrain(*settings.body, *settings.terrain))));
             world_hash = hex;
         }
+        // The weather (milestone 5.15): where the player is, and the next day's forecast there.
+        // (Forecasting fills the weather's caches: no change to what the game shows.)
+        auto& game = const_cast<midgard::Game&>(game_);
+        nlohmann::json weather = nullptr;
+        if (game.weather() || game.weather_now().forced) {
+            const auto& now = game.weather_now();
+            nlohmann::json forecast = nlohmann::json::array();
+            for (const auto& s : game.weather_forecast(24.0))
+                forecast.push_back({{"weather", s.weather},
+                                    {"start", s.start},
+                                    {"end", s.end},
+                                    {"front", s.front},
+                                    {"forced", s.forced}});
+            nlohmann::json cell = nullptr;
+            if (const auto c = game.weather_cell()) cell = {c->face, c->i, c->j};
+            nlohmann::json sounding = nlohmann::json::array();
+            if (const auto* type = game.weather_type())
+                for (const auto& s : type->sounds) sounding.push_back(s.event);
+            weather = {{"now", now.weather},
+                       {"front", now.front},
+                       {"forced", now.forced},
+                       {"cell", cell},
+                       {"sounds", sounding},
+                       {"forecast", forecast},
+                       {"changes", game.weather_changes().size()}};
+        }
         return nlohmann::json{{"entities", entities},
                               {"scene", game_.scene().id},
                               {"world_hash", world_hash},
@@ -487,7 +513,8 @@ public:
                               {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},
                               {"sun", sun},
                               {"season", game_.scene().sun_clock.season},
-                              {"audio", audio}}
+                              {"audio", audio},
+                              {"weather", weather}}
             .dump();
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }

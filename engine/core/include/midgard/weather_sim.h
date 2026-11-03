@@ -97,10 +97,11 @@ struct Cell {
 };
 
 // The weather somewhere at a moment: a weather type's id ("" when no table fits), and the
-// front it comes from, if one.
+// front it comes from, if one (and in a game, whether a script forces it).
 struct Now {
     std::string weather;
     int front = -1;  // the front's number, or -1: the cell's own weather
+    bool forced = false;
     bool operator==(const Now&) const = default;
 };
 
@@ -109,6 +110,7 @@ struct Spell {
     std::string weather;
     std::int64_t start = 0, end = 0;  // clock seconds; end is when the next starts
     int front = -1;
+    bool forced = false;
     bool operator==(const Spell&) const = default;
 };
 

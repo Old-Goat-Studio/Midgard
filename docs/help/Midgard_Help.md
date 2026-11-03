@@ -591,9 +591,18 @@ the same weather, and a **forecast** is always right (unless a script changes th
 **Inside worlds** such as habitats can have **controlled** weather instead: a timetable that
 repeats, such as 20 hours clear, then 4 hours of rain.
 
+**In your game.** The game always knows the weather where the player is standing; walk far
+enough and you may walk out of the rain. A weather type's **sounds** (the patter of rain, a
+howling wind) play while it lasts, fading in and out over a few seconds as the weather changes.
+
+**Scripts** can ask what the weather is, get the forecast, do something when the weather
+changes, and make their own weather: a storm that rolls in when the dragon appears, for an hour
+or until the script lets go (section 19, *Weather*). A world with no weather tables has no
+weather of its own, but scripts can still force some.
+
 You'll be able to change all of this, and make your own weather types (acid rain, a sleet
-storm), in the **Weather** tab of the Calendar panel, which is coming. Next you'll see the
-weather in your game and hear it, and scripts will be able to ask for the forecast.
+storm), in the **Weather** tab of the Calendar panel, which is coming. Next you'll *see* the
+weather: clouds, a darker sky, fog and lightning.
 
 ---
 
@@ -1077,6 +1086,30 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 | `midgard.ambience.release()` | Back to the set that fits where the player is. |
 | `midgard.ambience.stop()` | Fades the ambience out until `play()` or `release()`. |
 | `midgard.ambience.playing`, `midgard.ambience.layers` | What's playing now. |
+
+### Weather: `midgard.weather`
+
+| What | Meaning |
+|---|---|
+| `midgard.weather.current()` | The weather where the player is now. `.id` (such as `"rain"`), `.name`, and what it does: `.wind`, `.temperature`, `.wetness`, `.visibility`, `.falls` (`"rain"`, `"snow"`...), `.clouds`, `.lightning`. `.forced` is `True` while a script forces it. |
+| `midgard.weather.forecast(hours=24)` | What's coming: a list of spells, each with `.id`, `.in_hours` (how soon), `.hours` (how long). |
+| `midgard.weather.on_change(changed)` | Calls your function `changed(before, now)` whenever the weather where the player is changes. |
+| `midgard.weather.force("thunderstorm", hours=2)` | That weather everywhere, for two hours, then the weather comes back. Leave out `hours` to keep it until `release()`. |
+| `midgard.weather.release()` | Back to the weather there would have been. |
+| `midgard.weather.types` | The ids of the weather types. |
+
+```python
+import midgard
+
+def on_start(entity):
+    midgard.weather.on_change(changed)
+    for spell in midgard.weather.forecast(12):
+        print(spell.name, "in", round(spell.in_hours), "hours, for", round(spell.hours), "hours")
+
+def changed(before, now):
+    if now == "rain":
+        print("It's starting to rain. Find shelter!")
+```
 
 ### Other
 

@@ -404,6 +404,10 @@ SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
                 out.terrain = terrain_from_json(terrain);
             }
         }
+        if (settings.contains("weather") && !settings.at("weather").is_null()) {
+            out.weather = settings.at("weather").dump();
+            weather::weather_settings_from_json(out.weather);  // (what's wrong, said now)
+        }
         if (const auto mode = sun_mode_from_name(settings.value("sun_mode", "uniform")))
             out.sun_mode = *mode;
         else

@@ -3495,3 +3495,155 @@ TEST_CASE(
     std::sort(mix_ms.begin(), mix_ms.end());
     CHECK(mix_ms[mix_ms.size() / 2] < 1.0);
 }
+
+// ---- weather in the game (milestone 5.15) ------------------------------------------------------
+
+TEST_CASE("the game's weather is the weather where the player is, as forecast") {
+    const json player = {{"transform", {{"position", {0, 1, 0}}}}, {"player", json::object()}};
+    TestPackage pkg({{"e1_player", "NULL, '" + player.dump() + "'"}},
+                    R"({"weather": {"cell": 2000, "tables": [{"weather": {"clear": 1, "rain": 1}}],
+                                    "lasts": {"default": [1, 3]}}})");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    REQUIRE(game.weather() != nullptr);
+    game.update(actions, 0.0f);
+    CHECK(game.weather_changes().empty());  // (the weather it starts with isn't a change)
+    const std::string first = game.weather_now().weather;
+    CHECK((first == "clear" || first == "rain"));
+    CHECK_FALSE(game.weather_now().forced);
+    REQUIRE(game.weather_type() != nullptr);
+    CHECK(game.weather_type()->id == first);
+
+    const std::int64_t start = game.time().now();
+    const auto forecast = game.weather_forecast(48.0);
+    REQUIRE(!forecast.empty());
+    CHECK(forecast.front().start == start);
+    CHECK(forecast.front().weather == first);
+    CHECK(forecast.back().end == start + 48 * 3600);
+    CHECK(forecast.size() >= 10);
+    // The clock goes on, ten game minutes at a time: the weather is what the forecast said, and
+    // each change is told once.
+    size_t n = 0, changes = 0;
+    std::string was = first;
+    for (std::int64_t t = 600; t < 48 * 3600; t += 600) {
+        game.advance_time(600);
+        game.update(actions, 0.0f);
+        while (start + t >= forecast[n].end) ++n;
+        CHECK(game.weather_now().weather == forecast[n].weather);
+        if (game.weather_now().weather != was) {
+            REQUIRE(game.weather_changes().size() == 1);
+            CHECK(game.weather_changes()[0].from.weather == was);
+            CHECK(game.weather_changes()[0].to.weather == game.weather_now().weather);
+            was = game.weather_now().weather;
+            ++changes;
+        } else {
+            CHECK(game.weather_changes().empty());
+        }
+    }
+    CHECK(changes >= 5);
+
+    // Somewhere else, other weather (a cell of its own).
+    const auto here = game.weather_cell();
+    REQUIRE(here.has_value());
+    midgard::Transform& t =
+        game.scene().registry.get<midgard::Transform>(game.scene().find("e1_player"));
+    t.position.x += 9000.0;
+    CHECK(game.weather_cell() != here);
+}
+
+TEST_CASE("a script's weather is everywhere, for a while, then the weather comes back") {
+    const json player = {{"transform", {{"position", {0, 1, 0}}}}, {"player", json::object()}};
+    TestPackage pkg({{"e1_player", "NULL, '" + player.dump() + "'"}},
+                    R"({"weather": {"tables": [{"weather": {"clear": 1}}]}})");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    game.update(actions, 0.0f);
+    CHECK(game.weather_now() == midgard::weather::Now{"clear", -1, false});
+
+    CHECK_FALSE(game.force_weather("frogs", 1.0));
+    REQUIRE(game.force_weather("thunderstorm", 2.0));
+    CHECK(game.weather_now() == midgard::weather::Now{"thunderstorm", -1, true});
+    CHECK(game.weather_changes().empty());  // (told on the next update)
+    game.update(actions, 0.0f);
+    REQUIRE(game.weather_changes().size() == 1);
+    CHECK(game.weather_changes()[0].from.weather == "clear");
+    CHECK(game.weather_changes()[0].to.forced);
+    const std::int64_t now = game.time().now();
+    const auto forecast = game.weather_forecast(6.0);
+    REQUIRE(forecast.size() == 2);
+    CHECK(forecast[0] == midgard::weather::Spell{"thunderstorm", now, now + 7200, -1, true});
+    CHECK(forecast[1].weather == "clear");
+    CHECK(forecast[1].start == now + 7200);
+    CHECK_FALSE(forecast[1].forced);
+
+    game.advance_time(3600);
+    game.update(actions, 0.0f);
+    CHECK(game.weather_now().forced);
+    game.advance_time(3601);
+    game.update(actions, 0.0f);
+    CHECK(game.weather_now() == midgard::weather::Now{"clear", -1, false});
+    REQUIRE(game.weather_changes().size() == 1);
+    CHECK(game.weather_changes()[0].from.weather == "thunderstorm");
+
+    // Until released.
+    REQUIRE(game.force_weather("fog", 0.0));
+    game.advance_time(100 * 3600);
+    game.update(actions, 0.0f);
+    CHECK(game.weather_now().weather == "fog");
+    CHECK(game.weather_forecast(24.0).size() == 1);
+    game.release_weather();
+    CHECK(game.weather_now().weather == "clear");
+}
+
+TEST_CASE("a scene without weather has none, until a script forces some; its sounds play") {
+    std::vector<PackageFile> files{{"snd:rain", "audio/rain.wav", tone_wav(500, 2.0, 0.3f)}};
+    TestPackage pkg({}, R"({"sky": [0.1, 0.2, 0.3]})", {}, files);
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, R"(INSERT INTO sound_event VALUES ('sfx_rain', 'Rain',
+                    '{"sounds": ["snd:rain"], "spatial": false, "loop": true,
+                      "bus": "ambience"}'))");
+        exec(db, R"(UPDATE weather_type SET weather = json_set(weather, '$.sounds',
+                    json('[{"event": "sfx_rain", "volume": 0.5}]')) WHERE id = 'rain')");
+        sqlite3_close(db);
+    }
+    midgard::Game game(pkg.dir);
+    midgard::audio::MixerOptions offline;
+    offline.device = false;
+    midgard::audio::Mixer mixer(offline);
+    game.set_audio(&mixer);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    game.update(actions, 0.0f);
+    CHECK(game.weather() == nullptr);
+    CHECK(game.weather_now().weather.empty());
+    CHECK(game.weather_forecast(5.0).size() == 1);
+
+    REQUIRE(game.force_weather("rain", 0.0));
+    game.update(actions, 0.1f);
+    const auto playing = game.sounds()->playing_events();
+    CHECK(std::count(playing.begin(), playing.end(), "sfx_rain") == 1);
+    // It fades in, over a few seconds.
+    std::vector<float> block(480 * 2);
+    const auto loudness = [&] {
+        double sum = 0.0;
+        for (int i = 0; i < 10; ++i) {
+            game.update(actions, 0.01f);
+            mixer.mix(block);
+            for (float s : block) sum += double(s) * s;
+        }
+        return std::sqrt(sum / (10.0 * double(block.size())));
+    };
+    const double early = loudness();
+    for (int i = 0; i < 50; ++i) loudness();  // (fades go on as the sound is mixed)
+    const double later = loudness();
+    CHECK(later > 3.0 * early);
+    CHECK(later > 0.01);
+
+    // Clear weather has no sounds: the rain fades away.
+    REQUIRE(game.force_weather("clear", 0.0));
+    for (int i = 0; i < 60; ++i) loudness();
+    CHECK(loudness() < 0.001);
+    const auto after = game.sounds()->playing_events();
+    CHECK(std::count(after.begin(), after.end(), "sfx_rain") == 0);
+}

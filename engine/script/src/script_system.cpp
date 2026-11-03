@@ -30,6 +30,8 @@ struct Context {
     std::function<void(const Report&)> report;
     // midgard.time.on(signal, callback), in the order they were made.
     std::vector<std::pair<TimeSignal, pybind11::object>> time_callbacks;
+    // midgard.weather.on_change(callback), likewise.
+    std::vector<pybind11::object> weather_callbacks;
 };
 Context* g_context = nullptr;
 
@@ -52,7 +54,53 @@ struct RoomsHandle {};     // midgard.rooms
 struct AudioHandle {};     // midgard.audio
 struct MusicHandle {};     // midgard.music
 struct AmbienceHandle {};  // midgard.ambience
-struct SoundHandle {       // a sound playing (midgard.audio.play)
+
+// midgard.weather's view of the weather.
+struct WeatherHandle {};
+struct ScriptWeather {
+    std::string id, name, falls = "none";
+    bool forced = false, front = false;
+    float clouds = 0, darkness = 0, visibility = 0, amount = 0, lightning = 0, wind = 0, gusts = 0,
+          wetness = 0, temperature = 0;
+};
+struct ScriptSpell {
+    std::string id, name;
+    std::int64_t start = 0, end = 0;
+    double in_hours = 0.0, hours = 0.0;
+    bool forced = false, front = false;
+};
+
+std::string weather_name(const Game& game, const std::string& id) {
+    const auto it = game.scene().weather_types.find(id);
+    return it == game.scene().weather_types.end() ? std::string() : it->second.name;
+}
+
+ScriptWeather script_weather(const Game& game, const weather::Now& now) {
+    ScriptWeather w;
+    w.id = now.weather;
+    w.forced = now.forced;
+    w.front = now.front >= 0;
+    const auto it = game.scene().weather_types.find(now.weather);
+    if (it == game.scene().weather_types.end()) return w;
+    const weather::WeatherType& t = it->second;
+    w.name = t.name;
+    w.falls = weather::falls_name(t.falls);
+    w.clouds = t.clouds;
+    w.darkness = t.darkness;
+    w.visibility = t.visibility;
+    w.amount = t.amount;
+    w.lightning = t.lightning;
+    w.wind = t.wind;
+    w.gusts = t.gusts;
+    w.wetness = t.wetness;
+    w.temperature = t.temperature;
+    return w;
+}
+
+ScriptWeather script_weather(const Game& game) {
+    return script_weather(game, game.weather_now());
+}
+struct SoundHandle {  // a sound playing (midgard.audio.play)
     audio::VoiceId voice = 0;
 };
 
@@ -838,6 +886,114 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def("__repr__", [](const AmbienceHandle&) { return std::string("<midgard.ambience>"); });
     m.attr("ambience") = AmbienceHandle{};
 
+    py::class_<ScriptWeather>(m, "Weather",
+                              "The weather somewhere (midgard.weather.current()): its type's id "
+                              "and name, and what it does.")
+        .def_readonly("id", &ScriptWeather::id, "Its weather type's id (\"\": no weather).")
+        .def_readonly("name", &ScriptWeather::name)
+        .def_readonly("forced", &ScriptWeather::forced, "A script's (midgard.weather.force).")
+        .def_readonly("front", &ScriptWeather::front, "A front passing over.")
+        .def_readonly("clouds", &ScriptWeather::clouds, "0 a clear sky .. 1 overcast.")
+        .def_readonly("darkness", &ScriptWeather::darkness, "The daylight it takes, 0 .. 1.")
+        .def_readonly("visibility", &ScriptWeather::visibility,
+                      "Metres you can see through it (0: no limit).")
+        .def_readonly("falls", &ScriptWeather::falls, "none, rain, snow, ash or sand.")
+        .def_readonly("amount", &ScriptWeather::amount, "How much falls, 0 .. 1.")
+        .def_readonly("lightning", &ScriptWeather::lightning, "Flashes a minute.")
+        .def_readonly("wind", &ScriptWeather::wind, "Metres a second.")
+        .def_readonly("gusts", &ScriptWeather::gusts, "0 steady .. 1 very gusty.")
+        .def_readonly("wetness", &ScriptWeather::wetness, "How wet the open gets, 0 .. 1.")
+        .def_readonly("temperature", &ScriptWeather::temperature,
+                      "Degrees Celsius it adds to the climate's.")
+        .def("__eq__", [](const ScriptWeather& a, const ScriptWeather& b) { return a.id == b.id; })
+        .def("__eq__", [](const ScriptWeather& a, const std::string& id) { return a.id == id; })
+        .def("__hash__", [](const ScriptWeather& w) { return py::hash(py::str(w.id)); })
+        .def("__repr__", [](const ScriptWeather& w) {
+            return "Weather(" + py::repr(py::str(w.id)).cast<std::string>() +
+                   (w.forced ? ", forced" : "") + (w.front ? ", front" : "") + ")";
+        });
+    py::class_<ScriptSpell>(m, "WeatherSpell",
+                            "A stretch of the same weather in a forecast "
+                            "(midgard.weather.forecast()).")
+        .def_readonly("id", &ScriptSpell::id)
+        .def_readonly("name", &ScriptSpell::name)
+        .def_readonly("start", &ScriptSpell::start, "When it starts, as midgard.time.now().time.")
+        .def_readonly("end", &ScriptSpell::end, "When the next starts.")
+        .def_readonly("in_hours", &ScriptSpell::in_hours, "Hours from now until it starts.")
+        .def_readonly("hours", &ScriptSpell::hours, "How many hours it lasts.")
+        .def_readonly("forced", &ScriptSpell::forced)
+        .def_readonly("front", &ScriptSpell::front)
+        .def("__repr__", [](const ScriptSpell& s) {
+            char text[96];
+            std::snprintf(text, sizeof(text), ", in %.1f h for %.1f h", s.in_hours, s.hours);
+            return "WeatherSpell(" + py::repr(py::str(s.id)).cast<std::string>() + text + ")";
+        });
+    py::class_<WeatherHandle>(m, "WeatherApi",
+                              "The weather (midgard.weather; milestone 5.15): what it is where "
+                              "the player is, the forecast, and a script's own weather.")
+        .def(
+            "current", [](const WeatherHandle&) { return script_weather(current_game()); },
+            "The weather where the player is now.")
+        .def(
+            "forecast",
+            [](const WeatherHandle&, double hours) {
+                if (!(hours > 0.0)) throw py::value_error("a forecast is for some hours ahead");
+                Game& game = current_game();
+                const double hour = double(game.local_calendar().seconds_per_hour());
+                const std::int64_t now = game.time().now();
+                std::vector<ScriptSpell> out;
+                for (const weather::Spell& s : game.weather_forecast(hours)) {
+                    ScriptSpell spell;
+                    spell.id = s.weather;
+                    spell.name = weather_name(game, s.weather);
+                    spell.start = s.start;
+                    spell.end = s.end;
+                    spell.in_hours = double(s.start - now) / hour;
+                    spell.hours = double(s.end - s.start) / hour;
+                    spell.forced = s.forced;
+                    spell.front = s.front >= 0;
+                    out.push_back(std::move(spell));
+                }
+                return out;
+            },
+            py::arg("hours") = 24.0,
+            "The weather where the player is over the next so many hours, as it will come: a "
+            "list of WeatherSpell, the first starting now.")
+        .def(
+            "on_change",
+            [](const WeatherHandle&, const py::object& callback) {
+                if (!PyCallable_Check(callback.ptr()))
+                    throw py::type_error("midgard.weather.on_change needs a function to call");
+                if (!g_context) throw std::runtime_error("midgard: no game is running");
+                g_context->weather_callbacks.push_back(callback);
+            },
+            py::arg("callback"),
+            "Calls callback(before, now) with two Weather whenever the weather where the player "
+            "is changes (by itself, a front, the player going somewhere else, or a script).")
+        .def(
+            "force",
+            [](const WeatherHandle&, const std::string& weather, double hours) {
+                if (!current_game().force_weather(weather, hours))
+                    throw py::value_error("there is no weather type '" + weather + "'");
+            },
+            py::arg("weather"), py::arg("hours") = 0.0,
+            "Makes it this weather (a weather type's id) everywhere, from now: for so many hours, "
+            "then the weather there would have been (0: until release()). ValueError if there "
+            "is no such weather type.")
+        .def(
+            "release", [](const WeatherHandle&) { current_game().release_weather(); },
+            "Back to the weather there would have been.")
+        .def_property_readonly(
+            "types",
+            [](const WeatherHandle&) {
+                std::vector<std::string> out;
+                for (const auto& [id, t] : current_game().scene().weather_types) out.push_back(id);
+                return out;
+            },
+            "The weather types' ids.")
+        .def("__repr__", [](const WeatherHandle&) { return std::string("<midgard.weather>"); });
+    m.attr("weather") = WeatherHandle{};
+
     py::class_<NavHandle>(m, "Nav",
                           "Where agents can walk (midgard.nav; milestone 5.12): paths over the "
                           "scene's navigation mesh, made round the player.")
@@ -1016,6 +1172,7 @@ ScriptSystem::ScriptSystem(Game& game, std::function<void(const Report&)> report
             if (reg.valid(e)) s.call(module, "on_room_exit", handle(e), to);
         s.started.clear();
         s.context.time_callbacks.clear();  // (made by the scene's scripts)
+        s.context.weather_callbacks.clear();
     });
 }
 
@@ -1096,6 +1253,20 @@ void ScriptSystem::update(const Actions& actions, float dt) {
         }
     }
 
+    // The weather's changes where the player is (midgard.weather.on_change).
+    for (const Game::WeatherChange& change : s.context.game->weather_changes()) {
+        for (const py::object& callback : std::vector(s.context.weather_callbacks)) {
+            const std::string module = py::str(py::getattr(callback, "__module__", py::str("")));
+            if (s.paused.contains(module)) continue;
+            try {
+                callback(script_weather(*s.context.game, change.from),
+                         script_weather(*s.context.game, change.to));
+            } catch (py::error_already_set& e) {
+                s.fail(module, e, "midgard.weather.on_change");
+            }
+        }
+    }
+
     for (const auto& [e, module] : std::vector(s.started.begin(), s.started.end()))
         if (reg.valid(e)) s.call(module, "on_update", handle(e), dt);
 }
@@ -1124,6 +1295,14 @@ void ScriptSystem::reload(const std::string& module) {
                 py::getattr(it->second, py::getattr(callback, "__name__", py::str("")), py::none());
             if (!renewed.is_none()) callback = renewed;  // the edited function from now on
         }
+        for (py::object& callback : s.context.weather_callbacks) {
+            if (py::str(py::getattr(callback, "__module__", py::str(""))).cast<std::string>() !=
+                module)
+                continue;
+            const py::object renewed =
+                py::getattr(it->second, py::getattr(callback, "__name__", py::str("")), py::none());
+            if (!renewed.is_none()) callback = renewed;
+        }
     }
     if (s.context.report)
         s.context.report({"info", "Reloaded script '" + module + "'", module, "", 0});
@@ -1148,6 +1327,9 @@ result = json.dumps({
     "Sound": sorted(n for n in dir(midgard.Sound) if not n.startswith("_")),
     "Music": sorted(n for n in dir(midgard.Music) if not n.startswith("_")),
     "Ambience": sorted(n for n in dir(midgard.Ambience) if not n.startswith("_")),
+    "Weather": sorted(n for n in dir(midgard.Weather) if not n.startswith("_")),
+    "WeatherSpell": sorted(n for n in dir(midgard.WeatherSpell) if not n.startswith("_")),
+    "WeatherApi": sorted(n for n in dir(midgard.WeatherApi) if not n.startswith("_")),
 })
 )",
              scope);

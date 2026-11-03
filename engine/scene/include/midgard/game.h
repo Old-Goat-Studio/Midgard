@@ -30,6 +30,7 @@
 #include "midgard/terrain_collision.h"
 #include "midgard/terrain_streamer.h"
 #include "midgard/time_service.h"
+#include "midgard/weather_sim.h"
 #include "midgard/world_light.h"
 #include "midgard/world_save.h"
 
@@ -197,6 +198,31 @@ public:
     // Where the player is, as the music sees it: the scene, its world type, the biome at the
     // listener and the time of day.
     audio::MusicContext music_context() const;
+
+    // ---- weather (milestone 5.15) ----
+    // The world's weather (midgard/weather_sim.h), from the scene's weather settings or its
+    // world type's; none without any (only a script's forced weather, then).
+    weather::WeatherSim* weather() { return weather_.get(); }
+    // The weather where the player is (the camera, without one), as of the last update. While
+    // a script forces the weather, that, everywhere.
+    const weather::Now& weather_now() const { return weather_now_; }
+    // Its weather type (none: no weather).
+    const weather::WeatherType* weather_type() const;
+    // The weather changes of the last update (and those scripts made since the one before):
+    // what it was, and what it became.
+    struct WeatherChange {
+        weather::Now from, to;
+    };
+    const std::vector<WeatherChange>& weather_changes() const { return weather_changes_; }
+    // The forecast where the player is, from now for so many of the calendar's hours: the
+    // spells as they will come, forced weather and all.
+    std::vector<weather::Spell> weather_forecast(double hours);
+    // A script's weather, everywhere, from now: for so many hours (0: until released), then
+    // the weather there would have been. False if there is no such weather type.
+    bool force_weather(const std::string& weather, double hours);
+    void release_weather();
+    // The weather cell the player is in (none without weather settings).
+    std::optional<weather::Cell> weather_cell() const;
     // What is underfoot of an entity (midgard/footsteps.h): an object's surface, the terrain's
     // ground, or "default".
     std::string ground_under(entt::entity e) const;
@@ -328,6 +354,22 @@ private:
     audio::ReverbSettings reverb_;
     std::unique_ptr<audio::MusicDirector> music_;
     std::unique_ptr<audio::AmbienceDirector> ambience_;
+    // Weather: the simulation, what it is where the player is, a script's forcing, and the
+    // weather sounds playing (those of `weather_sounding_`).
+    std::unique_ptr<weather::WeatherSim> weather_;
+    weather::Now weather_now_;
+    std::vector<WeatherChange> weather_changes_, weather_pending_;
+    struct Forced {
+        std::string weather;
+        std::optional<std::int64_t> until;  // none: until released
+    };
+    std::optional<Forced> forced_;
+    std::string weather_sounding_;
+    std::vector<audio::VoiceId> weather_voices_;
+    void rebuild_weather();
+    void update_weather();
+    void update_weather_sounds();
+    glm::dvec3 player_position() const;
     // Footsteps: how far each walker has come since its last step, and the steps taken.
     struct Walk {
         glm::dvec3 last{0.0};

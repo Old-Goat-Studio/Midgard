@@ -2,6 +2,7 @@
 """Weather types (milestone 5.15 step 1): ten in every project, kept with undo, checked as the
 game is cooked, and read by the engine."""
 import pytest
+from test_scripting import needs_scripting, simulate, write_script
 
 from midgard_editor import engine, weather
 from midgard_editor.cook import CookError, cook
@@ -112,3 +113,52 @@ def test_the_engine_refuses_weather_settings_it_cant_read(project, tmp_path):
     a_world_type_with_weather(project, {"tables": "rainy"})
     with pytest.raises(CookError, match="weather settings"):
         cook(project, tmp_path / "pkg")
+
+
+STORM_SCRIPT = """
+import midgard
+
+def on_start(entity):
+    midgard.weather.on_change(changed)
+    now = midgard.weather.current()
+    print("now", now.id, now == "clear", now.forced)
+    midgard.weather.force("thunderstorm", hours=0.02)
+    print("forced", midgard.weather.current().id, midgard.weather.current().wind)
+    for spell in midgard.weather.forecast(1):
+        print("spell", spell.id, round(spell.in_hours, 3), round(spell.hours, 3), spell.forced)
+    try:
+        midgard.weather.force("frogs")
+    except ValueError as e:
+        print("refused", e)
+    print("types", len(midgard.weather.types))
+
+def changed(before, now):
+    print("changed", before.id, "->", now.id, now.forced)
+"""
+
+
+@needs_scripting
+def test_scripts_read_force_and_hear_the_weather(project, tmp_path):
+    from midgard_editor.scene_model import Entity
+
+    settings = project.scene_settings()
+    settings["weather"] = {"tables": [{"weather": {"clear": 1}}]}
+    project.set_scene_settings(settings)
+    project.put_entity(Entity("e000081", "Forecaster", None, {
+        "transform": {}, "script": {"module": "storm"}}))
+    write_script(project, "storm", STORM_SCRIPT)
+    package = cook(project, tmp_path / "pkg").out_dir
+    # 0.02 hours is 72 game seconds: 144 frames at the clock's usual 30 times.
+    dumped, run = simulate(package, 200)
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.splitlines()
+    assert "now clear True False" in lines
+    assert "forced thunderstorm 12.0" in lines
+    assert "spell thunderstorm 0.0 0.02 True" in lines
+    assert "spell clear 0.02 0.98 False" in lines
+    assert any(line.startswith("refused there is no weather type 'frogs'") for line in lines)
+    assert "types 10" in lines
+    changes = [line for line in lines if line.startswith("changed")]
+    assert changes == ["changed clear -> thunderstorm True", "changed thunderstorm -> clear False"]
+    assert dumped["weather"]["now"] == "clear" and not dumped["weather"]["forced"]
+    assert dumped["weather"]["forecast"][0]["weather"] == "clear"

@@ -26,7 +26,7 @@
 #include "midgard/sound_events.h"
 #include "midgard/sunlight.h"
 #include "midgard/terrain.h"
-#include "midgard/weather.h"
+#include "midgard/weather_sim.h"
 #include "midgard/world_type.h"
 
 namespace midgard {
@@ -311,6 +311,9 @@ struct SceneSettings {
     // themselves, without these.
     std::optional<WorldRef> world;
     std::optional<WorldRecipe> recipe;
+    // The scene's own weather settings (midgard/weather_sim.h), as JSON: a scene without a world
+    // type can have weather too. Empty: its world type's (none: no weather of its own).
+    std::string weather;
 };
 
 // The scene's sky: an entity with this component sets the scene's sky and ambient colours

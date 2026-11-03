@@ -62,6 +62,9 @@ Game::Game(const std::filesystem::path& package_dir)
     time_.set_time(standard_calendar().start_time());
     time_.set_scale(standard_calendar().time_scale());
     update_sun();
+    rebuild_weather();  // (on the clock's calendar)
+    update_weather();
+    weather_pending_.clear();  // (the weather the game starts with isn't a change)
 
     sqlite3* db = nullptr;
     const std::u8string u8 = database.u8string();
@@ -201,6 +204,8 @@ void Game::update(const Actions& actions, float dt) {
     characters_.update(scene_, dt);
     apply_root_motion();
     stream_navigation();
+    update_weather();
+    weather_changes_ = std::exchange(weather_pending_, {});  // (scripts' since the last, too)
     update_sounds(dt);
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
@@ -273,6 +278,8 @@ render::MeshData Game::load_mesh(const std::string& asset) const {
 
 void Game::set_audio(audio::Mixer* mixer) {
     stop_sources();
+    weather_voices_.clear();
+    weather_sounding_.clear();  // (the new player plays them)
     ambience_.reset();
     music_.reset();
     sounds_.reset();
@@ -427,6 +434,139 @@ audio::MusicContext Game::music_context() const {
     return c;
 }
 
+// ---- weather (milestone 5.15) ------------------------------------------------------------------
+
+namespace {
+
+// Where the weather is on a scene without a world shape: a flat 100 km square round the origin.
+const Shape& flat_weather_shape() {
+    static const Shape flat = Shape::bounded_area(100000.0, 100000.0, 9.81);
+    return flat;
+}
+
+}  // namespace
+
+void Game::rebuild_weather() {
+    weather_.reset();
+    const std::string& json = !scene_.settings.weather.empty() ? scene_.settings.weather
+                              : scene_.settings.recipe         ? scene_.settings.recipe->weather
+                                                               : std::string();
+    weather::WeatherSettings settings;
+    try {
+        settings = weather::weather_settings_from_json(json);
+    } catch (const weather::WeatherError&) {
+        return;  // (the cook refused it; a live edit's is reported by the editor)
+    }
+    if (settings.tables.empty() && settings.controlled.empty() && settings.fronts.weather.empty())
+        return;
+    const Body* body = scene_.settings.body ? &*scene_.settings.body : nullptr;
+    // The world's seed (its terrain's, else its body's).
+    std::uint64_t seed = body ? body->seed : 0;
+    if (scene_.settings.terrain && scene_.settings.terrain->seed)
+        seed = *scene_.settings.terrain->seed;
+    weather_ = std::make_unique<weather::WeatherSim>(
+        body ? body->shape : flat_weather_shape(), std::move(settings), scene_.weather_types, seed,
+        local_calendar(), [this](const SurfacePoint& p) -> std::string {
+            if (!terrain_ || !scene_.settings.terrain) return {};
+            const Terrain& t = terrain_->terrain();
+            const int biome = t.biome_index(p.face, p.u, p.v, t.height(p.face, p.u, p.v));
+            const auto& biomes = scene_.settings.terrain->biomes;
+            return biome >= 0 && size_t(biome) < biomes.size() ? biomes[size_t(biome)].name
+                                                               : std::string();
+        });
+}
+
+glm::dvec3 Game::player_position() const {
+    for (const entt::entity e : scene_.registry.view<const Player>())
+        return scene_.world_position(e);
+    return camera(1.0f).origin;
+}
+
+std::optional<weather::Cell> Game::weather_cell() const {
+    if (!weather_) return std::nullopt;
+    const glm::dvec3 at = player_position();
+    const SurfacePoint p =
+        scene_.settings.body ? scene_.settings.body->surface(at) : flat_weather_shape().surface(at);
+    return weather_->cell_at(p);
+}
+
+const weather::WeatherType* Game::weather_type() const {
+    const auto it = scene_.weather_types.find(weather_now_.weather);
+    return it == scene_.weather_types.end() ? nullptr : &it->second;
+}
+
+void Game::update_weather() {
+    const std::int64_t now = time_.now();
+    if (forced_ && forced_->until && now >= *forced_->until) forced_.reset();
+    weather::Now next;
+    if (forced_) {
+        next = {forced_->weather, -1, true};
+    } else if (const auto cell = weather_cell()) {
+        next = weather_->at(*cell, now);
+    }
+    if (next != weather_now_) {
+        weather_pending_.push_back({weather_now_, next});
+        weather_now_ = std::move(next);
+    }
+}
+
+std::vector<weather::Spell> Game::weather_forecast(double hours) {
+    const std::int64_t from = time_.now();
+    const std::int64_t until =
+        from + std::max<std::int64_t>(
+                   std::llround(hours * double(local_calendar().seconds_per_hour())), 1);
+    std::vector<weather::Spell> natural;
+    if (const auto cell = weather_cell())
+        natural = weather_->forecast(*cell, from, until);
+    else
+        natural = {{"", from, until, -1, false}};
+    if (!forced_) return natural;
+    // The forced weather until it ends, then what there would have been.
+    const std::int64_t end = std::min(until, forced_->until.value_or(until));
+    std::vector<weather::Spell> out{{forced_->weather, from, end, -1, true}};
+    for (weather::Spell s : natural) {
+        if (s.end <= end) continue;
+        s.start = std::max(s.start, end);
+        out.push_back(std::move(s));
+    }
+    return out;
+}
+
+bool Game::force_weather(const std::string& weather, double hours) {
+    if (!scene_.weather_types.contains(weather)) return false;
+    Forced f{weather, std::nullopt};
+    if (hours > 0.0)
+        f.until =
+            time_.now() + std::max<std::int64_t>(
+                              std::llround(hours * double(local_calendar().seconds_per_hour())), 1);
+    forced_ = std::move(f);
+    update_weather();  // (now: scripts and the sky see it this frame)
+    return true;
+}
+
+void Game::release_weather() {
+    forced_.reset();
+    update_weather();
+}
+
+// The weather's sounds: those of the weather now, looping, fading in as the last weather's fade
+// out (each at its sound's volume).
+void Game::update_weather_sounds() {
+    if (!sounds_ || weather_sounding_ == weather_now_.weather) return;
+    constexpr float kFade = 4.0f;
+    for (const audio::VoiceId v : weather_voices_) sounds_->fade_out(v, kFade);
+    weather_voices_.clear();
+    weather_sounding_ = weather_now_.weather;
+    if (const weather::WeatherType* type = weather_type()) {
+        for (const weather::WeatherType::Sound& s : type->sounds) {
+            audio::SoundPlayer::Play play;
+            play.volume = s.volume;
+            play.fade_in = kFade;
+            if (const audio::VoiceId v = sounds_->play(s.event, play)) weather_voices_.push_back(v);
+        }
+    }
+}
+
 audio::VoiceId Game::play_sound(const std::string& event, float volume, entt::entity from,
                                 std::optional<glm::dvec3> at) {
     if (!sounds_) return 0;
@@ -564,6 +704,7 @@ void Game::update_sounds(double dt) {
     }
     update_reverb();
     update_footsteps();
+    update_weather_sounds();
     if (music_ || ambience_) {
         const audio::MusicContext where = music_context();
         if (music_) {
@@ -696,6 +837,7 @@ void Game::reload_scene_settings() {
     scene_.use_sky();   // a Sky entity outranks the settings
     rebuild_physics();  // the world's shape may have changed
     rebuild_terrain();
+    rebuild_weather();
 }
 
 void Game::rebuild_terrain() {
@@ -1121,6 +1263,7 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     }
     rebuild_physics();
     rebuild_terrain();  // (lifts the player onto the ground there, and makes it solid)
+    rebuild_weather();
     camera_ = std::make_unique<CameraRig>(scene_);
     if (had_camera && camera_->active()) {  // the same view, behind the player as it faces
         CameraRig::State s = view;

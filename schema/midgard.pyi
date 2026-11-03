@@ -379,6 +379,92 @@ ambience: Ambience
 """Ambience."""
 
 
+class Weather:
+    """The weather somewhere (midgard.weather.current()): its weather type, and what it does.
+    Compares equal to its id: `if midgard.weather.current() == "rain":`."""
+
+    id: str
+    """Its weather type's id ("" when there is no weather)."""
+    name: str
+    """Its weather type's name."""
+    forced: bool
+    """Whether a script is forcing it (midgard.weather.force)."""
+    front: bool
+    """Whether it is a front passing over."""
+    clouds: float
+    """0 a clear sky .. 1 overcast."""
+    darkness: float
+    """The daylight it takes, 0 .. 1."""
+    visibility: float
+    """Metres you can see through it (0: no limit)."""
+    falls: str
+    """What falls from the sky: "none", "rain", "snow", "ash" or "sand"."""
+    amount: float
+    """How much falls, 0 .. 1."""
+    lightning: float
+    """Flashes of lightning a minute."""
+    wind: float
+    """Wind, in metres a second."""
+    gusts: float
+    """0 steady .. 1 very gusty."""
+    wetness: float
+    """How wet things out in the open get, 0 .. 1."""
+    temperature: float
+    """Degrees Celsius it adds to the climate's temperature."""
+
+
+class WeatherSpell:
+    """A stretch of the same weather in a forecast (midgard.weather.forecast())."""
+
+    id: str
+    """Its weather type's id."""
+    name: str
+    """Its weather type's name."""
+    start: int
+    """When it starts, on the clock (as midgard.time.now().time)."""
+    end: int
+    """When the next weather starts."""
+    in_hours: float
+    """Hours from now until it starts (0 for the weather now)."""
+    hours: float
+    """How many hours it lasts."""
+    forced: bool
+    """A script's weather."""
+    front: bool
+    """A front passing over."""
+
+
+class WeatherApi:
+    """The weather (midgard.weather): what it is where the player is, the forecast, and a
+    script's own weather. The weather changes by itself (by the world type's weather tables,
+    the season and the biome); a script can force some for a while."""
+
+    types: list[str]
+    """The weather types' ids (read-only)."""
+
+    def current(self) -> Weather:
+        """The weather where the player is now."""
+
+    def forecast(self, hours: float = 24.0) -> list[WeatherSpell]:
+        """The weather where the player is over the next so many hours, as it will come: the
+        first starting now."""
+
+    def on_change(self, callback: _Callable[[Weather, Weather], None]) -> None:
+        """Calls callback(before, now) whenever the weather where the player is changes."""
+
+    def force(self, weather: str, hours: float = 0.0) -> None:
+        """Makes it this weather (a weather type's id) everywhere from now: for so many hours,
+        then the weather there would have been (0: until release()). ValueError if there is no
+        such weather type."""
+
+    def release(self) -> None:
+        """Back to the weather there would have been."""
+
+
+weather: WeatherApi
+"""The weather."""
+
+
 class Rooms:
     """Moving between scenes (midgard.rooms). The player is in one scene at a time; a change
     fades the picture out, swaps the scene (the one left stops: its scripts get on_room_exit,
