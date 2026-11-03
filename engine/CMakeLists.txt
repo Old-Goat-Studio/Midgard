@@ -130,6 +130,21 @@ target_include_directories(midgard_anim PUBLIC anim/include)
 target_link_libraries(midgard_anim PUBLIC midgard_core glm::glm
                       PRIVATE ozz::animation_offline ozz::animation ozz::base midgard_options)
 
+# ---- audio: the mixer, buses and the audio device (miniaudio; milestone 5.14) ---------------
+find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
+# miniaudio's implementation (with stb_vorbis), built once without the engine's warnings.
+add_library(midgard_miniaudio STATIC audio/src/miniaudio_impl.cpp)
+target_include_directories(midgard_miniaudio SYSTEM PUBLIC "${MINIAUDIO_INCLUDE_DIR}"
+                           PRIVATE ${Stb_INCLUDE_DIR})
+find_package(Threads REQUIRED)
+target_link_libraries(midgard_miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+if(UNIX AND NOT APPLE)
+    target_link_libraries(midgard_miniaudio PUBLIC m)
+endif()
+add_library(midgard_audio STATIC audio/src/audio.cpp)
+target_include_directories(midgard_audio PUBLIC audio/include)
+target_link_libraries(midgard_audio PUBLIC midgard_core PRIVATE midgard_miniaudio midgard_options)
+
 # ---- scene: game.pak, glTF meshes and the EnTT scene built from the database ----------------
 find_package(miniz CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
@@ -288,8 +303,8 @@ if(MIDGARD_BUILD_PROGRAMS)
     endif()
     target_sources(midgard_runtime PRIVATE runtime/selftest.cpp runtime/test_scenes.cpp)
     target_link_libraries(midgard_runtime PRIVATE
-        midgard_core midgard_render midgard_scene midgard_link SDL3::SDL3 Vulkan::Headers
-        midgard_options)
+        midgard_core midgard_render midgard_scene midgard_link midgard_audio SDL3::SDL3
+        Vulkan::Headers midgard_options)
     target_include_directories(midgard_runtime PRIVATE ${Stb_INCLUDE_DIR})  # the window icon
     if(ANDROID)
         target_link_libraries(midgard_runtime PRIVATE miniz::miniz)  # unpacking Python
@@ -380,10 +395,11 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_quality.cpp
         tests/test_physics.cpp
         tests/test_model.cpp
+        tests/test_audio.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
-        midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_options
-        doctest::doctest
+        midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_audio
+        midgard_options doctest::doctest
         unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
     target_compile_definitions(midgard_tests PRIVATE
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema"
@@ -395,7 +411,7 @@ if(MIDGARD_BUILD_TESTS)
     if(NOT ANDROID)
         add_executable(midgard_bench bench/main.cpp)
         target_link_libraries(midgard_bench PRIVATE midgard_core midgard_render midgard_physics
-                              midgard_scene midgard_options
+                              midgard_scene midgard_audio midgard_options
                               nlohmann_json::nlohmann_json)
     endif()
     if(TARGET _midgard)

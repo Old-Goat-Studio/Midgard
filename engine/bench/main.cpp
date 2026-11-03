@@ -8,6 +8,7 @@
 // Benchmarks that need a GPU are skipped (and reported as skipped) when there's no Vulkan.
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -26,6 +27,7 @@
 
 #include "midgard/anim_graph.h"
 #include "midgard/animation.h"
+#include "midgard/audio.h"
 #include "midgard/det.h"
 #include "midgard/humanoid.h"
 #include "midgard/ik.h"
@@ -401,6 +403,30 @@ std::vector<Benchmark> benchmarks() {
                  }
              };
          }});
+    list.push_back({"audio.mix_32_voices",
+                    "10 ms of sound mixed (48 kHz stereo) from 32 voices playing on the six "
+                    "buses, each at its own volume, pitch and pan, offline",
+                    200, [](std::string&) -> std::function<void()> {
+                        midgard::audio::MixerOptions options;
+                        options.device = false;
+                        auto mixer = std::make_shared<midgard::audio::Mixer>(options);
+                        std::vector<float> wave(48000);
+                        for (size_t i = 0; i < wave.size(); ++i)
+                            wave[i] = 0.02f * float(std::sin(double(i) * 0.05));
+                        const auto sound =
+                            mixer->load("tone", midgard::audio::wav_bytes(wave, 1, 48000));
+                        for (int v = 0; v < 32; ++v) {
+                            midgard::audio::PlayOptions play;
+                            play.bus = midgard::audio::Bus(1 + v % 5);
+                            play.volume = 0.5f + 0.01f * float(v);
+                            play.pitch = 0.8f + 0.02f * float(v);
+                            play.pan = -1.0f + float(v) / 16.0f;
+                            play.loop = true;
+                            mixer->play(sound, play);
+                        }
+                        auto out = std::make_shared<std::vector<float>>(480 * 2);
+                        return [mixer, out] { mixer->mix(*out); };
+                    }});
     list.push_back({"anim.pose_65_joints",
                     "a 65-joint humanoid's pose sampled from a clip (30 keys a second on every "
                     "joint) and put in model space, 100 times (one thread)",

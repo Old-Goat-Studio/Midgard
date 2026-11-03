@@ -83,6 +83,7 @@
 #define STBI_ONLY_PNG
 #include <stb_image.h>
 
+#include "midgard/audio.h"
 #include "midgard/game.h"
 #include "midgard/input.h"
 #include "midgard/link.h"
@@ -958,6 +959,17 @@ int run_window(const Options& opt, Source& source) {
         desc.quality = render::quality_settings(opt.quality.value_or(render::default_quality()));
         render::Renderer renderer(desc);
         say("Rendering on %s\n", renderer.device_name().c_str());
+        // Sound (milestone 5.14): the system's audio device, or silence without one.
+        std::unique_ptr<midgard::audio::Mixer> sound;
+        try {
+            sound = std::make_unique<midgard::audio::Mixer>();
+            if (sound->has_device())
+                say("Sound on %s, %u Hz\n", sound->backend().c_str(), sound->sample_rate());
+            else
+                say("No sound device: the game is silent\n");
+        } catch (const midgard::audio::AudioError& e) {
+            say("No sound: %s\n", e.what());
+        }
         source.upload(renderer);
         midgard::Actions actions(source.input_map());
         // Mouse-look captures the mouse. Under the editor the game starts with the mouse free

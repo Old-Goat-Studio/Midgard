@@ -16,6 +16,7 @@
 
 #include "midgard/anim_graph.h"
 #include "midgard/animation.h"
+#include "midgard/audio.h"
 #include "midgard/body.h"
 #include "midgard/det.h"
 #include "midgard/hash.h"
@@ -302,6 +303,60 @@ Check python_check([[maybe_unused]] const Options& options) {
 // Characters on this device (milestone 5.13): 32 humanoids of 65 joints animated by a graph (a
 // walk/run blend space under an upper-body layer), their feet put on the ground by IK, and drawn
 // skinned with sun shadows, all within a frame's budget.
+// Sound (milestone 5.14): the device opens (a phone always has one; a PC without one, or a CI
+// machine, skips), and 32 voices mix in well under real time, to the levels expected.
+Check sound_check(const Options& options) {
+    constexpr double kBlockBudgetMs = 2.0;  // of each 10 ms block (the audio thread's job)
+    std::string device;
+    try {
+        midgard::audio::Mixer live;
+        device = live.has_device() ? live.backend() + format(", %u Hz", live.sample_rate()) : "";
+    } catch (const std::exception& e) {
+        return {"Sound", Status::Fail, std::string("the mixer didn't start: ") + e.what()};
+    }
+    if (device.empty() && options.vulkan_required)  // (on a phone)
+        return {"Sound", Status::Fail, "no audio device opened"};
+    try {
+        midgard::audio::MixerOptions offline;
+        offline.device = false;
+        midgard::audio::Mixer mixer(offline);
+        std::vector<float> wave(48000);
+        for (size_t i = 0; i < wave.size(); ++i)
+            wave[i] = 0.02f * float(std::sin(2.0 * 3.14159265358979 * 500.0 * double(i) / 48000));
+        const auto tone = mixer.load("tone", midgard::audio::wav_bytes(wave, 1, 48000));
+        for (int v = 0; v < 32; ++v) {
+            midgard::audio::PlayOptions play;
+            play.bus = midgard::audio::Bus(1 + v % 5);
+            play.loop = true;
+            mixer.play(tone, play);
+        }
+        std::vector<float> block(480 * 2);
+        std::vector<double> ms;
+        double sum = 0.0;
+        for (int b = 0; b < 100; ++b) {  // a second
+            const auto start = std::chrono::steady_clock::now();
+            mixer.mix(block);
+            ms.push_back(
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                    .count());
+            for (const float x : block) sum += double(x) * x;
+        }
+        // 32 in-step tones of 0.02: 0.64 at the peak, its RMS 0.64 / sqrt 2.
+        const double level = std::sqrt(sum / double(100 * block.size()));
+        if (std::abs(level - 0.64 / std::sqrt(2.0)) > 0.01)
+            return {"Sound", Status::Fail, format("mixed to the wrong level (%.3f)", level)};
+        std::sort(ms.begin(), ms.end());
+        const double median = ms[ms.size() / 2];
+        const std::string detail =
+            format("%s; 32 voices, 10 ms mixed in %.2f ms",
+                   device.empty() ? "no device (skipped playing)" : device.c_str(), median);
+        if (median > kBlockBudgetMs) return {"Sound", Status::Fail, detail};
+        return {"Sound", device.empty() ? Status::Skip : Status::Pass, detail};
+    } catch (const std::exception& e) {
+        return {"Sound", Status::Fail, std::string("mixing: ") + e.what()};
+    }
+}
+
 Check characters_check(const Options& options) {
     const render::Quality tier = options.quality.value_or(render::default_quality());
     try {
@@ -483,6 +538,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(frame_check(options));
     checks.push_back(characters_check(options));
+    checks.push_back(sound_check(options));
     checks.push_back(package_check(options.package));
     checks.push_back(python_check(options));
     return checks;

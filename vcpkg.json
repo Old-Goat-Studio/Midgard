@@ -32,6 +32,7 @@
     "joltphysics",
     "recastnavigation",
     "ozz-animation",
+    "miniaudio",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]
 }
