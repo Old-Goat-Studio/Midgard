@@ -4075,3 +4075,96 @@ TEST_CASE(
     // (Clear, cloudy or fog lets the ground dry; more rain keeps it wet.)
     if (forecast_at(game.time().now()) != "rain") CHECK(game.ground_cover().wetness < 0.9f);
 }
+
+// ---- glTF nodes place their meshes
+// ---------------------------------------------------------------
+
+namespace {
+
+// A glTF (JSON, its buffer inline) with one triangle (0,0,0), (1,0,0), (0,1,0) facing +Z, placed
+// by the nodes given (a "nodes" array and the scene's roots).
+std::vector<uint8_t> triangle_gltf(const json& nodes, const json& roots) {
+    const float data[] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+    std::string bytes(reinterpret_cast<const char*>(data), sizeof(data));
+    static const char* kB64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string b64;
+    for (size_t i = 0; i < bytes.size(); i += 3) {
+        const uint32_t n = (uint8_t(bytes[i]) << 16) |
+                           (i + 1 < bytes.size() ? uint8_t(bytes[i + 1]) << 8 : 0) |
+                           (i + 2 < bytes.size() ? uint8_t(bytes[i + 2]) : 0);
+        b64 += kB64[(n >> 18) & 63];
+        b64 += kB64[(n >> 12) & 63];
+        b64 += i + 1 < bytes.size() ? kB64[(n >> 6) & 63] : '=';
+        b64 += i + 2 < bytes.size() ? kB64[n & 63] : '=';
+    }
+    const json doc = {
+        {"asset", {{"version", "2.0"}}},
+        {"buffers",
+         {{{"byteLength", bytes.size()}, {"uri", "data:application/octet-stream;base64," + b64}}}},
+        {"bufferViews",
+         {{{"buffer", 0}, {"byteOffset", 0}, {"byteLength", 36}},
+          {{"buffer", 0}, {"byteOffset", 36}, {"byteLength", 36}}}},
+        {"accessors",
+         {{{"bufferView", 0},
+           {"componentType", 5126},
+           {"count", 3},
+           {"type", "VEC3"},
+           {"min", {0, 0, 0}},
+           {"max", {1, 1, 0}}},
+          {{"bufferView", 1}, {"componentType", 5126}, {"count", 3}, {"type", "VEC3"}}}},
+        {"meshes", {{{"primitives", {{{"attributes", {{"POSITION", 0}, {"NORMAL", 1}}}}}}}}},
+        {"nodes", nodes},
+        {"scenes", {{{"nodes", roots}}}},
+        {"scene", 0}};
+    const std::string text = doc.dump();
+    return {text.begin(), text.end()};
+}
+
+}  // namespace
+
+TEST_CASE("a glTF's nodes place its meshes: scaled, turned, moved, and more than once") {
+    // As Sketchfab exports: a root turning Z-up to Y-up (180 degrees about X here) and a child
+    // shrinking a hundredfold, moved; and the same mesh placed again by a second root.
+    const json nodes = json::parse(R"([
+        {"name": "root", "matrix": [1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1], "children": [1]},
+        {"name": "model", "scale": [0.01, 0.01, 0.01], "translation": [5, 0, 0], "mesh": 0},
+        {"name": "again", "translation": [0, 10, 0], "mesh": 0}])");
+    const auto mesh = midgard::load_glb(triangle_gltf(nodes, {0, 2}));
+    REQUIRE(mesh.vertices.size() == 6);
+    const auto at = [&](size_t i) {
+        return glm::vec3(mesh.vertices[i].position[0], mesh.vertices[i].position[1],
+                         mesh.vertices[i].position[2]);
+    };
+    const auto normal = [&](size_t i) {
+        return glm::vec3(mesh.vertices[i].normal[0], mesh.vertices[i].normal[1],
+                         mesh.vertices[i].normal[2]);
+    };
+    // The first: shrunk, moved 5 along x, then turned (y and z flipped).
+    CHECK(glm::length(at(0) - glm::vec3(5, 0, 0)) < 1e-5f);
+    CHECK(glm::length(at(1) - glm::vec3(5.01f, 0, 0)) < 1e-5f);
+    CHECK(glm::length(at(2) - glm::vec3(5, -0.01f, 0)) < 1e-5f);
+    CHECK(glm::length(normal(0) - glm::vec3(0, 0, -1)) < 1e-5f);  // (turned with it, unit)
+    // The second: as it is, 10 up.
+    CHECK(glm::length(at(4) - glm::vec3(1, 10, 0)) < 1e-5f);
+    CHECK(glm::length(normal(4) - glm::vec3(0, 0, 1)) < 1e-5f);
+
+    // A mirroring node turns the triangle round, so it still faces the way its normal does.
+    const auto mirrored =
+        midgard::load_glb(triangle_gltf(json::parse(R"([{"scale": [-1, 1, 1], "mesh": 0}])"), {0}));
+    REQUIRE(mirrored.indices.size() == 3);
+    const auto p = [&](uint32_t i) {
+        return glm::vec3(mirrored.vertices[i].position[0], mirrored.vertices[i].position[1],
+                         mirrored.vertices[i].position[2]);
+    };
+    const glm::vec3 face = glm::cross(p(mirrored.indices[1]) - p(mirrored.indices[0]),
+                                      p(mirrored.indices[2]) - p(mirrored.indices[0]));
+    const glm::vec3 n(mirrored.vertices[0].normal[0], mirrored.vertices[0].normal[1],
+                      mirrored.vertices[0].normal[2]);
+    CHECK(glm::dot(face, n) > 0.0f);
+
+    // A file whose nodes place no mesh has its meshes as they are.
+    const auto loose = midgard::load_glb(triangle_gltf(json::parse(R"([{"name": "empty"}])"), {0}));
+    CHECK(glm::length(glm::vec3(loose.vertices[1].position[0], loose.vertices[1].position[1],
+                                loose.vertices[1].position[2]) -
+                      glm::vec3(1, 0, 0)) < 1e-6f);
+}

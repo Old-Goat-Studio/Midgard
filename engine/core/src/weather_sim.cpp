@@ -201,8 +201,11 @@ WeatherSim::WeatherSim(const Shape& shape, WeatherSettings settings, WeatherType
         hour_ = std::max<std::int64_t>(calendar_->seconds_per_hour(), 1);
     }
     const glm::dvec2 size = shape_.face_size();
+    // An odd number of cells (the nearest to the size over the cell's), so a face's middle,
+    // where a scene's world starts, is a cell's middle and not the corner of four.
     const auto count = [&](double metres) {
-        return int(std::clamp(std::round(metres / settings_.cell), 1.0, 1.0e5));
+        const double n = std::clamp(metres / settings_.cell, 1.0, 1.0e5);
+        return 2 * int(std::round((n - 1.0) / 2.0)) + 1;
     };
     cells_u_ = count(size.x);
     cells_v_ = count(size.y);
@@ -211,13 +214,23 @@ WeatherSim::WeatherSim(const Shape& shape, WeatherSettings settings, WeatherType
     wraps_ = kind == Shape::Kind::FlatCylinder || kind == Shape::Kind::CurvedCylinder;
 }
 
+// Round a curved cylinder, where a scene's world starts at u = 0 (its bottom), the cells are
+// half a cell round, so one is centred there (it goes round: u wraps).
+double WeatherSim::u_shift() const {
+    return shape_.kind() == Shape::Kind::CurvedCylinder ? 0.5 / cells_u_ : 0.0;
+}
+
 Cell WeatherSim::cell_at(const SurfacePoint& p) const {
     const auto index = [](double x, int n) { return std::clamp(int(std::floor(x * n)), 0, n - 1); };
-    return {std::clamp(p.face, 0, shape_.faces() - 1), index(p.u, cells_u_), index(p.v, cells_v_)};
+    double u = p.u + u_shift();
+    if (u_shift() > 0.0) u -= std::floor(u);
+    return {std::clamp(p.face, 0, shape_.faces() - 1), index(u, cells_u_), index(p.v, cells_v_)};
 }
 
 SurfacePoint WeatherSim::centre(const Cell& c) const {
-    return {c.face, (c.i + 0.5) / cells_u_, (c.j + 0.5) / cells_v_, 0.0};
+    double u = (c.i + 0.5) / cells_u_ - u_shift();
+    if (u < 0.0) u += 1.0;
+    return {c.face, u, (c.j + 0.5) / cells_v_, 0.0};
 }
 
 const std::string& WeatherSim::biome(const Cell& c) {

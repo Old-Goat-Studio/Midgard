@@ -2,13 +2,15 @@
 // The weather simulation (milestone 5.15): which weather it is, where and when.
 //
 // A world's surface is cut into weather cells (about `cell` metres across, on every face of its
-// shape). Each cell has its own run of weather, spell after spell: a spell's weather is drawn
-// from the weather table that fits the cell's biome and the season when the spell starts (the
-// table for both the biome and the season, else for the biome, else for the season, else for
-// anywhere and any time; then the first), and lasts a while (hours, drawn between the
-// two numbers its weather type's "lasts" gives). A table's "weather" says how much of the time
-// each kind of weather is there (clear 3, rain 1: rain a quarter of the time); its "after" says
-// what may follow a weather instead, by how often (after a thunderstorm, rain 3, cloudy 1).
+// shape: an odd number each way, so a face's middle, where a scene's world starts, is a cell's
+// middle; round a curved cylinder, whose scenes start at its bottom, one is centred there). Each
+// cell has its own run of weather, spell after spell: a spell's weather is drawn from the weather
+// table that fits the cell's biome and the season when the spell starts (the table for both the
+// biome and the season, else for the biome, else for the season, else for anywhere and any time;
+// then the first), and lasts a while (hours, drawn between the two numbers its weather type's
+// "lasts" gives). A table's "weather" says how much of the time each kind of weather is there
+// (clear 3, rain 1: rain a quarter of the time); its "after" says what may follow a weather
+// instead, by how often (after a thunderstorm, rain 3, cloudy 1).
 //
 // Fronts are weather that travels: now and then one starts somewhere, moves in a straight line
 // (a great circle on a sphere, across its cube faces; across a cylinder's join) at some metres a
@@ -165,6 +167,7 @@ private:
         glm::dvec3 from{0.0}, heading{0.0};  // sphere: unit vectors; else metres (x, y)
     };
 
+    double u_shift() const;
     void advance(const Cell& c, Run& run, std::int64_t time);
     Spell draw(const Cell& c, std::int64_t k, const std::string& before, std::int64_t start);
     int season_at(std::int64_t time) const;

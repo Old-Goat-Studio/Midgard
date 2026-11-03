@@ -357,9 +357,29 @@ TILINGS = (1, 2, 4)  # a material's textures, repeated this often across each fa
 MODEL_KEY = "library-model"
 
 
+def _node_matrix(node: dict) -> list[list[float]]:
+    """A glTF node's own transform, as rows of a 4 x 4 matrix (its "matrix", or its
+    translation, rotation and scale)."""
+    if "matrix" in node:
+        m = node["matrix"]  # (column by column)
+        return [[m[c * 4 + r] for c in range(4)] for r in range(4)]
+    tx, ty, tz = node.get("translation", [0.0, 0.0, 0.0])
+    x, y, z, w = node.get("rotation", [0.0, 0.0, 0.0, 1.0])
+    sx, sy, sz = node.get("scale", [1.0, 1.0, 1.0])
+    rot = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+           [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+           [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]]
+    rows = [[rot[r][0] * sx, rot[r][1] * sy, rot[r][2] * sz, (tx, ty, tz)[r]] for r in range(3)]
+    return rows + [[0.0, 0.0, 0.0, 1.0]]
+
+
+def _times(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
+    return [[sum(a[r][k] * b[k][c] for k in range(4)) for c in range(4)] for r in range(4)]
+
+
 def model_bounds(glb: bytes) -> tuple[list[float], list[float]] | None:
-    """A glTF binary's extent, from its meshes' positions' min and max (its nodes' moves left
-    out: enough to frame it)."""
+    """A glTF binary's extent: its meshes' boxes (their positions' min and max) where its
+    nodes place them, as the engine draws it."""
     import json
     import struct
     try:
@@ -367,16 +387,47 @@ def model_bounds(glb: bytes) -> tuple[list[float], list[float]] | None:
         doc = json.loads(glb[20:20 + length])
     except (struct.error, ValueError):
         return None
+    accessors, meshes, nodes = (doc.get(k, []) for k in ("accessors", "meshes", "nodes"))
     lo, hi = [float("inf")] * 3, [float("-inf")] * 3
-    for mesh in doc.get("meshes", []):
-        for prim in mesh.get("primitives", []):
+
+    def take(mesh_index: int, m: list[list[float]]) -> None:
+        if not 0 <= mesh_index < len(meshes):
+            return
+        for prim in meshes[mesh_index].get("primitives", []):
             index = prim.get("attributes", {}).get("POSITION")
-            if index is None or index >= len(doc.get("accessors", [])):
+            if index is None or index >= len(accessors):
                 continue
-            acc = doc["accessors"][index]
-            if "min" in acc and "max" in acc:
-                lo = [min(a, b) for a, b in zip(lo, acc["min"], strict=False)]
-                hi = [max(a, b) for a, b in zip(hi, acc["max"], strict=False)]
+            acc = accessors[index]
+            if "min" not in acc or "max" not in acc:
+                continue
+            for corner in range(8):
+                p = [(acc["max"] if corner >> k & 1 else acc["min"])[k] for k in range(3)]
+                q = [sum(m[r][k] * p[k] for k in range(3)) + m[r][3] for r in range(3)]
+                for k in range(3):
+                    lo[k], hi[k] = min(lo[k], q[k]), max(hi[k], q[k])
+
+    placed = False
+
+    def walk(index: int, parent: list[list[float]], depth: int = 0) -> None:
+        nonlocal placed
+        if not 0 <= index < len(nodes) or depth > 64:
+            return
+        node = nodes[index]
+        m = _times(parent, _node_matrix(node))
+        if "mesh" in node:
+            take(node["mesh"], m)
+            placed = True
+        for child in node.get("children", []):
+            walk(child, m, depth + 1)
+
+    identity = [[float(r == c) for c in range(4)] for r in range(4)]
+    scenes = doc.get("scenes", [])
+    roots = scenes[doc.get("scene", 0)].get("nodes", []) if scenes else []
+    for root in roots:
+        walk(root, identity)
+    if not placed:
+        for i in range(len(meshes)):
+            take(i, identity)
     return (lo, hi) if lo[0] != float("inf") else None
 
 

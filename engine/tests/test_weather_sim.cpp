@@ -105,7 +105,7 @@ TEST_CASE("a world is cut into weather cells on every face") {
     const Shape planet = Shape::sphere_outside(20000.0, 9.81);
     WeatherSim w = sim(planet, kTemperate);
     const auto [nu, nv] = w.cells_per_face();
-    CHECK(nu == int(std::round(planet.face_size().x / 2000.0)));
+    CHECK(nu == 15);  // (15.7 cells across a face: the nearest odd number)
     CHECK(nv == nu);
     for (int face = 0; face < 6; ++face) {
         const Cell c{face, nu - 1, 3};
@@ -261,7 +261,7 @@ TEST_CASE("the forecast is what happens, fronts and all") {
                    "weather": {"thunderstorm": 1}}})";
     WeatherSim forecaster = sim(planet, settings), game = sim(planet, settings);
     int fronts_seen = 0;
-    for (const Cell cell : {Cell{0, 3, 4}, Cell{4, 8, 8}, Cell{2, 0, 15}}) {
+    for (const Cell cell : {Cell{0, 3, 4}, Cell{4, 8, 8}, Cell{2, 0, 14}}) {
         const std::int64_t from = 2 * kDay + 1234;
         const auto spells = forecaster.forecast(cell, from, from + 3 * kDay);
         REQUIRE(!spells.empty());
@@ -339,4 +339,35 @@ TEST_CASE("a world type's recipe carries its weather") {
     const auto problems = recipe_problems(bad);
     REQUIRE(problems.size() == 1);
     CHECK(problems[0].find("weather settings") != std::string::npos);
+}
+
+TEST_CASE("a world's middle is a weather cell's middle, not the corner of four") {
+    // Where a scene's world starts: a face's middle (an area, a flat cylinder, a sphere's top),
+    // or a curved cylinder's bottom (u = 0). Its cell is centred there, whatever the sizes.
+    for (const double cell : {1000.0, 1500.0, 2000.0, 2500.0, 4000.0}) {
+        CAPTURE(cell);
+        const std::string json = "{\"cell\": " + std::to_string(cell) + "}";
+        for (const Shape& shape :
+             {Shape::bounded_area(100000, 100000, 9.81), Shape::bounded_area(3000, 3000, 9.81),
+              Shape::flat_cylinder(20000, 8000, 9.81), Shape::sphere_outside(1500, 9.81),
+              Shape::sphere_inside(2000, 9.81)}) {
+            WeatherSim w = sim(shape, json.c_str());
+            const auto [nu, nv] = w.cells_per_face();
+            CHECK(nu % 2 == 1);
+            CHECK(nv % 2 == 1);
+            const SurfacePoint middle = w.centre(w.cell_at({0, 0.5, 0.5, 0.0}));
+            CHECK(middle.u == doctest::Approx(0.5));
+            CHECK(middle.v == doctest::Approx(0.5));
+        }
+        WeatherSim habitat = sim(Shape::curved_cylinder(1000, 5000, 9.81), json.c_str());
+        const Cell bottom = habitat.cell_at({0, 0.0, 0.5, 0.0});
+        CHECK(habitat.centre(bottom).u == doctest::Approx(0.0));
+        // Just either side of the bottom (round the join): the same cell.
+        CHECK(habitat.cell_at({0, 0.999, 0.5, 0.0}) == bottom);
+        CHECK(habitat.cell_at({0, 0.001, 0.5, 0.0}) == bottom);
+        // Every cell's middle is in that cell.
+        const auto [nu, nv] = habitat.cells_per_face();
+        for (int i = 0; i < nu; ++i)
+            CHECK(habitat.cell_at(habitat.centre({0, i, 0})) == Cell{0, i, 0});
+    }
 }

@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <string>
 
+#include <glm/glm.hpp>
+
 #include "midgard/pak.h"
 
 namespace midgard {
@@ -28,8 +30,13 @@ render::MeshData load_glb(std::span<const uint8_t> bytes) {
     render::MeshData mesh;
     // Tangents are generated (MikkTSpace, as glTF recommends) when the file has uvs but none.
     bool all_tangents = true, all_uvs = true;
-    for (cgltf_size m = 0; m < data->meshes_count; ++m) {
-        const cgltf_mesh& gm = data->meshes[m];
+    // A mesh as one node places it: its node's whole transform (its parents' too) put on its
+    // positions, normals (by the inverse transpose) and tangents; a mirroring one turns its
+    // triangles round, so they still face out.
+    const auto add = [&](const cgltf_mesh& gm, const glm::mat4& to_model) {
+        const glm::mat3 linear(to_model);
+        const glm::mat3 normal_matrix = glm::transpose(glm::inverse(linear));
+        const bool mirrored = glm::determinant(linear) < 0.0f;
         for (cgltf_size p = 0; p < gm.primitives_count; ++p) {
             const cgltf_primitive& prim = gm.primitives[p];
             if (prim.type != cgltf_primitive_type_triangles) continue;
@@ -54,18 +61,56 @@ render::MeshData load_glb(std::span<const uint8_t> bytes) {
                 if (normals) cgltf_accessor_read_float(normals, i, v.normal, 3);
                 if (uvs) cgltf_accessor_read_float(uvs, i, v.uv, 2);
                 if (tangents) cgltf_accessor_read_float(tangents, i, v.tangent, 4);
+                const glm::vec3 at = glm::vec3(
+                    to_model * glm::vec4(v.position[0], v.position[1], v.position[2], 1.0f));
+                glm::vec3 n = normal_matrix * glm::vec3(v.normal[0], v.normal[1], v.normal[2]);
+                if (glm::dot(n, n) > 0.0f) n = glm::normalize(n);
+                glm::vec3 t = linear * glm::vec3(v.tangent[0], v.tangent[1], v.tangent[2]);
+                if (glm::dot(t, t) > 0.0f) t = glm::normalize(t);
+                for (int k = 0; k < 3; ++k) {
+                    v.position[k] = at[k];
+                    v.normal[k] = n[k];
+                    v.tangent[k] = t[k];
+                }
+                if (mirrored) v.tangent[3] = -v.tangent[3];
                 mesh.vertices.push_back(v);
             }
-            if (prim.indices) {
-                for (cgltf_size i = 0; i < prim.indices->count; ++i)
-                    mesh.indices.push_back(
-                        base + static_cast<uint32_t>(cgltf_accessor_read_index(prim.indices, i)));
-            } else {
-                for (cgltf_size i = 0; i < positions->count; ++i)
-                    mesh.indices.push_back(base + static_cast<uint32_t>(i));
+            const auto index = [&](cgltf_size i) {
+                return prim.indices
+                           ? static_cast<uint32_t>(cgltf_accessor_read_index(prim.indices, i))
+                           : static_cast<uint32_t>(i);
+            };
+            const cgltf_size count = prim.indices ? prim.indices->count : positions->count;
+            for (cgltf_size i = 0; i + 2 < count; i += 3) {
+                mesh.indices.push_back(base + index(i));
+                mesh.indices.push_back(base + index(mirrored ? i + 2 : i + 1));
+                mesh.indices.push_back(base + index(mirrored ? i + 1 : i + 2));
             }
         }
+    };
+    // Every node with a mesh in the file's scene (its first, if none is chosen), each as it
+    // places it; a file whose nodes place none of its meshes has them as they are.
+    const cgltf_scene* scene = data->scene          ? data->scene
+                               : data->scenes_count ? &data->scenes[0]
+                                                    : nullptr;
+    bool placed = false;
+    const auto walk = [&](const auto& self, const cgltf_node* node) -> void {
+        if (node->mesh) {
+            glm::mat4 world;
+            cgltf_node_transform_world(node, &world[0][0]);
+            add(*node->mesh, world);
+            placed = true;
+        }
+        for (cgltf_size c = 0; c < node->children_count; ++c) self(self, node->children[c]);
+    };
+    if (scene) {
+        for (cgltf_size n = 0; n < scene->nodes_count; ++n) walk(walk, scene->nodes[n]);
+    } else {
+        for (cgltf_size n = 0; n < data->nodes_count; ++n)
+            if (!data->nodes[n].parent) walk(walk, &data->nodes[n]);
     }
+    if (!placed)
+        for (cgltf_size m = 0; m < data->meshes_count; ++m) add(data->meshes[m], glm::mat4(1.0f));
     if (mesh.indices.empty()) throw AssetError("the glTF file contains no triangles");
     if (!all_tangents && all_uvs) render::generate_tangents(mesh);
     return mesh;

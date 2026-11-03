@@ -727,3 +727,33 @@ def test_a_material_turns_under_the_mouse_lit_to_show_its_shine(project, qtbot, 
         qtbot.mousePress(player.picture, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
         qtbot.mouseMove(player.picture, QPoint(80, 80))
         assert player.view == before
+
+
+def test_a_models_size_is_where_its_nodes_put_it(project):
+    """The preview frames a model as the engine draws it: its nodes' moves, turns and scales
+    on its meshes (a Sketchfab model: Z up turned Y up, shrunk a hundredfold)."""
+    import json
+    import struct
+
+    from midgard_editor.docks.asset_window import model_bounds
+
+    def glb(doc: dict) -> bytes:
+        text = json.dumps(doc).encode()
+        text += b" " * (-len(text) % 4)
+        return struct.pack("<III", 0x46546C67, 2, 20 + len(text)) + \
+            struct.pack("<II", len(text), 0x4E4F534A) + text
+
+    doc = {"accessors": [{"count": 3, "type": "VEC3", "componentType": 5126,
+                          "min": [-100, -200, 0], "max": [100, 50, 300]}],
+           "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+           "nodes": [{"matrix": [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                      "children": [1]},
+                     {"scale": [0.01, 0.01, 0.01], "translation": [0, 0, 0], "mesh": 0}],
+           "scenes": [{"nodes": [0]}], "scene": 0}
+    lo, hi = model_bounds(glb(doc))
+    # Shrunk to [-1, 1] x [-2, 0.5] x [0, 3], then z up turned to y up (y = z, z = -y).
+    assert [round(v, 6) for v in lo] == [-1.0, 0.0, -0.5]
+    assert [round(v, 6) for v in hi] == [1.0, 3.0, 2.0]
+    # Without nodes placing it: as it is.
+    doc.pop("nodes"), doc.pop("scenes"), doc.pop("scene")
+    assert model_bounds(glb(doc)) == ([-100, -200, 0], [100, 50, 300])
