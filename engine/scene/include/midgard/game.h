@@ -325,6 +325,13 @@ public:
         leaving_ = std::move(callback);
     }
     bool changing_scene() const { return change_.has_value(); }
+    // Arriving (milestone 5.16): after the swap the picture stays dark, the game going on (the
+    // player standing still), while the ground in view where the player arrives is made, and
+    // fades in once it is all there (at most kArrivalWait seconds dark, then it fades in
+    // anyway). Without a renderer streaming the terrain, the game makes it itself.
+    static constexpr float kArrivalWait = 20.0f;
+    bool arrival_ready() const;
+    bool arriving() const { return change_ && change_->swapped && !arrival_settled_; }
     // How dark the picture is: 0 clear, 1 black (the renderer's exposure scales by 1 - fade).
     float fade() const { return fade_; }
     // Whether the last update swapped the scene (scripts start again from it).
@@ -385,7 +392,11 @@ private:
     std::optional<SceneChange> change_;
     float fade_ = 0.0f;
     bool scene_changed_ = false;
-    bool stream_all_ = false;  // a scene was just loaded: its view is made in full, at once
+    bool stream_all_ = false;       // a scene was just loaded: its meshes uploaded at once
+    int streams_since_load_ = 0;    // terrain streamed since the scene loaded
+    bool streamed_ = false;         // the terrain was streamed since the last update
+    bool arrival_settled_ = false;  // the arrival is ready (or waited for long enough)
+    float arrival_waited_ = 0.0f;   // seconds dark, waiting for it
     std::string scene_change_error_;
     std::string previous_scene_;
     std::map<std::string, std::string> rooms_;                // by scene id

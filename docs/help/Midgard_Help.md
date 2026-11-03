@@ -787,7 +787,9 @@ The **Scenes** panel lists every scene; one is where the game starts. To join tw
    walking into it, pressing **Use** (E) inside it, or only when a script says so (a locked
    door).
 
-The picture fades out and in during the change.
+The picture fades out and in during the change. It stays dark until the ground where you
+arrive is all there (a big world can take a moment), so you never see half-made ground or
+fall through it; the game keeps running meanwhile.
 
 **The player goes with you.** The player is the one from the scene the game starts in: their
 character, speed, footsteps and scripts go into every scene they visit, standing where that

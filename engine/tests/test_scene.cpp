@@ -2914,7 +2914,7 @@ void go_through(midgard::Game& game, midgard::Actions& actions) {
 
 }  // namespace
 
-TEST_CASE("arriving in a scene shows its ground at once, the player on it") {
+TEST_CASE("arriving in a scene shows its ground all there, the player on it") {
     TwoScenes pkg;
     midgard::Game game(pkg.dir);
     midgard::Actions actions(midgard::InputMap::defaults());
@@ -2922,9 +2922,14 @@ TEST_CASE("arriving in a scene shows its ground at once, the player on it") {
     s.registry.get<midgard::Transform>(s.find("e1_player")).position = {3.0, 1.0, 0.0};
     for (int i = 0; i < 100 && !game.scene_changed(); ++i) game.update(actions, 0.02f);
     REQUIRE(game.scene().id == "scn_land");
-    // The first frame in the land (no waiting asked for): every chunk in view is ready.
-    game.stream_terrain(game.camera(1.6f).origin);
+    // Dark until the land's ground is made (milestone 5.16); the first frame anything shows,
+    // every chunk in view is ready.
     REQUIRE(game.terrain() != nullptr);
+    for (int i = 0; i < 2000 && game.fade() >= 1.0f; ++i) {
+        game.stream_terrain(game.camera(1.6f).origin);
+        game.update(actions, 0.02f);
+    }
+    REQUIRE(game.fade() < 1.0f);
     const midgard::TerrainStreamStats stats = game.terrain()->stats();
     CHECK(stats.wanted > 0);
     CHECK(stats.complete);
@@ -4306,4 +4311,54 @@ TEST_CASE("rooms: a saved world starting in the scene it was left in has it as i
     CHECK(again.scene().id == "scn_main");
     CHECK(glm::length(again.scene().world_position(again.scene().find("e4_stone")) -
                       glm::dvec3(1, 0.5, 1)) < 1e-6);
+}
+
+TEST_CASE("rooms: a change never shows ground not yet made; the picture stays dark till it is") {
+    // The Main is flat; the Hills a bounded area of terrain, its ground made by jobs.
+    TestPackage pkg({
+        {"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]}, "player": {}}')"},
+        {"e2_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                        "collider": {"size": [40, 1, 40]}}')"},
+    });
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, "INSERT INTO string VALUES ('scn_hills.name', 'Hills', '')");
+        exec(db,
+             R"(INSERT INTO scene (id, name_key, settings) VALUES ('scn_hills', 'scn_hills.name',
+            '{"body": {"shape": "bounded_area", "width": 3000, "length": 3000, "seed": 4},
+              "terrain": {"height_scale": 40, "base": 10, "spacing": 1}}'))");
+        exec(db, R"(INSERT INTO entity (id, scene, name, parent, components) VALUES
+            ('e8_hills_player', 'scn_hills', 'Player', NULL,
+             '{"transform": {"position": [0, 60, 0]}, "player": {}}'),
+            ('e9_in', 'scn_hills', 'In', NULL,
+             '{"transform": {"position": [100, 60, 100]}, "arrival": {"name": "In"}}'))");
+        sqlite3_close(db);
+    }
+    for (const bool streamed_by_the_runtime : {true, false}) {
+        CAPTURE(streamed_by_the_runtime);
+        midgard::Game game(pkg.dir);
+        midgard::Actions actions(midgard::InputMap::defaults());
+        game.update(actions, 1.0f / 60.0f);
+        game.change_scene("scn_hills", "e9_in", 0.3f);
+        int frames = 0, dark_waiting = 0, unready_seen = 0;
+        bool arrived = false;
+        while (game.changing_scene() && frames < 60 * 30) {
+            game.update(actions, 1.0f / 60.0f);
+            if (streamed_by_the_runtime)  // (as the runtime does after each update: no renderer)
+                game.stream_terrain(game.camera(1.0f).origin, false);
+            ++frames;
+            if (game.scene().id != "scn_hills") continue;
+            arrived = true;
+            dark_waiting += game.arriving() ? 1 : 0;
+            // Whenever any of the picture shows, the ground in view is all there.
+            if (game.fade() < 1.0f && !game.arrival_ready()) ++unready_seen;
+        }
+        CHECK(arrived);
+        CHECK_FALSE(game.changing_scene());
+        CHECK(unready_seen == 0);
+        CHECK(dark_waiting > 0);  // (it was made while the picture was dark)
+        CHECK(game.terrain()->stats().complete);
+        CHECK(frames < 60 * 20);  // (made long before the most it waits)
+    }
 }

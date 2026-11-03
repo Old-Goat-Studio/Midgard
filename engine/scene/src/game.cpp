@@ -1217,13 +1217,16 @@ void Game::stream_terrain(const glm::dvec3& camera, bool wait) {
 }
 
 void Game::stream(render::Renderer* renderer, const glm::dvec3& camera, bool wait) {
-    if (stream_all_) {  // a scene just loaded: its meshes, and all of its ground in view
-        if (renderer)
+    if (stream_all_) {  // a scene just loaded: its meshes at once (its ground as it comes, the
+        if (renderer)   // picture dark until it's there: update_scene_change)
             for (const std::string& problem : upload_new_meshes(*renderer)) (void)problem;
-        wait = true;
         stream_all_ = false;
     }
-    if (terrain_) terrain_->update(camera, renderer, wait);
+    if (terrain_) {
+        terrain_->update(camera, renderer, wait);
+        ++streams_since_load_;
+        streamed_ = true;
+    }
     if (renderer) characters_.upload(*renderer);  // (a player's first-person arms, as made)
     if (placed_changed_ && renderer) {            // the placed objects' meshes, as they come
         upload_new_meshes(*renderer);
@@ -1475,13 +1478,33 @@ void Game::update_scene_change(float dt) {
         }
         c.swapped = true;
         c.t = 0.0f;
+        arrival_settled_ = false;
+        arrival_waited_ = 0.0f;
+        streamed_ = false;
         return;
+    }
+    // Dark until where the player arrives is ready (made here when nothing else streams it).
+    if (!arrival_settled_) {
+        if (!streamed_ && terrain_) stream(nullptr, camera(1.0f).origin, false);
+        streamed_ = false;
+        arrival_waited_ += dt;
+        if (!arrival_ready() && arrival_waited_ < kArrivalWait) {
+            fade_ = 1.0f;
+            c.t = 0.0f;
+            return;
+        }
+        arrival_settled_ = true;
     }
     fade_ = 1.0f - part;
     if (part >= 1.0f) {
         change_.reset();
         fade_ = 0.0f;
     }
+}
+
+bool Game::arrival_ready() const {
+    if (!terrain_) return true;
+    return streams_since_load_ > 0 && terrain_->stats().complete;
 }
 
 // ---- rooms (milestone 5.16) --------------------------------------------------------------------
@@ -1666,6 +1689,7 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     update_sun();
     note_exits_inside();
     stream_all_ = true;
+    streams_since_load_ = 0;
 }
 
 void Game::note_exits_inside() {
