@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/audio.h"
 
+#include "opus_backend.h"
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -20,6 +22,9 @@ namespace {
 
 constexpr std::array<const char*, kBusCount> kBusNames = {"master", "music",    "effects",
                                                           "voice",  "ambience", "interface"};
+
+// The decoders beyond miniaudio's own (WAV, FLAC, MP3, and Vorbis through stb_vorbis).
+ma_decoding_backend_vtable* g_backends[] = {opus_backend()};
 
 void check(ma_result result, const std::string& what) {
     if (result != MA_SUCCESS) throw AudioError(what + ": " + ma_result_description(result));
@@ -81,6 +86,8 @@ Mixer::Mixer(const MixerOptions& options) : impl_(std::make_unique<Impl>()) {
     rc.decodedFormat = ma_format_f32;
     rc.decodedChannels = 0;  // (each sound's own: mono stays mono until it's mixed)
     rc.decodedSampleRate = options.sample_rate;
+    rc.ppCustomDecodingBackendVTables = g_backends;
+    rc.customDecodingBackendCount = 1;
     check(ma_resource_manager_init(&rc, &m.resources), "starting the sound decoder");
 
     const auto start = [&](bool device) {
@@ -139,7 +146,7 @@ SoundId Mixer::load(const std::string& name, std::span<const std::uint8_t> encod
     if (r != MA_SUCCESS) {
         ma_resource_manager_unregister_data(&m.resources, name.c_str());
         throw AudioError("sound '" + name + "' can't be read (" + ma_result_description(r) +
-                         "): WAV, FLAC, MP3 and Ogg Vorbis files can");
+                         "): WAV, FLAC, MP3, Ogg Vorbis and Ogg Opus files can");
     }
     float seconds = 0.0f;
     ma_sound_get_length_in_seconds(&s->decoded, &seconds);
@@ -259,6 +266,31 @@ void Mixer::update() {
             ++it;
         }
     }
+}
+
+SoundInfo sound_info(std::span<const std::uint8_t> encoded) {
+    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
+    config.ppCustomBackendVTables = g_backends;
+    config.customBackendCount = 1;
+    ma_decoder decoder;
+    check(ma_decoder_init_memory(encoded.data(), encoded.size(), &config, &decoder),
+          "reading the sound");
+    SoundInfo info;
+    ma_format format;
+    ma_decoder_get_data_format(&decoder, &format, &info.channels, &info.sample_rate, nullptr, 0);
+    ma_uint64 frames = 0;
+    if (ma_decoder_get_length_in_pcm_frames(&decoder, &frames) != MA_SUCCESS || frames == 0) {
+        // (Not known up front: counted by reading it all.)
+        std::vector<float> block(4096 * std::max<ma_uint32>(info.channels, 1));
+        ma_uint64 got = 0;
+        frames = 0;
+        while (ma_decoder_read_pcm_frames(&decoder, block.data(), 4096, &got) == MA_SUCCESS &&
+               got > 0)
+            frames += got;
+    }
+    ma_decoder_uninit(&decoder);
+    info.seconds = info.sample_rate ? double(frames) / info.sample_rate : 0.0;
+    return info;
 }
 
 std::vector<std::uint8_t> wav_bytes(std::span<const float> interleaved, std::uint32_t channels,

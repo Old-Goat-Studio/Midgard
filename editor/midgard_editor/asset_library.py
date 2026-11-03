@@ -641,15 +641,17 @@ def asset_of(project, file: Path, assets: list[Asset] | None = None) -> Asset | 
 
 
 def used_by(project, content_ids) -> list[Asset]:
-    """The library assets a game's content uses: models ("lib:") and images ("tex:" paths
-    inside library/), each once, by name."""
-    from . import textures
+    """The library assets a game's content uses: models ("lib:"), images ("tex:" paths inside
+    library/) and sounds ("snd:" paths inside library/), each once, by name."""
+    from . import sounds, textures
     assets, _ = scan(project)
     found: dict[str, Asset] = {}
     for content in content_ids:
         file = model_file(project, content) if content.startswith(MODEL_PREFIX) else None
         if file is None and (parsed := textures.parse(content)) is not None:
             file = Path(project.root) / parsed[0]
+        if file is None and (sound := sounds.parse(content)) is not None:
+            file = Path(project.root) / sound
         if file is not None and (asset := asset_of(project, file, assets)) is not None:
             found[asset.id] = asset
     return sorted(found.values(), key=lambda a: a.name.lower())

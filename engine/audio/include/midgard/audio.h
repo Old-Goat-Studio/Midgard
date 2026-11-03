@@ -7,7 +7,8 @@
 // none (a server, a CI machine, Options::device false), mixes only when asked: mix() fills a
 // buffer, which is how the tests measure what would be heard.
 //
-// Sounds are files as they come (WAV, FLAC, MP3, Ogg Vorbis), given as bytes and decoded once
+// Sounds are files as they come (WAV, FLAC, MP3, Ogg Vorbis, Ogg Opus: games get Vorbis and
+// Opus from the cook, midgard/audio_encode.h), given as bytes and decoded once
 // to the mixer's rate; any number of voices may play one at once, each with its own volume,
 // pitch and pan. Call update() each frame to reclaim the voices that have finished.
 #pragma once
@@ -92,6 +93,14 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+
+// What a sound file holds, read with the game's own decoders (AudioError if they can't).
+struct SoundInfo {
+    double seconds = 0.0;
+    std::uint32_t channels = 0;
+    std::uint32_t sample_rate = 0;
+};
+SoundInfo sound_info(std::span<const std::uint8_t> encoded);
 
 // A WAV file's bytes (32-bit float, the given channels): for tests and generated sounds.
 std::vector<std::uint8_t> wav_bytes(std::span<const float> interleaved, std::uint32_t channels,

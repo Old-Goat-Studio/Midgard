@@ -141,9 +141,20 @@ target_link_libraries(midgard_miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS}
 if(UNIX AND NOT APPLE)
     target_link_libraries(midgard_miniaudio PUBLIC m)
 endif()
-add_library(midgard_audio STATIC audio/src/audio.cpp)
+find_package(OpusFile CONFIG REQUIRED)  # (Ogg Opus in games; Vorbis is stb_vorbis's)
+add_library(midgard_audio STATIC audio/src/audio.cpp audio/src/opus_backend.cpp)
 target_include_directories(midgard_audio PUBLIC audio/include)
-target_link_libraries(midgard_audio PUBLIC midgard_core PRIVATE midgard_miniaudio midgard_options)
+target_link_libraries(midgard_audio PUBLIC midgard_core midgard_miniaudio
+                      PRIVATE OpusFile::opusfile midgard_options)
+# The cook's encoders (Ogg Vorbis and Ogg Opus): the editor's module and the tests only.
+find_package(Vorbis CONFIG REQUIRED)
+find_package(Opus CONFIG REQUIRED)
+find_library(OPUSENC_LIBRARY NAMES opusenc REQUIRED)
+add_library(midgard_audio_encode STATIC audio/src/encode.cpp)
+target_include_directories(midgard_audio_encode PUBLIC audio/include PRIVATE audio/src)
+target_link_libraries(midgard_audio_encode PUBLIC midgard_audio
+                      PRIVATE Vorbis::vorbisenc "${OPUSENC_LIBRARY}" Opus::opus
+                              midgard_options)
 
 # ---- scene: game.pak, glTF meshes and the EnTT scene built from the database ----------------
 find_package(miniz CONFIG REQUIRED)
@@ -182,6 +193,7 @@ target_include_directories(midgard_scene PUBLIC scene/include
                            PRIVATE "${CGLTF_INCLUDE_DIR}" ${Stb_INCLUDE_DIR})
 target_link_libraries(midgard_scene
     PUBLIC midgard_core midgard_render midgard_input midgard_physics midgard_nav midgard_anim
+           midgard_audio
            EnTT::EnTT
            glm::glm
            nlohmann_json::nlohmann_json
@@ -343,7 +355,8 @@ endif()
 if(MIDGARD_BUILD_PYTHON AND NOT CMAKE_CROSSCOMPILING)
     if(MIDGARD_PYBIND11_DIR)
         pybind11_add_module(_midgard bindings/module.cpp bindings/viewport.cpp)
-        target_link_libraries(_midgard PRIVATE midgard_scene midgard_link volk::volk
+        target_link_libraries(_midgard PRIVATE midgard_scene midgard_link midgard_audio_encode
+                              volk::volk
                               Vulkan::Headers midgard_options)
         if(UNIX)
             target_link_libraries(_midgard PRIVATE ${CMAKE_DL_LIBS})
@@ -399,7 +412,7 @@ if(MIDGARD_BUILD_TESTS)
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_audio
-        midgard_options doctest::doctest
+        midgard_audio_encode midgard_options doctest::doctest
         unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
     target_compile_definitions(midgard_tests PRIVATE
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema"

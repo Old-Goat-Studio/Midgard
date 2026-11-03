@@ -33,6 +33,11 @@
     "recastnavigation",
     "ozz-animation",
     "miniaudio",
+    "libogg",
+    "opus",
+    "opusfile",
+    "libvorbis",
+    "libopusenc",
     { "name": "glslang", "host": true, "features": ["tools"] }
   ]
 }

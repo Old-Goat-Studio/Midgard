@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <vector>
 
 #include "midgard/audio.h"
+#include "midgard/audio_encode.h"
 
 namespace {
 
@@ -187,4 +189,65 @@ TEST_CASE("buses by name, and a mixer with a device (or, without one, silent)") 
     } else {
         CHECK(m.backend() == "none");
     }
+}
+
+namespace {
+
+// A stereo tone (left and right at different pitches) as a WAV at `rate`.
+std::vector<std::uint8_t> stereo_tone(double left_hz, double right_hz, double seconds,
+                                      std::uint32_t rate, std::uint32_t channels = 2) {
+    std::vector<float> s(size_t(seconds * rate) * channels, 0.0f);
+    for (size_t i = 0; i < s.size() / channels; ++i) {
+        s[i * channels] = 0.4f * float(std::sin(2.0 * kPi * left_hz * double(i) / rate));
+        s[i * channels + 1] = 0.4f * float(std::sin(2.0 * kPi * right_hz * double(i) / rate));
+    }
+    return midgard::audio::wav_bytes(s, channels, rate);
+}
+
+}  // namespace
+
+TEST_CASE("the cook's Vorbis and Opus come back as the sound they were") {
+    using midgard::audio::Codec;
+    const auto wav = stereo_tone(440.0, 660.0, 1.0, 44100);
+    for (const Codec codec : {Codec::Vorbis, Codec::Opus}) {
+        CAPTURE(midgard::audio::codec_name(codec));
+        const auto encoded = midgard::audio::encode_sound(wav, codec);
+        CHECK(encoded.size() < wav.size() / 4);  // (a fraction of the WAV)
+        CHECK(std::string(encoded.begin(), encoded.begin() + 4) == "OggS");
+        // The same sound: the same bytes (a cook gives the same package every time).
+        CHECK(midgard::audio::encode_sound(wav, codec) == encoded);
+        const auto info = midgard::audio::sound_info(encoded);
+        CHECK(info.seconds == doctest::Approx(1.0).epsilon(0.01));
+        CHECK(info.channels == 2);
+        CHECK(info.sample_rate == (codec == Codec::Opus ? 48000u : 44100u));
+        // Played: each side at its own pitch and about its level (both are lossy).
+        Mixer m = offline();
+        m.play(m.load("encoded", encoded));
+        mix(m, 0.1);  // (past the start)
+        const auto out = mix(m, 0.5);
+        CHECK(frequency(out, kRate) == doctest::Approx(440.0).epsilon(0.02));
+        std::vector<float> right(out.begin() + 1, out.end());
+        CHECK(frequency(right, kRate) == doctest::Approx(660.0).epsilon(0.02));
+        CHECK(rms(out, 0) == doctest::Approx(0.4 / std::sqrt(2.0)).epsilon(0.05));
+        CHECK(rms(out, 1) == doctest::Approx(0.4 / std::sqrt(2.0)).epsilon(0.05));
+    }
+}
+
+TEST_CASE("encoding: a mono effect, surround mixed down, and what can't be encoded") {
+    using midgard::audio::Codec;
+    // A mono effect as Opus: read back as stereo (Opus is read that way), the same length.
+    const auto click = midgard::audio::encode_sound(tone(1000.0, 0.3, 0.5f), Codec::Opus);
+    CHECK(midgard::audio::sound_info(click).seconds == doctest::Approx(0.3).epsilon(0.02));
+    // Opus in, Vorbis out (the cook takes whatever the library holds).
+    const auto again = midgard::audio::encode_sound(click, Codec::Vorbis);
+    CHECK(midgard::audio::sound_info(again).seconds == doctest::Approx(0.3).epsilon(0.02));
+    // Six channels: stereo.
+    const auto surround =
+        midgard::audio::encode_sound(stereo_tone(300, 500, 0.5, 48000, 6), Codec::Vorbis);
+    CHECK(midgard::audio::sound_info(surround).channels == 2);
+    const std::vector<std::uint8_t> junk(100, 7);
+    CHECK_THROWS_AS(midgard::audio::encode_sound(junk, Codec::Opus), midgard::audio::AudioError);
+    CHECK_THROWS_AS(midgard::audio::sound_info(junk), midgard::audio::AudioError);
+    CHECK(midgard::audio::codec_from_name("opus") == Codec::Opus);
+    CHECK_FALSE(midgard::audio::codec_from_name("mp3"));
 }

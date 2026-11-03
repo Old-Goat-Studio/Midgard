@@ -34,6 +34,7 @@ from . import (
     model_materials,
     objects,
     scenes,
+    sounds,
     textures,
 )
 from .project import Project
@@ -155,7 +156,8 @@ def used_mesh_assets(project: Project, model_textures: bool = True) -> set[str]:
             not a.startswith(BUILTIN_PREFIX)} | {
         a for e in entities for a in character_assets_used(e.components)} | {
         t for e in entities for t in textures.components_textures(e.components)
-        if textures.parse(t) is not None}
+        if textures.parse(t) is not None} | {
+        s for e in entities for s in sounds.sounds_in(e.components)}
 
 
 @dataclass
@@ -264,6 +266,17 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
     for e in all_entities:
         for texture, data in model_materials.textures_of(project, e.components).items():
             files[texture] = (model_materials.pak_path(texture), data)
+    # Sounds the scenes name (milestone 5.14): Ogg Vorbis or Opus, read back before they go in.
+    for user, components in texture_users:
+        for sound in sounds.sounds_in(components):
+            if sound in files:
+                continue
+            data = sounds.sound_data(project.root, sound)
+            if data is None:
+                warnings.append(f"{user} uses sound '{sounds.describe(sound)}', which is not "
+                                "in the project (or can't be read); it will be silent.")
+            else:
+                files[sound] = (sounds.pak_path(sound), data)
     content: list[dict[str, str]] = []
     tmp = out / "game.pak.tmp"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as pak:

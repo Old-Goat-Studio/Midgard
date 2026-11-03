@@ -13,6 +13,7 @@
 #include <sqlite3.h>
 #include <nlohmann/json.hpp>
 
+#include "midgard/audio.h"
 #include "midgard/calendar.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
@@ -248,6 +249,14 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                                                       '0',  0xBB, '\r', '\n', 0x1A, '\n'};
                     if (bytes.size() < 12 || std::memcmp(bytes.data(), magic, 12) != 0)
                         throw AssetError("not a KTX2 texture");
+                } else if (c.path.starts_with("audio/")) {
+                    // A sound (milestone 5.14): read through by the game's own decoders.
+                    try {
+                        if (audio::sound_info(bytes).seconds <= 0.0)
+                            throw AssetError("an empty sound");
+                    } catch (const audio::AudioError& e) {
+                        throw AssetError(std::string("not a sound the game can play: ") + e.what());
+                    }
                 } else {
                     load_glb(bytes);
                 }

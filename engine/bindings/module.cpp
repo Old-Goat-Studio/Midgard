@@ -28,6 +28,8 @@
 #include <nlohmann/json.hpp>
 
 #include "midgard/anim_graph.h"
+#include "midgard/audio.h"
+#include "midgard/audio_encode.h"
 #include "midgard/body.h"
 #include "midgard/calendar.h"
 #include "midgard/environment.h"
@@ -92,6 +94,43 @@ PYBIND11_MODULE(_midgard, m) {
         py::arg("path"), py::arg("srgb") = true,
         "An image file (PNG or JPEG) as KTX2 bytes with mipmaps, sRGB for colours. Raises "
         "RuntimeError for one that can't be read.");
+
+    m.def(
+        "encode_sound",
+        [](const std::filesystem::path& path, const std::string& codec) {
+            const auto chosen = midgard::audio::codec_from_name(codec);
+            if (!chosen) throw std::invalid_argument("codec is 'vorbis' or 'opus', not " + codec);
+            std::vector<uint8_t> out;
+            {
+                py::gil_scoped_release release;
+                std::ifstream in(path, std::ios::binary);
+                if (!in) throw midgard::AssetError("can't open " + path.filename().string());
+                const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                                 std::istreambuf_iterator<char>());
+                out = midgard::audio::encode_sound(bytes, *chosen);
+            }
+            return py::bytes(reinterpret_cast<const char*>(out.data()), out.size());
+        },
+        py::arg("path"), py::arg("codec"),
+        "A sound file (WAV, FLAC, MP3, Ogg Vorbis or Opus) as an Ogg Vorbis ('vorbis': music, "
+        "ambience) or Ogg Opus ('opus': effects, voice) file's bytes, the same bytes for the "
+        "same sound. Raises RuntimeError for one that can't be read.");
+
+    m.def(
+        "sound_info",
+        [](const py::bytes& data) {
+            const std::string_view view(data);
+            const auto info = midgard::audio::sound_info(std::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(view.data()), view.size()));
+            py::dict d;
+            d["seconds"] = info.seconds;
+            d["channels"] = info.channels;
+            d["sample_rate"] = info.sample_rate;
+            return d;
+        },
+        py::arg("data"),
+        "What a sound file's bytes hold, read with the game's own decoders: {seconds, channels, "
+        "sample_rate}. Raises RuntimeError if a game couldn't play it.");
 
     m.def(
         "import_model",
