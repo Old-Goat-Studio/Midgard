@@ -465,6 +465,21 @@ live-link tests; mixing-time budget.
 **Exit:** walking the test planet plays footsteps per surface, biome ambience that changes at
 dusk, and music that crossfades between biomes. 📱 Sound plays correctly on your phone.
 
+*As built:* `engine/audio` (`midgard/audio.h` the mixer, buses, 3D voices, the reverb;
+`audio_encode.h` the cook's encoders; `sound_events.h`, `music.h`, `ambience.h`), the game's
+sound in `Game` (listener, occlusion, reverb zones, footsteps in `midgard/footsteps.h`),
+`midgard.audio`, `midgard.music` and `midgard.ambience` for scripts, and the editor's Audio panel
+(`docks/audio_panel.py`, `sound_preview.py`, `_midgard.AudioPreview`). Migrations 14 to 17. The
+exit is the engine test "audio, the exit": the player walks 40 degrees of latitude on the test
+planet with a climate, from "Warm" grassland to "Cold" snowfields; its footsteps sound like the
+ground under each (grass, then snow), the music crossfades from the Warm playlist to the Cold one
+two seconds after the biome changes for good (each tune measured in the offline mix), and the
+ambience's day layer gives way to its night layer when dusk falls; mixing stays under a
+millisecond a frame. 📱 The self-test's Sound check (the device opens, 32 voices mix in budget at
+the right level) is the phone's part. Known limits: footsteps don't hear the seasons' snow; the
+Asset Library's sound preview still uses Qt Multimedia (system libraries on Linux, see
+errata.md); characters' animation-event sounds have no editor rows yet (set in the component).
+
 ### 5.15 Weather · L
 - **Weather types** (clear, cloudy, rain, thunderstorm, snow, blizzard, fog, wind, sandstorm,
   ash fall, and the designer's own) with visuals, sounds and their effect data (visibility, wind,

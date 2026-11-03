@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -32,6 +33,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
+#include "midgard/audio.h"
 #include "midgard/body.h"
 #include "midgard/collider_outlines.h"
 #include "midgard/footsteps.h"
@@ -3231,4 +3233,227 @@ TEST_CASE("footsteps: the terrain's ground underfoot, as it's drawn") {
         CHECK(found[g] > 0);
     }
     CHECK(midgard::footstep_surfaces().size() == 8);
+}
+
+// ---- audio, the exit (milestone 5.14) -----------------------------------------------------------
+
+namespace {
+
+constexpr double kTwoPi = 6.283185307179586;
+
+// A mono tone's WAV (for a test's sounds).
+std::vector<std::uint8_t> tone_wav(double hz, double seconds, float amplitude) {
+    std::vector<float> s(size_t(seconds * 48000));
+    for (size_t i = 0; i < s.size(); ++i)
+        s[i] = amplitude * float(std::sin(kTwoPi * hz * double(i) / 48000.0));
+    return midgard::audio::wav_bytes(s, 1, 48000);
+}
+
+// How strong one frequency is in a stretch of interleaved stereo (left channel; Goertzel).
+double tone_strength(const std::vector<float>& s, size_t from, size_t to, double hz) {
+    const double k = 2.0 * std::cos(kTwoPi * hz / 48000.0);
+    double s1 = 0.0, s2 = 0.0;
+    size_t n = 0;
+    for (size_t i = from; i < to && i * 2 < s.size(); ++i, ++n) {
+        const double s0 = s[i * 2] + k * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return n ? 2.0 * std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - k * s1 * s2)) / double(n) : 0.0;
+}
+
+}  // namespace
+
+TEST_CASE(
+    "audio, the exit: walking the planet, footsteps per surface, ambience at dusk, music "
+    "crossfading between biomes") {
+    // The test planet, with a climate: warm grassland round the equator ("Warm"), cold snowfields
+    // towards the pole ("Cold"). The player walks from the equator towards the pole. Its
+    // footsteps sound like the ground (a tone for each surface); the music is a playlist for
+    // each biome (crossfading when it changes); the ambience has a day layer and a night layer,
+    // and the clock is put at dusk on the way. All of it is mixed offline, and heard.
+    constexpr double kRadius = 1000.0;
+    const glm::dvec3 centre(0.0, -kRadius, 0.0);
+    const std::string body_json =
+        R"({"shape": "sphere_outside", "radius": 1000, "seed": 13, "origin": [0, -1000, 0]})";
+    const json terrain_json = json::parse(R"({"height_scale": 12, "base": 8,
+        "climate": {"temperature": 14, "latitude_cooling": 60, "lapse_rate": 6.5,
+                    "variation": 1, "season_swing": 0},
+        "biomes": [{"name": "Warm", "temperature": [4, 60], "moisture": [0, 1],
+                    "color": [0.3, 0.5, 0.2], "dry_color": [0.5, 0.5, 0.3]},
+                   {"name": "Cold", "temperature": [-60, 4], "moisture": [0, 1],
+                    "color": [0.8, 0.8, 0.8], "dry_color": [0.7, 0.7, 0.7]}]})");
+    json body = json::parse(body_json);
+    body["id"] = "b";
+    const midgard::Terrain terrain(midgard::body_from_json(body),
+                                   midgard::terrain_from_json(terrain_json));
+    const auto vec = [](const glm::dvec3& p) { return json{p.x, p.y, p.z}; };
+    const auto on_ground = [&](double angle) {  // from the equator (+X) towards the pole (+Y)
+        const glm::dvec3 dir(std::cos(angle), std::sin(angle), 0.0);
+        const glm::dvec3 g = terrain.ground(centre + dir * kRadius);
+        return g + terrain.body().up(g) * 1.0;
+    };
+    const glm::dvec3 start = on_ground(0.0);
+    // Sounds: a tone each, told apart by its pitch.
+    const std::map<std::string, double> tones = {
+        {"music_warm", 220}, {"music_cold", 330},  {"day", 440},
+        {"night", 550},      {"step_grass", 1000}, {"step_snow", 1200},
+        {"step_sand", 1400}, {"step_rock", 1600},  {"step_other", 1800}};
+    std::vector<PackageFile> files;
+    for (const auto& [name, hz] : tones) {
+        const bool looped = name.rfind("music", 0) == 0 || name == "day" || name == "night";
+        files.push_back(
+            {"snd:" + name, "audio/" + name + ".wav", tone_wav(hz, looped ? 2.0 : 0.08, 0.3f)});
+    }
+    const json footsteps = {{"every", 2.0},
+                            {"sounds",
+                             {{"grass", "sfx_step_grass"},
+                              {"snow", "sfx_step_snow"},
+                              {"sand", "sfx_step_sand"},
+                              {"rock", "sfx_step_rock"},
+                              {"default", "sfx_step_other"}}}};
+    const json player = {{"transform", {{"position", vec(start)}}},
+                         {"player", {{"speed", 25}, {"height", 1.8}}},
+                         {"footsteps", footsteps}};
+    const json cam = {{"transform", {{"position", vec(start + glm::dvec3(0, 3, 6))}}},
+                      {"camera", json::object()}};
+    TestPackage pkg({{"e1_player", "NULL, '" + player.dump() + "'"},
+                     {"e2_camera", "NULL, '" + cam.dump() + "'"}},
+                    R"({"body": )" + body_json + R"(, "terrain": )" + terrain_json.dump() + "}", {},
+                    files);
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        const auto event = [&](const std::string& id, const std::string& sound, const json& more) {
+            json e = {{"sounds", {"snd:" + sound}}, {"spatial", false}};
+            e.update(more);
+            exec(db,
+                 "INSERT INTO sound_event VALUES ('" + id + "', '" + id + "', '" + e.dump() + "')");
+        };
+        event("sfx_music_warm", "music_warm", {{"bus", "music"}, {"loop", true}});
+        event("sfx_music_cold", "music_cold", {{"bus", "music"}, {"loop", true}});
+        event("sfx_day", "day", {{"bus", "ambience"}, {"loop", true}});
+        event("sfx_night", "night", {{"bus", "ambience"}, {"loop", true}});
+        for (const char* s : {"grass", "snow", "sand", "rock", "other"})
+            event(std::string("sfx_step_") + s, std::string("step_") + s, json::object());
+        exec(db, R"(INSERT INTO music_playlist VALUES ('mus_warm', 'Warm',
+                    '{"tracks": ["sfx_music_warm"], "biomes": ["Warm"], "crossfade": 2}'))");
+        exec(db, R"(INSERT INTO music_playlist VALUES ('mus_cold', 'Cold',
+                    '{"tracks": ["sfx_music_cold"], "biomes": ["Cold"], "crossfade": 2}'))");
+        exec(db, R"(INSERT INTO ambience VALUES ('amb_world', 'World', '{"crossfade": 1,
+                    "layers": [{"event": "sfx_day", "times": ["dawn", "day"]},
+                               {"event": "sfx_night", "times": ["dusk", "night"]}]}'))");
+        sqlite3_close(db);
+    }
+    midgard::Game game(pkg.dir);
+    midgard::audio::MixerOptions offline;
+    offline.device = false;
+    midgard::audio::Mixer mixer(offline);
+    game.set_audio(&mixer);
+    midgard::Actions actions(midgard::InputMap::defaults());
+
+    // A time of day, by trying the clock half an hour at a time.
+    const auto put_clock_at = [&](const std::string& wanted) {
+        const std::int64_t base = game.time().now();
+        for (int h = 0; h < 96; ++h) {
+            game.set_time(base + h * 1800);
+            game.update(actions, 0.0f);
+            if (game.music_context().time == wanted) return true;
+        }
+        return false;
+    };
+    REQUIRE(put_clock_at("day"));
+
+    std::vector<float> heard;
+    std::vector<float> block(800 * 2);  // (a sixtieth of a second, stereo)
+    std::vector<double> mix_ms;
+    int frame = 0;
+    std::vector<std::string> biomes;  // the biome under the listener, each frame
+    std::vector<std::string> playlists;
+    std::vector<std::pair<std::string, std::string>> steps;  // (surface, sound)
+    std::size_t seen = 0;
+    const auto run = [&](int frames) {
+        for (int i = 0; i < frames; ++i, ++frame) {
+            game.update(actions, 1.0f / 60.0f);
+            actions.begin_frame();
+            const auto t0 = std::chrono::steady_clock::now();
+            mixer.mix(block);
+            mix_ms.push_back(
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
+                    .count());
+            heard.insert(heard.end(), block.begin(), block.end());
+            biomes.push_back(game.music_context().biome);
+            playlists.push_back(game.music()->playing());
+            const std::size_t taken = game.footsteps_taken();
+            const auto& log = game.footsteps();
+            for (std::size_t n = taken - seen; n > 0; --n)
+                steps.emplace_back(log[log.size() - n].surface, log[log.size() - n].sound);
+            seen = taken;
+        }
+    };
+    run(120);  // settle, at the equator, by day
+    CHECK(biomes.back() == "Warm");
+    CHECK(playlists.back() == "mus_warm");
+    // Walk towards the pole: 40 degrees of latitude, about 700 m.
+    std::vector<glm::dvec3> path;
+    for (int i = 1; i <= 80; ++i) path.push_back(on_ground(0.6981 * i / 80.0));
+    game.follow_path(path);
+    int dusk_at = -1;
+    for (int i = 0; i < 2400; ++i) {
+        run(1);
+        if (dusk_at < 0 && i == 900) {  // half way: dusk falls
+            REQUIRE(put_clock_at("dusk"));
+            dusk_at = frame;
+        }
+    }
+    const glm::dvec3 end = game.scene().world_position(game.scene().find("e1_player"));
+    CHECK(glm::distance(end, path.back()) < 3.0);  // (it got there)
+    CHECK(biomes.back() == "Cold");
+    CHECK(game.take_sound_problems().empty());
+
+    // Footsteps: one each 2 m (about 350), each the sound of the surface under it, grass
+    // and snow both among them.
+    std::map<std::string, int> surfaces;
+    const std::map<std::string, std::string> sound_of = {{"grass", "sfx_step_grass"},
+                                                         {"snow", "sfx_step_snow"},
+                                                         {"sand", "sfx_step_sand"},
+                                                         {"rock", "sfx_step_rock"}};
+    for (const auto& [surface, sound] : steps) {
+        ++surfaces[surface];
+        const auto it = sound_of.find(surface);
+        CHECK(sound == (it != sound_of.end() ? it->second : "sfx_step_other"));
+    }
+    CHECK(steps.size() > 300);
+    CHECK(steps.size() < 400);
+    CHECK(surfaces["grass"] > 20);
+    CHECK(surfaces["snow"] > 20);
+
+    // Music: Warm, then (two seconds after the biome stays Cold) Cold, crossfading over 2 s.
+    int changed = -1;
+    for (int f = 1; f < int(playlists.size()); ++f)
+        if (playlists[f] == "mus_cold" && playlists[f - 1] == "mus_warm") changed = f;
+    REQUIRE(changed > 0);
+    int cold_from = changed;  // when the listener came into the Cold biome to stay
+    while (cold_from > 0 && biomes[cold_from - 1] == "Cold") --cold_from;
+    CHECK((changed - cold_from) / 60.0 == doctest::Approx(2.0).epsilon(0.05));
+    const auto at = [](int f) { return size_t(f) * 800; };
+    CHECK(tone_strength(heard, at(changed - 60), at(changed - 10), 220) > 0.2);
+    CHECK(tone_strength(heard, at(changed - 60), at(changed - 10), 330) < 0.01);
+    const double mid_old = tone_strength(heard, at(changed + 55), at(changed + 65), 220);
+    const double mid_new = tone_strength(heard, at(changed + 55), at(changed + 65), 330);
+    CHECK(mid_old == doctest::Approx(0.15).epsilon(0.35));  // (half way through the crossfade)
+    CHECK(mid_new == doctest::Approx(0.15).epsilon(0.35));
+    CHECK(tone_strength(heard, at(changed + 130), at(changed + 180), 220) < 0.01);
+    CHECK(tone_strength(heard, at(changed + 130), at(changed + 180), 330) > 0.2);
+
+    // Ambience: the day layer until dusk, then (over its 1 s crossfade) the night layer.
+    REQUIRE(dusk_at > 0);
+    CHECK(tone_strength(heard, at(dusk_at - 60), at(dusk_at - 5), 440) > 0.2);
+    CHECK(tone_strength(heard, at(dusk_at - 60), at(dusk_at - 5), 550) < 0.01);
+    CHECK(tone_strength(heard, at(dusk_at + 90), at(dusk_at + 150), 550) > 0.2);
+    CHECK(tone_strength(heard, at(dusk_at + 90), at(dusk_at + 150), 440) < 0.01);
+
+    // Mixing: well within each frame's time.
+    std::sort(mix_ms.begin(), mix_ms.end());
+    CHECK(mix_ms[mix_ms.size() / 2] < 1.0);
 }

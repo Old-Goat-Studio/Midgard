@@ -205,6 +205,7 @@ public:
         std::string entity, surface, sound;
     };
     const std::vector<Step>& footsteps() const { return steps_; }
+    std::size_t footsteps_taken() const { return steps_taken_; }  // (all, since the start)
     void stream_navigation(bool wait = false);
     // The player walks along these points at its speed (instead of following the controls)
     // until it reaches the last; an empty list stops it. Tests, cutscenes, click-to-move.
@@ -335,6 +336,7 @@ private:
     };
     std::unordered_map<entt::entity, Walk> walks_;
     std::vector<Step> steps_;
+    std::size_t steps_taken_ = 0;
     void update_footsteps();
     void step(entt::entity e, const Footsteps& f);
     void listen();

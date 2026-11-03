@@ -485,6 +485,7 @@ void Game::step(entt::entity e, const Footsteps& f) {
         play_sound(s.sound, 1.0f, e);
     }
     steps_.push_back(std::move(s));
+    ++steps_taken_;
     if (steps_.size() > 64) steps_.erase(steps_.begin());
 }
 
