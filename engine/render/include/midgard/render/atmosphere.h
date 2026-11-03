@@ -68,10 +68,20 @@ struct Water {
     float time = 0.0f;                       // seconds: where the waves are
 };
 
+// A layer of cloud across the sky (the weather's; milestone 5.15): procedural, drifting with
+// the wind, thinning towards the horizon. Its colour comes from the sky's own, so it is right at
+// any time of day; it hides the sun where it is thick.
+struct Clouds {
+    float cover = 0.0f;     // 0 none .. 1 overcast
+    float shade = 0.3f;     // 0 white .. 1 dark grey (storm clouds)
+    glm::vec2 drift{0.0f};  // metres the clouds have moved (the wind times the time)
+};
+
 struct Environment {
     bool sky = false;  // false: the frame's clear colour is the whole sky, flat
     SkyColors sky_colors;
     Fog fog;
+    Clouds clouds;
     // Radians: how far below level the visible horizon is, from a camera above a curved world
     // (a planet's ground falls away). The sky's horizon, and the sun setting behind it, are there.
     float horizon_dip = 0.0f;

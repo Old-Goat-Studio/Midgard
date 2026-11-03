@@ -370,14 +370,12 @@ public:
     }
     render::Camera camera(float aspect) const override { return game_.camera(aspect); }
     render::Environment environment(const glm::dvec3& origin) const override {
-        return game_.scene().environment(origin);
+        return game_.environment(origin);  // (with the weather)
     }
     render::TerrainLook terrain_look() const override { return game_.terrain_look(); }
     float fade() const override { return game_.fade(); }
     void settle() override { game_.stream_navigation(true); }
-    render::Light light(const glm::dvec3& origin) const override {
-        return game_.scene().light(origin);
-    }
+    render::Light light(const glm::dvec3& origin) const override { return game_.light(origin); }
     glm::vec4 sky() const override { return {game_.scene().settings.sky, 1.0f}; }
     std::vector<render::DebugLine> debug_lines(const glm::dvec3& origin) const override {
         return game_.debug_lines(origin);
@@ -497,7 +495,14 @@ public:
             nlohmann::json sounding = nlohmann::json::array();
             if (const auto* type = game.weather_type())
                 for (const auto& s : type->sounds) sounding.push_back(s.event);
+            const auto& look = game.weather_look();
             weather = {{"now", now.weather},
+                       {"look",
+                        {{"clouds", look.clouds},
+                         {"darkness", look.darkness},
+                         {"fog", look.fog},
+                         {"flash", look.flash}}},
+                       {"flashes", game.lightning_flashes()},
                        {"front", now.front},
                        {"forced", now.forced},
                        {"cell", cell},

@@ -600,9 +600,16 @@ changes, and make their own weather: a storm that rolls in when the dragon appea
 or until the script lets go (section 19, *Weather*). A world with no weather tables has no
 weather of its own, but scripts can still force some.
 
+**What you see.** Clouds drift across the sky with the wind, white on a fair day, grey and
+heavy in a storm, and hide the sun when they're thick. The daylight dims and takes the weather's
+colour (blue-grey in a storm, orange in a sandstorm), and fog closes in to the weather's "how far
+you can see". In a thunderstorm, lightning lights everything up for a moment, and its thunder
+rolls in a few seconds later (give the weather type a **thunder** sound). When the weather
+changes, the sky doesn't snap: a storm rolls in over several seconds.
+
 You'll be able to change all of this, and make your own weather types (acid rain, a sleet
-storm), in the **Weather** tab of the Calendar panel, which is coming. Next you'll *see* the
-weather: clouds, a darker sky, fog and lightning.
+storm), in the **Weather** tab of the Calendar panel, which is coming. Next comes falling rain,
+snow and ash.
 
 ---
 

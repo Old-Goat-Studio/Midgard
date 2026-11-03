@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -21,6 +22,7 @@
 #include "midgard/scene.h"
 #include "midgard/sunlight.h"
 #include "midgard/terrain_streamer.h"
+#include "midgard/weather_look.h"
 #include "midgard/world_light.h"
 
 namespace midgard::test_scenes {
@@ -443,8 +445,8 @@ public:
         float elevation, azimuth, density, falloff;
         glm::vec3 eye, target;
     };
-    explicit Sky(const Setup& s)
-        : setup_(s), sky_(render::analytic_sky(glm::radians(s.elevation))) {}
+    explicit Sky(const Setup& s, std::optional<WeatherLook> weather = std::nullopt)
+        : setup_(s), sky_(render::analytic_sky(glm::radians(s.elevation))), weather_(weather) {}
     void upload(render::Renderer& r) override {
         cube_ = r.upload_mesh(render::make_cube());
         sphere_ = r.upload_mesh(render::make_sphere());
@@ -483,6 +485,10 @@ public:
         const float day = std::clamp(sky_.colors.brightness, 0.05f, 1.0f);
         l.ambient *= day;
         l.ambient_ground *= day;
+        if (weather_) {
+            render::Environment env;
+            apply(*weather_, env, l);
+        }
         return l;
     }
     glm::vec4 sky() const override { return {0.0f, 0.0f, 0.0f, 1.0f}; }
@@ -493,12 +499,17 @@ public:
         env.fog.density = setup_.density;
         env.fog.height_falloff = setup_.falloff;
         env.fog.camera_height = setup_.eye.y;
+        if (weather_) {
+            render::Light light;
+            apply(*weather_, env, light);
+        }
         return env;
     }
 
 private:
     Setup setup_;
     render::AnalyticSky sky_;
+    std::optional<WeatherLook> weather_;  // (milestone 5.15)
     render::MeshId cube_ = 0, sphere_ = 0;
 };
 
@@ -873,7 +884,7 @@ const std::pair<const char*, double> kDayTimes[] = {
 std::vector<std::string> names() {
     std::vector<std::string> out = {"materials", "textures",       "compressed", "lights",
                                     "shadows",   "shadows_curved", "sky_day",    "sky_sunset",
-                                    "colliders", "skinned"};
+                                    "colliders", "skinned",        "sky_cloudy", "sky_storm"};
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
@@ -903,6 +914,18 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "sky_sunset")
         return std::make_unique<Sky>(
             Sky::Setup{3.0f, -15.0f, 0.02f, 0.6f, {0, 3.0f, 0}, {0, 2.2f, -20}});
+    // The day's sky under the weather (milestone 5.15): broken cloud, then a storm.
+    if (name == "sky_cloudy" || name == "sky_storm") {
+        weather::WeatherType type = weather::weather_type_from_json(
+            name, name,
+            name == "sky_cloudy" ? R"({"clouds": 0.55, "darkness": 0.15, "wind": 4})"
+                                 : R"({"clouds": 1, "darkness": 0.75, "tint": [0.78, 0.8, 0.9],
+                      "visibility": 400, "wind": 12})");
+        WeatherLook look = look_of(&type);
+        look.drift = {1234.0f, 567.0f};
+        return std::make_unique<Sky>(
+            Sky::Setup{35.0f, 140.0f, 0.004f, 0.02f, {0, 1.7f, 0}, {0, 1.2f, -20}}, look);
+    }
     if (name == "terrain_area") return std::make_unique<TerrainScene>("area");
     if (name == "terrain_strip") return std::make_unique<TerrainScene>("strip");
     if (name == "terrain_habitat") return std::make_unique<TerrainScene>("habitat");

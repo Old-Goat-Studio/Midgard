@@ -81,6 +81,18 @@
       "max_bad": 0.01
     },
     {
+      "name": "sky_cloudy",
+      "_about": "The sky_day scene under broken cloud (milestone 5.15): white clouds drifting across the blue, thinning to the horizon, the sun still shining.",
+      "args": ["--size", "480x270", "--scene", "sky_cloudy"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "sky_storm",
+      "_about": "The sky_day scene in a storm: overcast and dark grey, the light dimmed and tinted blue-grey, fog closing in to 400 m so the far pillars fade, the shadows faint.",
+      "args": ["--size", "480x270", "--scene", "sky_storm"],
+      "max_bad": 0.01
+    },
+    {
       "name": "colliders",
       "_about": "Collider outlines (--debug-physics) over the scene: static scenery grey-green, a dynamic crate and ball orange, a kinematic capsule blue, a trigger yellow, a static convex rock grey-green with its faces' diagonals, and the player's capsule cyan. Lines are thin, so drivers draw their pixels a little differently: up to 2% of pixels may differ.",
       "args": ["--size", "480x270", "--scene", "colliders", "--debug-physics"],

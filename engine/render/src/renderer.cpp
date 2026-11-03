@@ -86,6 +86,7 @@ struct FrameData {
     glm::vec4 biome_range[kMaxTerrainBiomes];  // temperature min, max; moisture min, max
     glm::vec4 biome_color[kMaxTerrainBiomes];  // linear rgb, lush
     glm::vec4 biome_dry[kMaxTerrainBiomes];    // linear rgb, dry
+    glm::vec4 clouds;                          // x: cover, y: shade, zw: drift (metres)
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -2383,6 +2384,14 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
     data.fog_color = glm::vec4(fog_color, std::max(fog.sun_scatter, 0.0f));
     data.fog_params = glm::vec4(std::max(fog.density, 0.0f), std::max(fog.height_falloff, 0.0f),
                                 fog.camera_height, std::max(fog.sky_distance, 0.0f));
+    // The weather's clouds (only in a drawn sky). The drift wraps far from where it matters, so
+    // the shader's coordinates stay small.
+    const Clouds& clouds = env.clouds;
+    data.clouds =
+        env.sky
+            ? glm::vec4(std::clamp(clouds.cover, 0.0f, 1.0f), std::clamp(clouds.shade, 0.0f, 1.0f),
+                        std::fmod(clouds.drift.x, 2.0e6f), std::fmod(clouds.drift.y, 2.0e6f))
+            : glm::vec4(0.0f);
     // The terrain's look.
     {
         const TerrainLook& t = r.terrain_look;

@@ -30,6 +30,52 @@ vec3 sky_radiance(vec3 d) {
     return color;
 }
 
+// The weather's clouds (render::Clouds): value noise on a layer above, seen along d, drifting
+// with the wind and thinning to nothing at the horizon. Over a colour of the sky.
+float cloud_hash(vec2 p) {
+    p = fract(p * vec2(0.1031, 0.1030));
+    p += dot(p, p.yx + 33.33);
+    return fract((p.x + p.y) * p.x);
+}
+
+float cloud_noise(vec2 p) {
+    const vec2 i = floor(p);
+    const vec2 f = fract(p);
+    const vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(cloud_hash(i), cloud_hash(i + vec2(1.0, 0.0)), u.x),
+               mix(cloud_hash(i + vec2(0.0, 1.0)), cloud_hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+vec3 apply_clouds(vec3 color, vec3 d) {
+    const float cover = frame.clouds.x;
+    if (cover <= 0.001) return color;
+    const vec3 up = frame.up.xyz;
+    const float mu = dot(d, up) + frame.sky_params.y;
+    if (mu <= 0.0) return color;
+    // Where the view meets a flat layer above (nearer the horizon, farther away).
+    const vec3 side = abs(up.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    const vec3 t1 = normalize(cross(up, side));
+    const vec3 t2 = cross(up, t1);
+    const vec3 level = d - up * dot(d, up);
+    vec2 p = vec2(dot(level, t1), dot(level, t2)) / (mu + 0.12) * 1.6 + frame.clouds.zw / 2500.0;
+    float n = 0.0, amplitude = 0.5;
+    for (int octave = 0; octave < 4; ++octave) {
+        n += amplitude * cloud_noise(p);
+        p = p * 2.03 + vec2(17.1, 9.7);
+        amplitude *= 0.5;
+    }
+    n /= 0.9375;
+    const float alpha = smoothstep(1.0 - cover - 0.1, 1.0 - cover + 0.3, n) *
+                        smoothstep(0.0, 0.1, mu) * min(1.0, 0.6 + cover);
+    // Lit like the sky around them: white by day, grey under a storm, dark at night.
+    const vec3 sky = 0.5 * (frame.sky_horizon.rgb + frame.sky_zenith.rgb);
+    const float brightness = dot(sky, vec3(0.2126, 0.7152, 0.0722));
+    const float shade = frame.clouds.y;
+    const vec3 cloud = mix(vec3(brightness * 1.25) + frame.sun_glow.rgb * 0.15,
+                           vec3(brightness * 0.35), shade);
+    return mix(color, cloud, alpha);
+}
+
 // Fog between the camera and a point `offset` from it: the optical depth (render::fog_depth).
 float fog_depth(vec3 offset) {
     const float density = frame.fog_params.x;

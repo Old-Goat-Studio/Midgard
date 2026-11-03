@@ -44,4 +44,5 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 biome_range[8];
     vec4 biome_color[8];
     vec4 biome_dry[8];
+    vec4 clouds;             // the weather's: x cover (0 none .. 1 overcast), y shade, zw drift
 } frame;

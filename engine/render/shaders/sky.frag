@@ -13,5 +13,5 @@ void main() {
     // The view direction: this pixel on the near plane, relative to the camera.
     const vec4 p = frame.inverse_view_proj * vec4(v_ndc, 0.0, 1.0);
     const vec3 d = normalize(p.xyz / p.w);
-    out_color = vec4(apply_fog(sky_radiance(d), d * frame.fog_params.w), 1.0);
+    out_color = vec4(apply_fog(apply_clouds(sky_radiance(d), d), d * frame.fog_params.w), 1.0);
 }

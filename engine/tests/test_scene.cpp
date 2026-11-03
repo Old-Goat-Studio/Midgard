@@ -3647,3 +3647,120 @@ TEST_CASE("a scene without weather has none, until a script forces some; its sou
     const auto after = game.sounds()->playing_events();
     CHECK(std::count(after.begin(), after.end(), "sfx_rain") == 0);
 }
+
+TEST_CASE("the weather's look darkens the sky and light, brings cloud and fog, and flashes") {
+    midgard::render::Environment env;
+    env.sky = true;
+    env.fog.density = 0.001f;
+    env.fog.height_falloff = 0.05f;
+    midgard::render::Light light;
+    light.intensity = 2.0f;
+    // A clear sky changes nothing.
+    {
+        midgard::render::Environment e = env;
+        midgard::render::Light l = light;
+        midgard::apply(midgard::look_of(nullptr), e, l);
+        CHECK(e.sky_colors.brightness == env.sky_colors.brightness);
+        CHECK(e.sky_colors.zenith == env.sky_colors.zenith);
+        CHECK(e.fog.density == env.fog.density);
+        CHECK(e.clouds.cover == 0.0f);
+        CHECK(l.intensity == light.intensity);
+        CHECK(l.ambient == light.ambient);
+    }
+    const auto storm_type = midgard::weather::weather_type_from_json(
+        "storm", "Storm",
+        R"({"clouds": 1, "darkness": 0.75, "tint": [0.8, 0.8, 0.9], "visibility": 300})");
+    const midgard::WeatherLook storm = midgard::look_of(&storm_type);
+    CHECK(storm.fog == doctest::Approx(0.01));  // (5% of the light through 300 m)
+    midgard::render::Environment e = env;
+    midgard::render::Light l = light;
+    midgard::apply(storm, e, l);
+    CHECK(e.clouds.cover == 1.0f);
+    CHECK(e.sky_colors.brightness < 0.5f * env.sky_colors.brightness);
+    CHECK(e.sky_colors.sun_brightness == 0.0f);  // (behind the clouds)
+    CHECK(e.fog.density == doctest::Approx(0.011));
+    CHECK(e.fog.height_falloff < 0.01f);  // (rain fills the air, not only the valleys)
+    CHECK(l.intensity < 0.3f * light.intensity);
+    CHECK(l.ambient.x < light.ambient.x);
+    CHECK(l.ambient.z / l.ambient.x > light.ambient.z / light.ambient.x);  // (bluer)
+    // Halfway from clear to the storm.
+    const midgard::WeatherLook half = midgard::blend(midgard::look_of(nullptr), storm, 0.5f);
+    CHECK(half.clouds == doctest::Approx(0.5));
+    CHECK(half.fog == doctest::Approx(0.005));
+    // A flash lights everything for a moment.
+    midgard::WeatherLook flash = storm;
+    flash.flash = 1.0f;
+    midgard::render::Environment fe = env;
+    midgard::render::Light fl = light;
+    midgard::apply(flash, fe, fl);
+    CHECK(fl.ambient.x > l.ambient.x + 2.0f);
+    CHECK(fe.sky_colors.brightness > 3.0f * e.sky_colors.brightness);
+}
+
+TEST_CASE("in a game the storm rolls in over seconds, lightning flashes and thunder follows") {
+    std::vector<PackageFile> files{{"snd:thunder", "audio/thunder.wav", tone_wav(80, 0.4, 0.3f)}};
+    TestPackage pkg({}, R"({"sky": [0.1, 0.2, 0.3]})", {}, files);
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, R"(INSERT INTO sound_event VALUES ('sfx_thunder', 'Thunder',
+                    '{"sounds": ["snd:thunder"], "spatial": false}'))");
+        exec(db, R"(UPDATE weather_type SET weather = json_set(weather, '$.thunder',
+                    'sfx_thunder') WHERE id = 'thunderstorm')");
+        sqlite3_close(db);
+    }
+    midgard::Game game(pkg.dir);
+    midgard::audio::MixerOptions offline;
+    offline.device = false;
+    midgard::audio::Mixer mixer(offline);
+    game.set_audio(&mixer);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    std::vector<float> block(800 * 2);  // (a 60th of a second)
+    const auto frame = [&] {
+        game.update(actions, 1.0f / 60.0f);
+        mixer.mix(block);
+    };
+    frame();
+    CHECK(game.weather_look().clouds == 0.0f);
+    REQUIRE(game.force_weather("thunderstorm", 0.0));
+    frame();
+    const float early = game.weather_look().clouds;
+    CHECK(early > 0.0f);
+    CHECK(early < 0.1f);  // (it rolls in)
+    for (int i = 0; i < 60 * 3; ++i) frame();
+    const float three = game.weather_look().clouds;
+    CHECK(three > 0.4f);
+    CHECK(three < 0.8f);
+    for (int i = 0; i < 60 * 20; ++i) frame();
+    CHECK(game.weather_look().clouds > 0.99f);
+    CHECK(game.environment(glm::dvec3(0.0)).clouds.cover > 0.99f);
+    CHECK(game.light(glm::dvec3(0.0)).ambient.x < game.scene().light(glm::dvec3(0.0)).ambient.x);
+
+    // Four flashes a minute: over three minutes, about twelve, each with its thunder.
+    const std::size_t before = game.lightning_flashes();
+    int lit = 0, thunders = 0;
+    bool thundering = false;
+    for (int i = 0; i < 60 * 180; ++i) {
+        frame();
+        lit += game.weather_look().flash > 0.5f;
+        const auto playing = game.sounds()->playing_events();
+        const bool now = std::count(playing.begin(), playing.end(), "sfx_thunder") > 0;
+        thunders += now && !thundering;
+        thundering = now;
+    }
+    const std::size_t flashes = game.lightning_flashes() - before;
+    CHECK(flashes >= 5);
+    CHECK(flashes <= 24);
+    CHECK(lit >= int(flashes));      // (each flash is bright for a frame or more)
+    CHECK(lit < int(flashes) * 12);  // (and only a moment)
+    CHECK(thunders >= int(flashes) - 2);
+    CHECK(thunders <= int(flashes));
+
+    // Clear again: the clouds go, and the lightning stops.
+    REQUIRE(game.force_weather("clear", 0.0));
+    for (int i = 0; i < 60 * 30; ++i) frame();
+    CHECK(game.weather_look().clouds < 0.1f);
+    const std::size_t after = game.lightning_flashes();
+    for (int i = 0; i < 60 * 60; ++i) frame();
+    CHECK(game.lightning_flashes() == after);
+}

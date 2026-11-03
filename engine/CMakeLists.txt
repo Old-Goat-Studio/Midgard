@@ -191,6 +191,7 @@ add_library(midgard_scene STATIC
     scene/src/nav_world.cpp
     scene/src/world_surface.cpp
     scene/src/model.cpp
+    scene/src/weather_look.cpp
     scene/src/materials.cpp
     scene/src/stb_image_impl.cpp
 )

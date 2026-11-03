@@ -30,6 +30,7 @@
 #include "midgard/terrain_collision.h"
 #include "midgard/terrain_streamer.h"
 #include "midgard/time_service.h"
+#include "midgard/weather_look.h"
 #include "midgard/weather_sim.h"
 #include "midgard/world_light.h"
 #include "midgard/world_save.h"
@@ -223,6 +224,15 @@ public:
     void release_weather();
     // The weather cell the player is in (none without weather settings).
     std::optional<weather::Cell> weather_cell() const;
+    // How the weather looks now (midgard/weather_look.h): easing towards the weather's own over
+    // several seconds as it changes, the clouds drifting with its wind, lightning flashing.
+    const WeatherLook& weather_look() const { return look_; }
+    // The sky, fog and light of the time of day at `origin`, with the weather on them: what the
+    // renderer draws.
+    render::Environment environment(const glm::dvec3& origin) const;
+    render::Light light(const glm::dvec3& origin) const;
+    // Lightning flashes since the game started (each followed by its weather's thunder).
+    std::size_t lightning_flashes() const { return flashes_; }
     // What is underfoot of an entity (midgard/footsteps.h): an object's surface, the terrain's
     // ground, or "default".
     std::string ground_under(entt::entity e) const;
@@ -368,6 +378,13 @@ private:
     std::vector<audio::VoiceId> weather_voices_;
     void rebuild_weather();
     void update_weather();
+    void update_weather_look(float dt);
+    WeatherLook look_;
+    std::uint64_t lightning_rng_ = 0x6c696768746e696eULL;
+    double flash_clock_ = 0.0, next_flash_ = -1.0;         // real seconds
+    std::vector<double> strikes_;                          // when this flash's strikes came
+    std::vector<std::pair<double, std::string>> thunder_;  // when, and the sound event
+    std::size_t flashes_ = 0;
     void update_weather_sounds();
     glm::dvec3 player_position() const;
     // Footsteps: how far each walker has come since its last step, and the steps taken.

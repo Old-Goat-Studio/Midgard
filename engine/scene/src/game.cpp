@@ -4,6 +4,7 @@
 #include "midgard/scene_nav.h"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -12,6 +13,7 @@
 #include <sqlite3.h>
 
 #include "midgard/collider_outlines.h"
+#include "midgard/det.h"
 #include "midgard/footsteps.h"
 #include "midgard/gltf.h"
 #include "midgard/terrain_collision.h"
@@ -64,7 +66,8 @@ Game::Game(const std::filesystem::path& package_dir)
     update_sun();
     rebuild_weather();  // (on the clock's calendar)
     update_weather();
-    weather_pending_.clear();  // (the weather the game starts with isn't a change)
+    weather_pending_.clear();         // (the weather the game starts with isn't a change)
+    look_ = look_of(weather_type());  // (as it is, from the start)
 
     sqlite3* db = nullptr;
     const std::u8string u8 = database.u8string();
@@ -206,6 +209,7 @@ void Game::update(const Actions& actions, float dt) {
     stream_navigation();
     update_weather();
     weather_changes_ = std::exchange(weather_pending_, {});  // (scripts' since the last, too)
+    update_weather_look(dt);
     update_sounds(dt);
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
@@ -547,6 +551,67 @@ bool Game::force_weather(const std::string& weather, double hours) {
 void Game::release_weather() {
     forced_.reset();
     update_weather();
+}
+
+// The weather's look eases towards the weather's own (most of the way in about eight seconds),
+// its clouds drift with the wind (as the clock runs), and lightning flashes now and then at its
+// rate a minute: a strike or two, the thunder a few seconds after.
+void Game::update_weather_look(float dt) {
+    const weather::WeatherType* type = weather_type();
+    const WeatherLook target = look_of(type);
+    look_ = blend(look_, target, 1.0f - std::exp(-std::max(dt, 0.0f) / 4.0f));
+    const float wind = type ? type->wind : 0.0f;
+    look_.drift.x += wind * dt * float(std::max(time_.scale(), 1.0));
+    look_.drift.y += 0.3f * wind * dt * float(std::max(time_.scale(), 1.0));
+
+    flash_clock_ += dt;
+    det::Rng rng(lightning_rng_);
+    const auto roll = [&] {
+        const double r = rng.uniform();
+        lightning_rng_ = rng.next();
+        return r;
+    };
+    const float rate = type ? type->lightning : 0.0f;  // a minute
+    if (rate <= 0.0f) {
+        next_flash_ = -1.0;
+    } else {
+        if (next_flash_ < 0.0) next_flash_ = flash_clock_ - std::log(1.0 - roll()) * 60.0 / rate;
+        if (flash_clock_ >= next_flash_) {
+            ++flashes_;
+            strikes_ = {flash_clock_};
+            if (roll() < 0.6) strikes_.push_back(flash_clock_ + 0.08 + 0.1 * roll());
+            if (type && !type->thunder.empty())
+                thunder_.emplace_back(flash_clock_ + 1.0 + 3.0 * roll(), type->thunder);
+            next_flash_ = flash_clock_ - std::log(1.0 - roll()) * 60.0 / rate;
+        }
+    }
+    float flash = 0.0f;
+    for (const double at : strikes_)
+        if (flash_clock_ >= at)
+            flash = std::max(flash, float(std::exp(-(flash_clock_ - at) / 0.07)));
+    look_.flash = flash < 0.01f ? 0.0f : flash;
+    for (auto it = thunder_.begin(); it != thunder_.end();) {
+        if (flash_clock_ < it->first) {
+            ++it;
+            continue;
+        }
+        if (sounds_) sounds_->play(it->second);
+        it = thunder_.erase(it);
+    }
+}
+
+render::Environment Game::environment(const glm::dvec3& origin) const {
+    render::Environment env = scene_.environment(origin);
+    render::Light light;
+    apply(look_, env, light);
+    return env;
+}
+
+render::Light Game::light(const glm::dvec3& origin) const {
+    render::Light light = scene_.light(origin);
+    render::Environment env;
+    apply(look_, env, light);
+    return light;
 }
 
 // The weather's sounds: those of the weather now, looping, fading in as the last weather's fade
