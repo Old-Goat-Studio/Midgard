@@ -96,6 +96,14 @@
       "required": ["type", "audio"]
     },
     {
+      "description": "Editor → runtime: the Weather tab's edits (milestone 5.15): every weather type ({id, name, weather} rows, as the weather_type table has them) and the weather settings of the scene's world (null: its world type's own); the game's weather follows at once.",
+      "properties": {
+        "type": { "const": "weather.put" },
+        "weather": { "type": "object" }
+      },
+      "required": ["type", "weather"]
+    },
+    {
       "description": "Editor → runtime: the scene's terrain stamps (sculpting and painting, every one in order, as the terrain_stamp table has them); the ground drawn and the solid ground follow at once.",
       "properties": {
         "type": { "const": "terrain.stamps" },

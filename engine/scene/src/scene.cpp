@@ -953,4 +953,52 @@ render::Light Scene::light(const glm::dvec3& origin) const {
     return light;
 }
 
+// ---- weather (milestone 5.15) ------------------------------------------------------------------
+
+namespace {
+
+const Shape& flat_weather_shape() {
+    static const Shape flat = Shape::bounded_area(100000.0, 100000.0, 9.81);
+    return flat;
+}
+
+}  // namespace
+
+std::unique_ptr<weather::WeatherSim> scene_weather(const SceneSettings& s,
+                                                   const weather::WeatherTypes& types,
+                                                   const Calendar& calendar,
+                                                   std::function<const Terrain*()> terrain) {
+    const std::string& json = !s.weather.empty() ? s.weather
+                              : s.recipe         ? s.recipe->weather
+                                                 : std::string();
+    weather::WeatherSettings settings;
+    try {
+        settings = weather::weather_settings_from_json(json);
+    } catch (const weather::WeatherError&) {
+        return nullptr;  // (the cook refused it; a live edit's is reported by the editor)
+    }
+    if (settings.tables.empty() && settings.controlled.empty() && settings.fronts.weather.empty())
+        return nullptr;
+    const Body* body = s.body ? &*s.body : nullptr;
+    // The world's seed (its terrain's, else its body's).
+    std::uint64_t seed = body ? body->seed : 0;
+    if (s.terrain && s.terrain->seed) seed = *s.terrain->seed;
+    std::vector<std::string> names;
+    if (s.terrain)
+        for (const Biome& b : s.terrain->biomes) names.push_back(b.name);
+    return std::make_unique<weather::WeatherSim>(
+        body ? body->shape : flat_weather_shape(), std::move(settings), types, seed, calendar,
+        [terrain = std::move(terrain), names](const SurfacePoint& p) -> std::string {
+            const Terrain* t = terrain ? terrain() : nullptr;
+            if (!t) return {};
+            const int biome = t->biome_index(p.face, p.u, p.v, t->height(p.face, p.u, p.v));
+            return biome >= 0 && size_t(biome) < names.size() ? names[size_t(biome)]
+                                                              : std::string();
+        });
+}
+
+SurfacePoint weather_point(const SceneSettings& s, const glm::dvec3& at) {
+    return s.body ? s.body->surface(at) : flat_weather_shape().surface(at);
+}
+
 }  // namespace midgard

@@ -217,6 +217,9 @@ class CalendarPanel(QWidget):
         self.tabs.addTab(self._seasons_tab(), "Seasons")
         self.tabs.addTab(self._moons_tab(), "Moons")
         self.tabs.addTab(self._bodies_tab(), "Bodies")
+        from .weather_tab import WeatherTab
+        self.weather_tab = WeatherTab()  # (the scene's weather: not the calendar's)
+        self.tabs.addTab(self.weather_tab, "Weather")
         layout.addWidget(self.tabs)
         layout.addWidget(self._preview())
         self.problems = QLabel()
@@ -430,6 +433,7 @@ class CalendarPanel(QWidget):
         if project is not None:
             project.calendars_changed.connect(self._calendars_changed)
         self.setEnabled(project is not None)
+        self.weather_tab.set_project(project)
         self.cal = None
         self._reload(keep="")
 

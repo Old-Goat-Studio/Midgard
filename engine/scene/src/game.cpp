@@ -444,44 +444,34 @@ audio::MusicContext Game::music_context() const {
 
 // ---- weather (milestone 5.15) ------------------------------------------------------------------
 
-namespace {
-
-// Where the weather is on a scene without a world shape: a flat 100 km square round the origin.
-const Shape& flat_weather_shape() {
-    static const Shape flat = Shape::bounded_area(100000.0, 100000.0, 9.81);
-    return flat;
+void Game::rebuild_weather() {
+    weather_ = scene_weather(
+        scene_.settings, scene_.weather_types, local_calendar(),
+        [this]() -> const Terrain* { return terrain_ ? &terrain_->terrain() : nullptr; });
 }
 
-}  // namespace
-
-void Game::rebuild_weather() {
-    weather_.reset();
-    const std::string& json = !scene_.settings.weather.empty() ? scene_.settings.weather
-                              : scene_.settings.recipe         ? scene_.settings.recipe->weather
-                                                               : std::string();
-    weather::WeatherSettings settings;
+void Game::set_weather_data(const nlohmann::json& data) {
+    weather::WeatherTypes types;
+    std::string settings = scene_.settings.weather;
     try {
-        settings = weather::weather_settings_from_json(json);
-    } catch (const weather::WeatherError&) {
-        return;  // (the cook refused it; a live edit's is reported by the editor)
+        for (const nlohmann::json& t : data.value("types", nlohmann::json::array())) {
+            weather::WeatherType w = weather::weather_type_from_json(
+                t.at("id"), t.value("name", ""),
+                t.value("weather", nlohmann::json::object()).dump());
+            types.emplace(w.id, std::move(w));
+        }
+        if (data.contains("settings")) {
+            settings = data.at("settings").is_null() ? std::string() : data.at("settings").dump();
+            if (!settings.empty()) weather::weather_settings_from_json(settings);
+        }
+    } catch (const std::exception& e) {
+        throw SceneError(std::string("weather: ") + e.what());
     }
-    if (settings.tables.empty() && settings.controlled.empty() && settings.fronts.weather.empty())
-        return;
-    const Body* body = scene_.settings.body ? &*scene_.settings.body : nullptr;
-    // The world's seed (its terrain's, else its body's).
-    std::uint64_t seed = body ? body->seed : 0;
-    if (scene_.settings.terrain && scene_.settings.terrain->seed)
-        seed = *scene_.settings.terrain->seed;
-    weather_ = std::make_unique<weather::WeatherSim>(
-        body ? body->shape : flat_weather_shape(), std::move(settings), scene_.weather_types, seed,
-        local_calendar(), [this](const SurfacePoint& p) -> std::string {
-            if (!terrain_ || !scene_.settings.terrain) return {};
-            const Terrain& t = terrain_->terrain();
-            const int biome = t.biome_index(p.face, p.u, p.v, t.height(p.face, p.u, p.v));
-            const auto& biomes = scene_.settings.terrain->biomes;
-            return biome >= 0 && size_t(biome) < biomes.size() ? biomes[size_t(biome)].name
-                                                               : std::string();
-        });
+    if (data.contains("types")) scene_.weather_types = std::move(types);
+    scene_.settings.weather = std::move(settings);
+    rebuild_weather();
+    update_weather();
+    weather_sounding_ = "\x01";  // (its sounds start again: they may have changed)
 }
 
 glm::dvec3 Game::player_position() const {
@@ -493,9 +483,7 @@ glm::dvec3 Game::player_position() const {
 std::optional<weather::Cell> Game::weather_cell() const {
     if (!weather_) return std::nullopt;
     const glm::dvec3 at = player_position();
-    const SurfacePoint p =
-        scene_.settings.body ? scene_.settings.body->surface(at) : flat_weather_shape().surface(at);
-    return weather_->cell_at(p);
+    return weather_->cell_at(weather_point(scene_.settings, at));
 }
 
 const weather::WeatherType* Game::weather_type() const {

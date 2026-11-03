@@ -6,7 +6,9 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -323,6 +325,18 @@ struct SceneSettings {
     // type can have weather too. Empty: its world type's (none: no weather of its own).
     std::string weather;
 };
+
+// The weather of a scene's world (milestone 5.15): from the scene's own weather settings, else
+// its world type's, with its world's seed, on its shape (a flat 100 km square round the origin
+// without one); none without settings (or with settings that can't be read). `terrain` gives
+// the world's ground, for each weather cell's biome (none: no biomes). The game and the editor's
+// forecast preview both make it so.
+std::unique_ptr<weather::WeatherSim> scene_weather(const SceneSettings& settings,
+                                                   const weather::WeatherTypes& types,
+                                                   const Calendar& calendar,
+                                                   std::function<const Terrain*()> terrain);
+// Where a point of the scene is on its weather's surface.
+SurfacePoint weather_point(const SceneSettings& settings, const glm::dvec3& at);
 
 // The scene's sky: an entity with this component sets the scene's sky and ambient colours
 // (the scene table's settings are only the fallback, for scenes without one).

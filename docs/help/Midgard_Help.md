@@ -559,9 +559,9 @@ world. Drag the Calendar panel's **scrubber** to preview any time of day in the 
 Scripts can read and change the time, speed it up, stop it, skip ahead (sleeping in an inn),
 and react at dawn, dusk or each new day (section 19, *Time*).
 
-### Weather (being built)
+### Weather
 
-Weather is arriving one piece at a time. So far, every project has a list of **weather types**:
+Every project has a list of **weather types**:
 Clear, Cloudy, Rain, Thunderstorm, Snow, Blizzard, Fog, Windy, Sandstorm and Ash fall. Each
 one says:
 
@@ -614,8 +614,8 @@ picture on the screen. It eases in and out as the weather changes; rain turning 
 out before the snow comes. Phones draw a quarter as many drops and flakes as a computer, so
 heavy weather stays smooth (the phone's self-test has a **Weather** check for this).
 
-*For now*, rain and snow also fall under roofs and inside buildings. Keeping them out comes
-with the shelter checks, later in this milestone.
+Inside a building (a roof and walls all round the player) no rain or snow is drawn. Under a
+porch or an open shelter it still falls all round, and also under the roof itself.
 
 **What it leaves behind.** Rain wets the ground (up to the weather type's **wetness**, in
 about a quarter of an hour of game time), and it dries over a couple of hours after. Wet things
@@ -648,8 +648,35 @@ Press **F3** while playing to see it on screen: the weather, the air's temperatu
 feels, the wind, the warmth, whether the player is sheltered, and how wet they and the ground
 are.
 
-You'll be able to change all of this, and make your own weather types (acid rain, a sleet
-storm), in the **Weather** tab of the Calendar panel, which is coming next.
+### The Weather tab
+
+All of this is made in the **Calendar** panel's **Weather** tab, in four parts. Everything can
+be undone, and while your game is playing (**F5**), changes reach it at once.
+
+- **Types:** your weather types. Pick one on the left (or **New** for your own: acid rain, a
+  heatwave). On the right: **Clouds**, **Darkness** and the **Light colour**; how far you
+  **Can see** (0: no limit); what **Falls** and **How much**; **Lightning** a minute; **Wind**,
+  **Gusts**, **Wetness** and **Temperature** (how much warmer or colder than usual); and its
+  **Sounds** (they loop while it lasts) and **Thunder** (after each flash).
+- **Tables:** this scene's weather. Tick **This scene has weather**. Then:
+  - **Weather cells:** how big a patch of weather is.
+  - A **Table** says how much of the time each weather is there (**3** is three times as much as
+    **1**; 0 never). Tick **In biomes** and **In seasons** to make a table just for those (snow
+    in the mountains in winter); none ticked means everywhere and all year. **New Table** adds
+    another.
+  - **What comes after** overrides the table for what follows a weather: after a
+    Thunderstorm, Rain.
+  - **How long each lasts**, in hours, from least to most.
+  - Or tick **Controlled** for a timetable that repeats, for inside worlds: 20 hours clear,
+    then 4 of rain.
+- **Fronts:** tick it for storms that travel across the world: how often a new one comes, how
+  fast it moves, how big it is (in weather cells), how long it lasts, and its weather.
+- **Forecast:** the coming days where the player starts, worked out by the engine exactly as
+  your game will have it, as a coloured strip (a red band is a front passing) and a list. Below,
+  how much of a year each weather is there, so you can check your tables at a glance.
+
+A scene's weather is its own. If its world type has weather, the scene uses that until you
+change something here; your first change makes the scene's own copy to edit.
 
 ---
 

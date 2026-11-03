@@ -171,6 +171,105 @@ def world_problems(project: Project) -> list[str]:
     return out
 
 
+# ---- a scene's weather settings (the Weather tab; milestone 5.15 step 8) ---------------------
+# What a new scene's weather starts as, without a world type's to copy: mostly fair.
+STARTING_SETTINGS = {"cell": 4000,
+                     "tables": [{"name": "Everywhere", "biomes": [], "seasons": [],
+                                 "weather": {"clear": 5, "cloudy": 3, "rain": 2, "fog": 1}}],
+                     "lasts": {"default": [2, 8]}}
+
+
+def own_settings(project: Project, scene: str | None = None) -> dict[str, Any] | None:
+    """The scene's own weather settings ("weather" in its settings), or None."""
+    found = project.scene_settings(scene).get("weather")
+    return copy.deepcopy(found) if isinstance(found, dict) else None
+
+
+def world_type_settings(project: Project, scene: str | None = None) -> dict[str, Any] | None:
+    """The weather settings of the world type the scene is made from, or None."""
+    from . import world_types
+
+    world = world_types.scene_world(project, scene)
+    if not world:
+        return None
+    found = (world_types.recipe(project, world["world_type"], world.get("version")) or {}).get(
+        "weather")
+    return copy.deepcopy(found) if isinstance(found, dict) else None
+
+
+def scene_settings(project: Project, scene: str | None = None) -> dict[str, Any] | None:
+    """The weather settings a scene's game uses: its own, else its world type's (as the engine
+    chooses: midgard/scene.h's scene_weather)."""
+    own = own_settings(project, scene)
+    return own if own is not None else world_type_settings(project, scene)
+
+
+def put_settings(project: Project, settings: dict[str, Any] | None,
+                 scene: str | None = None) -> None:
+    """Set (None: remove) the scene's own weather settings. Only the weather is told it changed:
+    the scene's other settings (its shape, its terrain) are as they were."""
+    scene = scene or project.scene
+    with project.connect() as con:
+        row = con.execute("SELECT settings FROM scene WHERE id = ?", (scene,)).fetchone()
+        stored = json.loads(row[0]) if row and row[0] else {}
+        if settings is None:
+            stored.pop("weather", None)
+        else:
+            stored["weather"] = settings
+        con.execute("UPDATE scene SET settings = ? WHERE id = ?", (json.dumps(stored), scene))
+    project.weather_changed.emit("")
+
+
+class SceneWeatherCommand(QUndoCommand):
+    """Changes the scene's own weather settings (None: none of its own); changes to the same
+    setting in a row merge into one step."""
+    ID = 5152
+
+    def __init__(self, project: Project, old: dict | None, new: dict | None, label: str,
+                 field: str = "", scene: str | None = None):
+        super().__init__(f"Change the weather {label}".strip())
+        self.project, self.scene = project, scene or project.scene
+        self.old, self.new = copy.deepcopy(old), copy.deepcopy(new)
+        self.field = field
+
+    def id(self) -> int:
+        return self.ID
+
+    def mergeWith(self, other: QUndoCommand) -> bool:
+        if (not isinstance(other, SceneWeatherCommand) or not self.field
+                or other.field != self.field or other.scene != self.scene):
+            return False
+        self.new = other.new
+        return True
+
+    def redo(self) -> None:
+        put_settings(self.project, self.new, self.scene)
+
+    def undo(self) -> None:
+        put_settings(self.project, self.old, self.scene)
+
+
+def live_message(project: Project) -> dict[str, Any]:
+    """Everything the Weather tab edits, as the live link's weather.put sends it."""
+    return {"types": load_all(project), "settings": scene_settings(project)}
+
+
+def forecast(project: Project, settings: dict[str, Any] | None = None, hours: float = 72.0,
+             at: tuple[float, float, float] = (0.0, 0.0, 0.0),
+             start: int | None = None) -> dict[str, Any] | None:
+    """The game's weather at a place in the scene, as the game will have it (the engine makes
+    it: _midgard.weather_forecast), or None without the engine. `settings`: the weather settings
+    to try (None: the scene's)."""
+    from . import engine
+
+    module = engine.module()
+    if module is None:
+        return None
+    return module.weather_forecast(
+        project.db_path, project.scene, json.dumps(load_all(project)),
+        json.dumps(settings) if settings is not None else "", tuple(at), hours, start)
+
+
 class WeatherCommand(QUndoCommand):
     """Adds (old None), changes or deletes (new None) a weather type; changes to the same
     setting in a row merge into one step."""

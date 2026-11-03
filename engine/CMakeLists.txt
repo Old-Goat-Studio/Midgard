@@ -362,7 +362,7 @@ endif()
 if(MIDGARD_BUILD_PYTHON AND NOT CMAKE_CROSSCOMPILING)
     if(MIDGARD_PYBIND11_DIR)
         pybind11_add_module(_midgard bindings/module.cpp bindings/viewport.cpp
-                            bindings/audio_preview.cpp)
+                            bindings/audio_preview.cpp bindings/weather_preview.cpp)
         target_link_libraries(_midgard PRIVATE midgard_scene midgard_link midgard_audio_encode
                               volk::volk
                               Vulkan::Headers midgard_options)

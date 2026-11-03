@@ -222,6 +222,11 @@ public:
     // the weather there would have been. False if there is no such weather type.
     bool force_weather(const std::string& weather, double hours);
     void release_weather();
+    // The Weather tab's edits while the game plays (the live link's weather.put): every weather
+    // type ({id, name, weather} rows, as their table has them), and the weather settings of the
+    // scene's world ("settings": null for its world type's own). Throws SceneError for
+    // malformed ones (nothing changes then).
+    void set_weather_data(const nlohmann::json& data);
     // The weather cell the player is in (none without weather settings).
     std::optional<weather::Cell> weather_cell() const;
     // How the weather looks now (midgard/weather_look.h): easing towards the weather's own over

@@ -29,7 +29,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
-from . import environments, sound_events, terrain_stamps
+from . import environments, sound_events, terrain_stamps, weather
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .objects import ObjectError, object_content
 from .project import Project
@@ -127,6 +127,7 @@ class PlaySession(QObject):
         project.objects_changed.connect(self._objects_changed)
         project.environments_changed.connect(self._environments_changed)
         project.sound_events_changed.connect(self._audio_changed)
+        project.weather_changed.connect(self._weather_changed)
         project.terrain_changed.connect(self._terrain_changed)
         project.files_changed.connect(self._files_changed)
 
@@ -407,6 +408,13 @@ class PlaySession(QObject):
         if used_mesh_assets(self.project) - self._cooked_assets:
             self._reload_assets()
         self.send({"type": "audio.put", "audio": sound_events.audio_message(self.project)})
+
+    def _weather_changed(self, _type_id: str) -> None:
+        """The Weather tab's edits (weather types, the scene's weather settings): the running
+        game's weather follows at once."""
+        if self.socket is None:
+            return
+        self.send({"type": "weather.put", "weather": weather.live_message(self.project)})
 
     def _objects_changed(self, _object_id: str) -> None:
         """An object edited, re-imported, added or removed: the running game follows."""

@@ -618,6 +618,16 @@ public:
             acknowledge("applied audio.put");
             return;
         }
+        if (type == "weather.put") {  // the Calendar dock's Weather tab
+            try {
+                game_.set_weather_data(message.at("weather"));
+            } catch (const std::exception& ex) {
+                warn("live link: %s\n", ex.what());
+                return;
+            }
+            acknowledge("applied weather.put");
+            return;
+        }
         if (type == "time.set") {  // the Calendar dock's scrubber
             game_.set_time(message.value("time", std::int64_t(0)));
             return;
