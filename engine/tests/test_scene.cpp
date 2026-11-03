@@ -2970,10 +2970,70 @@ TEST_CASE("many scene changes leave nothing behind") {
     CHECK(game.scene().registry.view<const midgard::EntityInfo>().size() == entities);
     CHECK(game.physics().world().body_count() == bodies);
     CHECK(game.terrain() == nullptr);  // (the main scene has none)
+    // What the game remembers of each scene (milestone 5.16) stays one record each, not one a
+    // visit: the land's is as small after 90 visits as after one.
+    CHECK(!game.room_state("scn_land").empty());
+    CHECK(game.room_state("scn_land").size() < 200);
+    CHECK(!game.carried_player().empty());
     if (resident_bytes() > 0) {
         MESSAGE("memory grew by " << grown[0] << " MB, then " << grown[1]
                                   << " MB, over two windows of 30 round trips");
         CHECK(std::min(grown[0], grown[1]) < 16.0);
+    }
+}
+
+TEST_CASE("many scene changes leave nothing behind on the GPU either") {
+    // Drawn as a game draws (an offscreen renderer, each frame): the land's ground, uploaded
+    // as it arrives, goes when it's left; after a few round trips the meshes on the GPU are
+    // as many after each trip as before it.
+    TwoScenes pkg;
+    std::unique_ptr<midgard::render::Renderer> renderer;
+    try {
+        midgard::render::RendererDesc desc;
+        desc.offscreen = true;
+        desc.width = 64;
+        desc.height = 64;
+        renderer = std::make_unique<midgard::render::Renderer>(desc);
+    } catch (const std::exception& e) {
+        MESSAGE("no Vulkan here: " << e.what());
+        return;
+    }
+    midgard::Game game(pkg.dir);
+    game.upload_meshes(*renderer);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto frame = [&] {
+        game.update(actions, 0.02f);
+        const midgard::render::Camera cam = game.camera(1.0f);
+        game.stream_terrain(*renderer, cam.origin);
+        renderer->set_environment(game.environment(cam.origin));
+        renderer->render_frame(cam, game.light(cam.origin), game.draws(cam.origin),
+                               {0.1f, 0.1f, 0.2f, 1.0f});
+    };
+    const auto through = [&] {
+        midgard::Scene& s = game.scene();
+        entt::entity player = entt::null, exit = entt::null;
+        for (entt::entity e : s.registry.view<const midgard::Player>()) player = e;
+        for (entt::entity e : s.registry.view<const midgard::SceneExit>()) exit = e;
+        REQUIRE((player != entt::null));
+        REQUIRE((exit != entt::null));
+        s.registry.get<midgard::Transform>(player).position = s.world_position(exit);
+        for (int i = 0; i < 100 && !game.scene_changed(); ++i) frame();
+        REQUIRE(game.scene_changed());
+        while (game.changing_scene()) frame();
+        for (int i = 0; i < 5; ++i) frame();  // (and freed meshes retire with the frames)
+    };
+    for (int i = 0; i < 3; ++i) {  // warm up
+        through();
+        through();
+    }
+    REQUIRE(game.scene().id == "scn_main");
+    const size_t meshes = renderer->mesh_count();
+    for (int i = 0; i < 5; ++i) {
+        through();
+        CHECK(game.scene().id == "scn_land");
+        CHECK(renderer->mesh_count() > meshes);  // (its ground drawn)
+        through();
+        CHECK(renderer->mesh_count() == meshes);
     }
 }
 
