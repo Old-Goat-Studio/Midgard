@@ -112,3 +112,37 @@ TEST_CASE("what falls has a name") {
         CHECK(falls_from_name(falls_name(f)) == f);
     CHECK_FALSE(falls_from_name("hail").has_value());
 }
+
+// ---- feels-like temperature (midgard/survival.h; step 7)
+// -----------------------------------------
+
+#include <filesystem>
+#include <fstream>
+
+#include <nlohmann/json.hpp>
+
+#include "midgard/survival.h"
+
+TEST_CASE("feels-like temperature and heat sources match the shared table") {
+    std::ifstream in(std::filesystem::path(MIDGARD_SCHEMA_DIR) / "tests" / "feels_like.json");
+    REQUIRE(in);
+    const nlohmann::json table = nlohmann::json::parse(in);
+    REQUIRE(table.at("cases").size() == 324);
+    for (const auto& c : table.at("cases")) {
+        CAPTURE(c.dump());
+        const double got =
+            midgard::survival::feels_like(c.at("air"), c.at("wind"), c.at("wetness"), c.at("heat"));
+        CHECK(std::abs(got - c.at("feels_like").get<double>()) < 1e-9);
+    }
+    for (const auto& w : table.at("warmth")) {
+        CAPTURE(w.dump());
+        CHECK(std::abs(midgard::survival::warmth(w.at("heat"), w.at("radius"), w.at("distance")) -
+                       w.at("warmth").get<double>()) < 1e-12);
+    }
+    // By hand: wind chills cold air, never warm air; wet is colder; a fire warms.
+    CHECK(midgard::survival::feels_like(-10.0, 20.0 / 3.6, 0.0, 0.0) ==
+          doctest::Approx(-17.9).epsilon(0.005));
+    CHECK(midgard::survival::feels_like(25.0, 10.0, 0.0, 0.0) == 25.0);
+    CHECK(midgard::survival::feels_like(5.0, 0.0, 1.0, 0.0) == 1.0);
+    CHECK(midgard::survival::feels_like(5.0, 0.0, 0.0, 20.0) == 25.0);
+}

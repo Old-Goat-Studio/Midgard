@@ -269,6 +269,11 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
                 if (event.is_string() && !event.get<std::string>().empty())
                     f.sounds[surface] = event.get<std::string>();
         reg.emplace_or_replace<Footsteps>(e, std::move(f));
+    } else if (name == "heat_source") {
+        HeatSource h;
+        h.heat = std::clamp(c.value("heat", 15.0f), -100.0f, 200.0f);
+        h.radius = std::clamp(c.value("radius", 3.0f), 0.0f, 1000.0f);
+        reg.emplace_or_replace<HeatSource>(e, h);
     } else if (name == "reverb_zone") {
         ReverbZone z;
         z.preset = c.value("preset", std::string("room"));
@@ -324,6 +329,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<SoundSource>(e);
     else if (name == "reverb_zone")
         reg.remove<ReverbZone>(e);
+    else if (name == "heat_source")
+        reg.remove<HeatSource>(e);
     else if (name == "footsteps")
         reg.remove<Footsteps>(e);
     else if (name == "script")
@@ -354,7 +361,8 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
                ScriptRef, Trigger, Arrival, SceneExit, CharacterRef, Sky, RigidBody, ColliderShape,
-               PhysicsMaterial, Group, ObjectRef, SoundSource, ReverbZone, Footsteps>(e);
+               PhysicsMaterial, Group, ObjectRef, SoundSource, ReverbZone, Footsteps, HeatSource>(
+        e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }

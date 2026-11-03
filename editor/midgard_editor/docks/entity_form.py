@@ -118,7 +118,7 @@ class EntityForm(QWidget):
                "rigidbody": "Rigid body", "physics_material": "Physics material",
                "scene_exit": "Scene exit", "arrival": "Arrival point",
                "character": "Character", "sound": "Sound", "reverb_zone": "Reverb zone",
-               "footsteps": "Footsteps"}
+               "footsteps": "Footsteps", "heat_source": "Heat source"}
     # What footsteps sound like on things (physics materials') and on the ground (the terrain's
     # own), as midgard/footsteps.h knows them.
     SURFACES = {"grass": "Grass", "sand": "Sand", "rock": "Rock", "snow": "Snow",
@@ -303,6 +303,21 @@ class EntityForm(QWidget):
             self.reverb_edge.valueChanged.connect(lambda _v: self._component_value(
                 "reverb_zone", "edge", self.reverb_edge.value()))
             form.addRow("Fades in over", self.reverb_edge)
+        self.heat = self.heat_radius = None
+        if "heat_source" in entity.components:
+            self.heat = _spin(-100.0, 200.0, 1.0, 1)
+            self.heat.setSuffix(" °C")
+            self.heat.setToolTip("How much warmer it is right by it (a campfire about 15 to 25; "
+                                 "below 0 for something that chills, like a block of ice)")
+            self.heat.valueChanged.connect(lambda _v: self._component_value(
+                "heat_source", "heat", self.heat.value()))
+            form.addRow("Warmer by", self.heat)
+            self.heat_radius = _spin(0.0, 1000.0, 0.5, 1)
+            self.heat_radius.setSuffix(" m")
+            self.heat_radius.setToolTip("How far its warmth reaches (less and less further out)")
+            self.heat_radius.valueChanged.connect(lambda _v: self._component_value(
+                "heat_source", "radius", self.heat_radius.value()))
+            form.addRow("Reaching", self.heat_radius)
         self.script = self.trigger = None
         if "script" in entity.components:
             self.script = QComboBox()
@@ -672,6 +687,12 @@ class EntityForm(QWidget):
         self._refresh_character(entity)
         self._refresh_sound(entity)
         self._refresh_footsteps(entity)
+        if self.heat is not None:
+            source = entity.components["heat_source"]
+            for box, key, default in ((self.heat, "heat", 15.0), (self.heat_radius, "radius", 3.0)):
+                box.blockSignals(True)
+                box.setValue(float(source.get(key, default)))
+                box.blockSignals(False)
         if self.reverb_preset is not None:
             zone = entity.components["reverb_zone"]
             self.reverb_preset.blockSignals(True)
@@ -776,6 +797,8 @@ class EntityForm(QWidget):
         elif kind == "reverb_zone":
             entity.components["reverb_zone"] = {"preset": "room", "size": [8.0, 4.0, 8.0],
                                                 "edge": 2.0}
+        elif kind == "heat_source":
+            entity.components["heat_source"] = {"heat": 15.0, "radius": 3.0}
         elif kind == "sound":
             from .. import sound_events
             events = sound_events.load_all(self.project)

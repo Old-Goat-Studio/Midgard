@@ -134,6 +134,8 @@ def on_start(entity):
     midgard.weather.wetness = 0.5
     print("ground", round(midgard.weather.wetness, 2), round(midgard.weather.snow, 2),
           round(midgard.weather.temperature, 1))
+    exposure = midgard.weather.exposure()
+    print("exposure", exposure.sheltered, exposure.heat, exposure.feels_like <= exposure.air)
 
 def changed(before, now):
     print("changed", before.id, "->", now.id, now.forced)
@@ -162,7 +164,26 @@ def test_scripts_read_force_and_hear_the_weather(project, tmp_path):
     assert any(line.startswith("refused there is no weather type 'frogs'") for line in lines)
     assert "types 10" in lines
     assert "ground 0.5 0.0 10.0" in lines  # (15 degrees without a climate; the storm's -5)
+    assert "exposure False 0.0 True" in lines
     changes = [line for line in lines if line.startswith("changed")]
     assert changes == ["changed clear -> thunderstorm True", "changed thunderstorm -> clear False"]
     assert dumped["weather"]["now"] == "clear" and not dumped["weather"]["forced"]
     assert dumped["weather"]["forecast"][0]["weather"] == "clear"
+
+
+def test_a_heat_source_is_added_and_set_in_the_inspector(project, qtbot):
+    from test_physics_editing import form_for
+
+    from midgard_editor.scene_model import Entity
+
+    project.put_entity(Entity("e000082", "Campfire", None, {"transform": {}}))
+    form = form_for(qtbot, project, "e000082")
+    form.add("heat_source")
+    form = form_for(qtbot, project, "e000082")
+    assert project.entity("e000082").components["heat_source"] == {"heat": 15.0, "radius": 3.0}
+    assert form.heat.value() == 15.0 and form.heat_radius.value() == 3.0
+    form.heat.setValue(22.0)
+    form.heat_radius.setValue(4.5)
+    assert project.entity("e000082").components["heat_source"] == {"heat": 22.0, "radius": 4.5}
+    project.undo_stack.undo()
+    assert project.entity("e000082").components["heat_source"]["radius"] == 3.0

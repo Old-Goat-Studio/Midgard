@@ -16,6 +16,7 @@
 #include "midgard/det.h"
 #include "midgard/footsteps.h"
 #include "midgard/gltf.h"
+#include "midgard/survival.h"
 #include "midgard/terrain_collision.h"
 #include "midgard/world_surface.h"
 
@@ -212,6 +213,7 @@ void Game::update(const Actions& actions, float dt) {
     update_weather_look(dt);
     update_falling(dt);
     update_ground_cover(dt);
+    update_exposure(dt);
     update_sounds(dt);
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
@@ -691,11 +693,83 @@ void Game::update_ground_cover(float dt) {
     ground_cover_.wetness = float(wet);
 }
 
+void Game::set_player_wetness(float wetness) {
+    exposure_.wetness = std::clamp(wetness, 0.0f, 1.0f);
+}
+
+// Shelter (rays upward and sideways from the player's head, four times a second), the wind
+// and heat reaching them, how wet they are, and how warm it feels.
+void Game::update_exposure(float dt) {
+    entt::entity player = entt::null;
+    for (const entt::entity e : scene_.registry.view<const Player>()) player = e;
+    const glm::dvec3 at = player_position();
+    glm::dvec3 up(0.0, 1.0, 0.0), east(1.0, 0.0, 0.0), north(0.0, 0.0, -1.0);
+    if (scene_.settings.body) {
+        const SurfaceFrame f = scene_.settings.body->frame(at);
+        up = f.up;
+        east = f.east;
+        north = f.north;
+    }
+    shelter_due_ -= dt;
+    if (shelter_due_ <= 0.0 && physics_) {
+        shelter_due_ = 0.25;
+        const glm::dvec3 head = at + up * 0.6;
+        const physics::BodyId self =
+            player != entt::null ? physics_->body(player) : physics::kNoBody;
+        const auto blocked = [&](const glm::dvec3& d, double reach) {
+            return physics_->world()
+                .raycast(head, glm::vec3(glm::normalize(d)), reach, physics::Touching::Solid, self)
+                .has_value();
+        };
+        int roof = 0, walls = 0;
+        const double lean = 0.36;  // (about 20 degrees off straight up)
+        for (const glm::dvec3& d :
+             {up, up + east * lean, up - east * lean, up + north * lean, up - north * lean})
+            roof += blocked(d, 40.0);
+        for (int i = 0; i < 8; ++i) {
+            const double a = double(i) * 0.7853981633974483;
+            walls += blocked(east * std::cos(a) + north * std::sin(a), 6.0);
+        }
+        exposure_.roof = float(roof) / 5.0f;
+        exposure_.walls = float(walls) / 8.0f;
+        exposure_.sheltered = exposure_.roof >= 0.6f;
+    }
+    // Heat sources near the player.
+    double heat = 0.0;
+    for (const entt::entity e : scene_.registry.view<const HeatSource>()) {
+        const HeatSource& h = scene_.registry.get<HeatSource>(e);
+        heat += survival::warmth(h.heat, h.radius, glm::length(scene_.world_position(e) - at));
+    }
+    exposure_.heat = heat;
+    const weather::WeatherType* type = weather_type();
+    exposure_.wind = (type ? type->wind : 0.0) * (1.0 - 0.8 * exposure_.walls);
+    // Wet in the open while it rains (snow less so), drying under cover, faster by a fire.
+    const double hours = double(std::max(dt, 0.0f)) * std::max(time_.scale(), 0.0) /
+                         double(local_calendar().seconds_per_hour());
+    const bool falling_now =
+        falling_.kind == render::Falls::Rain || falling_.kind == render::Falls::Snow;
+    double wet = exposure_.wetness;
+    const double target =
+        falling_now && !exposure_.sheltered
+            ? double(falling_.amount) * (falling_.kind == render::Falls::Rain ? 1.0 : 0.4)
+            : 0.0;
+    if (target > wet)
+        wet += (target - wet) * (1.0 - std::exp(-hours / 0.15));
+    else
+        wet *= std::exp(-hours / (heat > 5.0 ? 0.25 : 1.0));
+    exposure_.wetness = float(std::clamp(wet, 0.0, 1.0));
+    exposure_.air = temperature_here();
+    exposure_.feels_like =
+        survival::feels_like(exposure_.air, exposure_.wind, exposure_.wetness, exposure_.heat);
+}
+
 render::Environment Game::environment(const glm::dvec3& origin) const {
     render::Environment env = scene_.environment(origin);
     render::Light light;
     apply(look_, env, light);
     env.falling = falling_;
+    // (Indoors, a roof and walls all round: none falls where the player can see.)
+    env.falling.amount *= 1.0f - exposure_.roof * exposure_.walls;
     env.ground = ground_cover_;
     return env;
 }

@@ -38,6 +38,7 @@ add_library(midgard_core STATIC
     core/src/time_service.cpp
     core/src/weather.cpp
     core/src/weather_sim.cpp
+    core/src/survival.cpp
 )
 target_include_directories(midgard_core PUBLIC
     core/include

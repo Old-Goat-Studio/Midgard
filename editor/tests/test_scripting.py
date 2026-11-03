@@ -147,7 +147,7 @@ def test_the_stub_matches_the_engine():
     assert members("GameTime") == api["GameTime"]
     assert members("Rooms") == api["Rooms"]
     assert members("Nav") == api["Nav"]
-    for name in ("Weather", "WeatherSpell", "WeatherApi"):
+    for name in ("Weather", "WeatherSpell", "WeatherApi", "Exposure"):
         assert members(name) == api[name]
 
 

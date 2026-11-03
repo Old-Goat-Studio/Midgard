@@ -928,6 +928,31 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             std::snprintf(text, sizeof(text), ", in %.1f h for %.1f h", s.in_hours, s.hours);
             return "WeatherSpell(" + py::repr(py::str(s.id)).cast<std::string>() + text + ")";
         });
+    py::class_<Game::Exposure>(m, "Exposure",
+                               "How the weather treats the player (midgard.weather.exposure()).")
+        .def_readonly("air", &Game::Exposure::air, "The air's temperature, degrees Celsius.")
+        .def_readonly("feels_like", &Game::Exposure::feels_like,
+                      "How warm it feels, degrees Celsius: the air, the wind, being wet, and "
+                      "heat sources near.")
+        .def_readonly("wind", &Game::Exposure::wind,
+                      "The wind where the player is, metres a second (walls cut it).")
+        .def_readonly("heat", &Game::Exposure::heat, "Degrees of warmth from heat sources near.")
+        .def_readonly("wetness", &Game::Exposure::wetness,
+                      "How wet the player is, 0 dry .. 1 soaked.")
+        .def_readonly("roof", &Game::Exposure::roof,
+                      "How much of the sky above is covered, 0 .. 1.")
+        .def_readonly("walls", &Game::Exposure::walls, "How much is walled in round about, 0 .. 1.")
+        .def_readonly("sheltered", &Game::Exposure::sheltered,
+                      "Under a roof: rain and snow don't reach the player.")
+        .def("__repr__", [](const Game::Exposure& e) {
+            char text[160];
+            std::snprintf(text, sizeof(text),
+                          "Exposure(air=%.1f, feels_like=%.1f, wind=%.1f, heat=%.1f, "
+                          "wetness=%.2f, sheltered=%s)",
+                          e.air, e.feels_like, e.wind, e.heat, double(e.wetness),
+                          e.sheltered ? "True" : "False");
+            return std::string(text);
+        });
     py::class_<WeatherHandle>(m, "WeatherApi",
                               "The weather (midgard.weather; milestone 5.15): what it is where "
                               "the player is, the forecast, and a script's own weather.")
@@ -999,6 +1024,14 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
                 current_game().set_ground_cover(g);
             },
             "How much snow has settled where the player is, 0 none .. 1 covered (settable).")
+        .def(
+            "exposure", [](const WeatherHandle&) { return current_game().exposure(); },
+            "How the weather treats the player now: sheltered or not, the wind reaching them, "
+            "how wet they are, the warmth of fires near, and how warm it feels.")
+        .def(
+            "set_player_wetness",
+            [](const WeatherHandle&, float wetness) { current_game().set_player_wetness(wetness); },
+            py::arg("wetness"), "How wet the player is now, 0 .. 1 (dried off, or fell in).")
         .def_property_readonly(
             "temperature", [](const WeatherHandle&) { return current_game().temperature_here(); },
             "The temperature where the player is, degrees Celsius: the climate's (with the "
@@ -1350,6 +1383,7 @@ result = json.dumps({
     "Weather": sorted(n for n in dir(midgard.Weather) if not n.startswith("_")),
     "WeatherSpell": sorted(n for n in dir(midgard.WeatherSpell) if not n.startswith("_")),
     "WeatherApi": sorted(n for n in dir(midgard.WeatherApi) if not n.startswith("_")),
+    "Exposure": sorted(n for n in dir(midgard.Exposure) if not n.startswith("_")),
 })
 )",
              scope);

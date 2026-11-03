@@ -248,6 +248,25 @@ public:
     // The temperature where the player is (degrees Celsius): the climate's there (with the
     // season), and the weather's change; 15 without a climate.
     double temperature_here() const;
+    // How the weather treats the player (milestone 5.15's survival groundwork), a few times a
+    // second: whether they're under a roof (rays upward) and between walls (rays sideways),
+    // the wind reaching them (walls cut it), how wet they are (out in the rain or snow they get
+    // wet; under a roof they dry, faster by a fire), the warmth of heat sources near them, and
+    // so how warm it feels (midgard/survival.h). Inside a building (a roof and walls all round)
+    // no rain or snow is drawn.
+    struct Exposure {
+        double air = 15.0;         // degrees Celsius
+        double feels_like = 15.0;  // degrees Celsius
+        double wind = 0.0;         // metres a second, where the player is
+        double heat = 0.0;         // degrees from heat sources
+        float wetness = 0.0f;      // the player's: 0 dry .. 1 soaked
+        float roof = 0.0f;         // how much of the sky above is covered, 0 .. 1
+        float walls = 0.0f;        // how much is walled in round about, 0 .. 1
+        bool sheltered = false;    // under a roof: rain and snow don't reach them
+    };
+    const Exposure& exposure() const { return exposure_; }
+    // Scripts: how wet the player is (they dried off, or fell in a river).
+    void set_player_wetness(float wetness);
     // What is underfoot of an entity (midgard/footsteps.h): an object's surface, the terrain's
     // ground, or "default".
     std::string ground_under(entt::entity e) const;
@@ -404,6 +423,9 @@ private:
     void update_falling(float dt);
     render::GroundCover ground_cover_;
     void update_ground_cover(float dt);
+    Exposure exposure_;
+    double shelter_due_ = 0.0;  // real seconds until the next shelter rays
+    void update_exposure(float dt);
     void update_weather_sounds();
     glm::dvec3 player_position() const;
     // Footsteps: how far each walker has come since its last step, and the steps taken.

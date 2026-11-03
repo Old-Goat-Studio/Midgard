@@ -368,3 +368,28 @@ def test_world_graph_nodes_by_hand():
     assert one({"op": "curve", "in": [20], "points": [[0, 0], [10, 20], [30, 25]]}) == 22.5
     assert one({"op": "input", "name": "edge_distance"}) == 1000.0
     assert one({"op": "smooth", "in": [7], "radius": 30}) == 7.0
+
+
+# ---- feels-like temperature (midgard/survival.h; milestone 5.15) -----------------------------
+def test_feels_like_matches_its_table():
+    from reference import survival
+    data = json.loads((TABLES / "feels_like.json").read_text("utf-8"))
+    assert len(data["cases"]) == 324
+    for c in data["cases"]:
+        got = survival.feels_like(c["air"], c["wind"], c["wetness"], c["heat"])
+        assert got == pytest.approx(c["feels_like"], abs=1e-12), c
+    for w in data["warmth"]:
+        assert survival.warmth(w["heat"], w["radius"], w["distance"]) == pytest.approx(
+            w["warmth"], abs=1e-12), w
+
+
+def test_feels_like_by_hand():
+    from reference.survival import feels_like, warmth, wind_chill
+    assert feels_like(20.0, 0.0, 0.0, 0.0) == 20.0  # still, dry, mild: as it is
+    assert feels_like(20.0, 10.0, 0.0, 0.0) == 20.0  # wind doesn't chill warm air
+    assert wind_chill(-10.0, 20.0 / 3.6) == pytest.approx(-17.9, abs=0.05)  # (the charts)
+    assert feels_like(-10.0, 1.0, 0.0, 0.0) == -10.0  # (3.6 km/h: too little to chill)
+    assert feels_like(5.0, 0.0, 1.0, 0.0) == 1.0  # soaked: four degrees colder
+    assert feels_like(5.0, 0.0, 0.0, 20.0) == 25.0  # right by the fire
+    assert warmth(20.0, 4.0, 0.0) == 20.0 and warmth(20.0, 4.0, 4.0) == 0.0
+    assert warmth(20.0, 4.0, 2.0) == pytest.approx(11.25)

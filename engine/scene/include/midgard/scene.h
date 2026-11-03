@@ -155,6 +155,14 @@ struct ReverbZone {
     std::optional<float> wet;
 };
 
+// Something that warms those near it (milestone 5.15): a campfire, a stove, a brazier. `heat`
+// degrees warmer at its middle, less further out, none from `radius` metres
+// (midgard/survival.h's warmth).
+struct HeatSource {
+    float heat = 15.0f;
+    float radius = 3.0f;
+};
+
 struct LocalLightSource {
     bool spot = false;
     glm::vec3 color{1.0f};

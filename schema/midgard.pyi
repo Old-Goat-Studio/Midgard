@@ -434,6 +434,28 @@ class WeatherSpell:
     """A front passing over."""
 
 
+class Exposure:
+    """How the weather treats the player (midgard.weather.exposure())."""
+
+    air: float
+    """The air's temperature, degrees Celsius."""
+    feels_like: float
+    """How warm it feels, degrees Celsius: the air, made colder by wind and by being wet, and
+    warmer by heat sources near."""
+    wind: float
+    """The wind where the player is, metres a second (walls cut it)."""
+    heat: float
+    """Degrees of warmth from heat sources near (campfires, stoves)."""
+    wetness: float
+    """How wet the player is: 0 dry .. 1 soaked."""
+    roof: float
+    """How much of the sky above the player is covered, 0 .. 1."""
+    walls: float
+    """How much is walled in round about, 0 .. 1."""
+    sheltered: bool
+    """Under a roof: rain and snow don't reach the player."""
+
+
 class WeatherApi:
     """The weather (midgard.weather): what it is where the player is, the forecast, and a
     script's own weather. The weather changes by itself (by the world type's weather tables,
@@ -467,6 +489,13 @@ class WeatherApi:
 
     def release(self) -> None:
         """Back to the weather there would have been."""
+
+    def exposure(self) -> Exposure:
+        """How the weather treats the player now: sheltered or not, the wind reaching them, how
+        wet they are, the warmth of fires near, and how warm it feels."""
+
+    def set_player_wetness(self, wetness: float) -> None:
+        """How wet the player is now, 0 .. 1 (they dried off by the fire, or fell in a river)."""
 
 
 weather: WeatherApi

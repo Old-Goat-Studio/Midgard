@@ -182,7 +182,7 @@ The top rows are the same for everything:
 
 Below come its components. **Add Component** gives it new abilities: Script, Trigger, Collider,
 Rigid body, Physics material, Scene exit, Arrival point, Character, Sound, Reverb zone,
-Footsteps. Each component has an **✕**
+Footsteps, Heat source. Each component has an **✕**
 button to take it off again.
 
 *Position, rotation and scale are always relative to the entity's parent.* If a candle is inside
@@ -625,9 +625,31 @@ rocks, roofs and trees. It doesn't settle on water, steep rock or anything that 
 it melts in a few hours (at once in rain), and the melted snow leaves the ground wet. In a world
 with a climate, snow stays as long as it's below freezing there.
 
+### Staying warm and dry
+
+The game keeps track of how the weather treats the player. This is the groundwork for survival
+games; your scripts decide what happens (shivering, a cold, a warning).
+
+- **Shelter:** a few times a second the game looks straight up and round about from the
+  player's head (invisible rays). Something solid overhead is a **roof**; things close by on
+  every side are **walls**. Under a roof, rain and snow don't reach the player. Walls cut the
+  wind. Inside a building (a roof and walls all round) no rain or snow is drawn.
+- **Getting wet:** out in the rain the player gets wet in a few game minutes (in snow, less so).
+  Under cover they dry off over about an hour, much faster by a fire.
+- **Heat sources:** give a campfire, a stove or a brazier **Add Component ▸ Heat source**.
+  **Warmer by** is how many degrees warmer it is right next to it (15 to 25 for a campfire);
+  **Reaching** is how far the warmth goes (it fades towards the edge). A negative number makes
+  something that chills, like a block of ice.
+- **Feels like:** the air's temperature, made colder by the wind (the same wind chill the
+  weather forecasts use, in cold weather), colder again for being wet (up to 4 degrees, more in
+  the wind), and warmer by heat sources near.
+
+Press **F3** while playing to see it on screen: the weather, the air's temperature and how it
+feels, the wind, the warmth, whether the player is sheltered, and how wet they and the ground
+are.
+
 You'll be able to change all of this, and make your own weather types (acid rain, a sleet
-storm), in the **Weather** tab of the Calendar panel, which is coming. Next: how warm, wet and
-sheltered the player is.
+storm), in the **Weather** tab of the Calendar panel, which is coming next.
 
 ---
 
@@ -1124,6 +1146,17 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 | `midgard.weather.types` | The ids of the weather types. |
 | `midgard.weather.wetness`, `midgard.weather.snow` | How wet the ground is, and how much snow has settled, where the player is (0 to 1). You can set them too: `midgard.weather.snow = 1` for a sudden winter. |
 | `midgard.weather.temperature` | How warm it is where the player is, in °C (the climate's, with the season and the weather). |
+| `midgard.weather.exposure()` | How the weather treats the player: `.feels_like` and `.air` (°C), `.wind` reaching them, `.heat` from fires, `.wetness` (0 dry to 1 soaked), `.sheltered` (under a roof), `.roof` and `.walls` (0 to 1). |
+| `midgard.weather.set_player_wetness(0)` | The player is now this wet (dried by the fire, or fell in the river: `1`). |
+
+```python
+import midgard
+
+def on_update(entity, dt):
+    e = midgard.weather.exposure()
+    if e.feels_like < 0 and not e.sheltered:
+        print("Brr! Find shelter or a fire.")
+```
 
 ```python
 import midgard

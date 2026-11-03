@@ -42,6 +42,7 @@
 #include "midgard/light_markers.h"
 #include "midgard/pak.h"
 #include "midgard/scene.h"
+#include "midgard/survival.h"
 #include "midgard/validate.h"
 #include "midgard/world_light.h"
 #include "midgard/world_surface.h"
@@ -3875,4 +3876,71 @@ TEST_CASE("rain wets the ground and it dries; snow settles, then melts into wet 
     game.set_ground_cover({0.25f, 0.5f});
     CHECK(game.ground_cover().wetness == 0.25f);
     CHECK(game.ground_cover().snow == 0.5f);
+}
+
+TEST_CASE(
+    "shelter: in the open the rain soaks; under a porch it doesn't; in a hut by a fire, warm") {
+    // Test buildings on flat ground: a porch (a roof on posts) at x = -20, a hut (a roof and
+    // four walls) at x = 20 with a fire inside, and open ground at x = 0.
+    const auto box = [](const std::string& id, glm::vec3 at, glm::vec3 size) {
+        const json c = {{"transform", {{"position", {at.x, at.y, at.z}}}},
+                        {"collider", {{"size", {size.x, size.y, size.z}}}}};
+        return std::pair<std::string, std::string>{id, "NULL, '" + c.dump() + "'"};
+    };
+    const auto game_at = [&](double x) {
+        const json player = {{"transform", {{"position", {x, 1.0, 0.0}}}},
+                             {"player", {{"height", 1.8}}}};
+        const json fire = {{"transform", {{"position", {21.0, 0.3, 0.0}}}},
+                           {"heat_source", {{"heat", 20}, {"radius", 4}}}};
+        return std::make_unique<TestPackage>(std::vector<std::pair<std::string, std::string>>{
+            box("e01_ground", {0, -0.5f, 0}, {80, 1, 20}),
+            box("e02_porch", {-20, 3.2f, 0}, {6, 0.3f, 6}),
+            box("e03_hut_roof", {20, 3.2f, 0}, {6, 0.3f, 6}),
+            box("e04_wall_w", {17, 1.5f, 0}, {0.3f, 3, 6}),
+            box("e05_wall_e", {23, 1.5f, 0}, {0.3f, 3, 6}),
+            box("e06_wall_n", {20, 1.5f, -3}, {6, 3, 0.3f}),
+            box("e07_wall_s", {20, 1.5f, 3}, {6, 3, 0.3f}),
+            {"e08_fire", "NULL, '" + fire.dump() + "'"},
+            {"e09_player", "NULL, '" + player.dump() + "'"}});
+    };
+    struct Seen {
+        midgard::Game::Exposure exposure;
+        float falling = 0.0f;  // drawn where the player is
+    };
+    const auto rain_on = [&](double x) {
+        const auto pkg = game_at(x);
+        midgard::Game game(pkg->dir);
+        midgard::Actions actions(midgard::InputMap::defaults());
+        REQUIRE(game.force_weather("rain", 0.0));  // (wind 5 m/s; 12 degrees)
+        const int steps = int(0.5 * 3600.0 / game.time().scale() / 0.25);  // half a game hour
+        for (int i = 0; i < steps; ++i) game.update(actions, 0.25f);
+        return Seen{game.exposure(), game.environment(glm::dvec3(x, 1.0, 0.0)).falling.amount};
+    };
+
+    const Seen open = rain_on(0.0);
+    CHECK_FALSE(open.exposure.sheltered);
+    CHECK(open.exposure.roof == 0.0f);
+    CHECK(open.exposure.walls == 0.0f);
+    CHECK(open.exposure.wetness > 0.4f);  // (most of the way to 0.6, the rain's amount)
+    CHECK(open.exposure.wind == doctest::Approx(5.0));
+    CHECK(open.exposure.heat == 0.0);
+    CHECK(open.exposure.air == doctest::Approx(12.0));
+    CHECK(open.exposure.feels_like < open.exposure.air - 3.0);  // (wet and windy)
+    CHECK(open.falling > 0.5f);
+
+    const Seen porch = rain_on(-20.0);
+    CHECK(porch.exposure.sheltered);
+    CHECK(porch.exposure.roof == 1.0f);
+    CHECK(porch.exposure.walls == 0.0f);
+    CHECK(porch.exposure.wetness < 0.01f);
+    CHECK(porch.falling > 0.5f);  // (the rain falls all round)
+
+    const Seen hut = rain_on(20.0);
+    CHECK(hut.exposure.sheltered);
+    CHECK(hut.exposure.walls == 1.0f);
+    CHECK(hut.exposure.wind == doctest::Approx(1.0));  // (the walls cut it)
+    CHECK(hut.exposure.heat ==
+          doctest::Approx(midgard::survival::warmth(20, 4, 1.0)).epsilon(0.05));
+    CHECK(hut.exposure.feels_like > hut.exposure.air + 10.0);
+    CHECK(hut.falling == 0.0f);  // (indoors: none drawn)
 }

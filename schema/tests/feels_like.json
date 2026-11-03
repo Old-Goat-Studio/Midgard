@@ -1,0 +1,2401 @@
+{
+ "_about": "Feels-like temperature and heat sources' warmth (tools/reference/survival.py; midgard/survival.h).",
+ "cases": [
+  {
+   "air": -30.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -30.0
+  },
+  {
+   "air": -30.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -17.5
+  },
+  {
+   "air": -30.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -32.0
+  },
+  {
+   "air": -30.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -19.5
+  },
+  {
+   "air": -30.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -34.0
+  },
+  {
+   "air": -30.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -21.5
+  },
+  {
+   "air": -30.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -30.0
+  },
+  {
+   "air": -30.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -17.5
+  },
+  {
+   "air": -30.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -32.15
+  },
+  {
+   "air": -30.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -19.65
+  },
+  {
+   "air": -30.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -34.3
+  },
+  {
+   "air": -30.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -21.799999999999997
+  },
+  {
+   "air": -30.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -35.661439628386006
+  },
+  {
+   "air": -30.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -23.161439628386006
+  },
+  {
+   "air": -30.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -37.87143962838601
+  },
+  {
+   "air": -30.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -25.371439628386007
+  },
+  {
+   "air": -30.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -40.08143962838601
+  },
+  {
+   "air": -30.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -27.581439628386008
+  },
+  {
+   "air": -30.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -42.4692332632261
+  },
+  {
+   "air": -30.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -29.9692332632261
+  },
+  {
+   "air": -30.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -45.2192332632261
+  },
+  {
+   "air": -30.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -32.7192332632261
+  },
+  {
+   "air": -30.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -47.9692332632261
+  },
+  {
+   "air": -30.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -35.4692332632261
+  },
+  {
+   "air": -30.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -48.024170773855374
+  },
+  {
+   "air": -30.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -35.524170773855374
+  },
+  {
+   "air": -30.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -51.82417077385537
+  },
+  {
+   "air": -30.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -39.32417077385537
+  },
+  {
+   "air": -30.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -55.624170773855376
+  },
+  {
+   "air": -30.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -43.124170773855376
+  },
+  {
+   "air": -30.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -53.31993313645382
+  },
+  {
+   "air": -30.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -40.81993313645382
+  },
+  {
+   "air": -30.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -59.06993313645382
+  },
+  {
+   "air": -30.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -46.56993313645382
+  },
+  {
+   "air": -30.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -64.81993313645381
+  },
+  {
+   "air": -30.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -52.31993313645381
+  },
+  {
+   "air": -10.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -10.0
+  },
+  {
+   "air": -10.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 2.5
+  },
+  {
+   "air": -10.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -12.0
+  },
+  {
+   "air": -10.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 0.5
+  },
+  {
+   "air": -10.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -14.0
+  },
+  {
+   "air": -10.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -1.5
+  },
+  {
+   "air": -10.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -10.0
+  },
+  {
+   "air": -10.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 2.5
+  },
+  {
+   "air": -10.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -12.15
+  },
+  {
+   "air": -10.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 0.34999999999999964
+  },
+  {
+   "air": -10.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -14.3
+  },
+  {
+   "air": -10.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -1.8000000000000007
+  },
+  {
+   "air": -10.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -12.959272585484609
+  },
+  {
+   "air": -10.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -0.4592725854846087
+  },
+  {
+   "air": -10.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -15.16927258548461
+  },
+  {
+   "air": -10.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -2.6692725854846096
+  },
+  {
+   "air": -10.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -17.379272585484607
+  },
+  {
+   "air": -10.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -4.879272585484607
+  },
+  {
+   "air": -10.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -17.44659325560164
+  },
+  {
+   "air": -10.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -4.946593255601641
+  },
+  {
+   "air": -10.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -20.19659325560164
+  },
+  {
+   "air": -10.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -7.696593255601641
+  },
+  {
+   "air": -10.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -22.94659325560164
+  },
+  {
+   "air": -10.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -10.446593255601641
+  },
+  {
+   "air": -10.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -21.10810052942498
+  },
+  {
+   "air": -10.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -8.60810052942498
+  },
+  {
+   "air": -10.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -24.90810052942498
+  },
+  {
+   "air": -10.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -12.408100529424981
+  },
+  {
+   "air": -10.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -28.708100529424982
+  },
+  {
+   "air": -10.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -16.208100529424982
+  },
+  {
+   "air": -10.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -24.598773894155137
+  },
+  {
+   "air": -10.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": -12.098773894155137
+  },
+  {
+   "air": -10.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -30.348773894155137
+  },
+  {
+   "air": -10.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -17.848773894155137
+  },
+  {
+   "air": -10.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -36.09877389415514
+  },
+  {
+   "air": -10.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -23.598773894155137
+  },
+  {
+   "air": 0.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 0.0
+  },
+  {
+   "air": 0.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 12.5
+  },
+  {
+   "air": 0.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -2.0
+  },
+  {
+   "air": 0.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 10.5
+  },
+  {
+   "air": 0.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -4.0
+  },
+  {
+   "air": 0.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 8.5
+  },
+  {
+   "air": 0.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 0.0
+  },
+  {
+   "air": 0.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 12.5
+  },
+  {
+   "air": 0.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -2.15
+  },
+  {
+   "air": 0.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 10.35
+  },
+  {
+   "air": 0.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -4.3
+  },
+  {
+   "air": 0.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 8.2
+  },
+  {
+   "air": 0.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -1.6081890640339083
+  },
+  {
+   "air": 0.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 10.891810935966092
+  },
+  {
+   "air": 0.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -3.8181890640339082
+  },
+  {
+   "air": 0.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 8.68181093596609
+  },
+  {
+   "air": 0.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -6.028189064033908
+  },
+  {
+   "air": 0.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 6.471810935966092
+  },
+  {
+   "air": 0.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -4.935273251789413
+  },
+  {
+   "air": 0.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 7.564726748210587
+  },
+  {
+   "air": 0.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -7.685273251789413
+  },
+  {
+   "air": 0.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 4.814726748210587
+  },
+  {
+   "air": 0.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -10.435273251789413
+  },
+  {
+   "air": 0.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 2.064726748210587
+  },
+  {
+   "air": 0.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -7.650065407209782
+  },
+  {
+   "air": 0.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 4.849934592790218
+  },
+  {
+   "air": 0.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -11.450065407209781
+  },
+  {
+   "air": 0.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 1.049934592790219
+  },
+  {
+   "air": 0.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -15.250065407209782
+  },
+  {
+   "air": 0.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -2.7500654072097817
+  },
+  {
+   "air": 0.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -10.238194273005798
+  },
+  {
+   "air": 0.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 2.2618057269942025
+  },
+  {
+   "air": 0.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -15.988194273005798
+  },
+  {
+   "air": 0.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": -3.4881942730057975
+  },
+  {
+   "air": 0.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -21.738194273005796
+  },
+  {
+   "air": 0.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -9.238194273005796
+  },
+  {
+   "air": 5.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 5.0
+  },
+  {
+   "air": 5.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 17.5
+  },
+  {
+   "air": 5.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 3.0
+  },
+  {
+   "air": 5.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 15.5
+  },
+  {
+   "air": 5.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 1.0
+  },
+  {
+   "air": 5.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 13.5
+  },
+  {
+   "air": 5.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 5.0
+  },
+  {
+   "air": 5.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 17.5
+  },
+  {
+   "air": 5.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 2.85
+  },
+  {
+   "air": 5.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 15.35
+  },
+  {
+   "air": 5.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 0.7000000000000002
+  },
+  {
+   "air": 5.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 13.2
+  },
+  {
+   "air": 5.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 4.067352696691442
+  },
+  {
+   "air": 5.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 16.567352696691444
+  },
+  {
+   "air": 5.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 1.857352696691442
+  },
+  {
+   "air": 5.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 14.357352696691443
+  },
+  {
+   "air": 5.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -0.352647303308558
+  },
+  {
+   "air": 5.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 12.147352696691442
+  },
+  {
+   "air": 5.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 1.3203867501167008
+  },
+  {
+   "air": 5.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 13.8203867501167
+  },
+  {
+   "air": 5.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -1.4296132498832992
+  },
+  {
+   "air": 5.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 11.0703867501167
+  },
+  {
+   "air": 5.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -4.1796132498833
+  },
+  {
+   "air": 5.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 8.3203867501167
+  },
+  {
+   "air": 5.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -0.9210478461021836
+  },
+  {
+   "air": 5.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 11.578952153897816
+  },
+  {
+   "air": 5.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -4.721047846102183
+  },
+  {
+   "air": 5.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 7.778952153897817
+  },
+  {
+   "air": 5.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -8.521047846102183
+  },
+  {
+   "air": 5.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 3.9789521538978168
+  },
+  {
+   "air": 5.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": -3.0579044624311287
+  },
+  {
+   "air": 5.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 9.442095537568871
+  },
+  {
+   "air": 5.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -8.807904462431129
+  },
+  {
+   "air": 5.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 3.6920955375688713
+  },
+  {
+   "air": 5.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -14.557904462431129
+  },
+  {
+   "air": 5.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": -2.0579044624311287
+  },
+  {
+   "air": 10.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 10.0
+  },
+  {
+   "air": 10.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 22.5
+  },
+  {
+   "air": 10.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 8.0
+  },
+  {
+   "air": 10.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 20.5
+  },
+  {
+   "air": 10.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 6.0
+  },
+  {
+   "air": 10.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 18.5
+  },
+  {
+   "air": 10.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 10.0
+  },
+  {
+   "air": 10.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 22.5
+  },
+  {
+   "air": 10.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 7.85
+  },
+  {
+   "air": 10.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 20.35
+  },
+  {
+   "air": 10.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 5.7
+  },
+  {
+   "air": 10.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 18.2
+  },
+  {
+   "air": 10.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 9.742894457416792
+  },
+  {
+   "air": 10.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 22.242894457416792
+  },
+  {
+   "air": 10.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 7.532894457416792
+  },
+  {
+   "air": 10.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 20.03289445741679
+  },
+  {
+   "air": 10.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 5.322894457416792
+  },
+  {
+   "air": 10.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 17.822894457416794
+  },
+  {
+   "air": 10.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 7.576046752022816
+  },
+  {
+   "air": 10.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 20.076046752022815
+  },
+  {
+   "air": 10.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 4.826046752022816
+  },
+  {
+   "air": 10.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 17.326046752022815
+  },
+  {
+   "air": 10.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 2.0760467520228163
+  },
+  {
+   "air": 10.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 14.576046752022815
+  },
+  {
+   "air": 10.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 5.8079697150054175
+  },
+  {
+   "air": 10.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 18.307969715005417
+  },
+  {
+   "air": 10.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 2.0079697150054177
+  },
+  {
+   "air": 10.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 14.507969715005418
+  },
+  {
+   "air": 10.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -1.7920302849945822
+  },
+  {
+   "air": 10.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 10.707969715005419
+  },
+  {
+   "air": 10.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 4.122385348143544
+  },
+  {
+   "air": 10.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 16.622385348143546
+  },
+  {
+   "air": 10.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": -1.6276146518564563
+  },
+  {
+   "air": 10.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 10.872385348143544
+  },
+  {
+   "air": 10.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -7.377614651856456
+  },
+  {
+   "air": 10.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 5.122385348143544
+  },
+  {
+   "air": 13.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 13.0
+  },
+  {
+   "air": 13.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 25.5
+  },
+  {
+   "air": 13.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 11.0
+  },
+  {
+   "air": 13.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 23.5
+  },
+  {
+   "air": 13.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 9.0
+  },
+  {
+   "air": 13.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 21.5
+  },
+  {
+   "air": 13.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 13.0
+  },
+  {
+   "air": 13.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 25.5
+  },
+  {
+   "air": 13.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 10.85
+  },
+  {
+   "air": 13.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 23.35
+  },
+  {
+   "air": 13.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 8.7
+  },
+  {
+   "air": 13.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 21.2
+  },
+  {
+   "air": 13.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 13.0
+  },
+  {
+   "air": 13.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 25.5
+  },
+  {
+   "air": 13.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 10.79
+  },
+  {
+   "air": 13.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 23.29
+  },
+  {
+   "air": 13.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 8.58
+  },
+  {
+   "air": 13.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 21.08
+  },
+  {
+   "air": 13.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 12.164721376583241
+  },
+  {
+   "air": 13.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 24.66472137658324
+  },
+  {
+   "air": 13.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 9.414721376583241
+  },
+  {
+   "air": 13.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 21.91472137658324
+  },
+  {
+   "air": 13.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 6.664721376583241
+  },
+  {
+   "air": 13.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 19.16472137658324
+  },
+  {
+   "air": 13.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 11.422690125834988
+  },
+  {
+   "air": 13.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 23.92269012583499
+  },
+  {
+   "air": 13.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 7.622690125834988
+  },
+  {
+   "air": 13.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 20.12269012583499
+  },
+  {
+   "air": 13.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 3.8226901258349884
+  },
+  {
+   "air": 13.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 16.32269012583499
+  },
+  {
+   "air": 13.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 10.715279617244173
+  },
+  {
+   "air": 13.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 23.21527961724417
+  },
+  {
+   "air": 13.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 4.965279617244173
+  },
+  {
+   "air": 13.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 17.46527961724417
+  },
+  {
+   "air": 13.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": -0.7847203827558271
+  },
+  {
+   "air": 13.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 11.715279617244173
+  },
+  {
+   "air": 16.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 16.0
+  },
+  {
+   "air": 16.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 28.5
+  },
+  {
+   "air": 16.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 14.0
+  },
+  {
+   "air": 16.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 26.5
+  },
+  {
+   "air": 16.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 12.0
+  },
+  {
+   "air": 16.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 24.5
+  },
+  {
+   "air": 16.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 16.0
+  },
+  {
+   "air": 16.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 28.5
+  },
+  {
+   "air": 16.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 13.85
+  },
+  {
+   "air": 16.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 26.35
+  },
+  {
+   "air": 16.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 11.7
+  },
+  {
+   "air": 16.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 24.2
+  },
+  {
+   "air": 16.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 16.0
+  },
+  {
+   "air": 16.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 28.5
+  },
+  {
+   "air": 16.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 13.79
+  },
+  {
+   "air": 16.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 26.29
+  },
+  {
+   "air": 16.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 11.58
+  },
+  {
+   "air": 16.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 24.08
+  },
+  {
+   "air": 16.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 16.0
+  },
+  {
+   "air": 16.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 28.5
+  },
+  {
+   "air": 16.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 13.25
+  },
+  {
+   "air": 16.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 25.75
+  },
+  {
+   "air": 16.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 10.5
+  },
+  {
+   "air": 16.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 23.0
+  },
+  {
+   "air": 16.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 16.0
+  },
+  {
+   "air": 16.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 28.5
+  },
+  {
+   "air": 16.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 12.2
+  },
+  {
+   "air": 16.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 24.7
+  },
+  {
+   "air": 16.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 8.4
+  },
+  {
+   "air": 16.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 20.9
+  },
+  {
+   "air": 16.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 16.0
+  },
+  {
+   "air": 16.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 28.5
+  },
+  {
+   "air": 16.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 10.25
+  },
+  {
+   "air": 16.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 22.75
+  },
+  {
+   "air": 16.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 4.5
+  },
+  {
+   "air": 16.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 17.0
+  },
+  {
+   "air": 25.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 25.0
+  },
+  {
+   "air": 25.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 37.5
+  },
+  {
+   "air": 25.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 23.0
+  },
+  {
+   "air": 25.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 35.5
+  },
+  {
+   "air": 25.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 21.0
+  },
+  {
+   "air": 25.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 33.5
+  },
+  {
+   "air": 25.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 25.0
+  },
+  {
+   "air": 25.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 37.5
+  },
+  {
+   "air": 25.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 22.85
+  },
+  {
+   "air": 25.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 35.35
+  },
+  {
+   "air": 25.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 20.7
+  },
+  {
+   "air": 25.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 33.2
+  },
+  {
+   "air": 25.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 25.0
+  },
+  {
+   "air": 25.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 37.5
+  },
+  {
+   "air": 25.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 22.79
+  },
+  {
+   "air": 25.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 35.29
+  },
+  {
+   "air": 25.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 20.58
+  },
+  {
+   "air": 25.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 33.08
+  },
+  {
+   "air": 25.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 25.0
+  },
+  {
+   "air": 25.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 37.5
+  },
+  {
+   "air": 25.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 22.25
+  },
+  {
+   "air": 25.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 34.75
+  },
+  {
+   "air": 25.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 19.5
+  },
+  {
+   "air": 25.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 32.0
+  },
+  {
+   "air": 25.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 25.0
+  },
+  {
+   "air": 25.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 37.5
+  },
+  {
+   "air": 25.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 21.2
+  },
+  {
+   "air": 25.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 33.7
+  },
+  {
+   "air": 25.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 17.4
+  },
+  {
+   "air": 25.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 29.9
+  },
+  {
+   "air": 25.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 25.0
+  },
+  {
+   "air": 25.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 37.5
+  },
+  {
+   "air": 25.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 19.25
+  },
+  {
+   "air": 25.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 31.75
+  },
+  {
+   "air": 25.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 13.5
+  },
+  {
+   "air": 25.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 26.0
+  },
+  {
+   "air": 38.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 38.0
+  },
+  {
+   "air": 38.0,
+   "wind": 0.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 50.5
+  },
+  {
+   "air": 38.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 36.0
+  },
+  {
+   "air": 38.0,
+   "wind": 0.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 48.5
+  },
+  {
+   "air": 38.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 34.0
+  },
+  {
+   "air": 38.0,
+   "wind": 0.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 46.5
+  },
+  {
+   "air": 38.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 38.0
+  },
+  {
+   "air": 38.0,
+   "wind": 1.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 50.5
+  },
+  {
+   "air": 38.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 35.85
+  },
+  {
+   "air": 38.0,
+   "wind": 1.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 48.35
+  },
+  {
+   "air": 38.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 33.7
+  },
+  {
+   "air": 38.0,
+   "wind": 1.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 46.2
+  },
+  {
+   "air": 38.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 38.0
+  },
+  {
+   "air": 38.0,
+   "wind": 1.4,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 50.5
+  },
+  {
+   "air": 38.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 35.79
+  },
+  {
+   "air": 38.0,
+   "wind": 1.4,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 48.29
+  },
+  {
+   "air": 38.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 33.58
+  },
+  {
+   "air": 38.0,
+   "wind": 1.4,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 46.08
+  },
+  {
+   "air": 38.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 38.0
+  },
+  {
+   "air": 38.0,
+   "wind": 5.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 50.5
+  },
+  {
+   "air": 38.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 35.25
+  },
+  {
+   "air": 38.0,
+   "wind": 5.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 47.75
+  },
+  {
+   "air": 38.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 32.5
+  },
+  {
+   "air": 38.0,
+   "wind": 5.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 45.0
+  },
+  {
+   "air": 38.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 38.0
+  },
+  {
+   "air": 38.0,
+   "wind": 12.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 50.5
+  },
+  {
+   "air": 38.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 34.2
+  },
+  {
+   "air": 38.0,
+   "wind": 12.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 46.7
+  },
+  {
+   "air": 38.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 30.4
+  },
+  {
+   "air": 38.0,
+   "wind": 12.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 42.9
+  },
+  {
+   "air": 38.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 0.0,
+   "feels_like": 38.0
+  },
+  {
+   "air": 38.0,
+   "wind": 25.0,
+   "wetness": 0.0,
+   "heat": 12.5,
+   "feels_like": 50.5
+  },
+  {
+   "air": 38.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 0.0,
+   "feels_like": 32.25
+  },
+  {
+   "air": 38.0,
+   "wind": 25.0,
+   "wetness": 0.5,
+   "heat": 12.5,
+   "feels_like": 44.75
+  },
+  {
+   "air": 38.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 0.0,
+   "feels_like": 26.5
+  },
+  {
+   "air": 38.0,
+   "wind": 25.0,
+   "wetness": 1.0,
+   "heat": 12.5,
+   "feels_like": 39.0
+  }
+ ],
+ "warmth": [
+  {
+   "heat": 20.0,
+   "radius": 4.0,
+   "distance": 0.0,
+   "warmth": 20.0
+  },
+  {
+   "heat": 20.0,
+   "radius": 4.0,
+   "distance": 0.5,
+   "warmth": 19.3798828125
+  },
+  {
+   "heat": 20.0,
+   "radius": 4.0,
+   "distance": 1.0,
+   "warmth": 17.578125
+  },
+  {
+   "heat": 20.0,
+   "radius": 4.0,
+   "distance": 2.0,
+   "warmth": 11.25
+  },
+  {
+   "heat": 20.0,
+   "radius": 4.0,
+   "distance": 3.99,
+   "warmth": 0.0004987507812499817
+  },
+  {
+   "heat": 20.0,
+   "radius": 4.0,
+   "distance": 4.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 20.0,
+   "radius": 4.0,
+   "distance": 10.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 8.0,
+   "radius": 1.5,
+   "distance": 0.0,
+   "warmth": 8.0
+  },
+  {
+   "heat": 8.0,
+   "radius": 1.5,
+   "distance": 0.5,
+   "warmth": 6.320987654320987
+  },
+  {
+   "heat": 8.0,
+   "radius": 1.5,
+   "distance": 1.0,
+   "warmth": 2.469135802469136
+  },
+  {
+   "heat": 8.0,
+   "radius": 1.5,
+   "distance": 2.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 8.0,
+   "radius": 1.5,
+   "distance": 3.99,
+   "warmth": 0.0
+  },
+  {
+   "heat": 8.0,
+   "radius": 1.5,
+   "distance": 4.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 8.0,
+   "radius": 1.5,
+   "distance": 10.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 30.0,
+   "radius": 0.0,
+   "distance": 0.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 30.0,
+   "radius": 0.0,
+   "distance": 0.5,
+   "warmth": 0.0
+  },
+  {
+   "heat": 30.0,
+   "radius": 0.0,
+   "distance": 1.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 30.0,
+   "radius": 0.0,
+   "distance": 2.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 30.0,
+   "radius": 0.0,
+   "distance": 3.99,
+   "warmth": 0.0
+  },
+  {
+   "heat": 30.0,
+   "radius": 0.0,
+   "distance": 4.0,
+   "warmth": 0.0
+  },
+  {
+   "heat": 30.0,
+   "radius": 0.0,
+   "distance": 10.0,
+   "warmth": 0.0
+  }
+ ]
+}

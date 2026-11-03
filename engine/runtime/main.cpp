@@ -244,6 +244,8 @@ public:
     virtual std::vector<render::DebugLine> debug_lines(const glm::dvec3&) const { return {}; }
     // The scene as JSON (entities and their transforms and colours), for tests.
     virtual std::string dump() const { return "{}"; }
+    // Lines about the game for the debug overlay (F3): the weather and how it treats the player.
+    virtual std::vector<std::string> status() const { return {}; }
     // How dark the picture is (a scene change fading out and in): 0 clear, 1 black.
     virtual float fade() const { return 0.0f; }
     // The player's profile file: used from now on, and saved when the game ends.
@@ -507,6 +509,14 @@ public:
                 {"ground",
                  {{"wetness", game.ground_cover().wetness}, {"snow", game.ground_cover().snow}}},
                 {"temperature", game.temperature_here()},
+                {"exposure",
+                 {{"feels_like", game.exposure().feels_like},
+                  {"wind", game.exposure().wind},
+                  {"heat", game.exposure().heat},
+                  {"wetness", game.exposure().wetness},
+                  {"roof", game.exposure().roof},
+                  {"walls", game.exposure().walls},
+                  {"sheltered", game.exposure().sheltered}}},
                 {"falling",
                  {{"kind", int(game.falling().kind)},
                   {"amount", game.falling().amount},
@@ -531,6 +541,23 @@ public:
                               {"audio", audio},
                               {"weather", weather}}
             .dump();
+    }
+    std::vector<std::string> status() const override {
+        const auto* type = game_.weather_type();
+        if (!type && !game_.weather_cell()) return {};
+        const auto& now = game_.weather_now();
+        const auto& e = game_.exposure();
+        const auto& g = game_.ground_cover();
+        char a[160], b[160], c[160];
+        std::snprintf(a, sizeof(a), "Weather: %s%s%s", type ? type->name.c_str() : "none",
+                      now.forced ? " (forced)" : "", now.front >= 0 ? " (a front)" : "");
+        std::snprintf(b, sizeof(b), "Air %.1f C, feels like %.1f C, wind %.1f m/s, heat +%.1f C",
+                      e.air, e.feels_like, e.wind, e.heat);
+        std::snprintf(c, sizeof(c),
+                      "%s (roof %.0f%%, walls %.0f%%), wet %.0f%%; ground wet %.0f%%, snow %.0f%%",
+                      e.sheltered ? "Sheltered" : "In the open", e.roof * 100.0, e.walls * 100.0,
+                      e.wetness * 100.0, g.wetness * 100.0, g.snow * 100.0);
+        return {a, b, c};
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
@@ -1246,12 +1273,16 @@ int run_window(const Options& opt, Source& source) {
                     char timing[96];
                     std::snprintf(timing, sizeof(timing), "%ld fps  %.1f ms  (worst %.1f ms)",
                                   frames_this_second, average * 1000.0, worst_frame * 1000.0);
-                    renderer.set_overlay(
-                        {{std::string("Midgard ") + midgard::kVersion},
-                         {timing, {1.0f, 1.0f, 0.6f, 1.0f}},
-                         {std::to_string(draw_count) + " draws"},
-                         {renderer.device_name()},
-                         {"F3 hides this, F4 outlines physics", {0.7f, 0.7f, 0.7f, 1.0f}}});
+                    std::vector<render::OverlayLine> lines = {
+                        {std::string("Midgard ") + midgard::kVersion},
+                        {timing, {1.0f, 1.0f, 0.6f, 1.0f}},
+                        {std::to_string(draw_count) + " draws"},
+                        {renderer.device_name()}};
+                    for (const std::string& line : source.status())
+                        lines.push_back({line, {0.7f, 0.9f, 1.0f, 1.0f}});
+                    lines.push_back(
+                        {"F3 hides this, F4 outlines physics", {0.7f, 0.7f, 0.7f, 1.0f}});
+                    renderer.set_overlay(lines);
                 }
                 frames_this_second = 0;
                 frame_seconds = worst_frame = 0.0;
