@@ -68,6 +68,17 @@ Playlist playlist_from_json(const std::string& id, const std::string& name, std:
     return p;
 }
 
+std::optional<int> fit(const std::vector<std::string>& scenes,
+                       const std::vector<std::string>& world_types,
+                       const std::vector<std::string>& biomes,
+                       const std::vector<std::string>& times, const MusicContext& c) {
+    if (!fits(scenes, c.scene) || !fits(world_types, c.world_type) || !fits(biomes, c.biome) ||
+        !fits(times, c.time))
+        return std::nullopt;
+    return int(!scenes.empty()) + int(!world_types.empty()) + int(!biomes.empty()) +
+           int(!times.empty());
+}
+
 std::string time_of_day(double phase) {
     phase -= std::floor(phase);  // 0 to 1
     const auto close_to = [&](double at) {
@@ -96,12 +107,9 @@ const Playlist* MusicDirector::choose(const MusicContext& c) const {
     const Playlist* best = nullptr;
     std::tuple<int, int> best_rank{-1, 0};
     for (const auto& [id, p] : playlists_) {  // (by id: the same choice every time)
-        if (p.tracks.empty() || !fits(p.scenes, c.scene) || !fits(p.world_types, c.world_type) ||
-            !fits(p.biomes, c.biome) || !fits(p.times, c.time))
-            continue;
-        const int named = int(!p.scenes.empty()) + int(!p.world_types.empty()) +
-                          int(!p.biomes.empty()) + int(!p.times.empty());
-        const std::tuple<int, int> rank{named, p.priority};
+        const auto named = fit(p.scenes, p.world_types, p.biomes, p.times, c);
+        if (p.tracks.empty() || !named) continue;
+        const std::tuple<int, int> rank{*named, p.priority};
         if (!best || rank > best_rank) {
             best = &p;
             best_rank = rank;

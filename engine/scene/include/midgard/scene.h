@@ -16,6 +16,7 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include "midgard/ambience.h"
 #include "midgard/body.h"
 #include "midgard/environment.h"
 #include "midgard/music.h"
@@ -348,6 +349,8 @@ public:
     std::map<std::string, audio::SoundEvent> sound_events;
     // Its music playlists (migration 15; midgard/music.h), by id.
     std::map<std::string, audio::Playlist> playlists;
+    // Its ambience sets (migration 16; midgard/ambience.h), by id.
+    std::map<std::string, audio::AmbienceSet> ambience;
     // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
     std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.

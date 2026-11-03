@@ -473,8 +473,21 @@ silence between them.
 A **stinger** is a short piece of music played over the music when something happens (a
 fanfare for a found secret): the music dips under it and comes back afterwards.
 
-*Making playlists in the editor comes with the Audio panel in a coming update. Until then they
-can be played from scripts, and your games already choose and crossfade them.*
+### Ambience: the sound of a place
+
+**Ambience** is the background sound of somewhere: wind on a hill, a forest's birds, a cave's
+drips. An **ambience set** says where it belongs (scenes, world types, biomes; empty means
+anywhere) and is chosen just as music is. It has:
+
+- **Layers**: sounds that loop under everything, each at its own **times of day**. Birdsong at
+  dawn and by day, crickets at dusk and by night: as the sun sets, the birds fade out as the
+  crickets fade in.
+- **Sprinkles**: one-off sounds now and then (an owl's hoot, a twig snapping), every so many
+  seconds, at a random spot around the player, so they're heard from different directions.
+
+*Making playlists and ambience sets in the editor comes with the Audio panel in a coming
+update. Until then they can be played from scripts, and your games already choose and
+crossfade them.*
 
 ### In the finished game
 
@@ -482,9 +495,9 @@ When the game is built, Midgard makes every sound it uses smaller: music and amb
 **Ogg Vorbis**, effects become **Opus**. Each is checked to be sure the game can play it. CC-BY
 sounds are credited automatically, like models and textures.
 
-*Coming in the next updates:* ambience by biome and time of day, footsteps that match the
-ground, and an **Audio** panel to make playlists and edit sound events in detail (including how
-far each one is heard).
+*Coming in the next updates:* footsteps that match the ground, and an **Audio** panel to
+make playlists and ambience sets and edit sound events in detail (including how far each one is
+heard).
 
 ---
 
@@ -970,6 +983,15 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 | `midgard.music.stop()` | Fades the music out until `play()` or `release()`. |
 | `midgard.music.stinger("Fanfare", duck=0.35)` | Plays a short piece over the music, which dips under it. |
 | `midgard.music.playlist`, `midgard.music.track` | What's playing now. |
+
+### Ambience: `midgard.ambience`
+
+| What | Meaning |
+|---|---|
+| `midgard.ambience.play("Cave")` | Plays that ambience set (crossfading), whatever fits where the player is. |
+| `midgard.ambience.release()` | Back to the set that fits where the player is. |
+| `midgard.ambience.stop()` | Fades the ambience out until `play()` or `release()`. |
+| `midgard.ambience.playing`, `midgard.ambience.layers` | What's playing now. |
 
 ### Other
 

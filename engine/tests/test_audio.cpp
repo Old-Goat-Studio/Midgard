@@ -669,3 +669,110 @@ TEST_CASE("music: tracks follow each other after their gap, and stingers duck th
     CHECK(m.duck_level() == doctest::Approx(1.0f));
     CHECK(strength(mix(v.mixer, 0.1), 300.0) == doctest::Approx(0.5).epsilon(0.05));
 }
+
+#include "midgard/ambience.h"
+
+namespace {
+
+void hear_for(Events& w, midgard::audio::AmbienceDirector& d, double seconds) {
+    for (int i = 0; i < int(std::lround(seconds * 100)); ++i) {
+        d.update(0.01);
+        w.player.update(0.01);
+        mix(w.mixer, 0.01);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("ambience: sets, their layers and sprinkles, and which fits where") {
+    using midgard::audio::ambience_from_json;
+    const auto a = ambience_from_json("amb_forest", "Forest", R"({
+        "layers": [{"event": "birds", "times": ["dawn", "day"], "volume": 0.8}, "wind"],
+        "sprinkles": [{"event": "owl", "times": ["night"], "every": [20, 10],
+                       "distance": [5, 15]}],
+        "biomes": ["Forest"], "priority": 1, "crossfade": 2})");
+    REQUIRE(a.layers.size() == 2);
+    CHECK(a.layers[0].times.size() == 2);
+    CHECK(a.layers[0].volume == 0.8f);
+    CHECK(a.layers[1].event == "wind");
+    CHECK(a.layers[1].times.empty());
+    REQUIRE(a.sprinkles.size() == 1);
+    CHECK(a.sprinkles[0].every_min == 10.0f);
+    CHECK(a.sprinkles[0].every_max == 20.0f);
+    CHECK(a.sprinkles[0].distance_max == 15.0f);
+    CHECK(a.crossfade == 2.0f);
+    CHECK_THROWS_AS(ambience_from_json("x", "X", R"({"layers": [{"event": "e",
+                                                    "times": ["teatime"]}]})"),
+                    midgard::audio::AudioError);
+
+    Events w;
+    midgard::audio::AmbienceDirector d(w.player);
+    d.add(ambience_from_json("anywhere", "Anywhere", R"({"layers": ["wind"]})"));
+    d.add(a);
+    d.add(ambience_from_json("silent", "Silent", R"({"biomes": ["Forest"], "priority": 9})"));
+    CHECK(d.choose({"s", "", "Desert", "day"})->id == "anywhere");
+    CHECK(d.choose({"s", "", "Forest", "night"})->id == "amb_forest");  // (silent: nothing)
+}
+
+TEST_CASE("ambience: layers change at dusk, crossfading; sprinkles now and then, around") {
+    Events w;
+    w.add("birds", R"({"sounds": ["snd:long400"], "bus": "ambience", "loop": true,
+                       "spatial": false})");
+    w.add("crickets", R"({"sounds": ["snd:long600"], "bus": "ambience", "loop": true,
+                          "spatial": false})");
+    w.add("owl", R"({"sounds": ["snd:900"], "bus": "ambience", "min_distance": 1,
+                     "max_distance": 100})");
+    midgard::audio::SoundPlayer::Listener ear;
+    ear.position = {100, 0, 100};
+    w.player.set_listener(ear);
+    midgard::audio::AmbienceDirector d(w.player);
+    d.add(midgard::audio::ambience_from_json("woods", "Woods", R"({
+        "layers": [{"event": "birds", "times": ["dawn", "day"]},
+                   {"event": "crickets", "times": ["dusk", "night"]}],
+        "sprinkles": [{"event": "owl", "times": ["night"], "every": [1, 2],
+                       "distance": [10, 10]}],
+        "crossfade": 1})"));
+    d.set_context({"s", "", "Forest", "day"});
+    hear_for(w, d, 1.5);
+    CHECK(d.playing() == "woods");
+    CHECK(d.layers() == std::vector<std::string>{"birds"});
+    auto out = mix(w.mixer, 0.1);
+    CHECK(strength(out, 400.0) == doctest::Approx(0.5).epsilon(0.05));
+    CHECK(strength(out, 600.0) < 0.01);
+    CHECK(d.sprinkled() == 0);  // (owls only at night)
+    // Dusk: the birds fade out as the crickets fade in, over the crossfade (at once: the set
+    // is the same, only the time changed).
+    d.set_context({"s", "", "Forest", "dusk"});
+    hear_for(w, d, 0.5);
+    out = mix(w.mixer, 0.1);
+    CHECK(strength(out, 400.0) == doctest::Approx(0.22).epsilon(0.3));
+    CHECK(strength(out, 600.0) == doctest::Approx(0.28).epsilon(0.3));
+    hear_for(w, d, 0.6);
+    out = mix(w.mixer, 0.1);
+    CHECK(strength(out, 400.0) < 0.01);
+    CHECK(strength(out, 600.0) == doctest::Approx(0.5).epsilon(0.05));
+    CHECK(d.layers() == std::vector<std::string>{"crickets"});
+    // Night: an owl every one to two seconds, 10 m away somewhere.
+    d.set_context({"s", "", "Forest", "night"});
+    int placed = 0;
+    for (int i = 0; i < 1000; ++i) {
+        hear_for(w, d, 0.01);
+        for (const auto& v : w.player.voices())
+            if (v.event == "owl" && v.spatial) {
+                CHECK(v.gain == doctest::Approx(0.1f).epsilon(0.01));  // (1 m / 10 m)
+                ++placed;
+            }
+    }
+    CHECK(d.sprinkled() >= 5);  // ten seconds: five to ten of them
+    CHECK(d.sprinkled() <= 10);
+    CHECK(placed > 0);
+    // A script's choice: silence, then back.
+    CHECK(d.force(""));
+    hear_for(w, d, 1.2);
+    CHECK(d.playing().empty());
+    CHECK(strength(mix(w.mixer, 0.1), 600.0) < 0.01);
+    CHECK_FALSE(d.force("Jungle"));
+    d.release();
+    hear_for(w, d, 2.2);  // (back once the choice has settled)
+    CHECK(d.playing() == "woods");
+}

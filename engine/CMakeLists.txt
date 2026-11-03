@@ -143,7 +143,8 @@ if(UNIX AND NOT APPLE)
 endif()
 find_package(OpusFile CONFIG REQUIRED)  # (Ogg Opus in games; Vorbis is stb_vorbis's)
 add_library(midgard_audio STATIC audio/src/audio.cpp audio/src/opus_backend.cpp
-            audio/src/sound_events.cpp audio/src/reverb.cpp audio/src/music.cpp)
+            audio/src/sound_events.cpp audio/src/reverb.cpp audio/src/music.cpp
+            audio/src/ambience.cpp)
 target_include_directories(midgard_audio PUBLIC audio/include)
 target_link_libraries(midgard_audio PUBLIC midgard_core midgard_miniaudio
                       PRIVATE OpusFile::opusfile nlohmann_json::nlohmann_json midgard_options)

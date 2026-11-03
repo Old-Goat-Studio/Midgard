@@ -187,6 +187,9 @@ public:
     // The music (midgard/music.h): playlists chosen by where the player is (none: silent).
     audio::MusicDirector* music() { return music_.get(); }
     const audio::MusicDirector* music() const { return music_.get(); }
+    // The ambience (midgard/ambience.h): the background sound of where the player is.
+    audio::AmbienceDirector* ambience() { return ambience_.get(); }
+    const audio::AmbienceDirector* ambience() const { return ambience_.get(); }
     // Where the player is, as the music sees it: the scene, its world type, the biome at the
     // listener and the time of day.
     audio::MusicContext music_context() const;
@@ -311,6 +314,7 @@ private:
     std::unordered_map<audio::VoiceId, entt::entity> attached_;
     audio::ReverbSettings reverb_;
     std::unique_ptr<audio::MusicDirector> music_;
+    std::unique_ptr<audio::AmbienceDirector> ambience_;
     void listen();
     bool sound_blocked(audio::VoiceId voice, const glm::dvec3& from, const glm::dvec3& to) const;
     void update_reverb();

@@ -498,6 +498,19 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
             }
         }
     }
+    // Ambience sets (migration 16).
+    if (has_column(db.get(), "ambience", "ambience")) {
+        Stmt v = prepare(db.get(), "SELECT id, name, ambience FROM ambience");
+        while (sqlite3_step(v.get()) == SQLITE_ROW) {
+            try {
+                audio::AmbienceSet a = audio::ambience_from_json(
+                    column_text(v.get(), 0), column_text(v.get(), 1), column_text(v.get(), 2));
+                scene.ambience.emplace(a.id, std::move(a));
+            } catch (const std::exception& ex) {
+                throw SceneError(ex.what());
+            }
+        }
+    }
     // Terrain stamps (migration 11): the scene's sculpting and painting, in order.
     if (has_column(db.get(), "terrain_stamp", "stamp")) {
         Stmt st = prepare(db.get(), "SELECT stamp FROM terrain_stamp WHERE scene = ? ORDER BY id");

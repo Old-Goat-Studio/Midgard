@@ -44,6 +44,13 @@ struct MusicContext {
     bool operator==(const MusicContext&) const = default;
 };
 
+// How well conditions fit where the player is (music's, ambience's): how many of the lists
+// name something (an empty one is any), or none when one of them doesn't hold.
+std::optional<int> fit(const std::vector<std::string>& scenes,
+                       const std::vector<std::string>& world_types,
+                       const std::vector<std::string>& biomes,
+                       const std::vector<std::string>& times, const MusicContext& context);
+
 // The time of day for a solar phase (0 sunrise, 0.25 noon, 0.5 sunset, 0.75 midnight): "dawn"
 // and "dusk" within 0.04 of sunrise and sunset (about an hour of a 24 hour day), "day" between,
 // "night" the rest.

@@ -81,6 +81,7 @@ public:
     using Blocked =
         std::function<bool(VoiceId voice, const glm::dvec3& from, const glm::dvec3& to)>;
     void set_listener(const Listener& listener);
+    const std::optional<Listener>& listener() const { return listener_; }
     void set_blocked(Blocked blocked) { blocked_ = std::move(blocked); }
     void set_position(VoiceId voice, const glm::dvec3& at);
     // How muffled a placed voice is now (0 clear, 1 behind a wall), and how loud for its

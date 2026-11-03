@@ -271,6 +271,7 @@ render::MeshData Game::load_mesh(const std::string& asset) const {
 
 void Game::set_audio(audio::Mixer* mixer) {
     stop_sources();
+    ambience_.reset();
     music_.reset();
     sounds_.reset();
     if (!mixer) return;
@@ -279,6 +280,8 @@ void Game::set_audio(audio::Mixer* mixer) {
     for (const auto& [id, e] : scene_.sound_events) sounds_->add(e);
     music_ = std::make_unique<audio::MusicDirector>(*sounds_);
     for (const auto& [id, p] : scene_.playlists) music_->add(p);
+    ambience_ = std::make_unique<audio::AmbienceDirector>(*sounds_);
+    for (const auto& [id, a] : scene_.ambience) ambience_->add(a);
     sounds_->set_blocked([this](audio::VoiceId voice, const glm::dvec3& from,
                                 const glm::dvec3& to) { return sound_blocked(voice, from, to); });
     listen();
@@ -422,9 +425,16 @@ void Game::update_sounds(double dt) {
         ++it;
     }
     update_reverb();
-    if (music_) {
-        music_->set_context(music_context());
-        music_->update(dt);
+    if (music_ || ambience_) {
+        const audio::MusicContext where = music_context();
+        if (music_) {
+            music_->set_context(where);
+            music_->update(dt);
+        }
+        if (ambience_) {
+            ambience_->set_context(where);
+            ambience_->update(dt);
+        }
     }
     sounds_->update(dt);
     for (std::string& p : sounds_->take_problems()) sound_problems_.push_back(std::move(p));
@@ -949,6 +959,8 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
         for (const auto& [eid, ev] : scene_.sound_events) sounds_->add(ev);
     if (music_)  // (the music plays on: the next update chooses for the new scene)
         for (const auto& [pid, p] : scene_.playlists) music_->add(p);
+    if (ambience_)
+        for (const auto& [aid, a] : scene_.ambience) ambience_->add(a);
 
     // The player at the arrival, facing the way it does (level: "up" comes from the world).
     entt::entity player = entt::null;

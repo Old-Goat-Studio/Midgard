@@ -449,6 +449,10 @@ public:
                      {"voices", voices},
                      {"reverb", game_.reverb().wet},
                      {"listener", {ear.x, ear.y, ear.z}}};
+            if (const auto* ambience = game_.ambience())
+                audio["ambience"] = {{"set", ambience->playing()},
+                                     {"layers", ambience->layers()},
+                                     {"sprinkled", ambience->sprinkled()}};
             if (const auto* music = game_.music()) {
                 const auto c = game_.music_context();
                 audio["music"] = {{"playlist", music->playing()},

@@ -354,6 +354,31 @@ music: Music
 """Music."""
 
 
+class Ambience:
+    """Ambience (midgard.ambience): the background sound of a place, made in the editor as
+    ambience sets and chosen like music by where the player is. Its layers fade in and out with
+    the time of day; its sprinkles sound now and then around the listener."""
+
+    playing: str
+    """The ambience set playing, by id ("" for none; read-only)."""
+    layers: list[str]
+    """Its layers sounding now: their sound events (read-only)."""
+
+    def play(self, set: str) -> None:
+        """Plays an ambience set (by name or id), crossfading, until release(). ValueError for
+        one the game hasn't."""
+
+    def release(self) -> None:
+        """Back to the ambience that fits where the player is."""
+
+    def stop(self) -> None:
+        """Fades the ambience out, until play() or release()."""
+
+
+ambience: Ambience
+"""Ambience."""
+
+
 class Rooms:
     """Moving between scenes (midgard.rooms). The player is in one scene at a time; a change
     fades the picture out, swaps the scene (the one left stops: its scripts get on_room_exit,

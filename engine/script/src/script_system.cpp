@@ -48,10 +48,11 @@ entt::registry& registry() {
 }
 
 // midgard.Entity: a handle on an entity of the running scene, by id.
-struct RoomsHandle {};  // midgard.rooms
-struct AudioHandle {};  // midgard.audio
-struct MusicHandle {};  // midgard.music
-struct SoundHandle {    // a sound playing (midgard.audio.play)
+struct RoomsHandle {};     // midgard.rooms
+struct AudioHandle {};     // midgard.audio
+struct MusicHandle {};     // midgard.music
+struct AmbienceHandle {};  // midgard.ambience
+struct SoundHandle {       // a sound playing (midgard.audio.play)
     audio::VoiceId voice = 0;
 };
 
@@ -795,6 +796,48 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def("__repr__", [](const MusicHandle&) { return std::string("<midgard.music>"); });
     m.attr("music") = MusicHandle{};
 
+    const auto ambience = []() -> audio::AmbienceDirector* { return current_game().ambience(); };
+    py::class_<AmbienceHandle>(m, "Ambience",
+                               "Ambience (midgard.ambience; milestone 5.14): the background "
+                               "sound of where the player is, or of a script's choosing.")
+        .def(
+            "play",
+            [ambience](const AmbienceHandle&, const std::string& set) {
+                if (auto* d = ambience(); d && !d->force(set))
+                    throw py::value_error("there is no ambience '" + set + "'");
+            },
+            py::arg("set"),
+            "Plays an ambience set (by name or id), crossfading, until release(). ValueError "
+            "for one the game hasn't.")
+        .def(
+            "release",
+            [ambience](const AmbienceHandle&) {
+                if (auto* d = ambience()) d->release();
+            },
+            "Back to the ambience that fits where the player is.")
+        .def(
+            "stop",
+            [ambience](const AmbienceHandle&) {
+                if (auto* d = ambience()) d->force("");
+            },
+            "Fades the ambience out, until play() or release().")
+        .def_property_readonly(
+            "playing",
+            [ambience](const AmbienceHandle&) {
+                auto* d = ambience();
+                return d ? d->playing() : std::string();
+            },
+            "The ambience set playing, by id (empty: none).")
+        .def_property_readonly(
+            "layers",
+            [ambience](const AmbienceHandle&) {
+                auto* d = ambience();
+                return d ? d->layers() : std::vector<std::string>();
+            },
+            "Its layers sounding now (their sound events).")
+        .def("__repr__", [](const AmbienceHandle&) { return std::string("<midgard.ambience>"); });
+    m.attr("ambience") = AmbienceHandle{};
+
     py::class_<NavHandle>(m, "Nav",
                           "Where agents can walk (midgard.nav; milestone 5.12): paths over the "
                           "scene's navigation mesh, made round the player.")
@@ -1104,6 +1147,7 @@ result = json.dumps({
     "Audio": sorted(n for n in dir(midgard.Audio) if not n.startswith("_")),
     "Sound": sorted(n for n in dir(midgard.Sound) if not n.startswith("_")),
     "Music": sorted(n for n in dir(midgard.Music) if not n.startswith("_")),
+    "Ambience": sorted(n for n in dir(midgard.Ambience) if not n.startswith("_")),
 })
 )",
              scope);
