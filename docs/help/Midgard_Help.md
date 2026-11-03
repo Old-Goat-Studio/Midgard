@@ -811,7 +811,17 @@ player flies a small ship there: **W A S D** go where the camera looks, **Space*
 **Left Ctrl** sinks, and the higher you are the faster you go (hold **Shift** for more). There
 is no gravity and no weather in space.
 
-*Coming next:* flying up out of the planet's atmosphere to get there, and coming back down.
+**Getting there.** A planet's atmosphere has a **ceiling**: fly higher than it (with a jetpack
+or a ship: a script makes the player fly) and you're in space, carrying on from where you
+crossed it. It's a fifth of the planet's radius up, and at least 300 m (you'll be able to set it
+in the editor). Fly back down through it and you come down below where you descended: on the
+ground there, or still flying just under the ceiling if your player flies.
+
+A **habitat** or a **hollow world** has no sky to fly up through. Its ways out are **docks** and
+**exit sites**: Scene Exits leading to space. Out there you see your world from outside, a huge
+cylinder or ball against the stars, with your ship just outside where you left. Fly back to its
+hull and you go back in, arriving at the exit's arrival point. (Choosing *Space* in a Scene
+Exit's Inspector comes with the next update.)
 
 ---
 

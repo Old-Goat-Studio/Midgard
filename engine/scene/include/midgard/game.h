@@ -39,6 +39,8 @@ namespace midgard {
 
 // Mesh asset ids that are built into the engine rather than stored in game.pak.
 inline constexpr const char* kBuiltinCube = "builtin:cube";
+inline constexpr const char* kBuiltinSphere = "builtin:sphere";      // radius 0.5
+inline constexpr const char* kBuiltinCylinder = "builtin:cylinder";  // radius 0.5, along Z
 
 // The player entered or left a trigger this frame.
 struct TriggerEvent {
@@ -318,8 +320,19 @@ public:
     static constexpr const char* kSystemSpace = "@space";
     static constexpr double kShipStart = 300.0;  // metres above the ground it leaves from
     // Into space from the planet the player is on, above where they are (a change of scene,
-    // faded). SceneError (as scene_change_error) when the scene isn't a planet's.
+    // faded): at least kShipStart above the ground, and above the atmosphere's ceiling. From an
+    // inside world (a habitat, a hollow world: through a Scene Exit leading to kSystemSpace, its
+    // docks and exit sites) the ship is just outside its hull there, the world seen from outside;
+    // flying back to the hull goes back in, at the exit's arrival. SceneError (as
+    // scene_change_error) on a bounded area or a flat-wrap cylinder: they have no outside.
     void enter_space(float fade = 1.0f);
+    // A planet's atmosphere: fly higher than its ceiling (metres above its sea level; the
+    // scene's "ceiling" setting, else a fifth of its radius and at least 300 m) and you're in
+    // space; fly down through it from space and you land below where you came down (on the
+    // ground; or still flying, just under it, if the player flies). 0: not a planet.
+    double ceiling() const;
+    // Players fly or walk (Player::fly), as a script says (a jetpack, a ship taking off).
+    void set_flying(entt::entity player, bool fly);
     bool in_space() const { return scene_.id == kSystemSpace; }
     // The planet's scene the player left for space ("" when not in space).
     const std::string& space_from() const { return space_from_; }
@@ -417,7 +430,17 @@ private:
     std::string scene_change_error_;
     std::string previous_scene_;
     std::map<std::string, std::string> rooms_;  // by scene id
-    std::string space_from_;
+    std::string space_from_, space_return_;     // the scene left for space; its arrival back
+    std::optional<double> space_start_;         // the ship's altitude on arriving (else the rule)
+    double space_ceiling_ = 0.0;                // the planet's, while in space above it
+    struct Hull {                               // an inside world's, seen from space
+        Shape::Kind kind = Shape::Kind::SphereInside;
+        glm::dvec3 centre{0.0};
+        double radius = 0.0, length = 0.0;
+    };
+    std::optional<Hull> space_hull_;
+    std::optional<SurfacePoint> landing_;  // where the player comes down on the planet
+    void cross_atmosphere();
     Scene make_space() const;
     void fly(const Actions& actions, float dt);
     std::map<std::string, Transform> loaded_;                 // the scene's entities as they loaded

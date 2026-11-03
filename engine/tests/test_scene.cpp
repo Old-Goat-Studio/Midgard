@@ -4520,3 +4520,127 @@ TEST_CASE("system space: only a planet has space above it") {
     CHECK_FALSE(game.in_space());
     CHECK(game.scene_change_error().find("only a planet") != std::string::npos);
 }
+
+TEST_CASE("system space: up through a planet's ceiling, and down again onto the ground below") {
+    const auto pkg = little_planet();
+    midgard::Game game(pkg->dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto frame = [&] {
+        game.update(actions, 1.0f / 60.0f);
+        game.stream_terrain(game.camera(1.0f).origin, false);
+        actions.begin_frame();
+    };
+    for (int i = 0; i < 60; ++i) frame();
+    CHECK(game.ceiling() == doctest::Approx(300.0));  // (a fifth of 1 km: at least 300 m)
+    // A jetpack (a script): the player flies, and climbs.
+    const entt::entity player = game.scene().find("e1_player");
+    game.set_flying(player, true);
+    actions.set("keyboard", "Space", 1.0f);
+    int frames = 0;
+    while (!game.in_space() && frames++ < 60 * 60) frame();
+    actions.set("keyboard", "Space", 0.0f);
+    REQUIRE(game.in_space());
+    CHECK(game.altitude() > 300.0);
+    CHECK(game.altitude() < 360.0);  // (on from where they crossed it)
+    while (game.changing_scene()) frame();
+    // Across a little, then down: through the ceiling, onto the ground below where the ship
+    // came down (the player walks: as designed).
+    actions.set("keyboard", "W", 1.0f);
+    for (int i = 0; i < 30; ++i) frame();
+    actions.set("keyboard", "W", 0.0f);
+    actions.set("keyboard", "Left Ctrl", 1.0f);
+    frames = 0;
+    glm::dvec3 came_down{0.0};
+    while (game.in_space() && frames++ < 60 * 60) {
+        came_down = game.scene().world_position(game.scene().find("space_ship"));
+        frame();
+    }
+    actions.set("keyboard", "Left Ctrl", 0.0f);
+    REQUIRE_FALSE(game.in_space());
+    while (game.changing_scene()) frame();
+    REQUIRE(game.scene().id == "scn_main");
+    const midgard::Scene& planet = game.scene();
+    const entt::entity landed = planet.find("e1_player");
+    CHECK_FALSE(planet.registry.get<midgard::Player>(landed).fly);
+    const glm::dvec3 at = planet.world_position(landed);
+    const auto& body = *planet.settings.body;
+    const midgard::SurfacePoint below = body.surface(came_down), here = body.surface(at);
+    CHECK(here.face == below.face);
+    CHECK(std::abs(here.u - below.u) < 0.01);
+    CHECK(std::abs(here.v - below.v) < 0.01);
+    REQUIRE(game.terrain() != nullptr);
+    CHECK(std::abs(game.terrain()->terrain().above_ground(at)) < 1.5);  // (on the ground)
+}
+
+TEST_CASE("system space: out of a habitat by its dock, round its hull, and back in") {
+    TestPackage pkg(
+        {{"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]}, "player": {}}')"},
+         {"e2_dock", R"(NULL, '{"transform": {"position": [0, 1, 30]},
+                        "scene_exit": {"scene": "@space", "arrival": "e3_back", "size": [4, 4, 4],
+                                       "fade": 0.1}}')"},
+         {"e3_back", R"(NULL, '{"transform": {"position": [0, 1, 24], "rotation": [0, 180, 0]},
+                        "arrival": {"name": "Back"}}')"},
+         {"e4_sun", R"(NULL, '{"transform": {"rotation": [-60, 0, 0]},
+                        "light": {"type": "directional"}}')"},
+         {"e5_floor", R"(NULL, '{"mesh": {"asset": "builtin:surface"},
+                          "collider": {"shape": "mesh"}}')"}},
+        R"({"body": {"shape": "curved_cylinder", "radius": 1000, "length": 6000,
+                     "origin": [0, 1000, 0]}})");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto frame = [&] {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+    };
+    frame();
+    CHECK(game.ceiling() == 0.0);  // (no sky to fly up through: a dock instead)
+    midgard::Scene& habitat = game.scene();
+    habitat.registry.get<midgard::Transform>(habitat.find("e1_player")).position = {0, 1, 30};
+    for (int i = 0; i < 60 && !game.in_space(); ++i) frame();
+    REQUIRE(game.in_space());
+    while (game.changing_scene()) frame();
+    // Outside, by the dock: the hull a cylinder 2 km across, 6 km long, round the axis.
+    const midgard::Scene& space = game.scene();
+    const entt::entity hull = space.find("space_hull");
+    REQUIRE((hull != entt::null));
+    const glm::vec3 size = space.registry.get<midgard::Transform>(hull).scale;
+    CHECK(size.x == doctest::Approx(2000.0f));
+    CHECK(size.z == doctest::Approx(6000.0f));
+    const glm::dvec3 ship = space.world_position(space.find("space_ship"));
+    CHECK(glm::length(glm::dvec2(ship.x, ship.y - 1000.0)) ==
+          doctest::Approx(1080.0).epsilon(0.01));
+    CHECK(ship.z == doctest::Approx(30.0).epsilon(0.05));
+    // Back to the hull (straight at it: up, from the bottom): in again, at the dock's arrival.
+    actions.set("keyboard", "Space", 1.0f);
+    for (int i = 0; i < 60 * 20 && game.in_space(); ++i) frame();
+    actions.set("keyboard", "Space", 0.0f);
+    REQUIRE_FALSE(game.in_space());
+    while (game.changing_scene()) frame();
+    CHECK(game.scene().id == "scn_main");
+    CHECK(glm::length(game.scene().world_position(game.scene().find("e1_player")) -
+                      glm::dvec3(0, 1, 24)) < 0.5);
+}
+
+TEST_CASE("system space: the cook takes a way out into space from a world with an outside") {
+    // A habitat's dock, coming back in at its own arrival: fine. On flat ground: refused; and
+    // a way back in that isn't an arrival there: refused.
+    TestPackage habitat({{"e1_dock", R"(NULL, '{"transform": {}, "scene_exit": {"scene": "@space",
+                        "arrival": "e2_back"}}')"},
+                         {"e2_back", R"(NULL, '{"transform": {}, "arrival": {}}')"}},
+                        R"({"body": {"shape": "curved_cylinder", "radius": 1000, "length": 6000,
+                     "origin": [0, 1000, 0]}})");
+    CHECK(midgard::validate_package(habitat.dir).errors.empty());
+    TestPackage flat(
+        {{"e1_dock", R"(NULL, '{"transform": {}, "scene_exit": {"scene": "@space"}}')"}});
+    const auto flat_report = midgard::validate_package(flat.dir);
+    REQUIRE(flat_report.errors.size() == 1);
+    CHECK(flat_report.errors[0].find("only a planet, a habitat or a hollow world") !=
+          std::string::npos);
+    TestPackage wrong(
+        {{"e1_dock", R"(NULL, '{"transform": {}, "scene_exit": {"scene": "@space",
+                        "arrival": "e9_nowhere"}}')"}},
+        R"({"body": {"shape": "sphere_inside", "radius": 1000, "origin": [0, 1000, 0]}})");
+    const auto wrong_report = midgard::validate_package(wrong.dir);
+    REQUIRE(wrong_report.errors.size() == 1);
+    CHECK(wrong_report.errors[0].find("e9_nowhere") != std::string::npos);
+}

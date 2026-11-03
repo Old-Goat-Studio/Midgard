@@ -78,6 +78,56 @@ MeshData make_sphere(int rings, int segments) {
     return mesh;
 }
 
+MeshData make_cylinder(int segments) {
+    if (segments < 3) throw std::invalid_argument("make_cylinder: too few segments");
+    constexpr float kPi = 3.14159265358979f;
+    MeshData mesh;
+    const auto add = [&](float x, float y, float z, float nx, float ny, float nz, float u,
+                         float v) {
+        Vertex vtx{};
+        vtx.position[0] = x;
+        vtx.position[1] = y;
+        vtx.position[2] = z;
+        vtx.normal[0] = nx;
+        vtx.normal[1] = ny;
+        vtx.normal[2] = nz;
+        vtx.uv[0] = u;
+        vtx.uv[1] = v;
+        mesh.vertices.push_back(vtx);
+        return uint32_t(mesh.vertices.size() - 1);
+    };
+    // The side: a strip round the axis, facing out.
+    for (int s = 0; s <= segments; ++s) {
+        const float a = 2.0f * kPi * float(s) / float(segments);
+        const float x = std::sin(a), y = std::cos(a);
+        add(0.5f * x, 0.5f * y, -0.5f, x, y, 0.0f, float(s) / float(segments), 0.0f);
+        add(0.5f * x, 0.5f * y, 0.5f, x, y, 0.0f, float(s) / float(segments), 1.0f);
+    }
+    for (uint32_t s = 0; s < uint32_t(segments); ++s) {
+        const uint32_t a = 2 * s, b = a + 1, c = a + 2, d = a + 3;
+        mesh.indices.insert(mesh.indices.end(), {a, c, b, b, c, d});
+    }
+    // The ends: fans facing out along the axis.
+    for (const float z : {-0.5f, 0.5f}) {
+        const float n = z < 0.0f ? -1.0f : 1.0f;
+        const uint32_t centre = add(0.0f, 0.0f, z, 0.0f, 0.0f, n, 0.5f, 0.5f);
+        for (int s = 0; s <= segments; ++s) {
+            const float a = 2.0f * kPi * float(s) / float(segments);
+            add(0.5f * std::sin(a), 0.5f * std::cos(a), z, 0.0f, 0.0f, n, 0.5f + 0.5f * std::sin(a),
+                0.5f + 0.5f * std::cos(a));
+        }
+        for (uint32_t s = 0; s < uint32_t(segments); ++s) {
+            const uint32_t a = centre + 1 + s, b = a + 1;
+            if (n > 0.0f)
+                mesh.indices.insert(mesh.indices.end(), {centre, b, a});
+            else
+                mesh.indices.insert(mesh.indices.end(), {centre, a, b});
+        }
+    }
+    generate_tangents(mesh);
+    return mesh;
+}
+
 namespace {
 
 // MikkTSpace reads the mesh through these callbacks.

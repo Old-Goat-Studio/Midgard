@@ -413,6 +413,8 @@ SceneSettings settings_from(sqlite3* db, const std::string& scene_id) {
                 out.terrain = terrain_from_json(terrain);
             }
         }
+        if (settings.contains("ceiling") && settings.at("ceiling").is_number())
+            out.ceiling = std::max(settings.at("ceiling").get<double>(), 10.0);
         if (settings.contains("weather") && !settings.at("weather").is_null()) {
             out.weather = settings.at("weather").dump();
             weather::weather_settings_from_json(out.weather);  // (what's wrong, said now)

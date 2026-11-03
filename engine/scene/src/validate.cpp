@@ -91,8 +91,8 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
         }
         for (entt::entity e : scene.registry.view<const MeshRef>()) {
             for (const std::string& asset : scene.registry.get<MeshRef>(e).assets())
-                if (asset != kBuiltinCube && asset != kBuiltinSurface &&
-                    !content_ids.contains(asset))
+                if (asset != kBuiltinCube && asset != kBuiltinSurface && asset != kBuiltinSphere &&
+                    asset != kBuiltinCylinder && !content_ids.contains(asset))
                     report.warnings.push_back(
                         "entity '" + scene.registry.get<EntityInfo>(e).id + "' uses mesh '" +
                         asset + "', which is not in the package; it will not be drawn");
@@ -162,11 +162,23 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
         for (entt::entity e : scene.registry.view<const SceneExit>()) {
             const SceneExit& x = scene.registry.get<SceneExit>(e);
             const std::string who = "entity '" + scene.registry.get<EntityInfo>(e).id + "'";
-            if (x.scene.empty())
+            if (x.scene.empty()) {
                 report.errors.push_back(who +
                                         " is a scene exit that leads nowhere: choose its "
                                         "scene");
-            else if (std::find(all_scenes.begin(), all_scenes.end(), x.scene) == all_scenes.end())
+            } else if (x.scene == "@space") {  // (Game::kSystemSpace: a dock, an exit site)
+                const auto& body = scene.settings.body;
+                const bool outside = body && (body->shape.kind() == Shape::Kind::SphereOutside ||
+                                              body->shape.kind() == Shape::Kind::SphereInside ||
+                                              body->shape.kind() == Shape::Kind::CurvedCylinder);
+                if (!outside)
+                    report.errors.push_back(who +
+                                            " is a way out into space, but only a planet, "
+                                            "a habitat or a hollow world has one");
+                else if (!x.arrival.empty() && !is_arrival(database, scene.id, x.arrival))
+                    report.errors.push_back(who + " comes back in at arrival '" + x.arrival +
+                                            "', which is not an arrival in its own scene");
+            } else if (std::find(all_scenes.begin(), all_scenes.end(), x.scene) == all_scenes.end())
                 report.errors.push_back(who + " is a scene exit to scene '" + x.scene +
                                         "', which is not in the package");
             else if (!x.arrival.empty() && !is_arrival(database, x.scene, x.arrival))
@@ -187,6 +199,8 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
         const PhysicsLayers layers = PhysicsLayers::load(database);
         const ScenePhysics physics(scene, layers, [&](const std::string& asset) {
             if (asset == kBuiltinCube) return render::make_cube();
+            if (asset == kBuiltinSphere) return render::make_sphere();
+            if (asset == kBuiltinCylinder) return render::make_cylinder();
             if (asset == kBuiltinSurface) return surface_mesh(scene.settings.body);
             for (const ContentEntry& c : m.content)
                 if (c.id == asset) {

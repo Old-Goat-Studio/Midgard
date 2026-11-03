@@ -328,6 +328,9 @@ struct SceneSettings {
     // The scene's own weather settings (midgard/weather_sim.h), as JSON: a scene without a world
     // type can have weather too. Empty: its world type's (none: no weather of its own).
     std::string weather;
+    // A planet's atmosphere ceiling (milestone 5.16): metres above its sea level where space
+    // begins (none: a fifth of its radius, at least 300 m).
+    std::optional<double> ceiling;
 };
 
 // The weather of a scene's world (milestone 5.15): from the scene's own weather settings, else

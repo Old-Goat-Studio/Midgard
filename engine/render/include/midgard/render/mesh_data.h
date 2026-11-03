@@ -25,6 +25,8 @@ struct MeshData {
 MeshData make_cube();
 // A sphere of radius 0.5 centred on the origin: rings from pole to pole, segments around.
 MeshData make_sphere(int rings = 24, int segments = 48);
+// A cylinder of radius 0.5 along Z from -0.5 to 0.5, closed at both ends.
+MeshData make_cylinder(int segments = 64);
 
 // Fills in tangents with MikkTSpace (the standard normal maps are baked against). The mesh needs
 // normals and uvs.
