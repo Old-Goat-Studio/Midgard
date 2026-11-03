@@ -89,6 +89,10 @@ class Entity:
         """Reaches a hand ("left" or "right") to a point or where an entity is, by a weight (0 to
         1), easing in; None: lets it go. ValueError for another hand."""
 
+    def play_sound(self, event: str, volume: float = 1.0) -> Sound | None:
+        """Plays a sound event (by name or id) from this entity, at volume times the event's.
+        The Sound playing, or None (a silent game, an unknown event, one cooling down)."""
+
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
 
@@ -273,6 +277,48 @@ class Time:
 
 time: Time
 """The game's clock."""
+
+
+class Sound:
+    """A sound playing (midgard.audio.play, Entity.play_sound)."""
+
+    playing: bool
+    """Whether it's still playing (False once it has finished or been stopped; read-only)."""
+
+    def stop(self) -> None:
+        """Stops it."""
+
+    def set_volume(self, volume: float) -> None:
+        """Its volume, times the event's (1 as it started)."""
+
+
+class Audio:
+    """Sound (midgard.audio): sound events, made in the editor, played by name or id. Every
+    sound plays on a bus: "music", "effects", "voice", "ambience" or "interface", all under
+    "master" (the whole game's volume). A game without sound (a server) plays nothing: play()
+    gives None and enabled is False."""
+
+    enabled: bool
+    """Whether the game makes sound (read-only)."""
+    playing: list[str]
+    """The sound events playing now, by id: one for each sound playing (read-only)."""
+
+    def play(self, event: str, volume: float = 1.0) -> Sound | None:
+        """Plays a sound event (by name or id), at volume times the event's: the Sound playing,
+        or None (a silent game, an unknown event, one cooling down)."""
+
+    def stop_all(self) -> None:
+        """Stops every sound playing."""
+
+    def set_volume(self, bus: str, volume: float) -> None:
+        """A bus's volume (linear: 0.5 is half). ValueError for an unknown bus."""
+
+    def volume(self, bus: str) -> float:
+        """A bus's volume."""
+
+
+audio: Audio
+"""Sound."""
 
 
 class Rooms:

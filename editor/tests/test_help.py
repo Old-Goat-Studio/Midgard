@@ -33,7 +33,7 @@ def test_the_guide_covers_what_it_promises_and_its_examples_are_python():
     text = guide.GUIDE.read_text("utf-8")
     contents = re.findall(r"^\d+\. (.+)$", text.split("## 1.")[0], re.M)
     headings = re.findall(r"^## \d+\. (.+)$", text, re.M)
-    assert len(contents) == len(headings) == 22
+    assert len(contents) == len(headings) == 23
     for example in re.findall(r"```python\n(.*?)```", text, re.S):
         ast.parse(example)  # (a mistake in an example would teach a mistake)
 

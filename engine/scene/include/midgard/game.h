@@ -166,6 +166,16 @@ public:
     Characters& characters() { return characters_; }
     // What went wrong reading characters' models and clips (each once, as it happened).
     const std::vector<std::string>& character_problems() const { return character_problems_; }
+
+    // Sound (milestone 5.14): the mixer the game plays through (the runtime's: a device, or
+    // one mixed offline; none: silent, and scripts' sounds do nothing). Its sound events come
+    // from the package; entities with a sound component play theirs (autoplay) while they're
+    // in the scene.
+    void set_audio(audio::Mixer* mixer);
+    audio::SoundPlayer* sounds() { return sounds_.get(); }
+    const audio::SoundPlayer* sounds() const { return sounds_.get(); }
+    // Sounds that couldn't be read, events that aren't there (each once), since last asked.
+    std::vector<std::string> take_sound_problems();
     void stream_navigation(bool wait = false);
     // The player walks along these points at its speed (instead of following the controls)
     // until it reaches the last; an empty list stops it. Tests, cutscenes, click-to-move.
@@ -275,6 +285,17 @@ private:
     Characters characters_;
     std::vector<std::string> character_problems_;
     void load_characters();
+    // Sound: the player of the game's events, and what each sound component is playing.
+    std::unique_ptr<audio::SoundPlayer> sounds_;
+    struct Source {
+        std::string event;
+        float volume = 1.0f;
+        audio::VoiceId voice = 0;
+    };
+    std::unordered_map<entt::entity, Source> sources_;
+    std::vector<std::string> sound_problems_;
+    void update_sounds(double dt);
+    void stop_sources();
     void apply_root_motion();
     std::vector<glm::dvec3> route_;  // follow_path's points still ahead
     glm::vec3 route_walk(entt::entity player);

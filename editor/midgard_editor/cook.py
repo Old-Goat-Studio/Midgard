@@ -34,6 +34,7 @@ from . import (
     model_materials,
     objects,
     scenes,
+    sound_events,
     sounds,
     textures,
 )
@@ -157,7 +158,8 @@ def used_mesh_assets(project: Project, model_textures: bool = True) -> set[str]:
         a for e in entities for a in character_assets_used(e.components)} | {
         t for e in entities for t in textures.components_textures(e.components)
         if textures.parse(t) is not None} | {
-        s for e in entities for s in sounds.sounds_in(e.components)}
+        s for e in entities for s in sounds.sounds_in(e.components)} | {
+        s for ev in sound_events.load_all(project) for s in sound_events.sounds_of(ev)}
 
 
 @dataclass
@@ -266,8 +268,17 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
     for e in all_entities:
         for texture, data in model_materials.textures_of(project, e.components).items():
             files[texture] = (model_materials.pak_path(texture), data)
-    # Sounds the scenes name (milestone 5.14): Ogg Vorbis or Opus, read back before they go in.
-    for user, components in texture_users:
+    # Sounds the scenes name and every sound event plays (milestone 5.14; scripts play events
+    # by name, so all of them): Ogg Vorbis or Opus, read back before they go in.
+    events = sound_events.load_all(project)
+    known = {e["id"] for e in events} | {e["name"] for e in events}
+    for e in all_entities:
+        event = e.components.get("sound", {}).get("event", "")
+        if "sound" in e.components and event not in known:
+            warnings.append(f"Entity '{e.name}' plays sound event '{event}', which the project "
+                            "doesn't have; it will be silent.")
+    sound_users = texture_users + [(f"Sound event '{e['name']}'", e["event"]) for e in events]
+    for user, components in sound_users:
         for sound in sounds.sounds_in(components):
             if sound in files:
                 continue

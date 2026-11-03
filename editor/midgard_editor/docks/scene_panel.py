@@ -30,7 +30,7 @@ from ..scene_model import Entity, descendants, parents_first, sky_component
 from ..undo import AddEntityCommand, AddObjectCommand, DeleteEntityCommand, SetEntityCommand
 
 ICONS = {"folder": "📁", "group": "🧩", "object": "🧱", "player": "🧍", "camera": "🎥",
-         "light": "☀", "sky": "🌌", "mesh": "■"}
+         "light": "☀", "sound": "🔊", "sky": "🌌", "mesh": "■"}
 LIGHT_ICONS = {"directional": "☀", "point": "💡", "spot": "🔦"}
 # New lights: a warm lamp's glow, and a spot pointing down. (A light added with a placed thing
 # selected goes inside it, a little above its origin: a candle's flame, a torch's.)

@@ -69,6 +69,7 @@ class Project(QObject):
     environments_changed = Signal(str)  # environment id, or "" when added or removed
     terrain_changed = Signal(str)  # scene id: its terrain stamps (sculpting and painting)
     world_types_changed = Signal(str)  # world type id: its recipe or name
+    sound_events_changed = Signal(str)  # sound event id, or "" when added or removed
     scenes_changed = Signal(str)  # scene id: added, removed, renamed or made the starting one
     scene_opened = Signal(str)  # scene id: the editor now edits this scene
     files_changed = Signal(list)  # model and image files changed on disk (paths in the project)

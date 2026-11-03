@@ -49,7 +49,22 @@ entt::registry& registry() {
 
 // midgard.Entity: a handle on an entity of the running scene, by id.
 struct RoomsHandle {};  // midgard.rooms
-struct NavHandle {};    // midgard.nav
+struct AudioHandle {};  // midgard.audio
+struct SoundHandle {    // a sound playing (midgard.audio.play)
+    audio::VoiceId voice = 0;
+};
+
+// Plays a sound event for a script: None when the game is silent, the event unknown (a warning
+// in the log, once) or cooling down.
+py::object play_sound(const std::string& event, float volume) {
+    audio::SoundPlayer* sounds = current_game().sounds();
+    if (!sounds) return py::none();
+    audio::SoundPlayer::Play play;
+    play.volume = volume;
+    const audio::VoiceId voice = sounds->play(event, play);
+    return voice ? py::cast(SoundHandle{voice}) : py::none();
+}
+struct NavHandle {};  // midgard.nav
 
 struct EntityHandle {
     entt::entity entity = entt::null;
@@ -291,6 +306,16 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             },
             py::arg("name"), py::arg("value"),
             "Sets a parameter of the character's animation graph (True and False are 1 and 0).")
+        .def(
+            "play_sound",
+            [](const EntityHandle& h, const std::string& event, float volume) {
+                h.resolve();
+                return play_sound(event, volume);
+            },
+            py::arg("event"), py::arg("volume") = 1.0f,
+            "Plays a sound event (by name or id) from this entity, at volume times the "
+            "event's. The Sound playing, or None (a silent game, an unknown event, one cooling "
+            "down).")
         .def(
             "trigger_animation",
             [](const EntityHandle& h, const std::string& name) {
@@ -638,6 +663,82 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def("__repr__", [](const RoomsHandle&) { return std::string("<midgard.rooms>"); });
     m.attr("rooms") = RoomsHandle{};
 
+    py::class_<SoundHandle>(m, "Sound", "A sound playing (midgard.audio.play).")
+        .def(
+            "stop",
+            [](const SoundHandle& s) {
+                if (auto* sounds = current_game().sounds()) sounds->stop(s.voice);
+            },
+            "Stops it.")
+        .def_property_readonly(
+            "playing",
+            [](const SoundHandle& s) {
+                const auto* sounds = current_game().sounds();
+                return sounds && sounds->playing(s.voice);
+            },
+            "Whether it's still playing (False once it has finished or been stopped).")
+        .def(
+            "set_volume",
+            [](const SoundHandle& s, float volume) {
+                if (auto* sounds = current_game().sounds()) sounds->set_volume(s.voice, volume);
+            },
+            py::arg("volume"), "Its volume, times the event's (1 as it started).")
+        .def("__repr__", [](const SoundHandle& s) {
+            return "<midgard.Sound " + std::to_string(s.voice) + ">";
+        });
+
+    const auto bus_of = [](const std::string& name) {
+        const auto bus = audio::bus_from_name(name);
+        if (!bus)
+            throw py::value_error("bus '" + name +
+                                  "' isn't master, music, effects, voice, ambience or interface");
+        return *bus;
+    };
+    py::class_<AudioHandle>(m, "Audio", "Sound (midgard.audio; milestone 5.14).")
+        .def(
+            "play",
+            [](const AudioHandle&, const std::string& event, float volume) {
+                return play_sound(event, volume);
+            },
+            py::arg("event"), py::arg("volume") = 1.0f,
+            "Plays a sound event (by name or id), at volume times the event's: the Sound "
+            "playing, or None (a silent game, an unknown event, one cooling down).")
+        .def(
+            "stop_all",
+            [](const AudioHandle&) {
+                if (auto* sounds = current_game().sounds()) sounds->stop_all();
+            },
+            "Stops every sound playing.")
+        .def(
+            "set_volume",
+            [bus_of](const AudioHandle&, const std::string& bus, float volume) {
+                const audio::Bus b = bus_of(bus);
+                if (auto* sounds = current_game().sounds()) sounds->mixer().set_volume(b, volume);
+            },
+            py::arg("bus"), py::arg("volume"),
+            "A bus's volume (linear: 0.5 is half): master, music, effects, voice, ambience or "
+            "interface.")
+        .def(
+            "volume",
+            [bus_of](const AudioHandle&, const std::string& bus) {
+                const audio::Bus b = bus_of(bus);
+                auto* sounds = current_game().sounds();
+                return sounds ? sounds->mixer().volume(b) : 1.0f;
+            },
+            py::arg("bus"), "A bus's volume.")
+        .def_property_readonly(
+            "playing",
+            [](const AudioHandle&) {
+                auto* sounds = current_game().sounds();
+                return sounds ? sounds->playing_events() : std::vector<std::string>();
+            },
+            "The sound events playing now, by id (one for each sound playing).")
+        .def_property_readonly(
+            "enabled", [](const AudioHandle&) { return current_game().sounds() != nullptr; },
+            "Whether the game makes sound (False on a server, or without a mixer).")
+        .def("__repr__", [](const AudioHandle&) { return std::string("<midgard.audio>"); });
+    m.attr("audio") = AudioHandle{};
+
     py::class_<NavHandle>(m, "Nav",
                           "Where agents can walk (midgard.nav; milestone 5.12): paths over the "
                           "scene's navigation mesh, made round the player.")
@@ -944,6 +1045,8 @@ result = json.dumps({
     "GameTime": sorted(n for n in dir(midgard.GameTime) if not n.startswith("_")),
     "Rooms": sorted(n for n in dir(midgard.Rooms) if not n.startswith("_")),
     "Nav": sorted(n for n in dir(midgard.Nav) if not n.startswith("_")),
+    "Audio": sorted(n for n in dir(midgard.Audio) if not n.startswith("_")),
+    "Sound": sorted(n for n in dir(midgard.Sound) if not n.startswith("_")),
 })
 )",
              scope);

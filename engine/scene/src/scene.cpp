@@ -256,6 +256,12 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<PhysicsMaterial>(
             e, std::max(c.value("friction", 0.5f), 0.0f),
             std::clamp(c.value("bounciness", 0.0f), 0.0f, 1.0f));
+    } else if (name == "sound") {
+        SoundSource s;
+        s.event = c.value("event", std::string());
+        s.autoplay = c.value("autoplay", true);
+        s.volume = std::max(c.value("volume", 1.0f), 0.0f);
+        reg.emplace_or_replace<SoundSource>(e, s);
     } else if (name == "light") {
         const std::string type = c.value("type", "directional");
         reg.remove<DirectionalLight, LocalLightSource>(e);
@@ -291,6 +297,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<Player>(e);
     else if (name == "light")
         reg.remove<DirectionalLight, LocalLightSource>(e);
+    else if (name == "sound")
+        reg.remove<SoundSource>(e);
     else if (name == "script")
         reg.remove<ScriptRef>(e);
     else if (name == "trigger")
@@ -319,7 +327,7 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
                ScriptRef, Trigger, Arrival, SceneExit, CharacterRef, Sky, RigidBody, ColliderShape,
-               PhysicsMaterial, Group, ObjectRef>(e);
+               PhysicsMaterial, Group, ObjectRef, SoundSource>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }
@@ -447,6 +455,19 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
                 scene.environments.emplace(
                     id, environment_from_json(id, column_text(v.get(), 1), column_text(v.get(), 2),
                                               column_text(v.get(), 3)));
+            } catch (const std::exception& ex) {
+                throw SceneError(ex.what());
+            }
+        }
+    }
+    // Sound events (migration 14).
+    if (has_column(db.get(), "sound_event", "event")) {
+        Stmt v = prepare(db.get(), "SELECT id, name, event FROM sound_event");
+        while (sqlite3_step(v.get()) == SQLITE_ROW) {
+            try {
+                audio::SoundEvent e = audio::sound_event_from_json(
+                    column_text(v.get(), 0), column_text(v.get(), 1), column_text(v.get(), 2));
+                scene.sound_events.emplace(e.id, std::move(e));
             } catch (const std::exception& ex) {
                 throw SceneError(ex.what());
             }

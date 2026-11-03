@@ -20,6 +20,7 @@
 #include "midgard/environment.h"
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
+#include "midgard/sound_events.h"
 #include "midgard/sunlight.h"
 #include "midgard/terrain.h"
 #include "midgard/world_type.h"
@@ -131,6 +132,14 @@ struct DirectionalLight {
 };
 
 // A point or spot light (a spot shines along the entity's local -Z).
+// An entity that plays a sound event (milestone 5.14): from where it is (3D, step 4), when the
+// scene starts or the entity appears (autoplay), at its own volume times the event's.
+struct SoundSource {
+    std::string event;  // a sound event's id (or name)
+    bool autoplay = true;
+    float volume = 1.0f;
+};
+
 struct LocalLightSource {
     bool spot = false;
     glm::vec3 color{1.0f};
@@ -323,6 +332,8 @@ public:
     std::unordered_map<std::string, std::string> objects;
     // The environments by id (the environment table, migration 10).
     std::unordered_map<std::string, EnvironmentDef> environments;
+    // The game's sound events (migration 14; midgard/sound_events.h), by id.
+    std::map<std::string, audio::SoundEvent> sound_events;
     // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
     std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.

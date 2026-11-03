@@ -251,3 +251,142 @@ TEST_CASE("encoding: a mono effect, surround mixed down, and what can't be encod
     CHECK(midgard::audio::codec_from_name("opus") == Codec::Opus);
     CHECK_FALSE(midgard::audio::codec_from_name("mp3"));
 }
+
+#include "midgard/sound_events.h"
+
+namespace {
+
+// A player over an offline mixer whose sounds are tones by name ("snd:440" is a 440 Hz tone,
+// half a second; "snd:long440" two seconds).
+struct Events {
+    Mixer mixer = offline();
+    std::vector<std::string> asked;
+    midgard::audio::SoundPlayer player{mixer, [this](const std::string& id) {
+                                           asked.push_back(id);
+                                           if (id.rfind("snd:long", 0) == 0)
+                                               return tone(std::stod(id.substr(8)), 2.0, 0.5f);
+                                           if (id.rfind("snd:", 0) != 0 || id == "snd:missing")
+                                               return std::vector<std::uint8_t>();
+                                           return tone(std::stod(id.substr(4)), 0.5, 0.5f);
+                                       }};
+    void add(const char* id, const char* json) {
+        player.add(midgard::audio::sound_event_from_json(id, std::string("Event ") + id, json));
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a sound event's settings, and what isn't one") {
+    using midgard::audio::sound_event_from_json;
+    const auto e = sound_event_from_json(
+        "sfx_door", "Door",
+        R"({"sounds": [{"sound": "snd:a", "weight": 3}, "snd:b"], "bus": "ambience",
+            "volume": [0.5, 0.8], "pitch": 1.2, "loop": true, "cooldown": 2, "max_voices": 3,
+            "spatial": false, "min_distance": 2, "max_distance": 1})");
+    CHECK(e.sounds.size() == 2);
+    CHECK(e.sounds[0].weight == 3.0f);
+    CHECK(e.sounds[1].sound == "snd:b");
+    CHECK(e.bus == Bus::Ambience);
+    CHECK(e.volume_min == 0.5f);
+    CHECK(e.volume_max == 0.8f);
+    CHECK(e.pitch_min == doctest::Approx(1.2f));
+    CHECK(e.pitch_max == doctest::Approx(1.2f));
+    CHECK(e.loop);
+    CHECK(e.max_voices == 3);
+    CHECK_FALSE(e.spatial);
+    CHECK(e.max_distance == 2.0f);                         // (never nearer than min_distance)
+    const auto d = sound_event_from_json("x", "X", "{}");  // defaults
+    CHECK(d.bus == Bus::Effects);
+    CHECK(d.volume_min == 1.0f);
+    CHECK_FALSE(d.loop);
+    CHECK_THROWS_AS(sound_event_from_json("x", "X", R"({"bus": "master"})"),
+                    midgard::audio::AudioError);
+    CHECK_THROWS_AS(sound_event_from_json("x", "X", R"({"volume": "loud"})"),
+                    midgard::audio::AudioError);
+    CHECK_THROWS_AS(sound_event_from_json("x", "X", "[1]"), midgard::audio::AudioError);
+}
+
+TEST_CASE("an event picks its sounds by weight, and its volume and pitch in their ranges") {
+    Events w;
+    w.add("steps", R"({"sounds": [{"sound": "snd:400", "weight": 3},
+                                  {"sound": "snd:800", "weight": 1}],
+                     "volume": [0.4, 0.6], "pitch": [0.9, 1.1]})");
+    int low = 0;
+    std::vector<double> levels;
+    for (int i = 0; i < 40; ++i) {
+        w.player.stop_all();
+        REQUIRE(w.player.play("Event steps") != 0);  // (by name)
+        const auto out = mix(w.mixer, 0.1);
+        const double hz = frequency(out, kRate);
+        CHECK(((hz > 350 && hz < 450) || (hz > 700 && hz < 900)));  // (pitch within 10%)
+        if (hz < 600) ++low;
+        levels.push_back(rms(out, 0) / (0.5 / std::sqrt(2.0)));
+    }
+    CHECK(low > 20);  // three in four, near enough
+    CHECK(low < 38);
+    CHECK(*std::min_element(levels.begin(), levels.end()) >= 0.39);
+    CHECK(*std::max_element(levels.begin(), levels.end()) <= 0.61);
+    CHECK(*std::max_element(levels.begin(), levels.end()) -
+              *std::min_element(levels.begin(), levels.end()) >
+          0.05);  // (they vary)
+    // Each sound read once, however often it plays.
+    CHECK(std::count(w.asked.begin(), w.asked.end(), "snd:400") == 1);
+    // The same seed: the same picks.
+    Events again;
+    again.add("steps", R"({"sounds": [{"sound": "snd:400", "weight": 3},
+                                      {"sound": "snd:800", "weight": 1}],
+                         "volume": [0.4, 0.6], "pitch": [0.9, 1.1]})");
+    again.player.play("steps");
+    Events first;
+    first.add("steps", R"({"sounds": [{"sound": "snd:400", "weight": 3},
+                                      {"sound": "snd:800", "weight": 1}],
+                         "volume": [0.4, 0.6], "pitch": [0.9, 1.1]})");
+    first.player.play("steps");
+    CHECK(mix(again.mixer, 0.1) == mix(first.mixer, 0.1));
+}
+
+TEST_CASE("cooldown, at most so many at once, looping, stopping, and problems") {
+    Events w;
+    w.add("bell", R"({"sounds": ["snd:500"], "cooldown": 1.0})");
+    CHECK(w.player.play("bell") != 0);
+    CHECK(w.player.play("bell") == 0);  // cooling down
+    w.player.update(0.6);
+    CHECK(w.player.play("bell") == 0);
+    w.player.update(0.5);  // 1.1 s on
+    CHECK(w.player.play("bell") != 0);
+
+    w.add("crowd", R"({"sounds": ["snd:long300"], "max_voices": 2})");
+    const auto a = w.player.play("crowd");
+    const auto b = w.player.play("crowd");
+    const auto c = w.player.play("crowd");  // the oldest goes for it
+    CHECK_FALSE(w.player.playing(a));
+    CHECK(w.player.playing(b));
+    CHECK(w.player.playing(c));
+    w.player.stop_event("crowd");
+    CHECK_FALSE(w.player.playing(c));
+
+    w.add("hum", R"({"sounds": ["snd:200"], "loop": true, "bus": "ambience"})");
+    const auto hum = w.player.play("hum");
+    mix(w.mixer, 1.0);  // twice its length
+    w.player.update(1.0);
+    CHECK(w.player.playing(hum));
+    const auto now = w.player.playing_events();
+    CHECK(std::count(now.begin(), now.end(), "hum") == 1);
+    w.player.stop_event("bell");
+    w.mixer.set_volume(Bus::Ambience, 0.0f);  // its bus down: silent
+    CHECK(peak(mix(w.mixer, 0.1)) == 0.0f);
+    w.player.stop_all();
+    CHECK(w.player.playing_events().empty());
+
+    // Problems: an unknown event, a sound not in the game (each once), and the event plays
+    // its other sounds.
+    w.add("half", R"({"sounds": ["snd:missing", "snd:600"]})");
+    CHECK(w.player.play("nothing") == 0);
+    CHECK(w.player.play("half") != 0);
+    w.player.stop_all();
+    CHECK(w.player.play("half") != 0);
+    const auto problems = w.player.take_problems();
+    CHECK(problems.size() == 2);
+    CHECK(std::count(w.asked.begin(), w.asked.end(), "snd:missing") == 1);
+    CHECK(w.player.take_problems().empty());
+}

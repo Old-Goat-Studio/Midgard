@@ -117,7 +117,7 @@ class EntityForm(QWidget):
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
                "rigidbody": "Rigid body", "physics_material": "Physics material",
                "scene_exit": "Scene exit", "arrival": "Arrival point",
-               "character": "Character"}
+               "character": "Character", "sound": "Sound"}
     ACTIVATIONS = {"enter": "Walking into it", "use": "Using it (Use: E or gamepad X, inside it)",
                    "script": "Only from a script"}
     SKY_COLOURS = {"color": "Sky colour", "ambient": "Ambient light"}
@@ -270,6 +270,9 @@ class EntityForm(QWidget):
                 self.follows_clock.toggled.connect(lambda on: self._set_value(
                     "light", "follows_clock", on, "follows the clock"))
                 form.addRow("", self.follows_clock)
+        self.sound_event = self.sound_autoplay = self.sound_volume = None
+        if "sound" in entity.components:
+            self._build_sound(form)
         self.script = self.trigger = None
         if "script" in entity.components:
             self.script = QComboBox()
@@ -565,6 +568,7 @@ class EntityForm(QWidget):
         self._refresh_physics(entity)
         self._refresh_scene_exit(entity)
         self._refresh_character(entity)
+        self._refresh_sound(entity)
         if self.follows_clock is not None:
             self.follows_clock.blockSignals(True)
             self.follows_clock.setChecked(bool(entity.components["light"].get("follows_clock")))
@@ -652,6 +656,11 @@ class EntityForm(QWidget):
                                                "size": [2.0, 2.5, 1.0], "fade": 0.5}
         elif kind == "arrival":
             entity.components["arrival"] = {"name": entity.name}
+        elif kind == "sound":
+            from .. import sound_events
+            events = sound_events.load_all(self.project)
+            entity.components["sound"] = {"event": events[0]["id"] if events else "",
+                                          "autoplay": True, "volume": 1.0}
         elif kind == "character":
             models = list(self.project.character_assets())
             entity.components["character"] = {"model": models[0] if models else "",
@@ -1062,6 +1071,83 @@ class EntityForm(QWidget):
         entity.components["sky"] = {**entity.components["sky"],
                                     key: [round(c, 4) for c in rgb[:3]]}
         self._push(entity, self.SKY_COLOURS[key].lower())
+
+    # ---- sound (milestone 5.14) -------------------------------------------------------------
+    def _build_sound(self, form: QFormLayout) -> None:
+        from .. import sound_events
+        self.sound_event = QComboBox()
+        self.sound_event.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.sound_event.setToolTip("The sound event it plays (a sound, or several to pick "
+                                    "from, with its volume and pitch)")
+        for e in sound_events.load_all(self.project):
+            self.sound_event.addItem(e["name"], e["id"])
+        self.sound_event.currentIndexChanged.connect(
+            lambda _i: self._set_value("sound", "event", self.sound_event.currentData(), "sound"))
+        library = QPushButton("Library...")
+        library.setToolTip("A sound from the Asset Library (music, ambiance or an effect): it "
+                           "becomes a sound event, if it isn't one already")
+        library.clicked.connect(self._sound_from_library)
+        form.addRow("Sound", _row(self.sound_event, library))
+        self.sound_autoplay = QCheckBox("Plays when the scene starts (or it appears)")
+        self.sound_autoplay.setToolTip("Off: only a script plays it (midgard.audio.play)")
+        self.sound_autoplay.toggled.connect(
+            lambda on: self._set_value("sound", "autoplay", on, "plays at the start"))
+        form.addRow("", self.sound_autoplay)
+        self.sound_volume = _spin(0.0, 4.0, 0.05, 2)
+        self.sound_volume.setToolTip("Times the sound event's own volume")
+        self.sound_volume.valueChanged.connect(
+            lambda _v: self._component_value("sound", "volume", self.sound_volume.value()))
+        form.addRow("Volume", self.sound_volume)
+        self.project.sound_events_changed.connect(self._sound_events_changed)
+
+    def _sound_events_changed(self, _event_id: str) -> None:
+        self.rebuild.emit(self.entity_id)  # (the list of events changed)
+
+    def _refresh_sound(self, entity) -> None:
+        if self.sound_event is None:
+            return
+        sound = entity.components["sound"]
+        event = sound.get("event", "")
+        self.sound_event.blockSignals(True)
+        if self.sound_event.findData(event) < 0:
+            self.sound_event.addItem(f"{event or 'none'} (missing)", event)
+        self.sound_event.setCurrentIndex(self.sound_event.findData(event))
+        self.sound_event.blockSignals(False)
+        self.sound_autoplay.blockSignals(True)
+        self.sound_autoplay.setChecked(bool(sound.get("autoplay", True)))
+        self.sound_autoplay.blockSignals(False)
+        self.sound_volume.blockSignals(True)
+        self.sound_volume.setValue(float(sound.get("volume", 1.0)))
+        self.sound_volume.blockSignals(False)
+
+    def sound_picker(self):
+        from .asset_window import LibraryPicker
+        return LibraryPicker(self.project, "A Sound from the Library",
+                             ("effects", "ambiance", "music"), asset_library.AUDIO, self)
+
+    def _sound_from_library(self) -> None:
+        picker = self.sound_picker()
+        if picker.exec() and picker.chosen is not None:
+            self.use_library_sound(picker.chosen)
+
+    def use_library_sound(self, file: Path) -> str:
+        """A library sound as what this entity plays: an event that plays just it (made, if
+        there isn't one), as one undoable step. Returns the event's id."""
+        from .. import sound_events, sounds
+        root = Path(self.project.root).resolve()
+        sound = sounds.ref(Path(file).resolve().relative_to(root).as_posix())
+        event = sound_events.find_for_sound(self.project, sound)
+        stack = self.project.undo_stack
+        stack.beginMacro("Sound from the library")
+        try:
+            if event is None:
+                event = sound_events.event_for_sound(self.project, file)
+                stack.push(sound_events.SoundEventCommand(self.project, None, event, ""))
+            self._set_value("sound", "event", event["id"], "sound")
+        finally:
+            stack.endMacro()
+        self.rebuild.emit(self.entity_id)
+        return event["id"]
 
     # ---- lights ----------------------------------------------------------------------------
     def _pick_light_color(self) -> None:

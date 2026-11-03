@@ -142,10 +142,11 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(midgard_miniaudio PUBLIC m)
 endif()
 find_package(OpusFile CONFIG REQUIRED)  # (Ogg Opus in games; Vorbis is stb_vorbis's)
-add_library(midgard_audio STATIC audio/src/audio.cpp audio/src/opus_backend.cpp)
+add_library(midgard_audio STATIC audio/src/audio.cpp audio/src/opus_backend.cpp
+            audio/src/sound_events.cpp)
 target_include_directories(midgard_audio PUBLIC audio/include)
 target_link_libraries(midgard_audio PUBLIC midgard_core midgard_miniaudio
-                      PRIVATE OpusFile::opusfile midgard_options)
+                      PRIVATE OpusFile::opusfile nlohmann_json::nlohmann_json midgard_options)
 # The cook's encoders (Ogg Vorbis and Ogg Opus): the editor's module and the tests only.
 find_package(Vorbis CONFIG REQUIRED)
 find_package(Opus CONFIG REQUIRED)

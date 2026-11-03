@@ -18,17 +18,18 @@ assumed: every term is explained the first time it appears.*
 9. Colours, materials and textures
 10. Terrain: hills, valleys, sand and snow
 11. Light: the sun, the sky, lamps, candles and torches
-12. Time, calendars, day and night
-13. Physics: things that are solid, fall and bounce
-14. The player and the camera
-15. Characters and animation
-16. More than one scene: doors and portals
-17. Scripting for beginners
-18. Scripting reference: everything a script can do
-19. Playing, building and exporting your game
-20. Saving, Git, backups and the error log
-21. Troubleshooting: when something goes wrong
-22. Keyboard shortcuts
+12. Sound and music
+13. Time, calendars, day and night
+14. Physics: things that are solid, fall and bounce
+15. The player and the camera
+16. Characters and animation
+17. More than one scene: doors and portals
+18. Scripting for beginners
+19. Scripting reference: everything a script can do
+20. Playing, building and exporting your game
+21. Saving, Git, backups and the error log
+22. Troubleshooting: when something goes wrong
+23. Keyboard shortcuts
 
 ---
 
@@ -90,7 +91,7 @@ arrangements ("Two Monitors" is built in).
 
 ### The menus
 
-- **File**: new, open and close projects; put a project under Git and commit (see section 20).
+- **File**: new, open and close projects; put a project under Git and commit (see section 21).
 - **Edit**: Undo, Redo, and **Preferences** (your settings for the editor itself).
 - **Build**: **Cook**, **Play** (F5), **Continue** (Ctrl+F5), **Pause** (F6), **Stop** (Shift+F5)
   and **Export…** (Ctrl+E).
@@ -133,7 +134,7 @@ Scale grows or shrinks evenly. Each drag is one Undo step.
 
 The Viewport's toolbar has switches:
 
-- **Colliders**: outlines of everything solid (see section 13).
+- **Colliders**: outlines of everything solid (see section 14).
 - **Navigation**: where computer-controlled characters can walk.
 - **Lights**: little light bulbs where your lamps are (they never appear in the game).
 - **Gizmos**: show or hide the Move/Rotate/Scale controls.
@@ -152,7 +153,7 @@ The **Add** button at the top of the **Scene** panel offers:
 - **Folder**: just for tidiness; folders group entities in the list and do nothing in the game.
 - **Group**: a set of parts that move as one (a cart made of a box and four wheels). Move the
   group and all its parts come along.
-- **Scene Exit** and **Arrival Point**: doors between scenes (section 16).
+- **Scene Exit** and **Arrival Point**: doors between scenes (section 17).
 - **Point Light** and **Spot Light**: lamps (section 11).
 - **Object**: one of your reusable objects (section 8).
 - **Sky**: the scene's sky (one per scene).
@@ -178,7 +179,7 @@ The top rows are the same for everything:
 - **Scale**: its size. 1 is normal, 2 is twice as big.
 
 Below come its components. **Add Component** gives it new abilities: Script, Trigger, Collider,
-Rigid body, Physics material, Scene exit, Arrival point, Character. Each component has an **✕**
+Rigid body, Physics material, Scene exit, Arrival point, Character, Sound. Each component has an **✕**
 button to take it off again.
 
 *Position, rotation and scale are always relative to the entity's parent.* If a candle is inside
@@ -396,18 +397,57 @@ shows while the game plays.
 
 ---
 
-## 12. Time, calendars, day and night
+## 12. Sound and music
+
+Midgard plays sound effects, music and ambience (background sound such as wind or birds).
+
+### Words first
+
+- A **sound** is a sound file in your Asset Library: an effect, a piece of music or ambiance.
+- A **sound event** is a named sound your game plays: "Door creak", "Theme", "Wind". It can
+  hold several variations of the sound; each time it plays it picks one, and nudges its volume
+  and pitch a little, so a sound heard again and again never sounds mechanical.
+- A **bus** is like a fader on a mixing desk. Every sound plays on one: **music**, **effects**,
+  **voice**, **ambience** or **interface**, all under the **master** (the whole game's volume).
+
+### Giving something a sound
+
+1. Bring the sound into the **Asset Library** (Assets ▸ Import Into Library…) as Music,
+   Ambiance or FX.
+2. Select the thing that makes the sound (a radio, a waterfall, a campfire) and choose **Add
+   Component ▸ Sound**.
+3. Click **Library…** next to **Sound** and pick the file. Midgard makes a sound event for it
+   (music and ambiance loop by themselves; effects play once).
+4. **Plays when the scene starts** plays it as soon as the scene begins (or the thing appears);
+   untick it to let only a script play it. **Volume** makes this one louder or quieter.
+5. Press **Play** to hear it.
+
+In the Scene list, things with a sound show 🔊.
+
+### In the finished game
+
+When the game is built, Midgard makes every sound it uses smaller: music and ambience become
+**Ogg Vorbis**, effects become **Opus**. Each is checked to be sure the game can play it. CC-BY
+sounds are credited automatically, like models and textures.
+
+*Coming in the next updates:* sounds heard from where they are in 3D (louder close up, muffled
+behind walls, echoing in caves), music that changes with the place and time of day, ambience by
+biome, footsteps that match the ground, and an **Audio** panel to edit sound events in detail.
+
+---
+
+## 13. Time, calendars, day and night
 
 Every game has a clock and a **calendar** (the **Calendar** panel): how long a day is, the
 months, the weekdays, the seasons and moons. You can design your own calendar for a fantasy
 world. Drag the Calendar panel's **scrubber** to preview any time of day in the Viewport.
 
 Scripts can read and change the time, speed it up, stop it, skip ahead (sleeping in an inn),
-and react at dawn, dusk or each new day (section 18, *Time*).
+and react at dawn, dusk or each new day (section 19, *Time*).
 
 ---
 
-## 13. Physics: things that are solid, fall and bounce
+## 14. Physics: things that are solid, fall and bounce
 
 Add these with **Add Component**:
 
@@ -433,10 +473,10 @@ In the game, **F4** shows them.
 
 ---
 
-## 14. The player and the camera
+## 15. The player and the camera
 
 The entity named **Player** has a **Player** component: speed, run speed, jump height and how
-big it is. With a **Character** component it also has a body (section 15).
+big it is. With a **Character** component it also has a body (section 16).
 
 The **Camera** follows the player in three views: **first person** (through its eyes), **third
 person** (behind it) and **top-down**. In the Inspector, **Edit…** next to the camera's field of
@@ -461,7 +501,7 @@ Walking is relative to the camera, and the player turns to face the way it walks
 
 ---
 
-## 15. Characters and animation
+## 16. Characters and animation
 
 A **character** is an animated model with a skeleton (a "rigged" model). To give an entity a
 body, select it, **Add Component ▸ Character**, then:
@@ -498,7 +538,7 @@ The panel's preview plays it all live.
 
 ---
 
-## 16. More than one scene: doors and portals
+## 17. More than one scene: doors and portals
 
 The **Scenes** panel lists every scene; one is where the game starts. To join two scenes:
 
@@ -513,7 +553,7 @@ The picture fades out and in during the change.
 
 ---
 
-## 17. Scripting for beginners
+## 18. Scripting for beginners
 
 A **script** is a small text file of instructions in **Python**, a programming language
 designed to be readable. You don't need to know Python to start: copy the examples below and
@@ -680,6 +720,28 @@ def on_trigger_enter(entity, other):
     midgard.rooms.change("scn_cave", fade=1.0)
 ```
 
+**Ring a bell when the player walks in** (make a sound event called "Bell" first, with
+**Library…** on any Sound component, or by giving something a sound):
+
+```python
+import midgard
+
+def on_trigger_enter(entity, other):
+    entity.play_sound("Bell")
+```
+
+**Turn the music down in a quiet room**
+
+```python
+import midgard
+
+def on_trigger_enter(entity, other):
+    midgard.audio.set_volume("music", 0.3)
+
+def on_trigger_exit(entity, other):
+    midgard.audio.set_volume("music", 1.0)
+```
+
 **Shake the camera when something lands**
 
 ```python
@@ -698,7 +760,7 @@ def on_trigger_enter(entity, other):
 
 ---
 
-## 18. Scripting reference: everything a script can do
+## 19. Scripting reference: everything a script can do
 
 Positions are in metres as `(x, y, z)`; Y is up. Angles are in degrees. Colours are
 `(red, green, blue)` or `(red, green, blue, alpha)` from 0 to 1.
@@ -814,6 +876,18 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 | `.nearest(point, reach=2)` | The nearest walkable spot. |
 | `.ready` | True once the walkable area round the player is worked out. |
 
+### Sound: `midgard.audio`
+
+| What | Meaning |
+|---|---|
+| `midgard.audio.play("Bell", volume=1)` | Plays a sound event by name; gives a **Sound** (or None). |
+| `entity.play_sound("Bell", volume=1)` | The same, from that entity. |
+| `sound.stop()`, `sound.playing`, `sound.set_volume(v)` | Stop it, check it, change its volume. |
+| `midgard.audio.stop_all()` | Stops every sound. |
+| `midgard.audio.set_volume(bus, v)` / `.volume(bus)` | A bus's volume: "master", "music", "effects", "voice", "ambience", "interface". |
+| `midgard.audio.playing` | The sound events playing now. |
+| `midgard.audio.enabled` | False when the game has no sound (a server). |
+
 ### Other
 
 | What | Meaning |
@@ -826,7 +900,7 @@ Scripts can use Python's standard library (`math`, `random` and so on).
 
 ---
 
-## 19. Playing, building and exporting your game
+## 20. Playing, building and exporting your game
 
 - **Play** (F5): starts your game from the beginning in a window beside the editor. Changes you
   make in the editor while it runs (moving things, colours, scripts) appear in the game at once.
@@ -841,7 +915,7 @@ Plays are quick.
 
 ---
 
-## 20. Saving, Git, backups and the error log
+## 21. Saving, Git, backups and the error log
 
 - **Saving**: Midgard saves every change as you make it. There's no Save button to forget.
 - **Backups**: copies of your project are made every few minutes (set in **Edit ▸
@@ -862,7 +936,7 @@ Project Page.
 
 ---
 
-## 21. Troubleshooting: when something goes wrong
+## 22. Troubleshooting: when something goes wrong
 
 **The editor takes a long time the first time I open a project or press Play.**
 Big model textures are being converted. It happens once per model; afterwards it's quick.
@@ -905,7 +979,7 @@ it along when asking for help.
 
 ---
 
-## 22. Keyboard shortcuts
+## 23. Keyboard shortcuts
 
 | Keys | Does |
 |---|---|

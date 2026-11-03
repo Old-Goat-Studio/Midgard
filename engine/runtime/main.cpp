@@ -4,8 +4,9 @@
 //   midgard_runtime --version
 //   midgard_runtime --check-python      start the game's Python and import the standard library
 //   midgard_runtime --dump-api          the midgard script API's names, as JSON
-//   midgard_runtime --package <dir> --simulate N [--dump-scene]
-//                                       N frames of gameplay and scripts, no window (tests)
+//   midgard_runtime --package <dir> --simulate N [--dump-scene] [--record-audio out.wav]
+//                                       N frames of gameplay and scripts, no window (tests);
+//                                       its sound mixed offline, and written to a WAV if asked
 //   midgard_runtime --package <dir> --headless --editor-link host:port
 //                                       play under the editor without a window or GPU (tests, CI)
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
@@ -108,6 +109,7 @@ struct Options {
     std::optional<std::string> editor_link;
     long simulate = -1;  // frames to run without a window
     bool dump_scene = false;
+    std::optional<std::string> record_audio;  // --simulate: the sound mixed, to this WAV
     bool headless = false;  // the game loop and live link, without a window or GPU
     long frames = -1;       // run until closed
     uint32_t width = 1280, height = 720;
@@ -229,6 +231,8 @@ public:
     virtual render::TerrainLook terrain_look() const { return {}; }
     virtual midgard::InputMap input_map() const { return midgard::InputMap::defaults(); }
     virtual void update(const midgard::Actions&, float) {}
+    // The mixer to play through (milestone 5.14; none: silent). Set back to none before it goes.
+    virtual void set_audio(midgard::audio::Mixer*) {}
     // Background work a frame would have had time for (navigation tiles being made): done
     // now. Headless simulations run frames far faster than real time.
     virtual void settle() {}
@@ -385,7 +389,9 @@ public:
 #ifdef MIDGARD_HAS_SCRIPTING
         if (scripts_) scripts_->update(actions, dt);
 #endif
+        for (const std::string& p : game_.take_sound_problems()) warn("%s\n", p.c_str());
     }
+    void set_audio(midgard::audio::Mixer* mixer) override { game_.set_audio(mixer); }
 
     std::string dump() const override {
         nlohmann::json entities = nlohmann::json::array();
@@ -429,6 +435,9 @@ public:
                                  {"color", {light.color.x, light.color.y, light.color.z}},
                                  {"ambient", {light.ambient.x, light.ambient.y, light.ambient.z}}};
         const auto phase = game_.scene().solar_phase;
+        // Sound (milestone 5.14): what's playing, by event.
+        nlohmann::json audio = nullptr;
+        if (const auto* sounds = game_.sounds()) audio = {{"playing", sounds->playing_events()}};
         // The world as generated (midgard/world_type.h): the editor's preview must match it.
         nlohmann::json world_hash;
         const midgard::SceneSettings& settings = game_.scene().settings;
@@ -446,7 +455,8 @@ public:
                               {"time", game_.time().now()},
                               {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},
                               {"sun", sun},
-                              {"season", game_.scene().sun_clock.season}}
+                              {"season", game_.scene().sun_clock.season},
+                              {"audio", audio}}
             .dump();
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
@@ -970,6 +980,12 @@ int run_window(const Options& opt, Source& source) {
         } catch (const midgard::audio::AudioError& e) {
             say("No sound: %s\n", e.what());
         }
+        source.set_audio(sound.get());
+        // (The game lets go of the mixer before it goes, however this ends.)
+        struct LetGo {
+            Source& source;
+            ~LetGo() { source.set_audio(nullptr); }
+        } let_go{source};
         source.upload(renderer);
         midgard::Actions actions(source.input_map());
         // Mouse-look captures the mouse. Under the editor the game starts with the mouse free
@@ -1234,15 +1250,35 @@ int dump_api() {
 #endif
 }
 
-// Gameplay and scripts for a number of frames at 60 per second, with no window or input.
+// Gameplay and scripts for a number of frames at 60 per second, with no window or input. Its
+// sound is mixed offline as it goes (each frame's 1/60 s), and written to --record-audio's WAV.
 int run_simulation(const Options& opt, Source& source) {
     midgard::Actions actions(source.input_map());
+    midgard::audio::MixerOptions offline;
+    offline.device = false;
+    midgard::audio::Mixer mixer(offline);
+    source.set_audio(&mixer);
+    const std::uint32_t per_frame = mixer.sample_rate() / 60;
+    std::vector<float> block(size_t(per_frame) * mixer.channels());
+    std::vector<float> recorded;
     for (long frame = 0; frame < opt.simulate; ++frame) {
         actions.begin_frame();
         source.update(actions, 1.0f / 60.0f);
         source.settle();
+        mixer.mix(block);
+        if (opt.record_audio) recorded.insert(recorded.end(), block.begin(), block.end());
     }
     if (opt.dump_scene) std::printf("%s\n", source.dump().c_str());
+    source.set_audio(nullptr);
+    if (opt.record_audio) {
+        const auto wav = midgard::audio::wav_bytes(recorded, mixer.channels(), mixer.sample_rate());
+        std::ofstream out(*opt.record_audio, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(wav.data()), std::streamsize(wav.size()));
+        if (!out) {
+            fail("can't write " + *opt.record_audio);
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -1336,6 +1372,8 @@ int main(int argc, char** argv) {
             opt.simulate = std::atol(argv[++i]);
         } else if (arg == "--dump-scene") {
             opt.dump_scene = true;
+        } else if (arg == "--record-audio" && has_value) {
+            opt.record_audio = argv[++i];
         } else if (arg == "--headless") {
             opt.headless = true;
         } else if (arg == "--package" && has_value) {

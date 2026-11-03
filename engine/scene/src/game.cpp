@@ -4,6 +4,7 @@
 #include "midgard/scene_nav.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
@@ -198,6 +199,7 @@ void Game::update(const Actions& actions, float dt) {
     characters_.update(scene_, dt);
     apply_root_motion();
     stream_navigation();
+    update_sounds(dt);
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
             save_profile();
@@ -263,6 +265,57 @@ render::MeshData Game::load_mesh(const std::string& asset) const {
         }
     }
     throw AssetError("mesh '" + asset + "' is not in the package's content list");
+}
+
+// ---- sound (milestone 5.14) --------------------------------------------------------------------
+
+void Game::set_audio(audio::Mixer* mixer) {
+    stop_sources();
+    sounds_.reset();
+    if (!mixer) return;
+    sounds_ = std::make_unique<audio::SoundPlayer>(
+        *mixer, [this](const std::string& id) { return read_texture(id); });
+    for (const auto& [id, e] : scene_.sound_events) sounds_->add(e);
+}
+
+void Game::stop_sources() {
+    if (sounds_)
+        for (const auto& [e, s] : sources_) sounds_->stop(s.voice);
+    sources_.clear();
+}
+
+void Game::update_sounds(double dt) {
+    if (!sounds_) return;
+    // Entities gone, or their sound changed or turned off: theirs stops.
+    for (auto it = sources_.begin(); it != sources_.end();) {
+        const SoundSource* s = scene_.registry.valid(it->first)
+                                   ? scene_.registry.try_get<SoundSource>(it->first)
+                                   : nullptr;
+        if (!s || !s->autoplay || s->event != it->second.event) {
+            sounds_->stop(it->second.voice);
+            it = sources_.erase(it);
+            continue;
+        }
+        if (s->volume != it->second.volume) {
+            sounds_->set_volume(it->second.voice, s->volume);
+            it->second.volume = s->volume;
+        }
+        ++it;
+    }
+    // New ones play (once each while their entity stays: a one-shot isn't played again).
+    for (const entt::entity e : scene_.registry.view<const SoundSource>()) {
+        const SoundSource& s = scene_.registry.get<SoundSource>(e);
+        if (!s.autoplay || sources_.contains(e)) continue;
+        audio::SoundPlayer::Play play;
+        play.volume = s.volume;
+        sources_[e] = {s.event, s.volume, sounds_->play(s.event, play)};
+    }
+    sounds_->update(dt);
+    for (std::string& p : sounds_->take_problems()) sound_problems_.push_back(std::move(p));
+}
+
+std::vector<std::string> Game::take_sound_problems() {
+    return std::exchange(sound_problems_, {});
 }
 
 void Game::load_characters() {
@@ -762,7 +815,9 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     const bool had_camera = camera_ && camera_->active();
     const CameraRig::State view = had_camera ? camera_->state() : CameraRig::State{};
 
-    // Leave the scene: its ground, placed objects and physics go.
+    // Leave the scene: its ground, placed objects and physics go, and its entities' sounds stop
+    // (a script's music plays on).
+    stop_sources();
     nav_world_.reset();
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
@@ -774,6 +829,8 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     outline_meshes_.clear();
     characters_.clear_states();
     scene_ = std::move(next);
+    if (sounds_)  // (the game's events, as this scene's package has them)
+        for (const auto& [eid, ev] : scene_.sound_events) sounds_->add(ev);
 
     // The player at the arrival, facing the way it does (level: "up" comes from the world).
     entt::entity player = entt::null;
