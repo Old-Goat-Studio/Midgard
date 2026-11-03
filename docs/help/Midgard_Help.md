@@ -235,11 +235,16 @@ Only use assets you're allowed to. Midgard accepts two kinds:
 
 ### Looking at assets
 
-Select an asset to see its details and a preview:
+Select an asset to see its details and a preview. Below its licence, every file it holds is
+listed with its size; click one to see it (or play it). Files there's nothing to show of, such
+as a licence or a model's data, are greyed.
 
-- **Models** turn slowly; if they're animated, choose a clip and press Play.
-- **Sounds** are listed file by file with their sizes; click one to play it.
-- **Textures** are shown as a material: choose **Cube, Sphere or Plane**, and **1:1, 1:2 or
+- **Models** turn slowly; if they're animated, choose a clip and press Play. Their texture
+  pictures are listed too.
+- **Sounds:** click one to play it (double-click plays it at once).
+- **Fonts** show a sample line in the font.
+- **Textures** are shown as a material (the first line of the list); click a map to see it
+  on its own. As a material: choose **Cube, Sphere or Plane**, and **1:1, 1:2 or
   1:4** to see how the texture repeats. **Drag** to turn it, **wheel** to zoom, **double-click**
   to reset. A lamp beside the camera shows how shiny it is.
 

@@ -477,12 +477,88 @@ def test_a_sound_assets_files_are_listed_with_their_sizes_to_play(project, qtbot
     window.files_list.topLevelItem(0).setSelected(False)
     window.files_list.topLevelItem(1).setSelected(True)
     assert window.player.choose.currentData()[1].name == "dusk.ogg"
-    # Not a sound asset: no list.
+    # Any other asset is listed too: a picture, chosen to show.
     lib.import_asset(project, [a_picture(tmp_path, "tile.png")], "images", "Tile")
     window.refresh()
     window.select("images/tile")
-    assert not window.files_list.isVisible()
+    assert window.files_list.isVisible()
+    assert window.files_list.topLevelItem(0).text(0) == "tile.png"
+    assert window.files_list.topLevelItem(0).isSelected()
+    assert window.player.kind == "picture"
     assert size_text(3_400_000) == "3.4 MB" and size_text(820_000) == "820 KB"
+
+
+def test_every_assets_files_are_listed_below_its_licence(project, qtbot, tmp_path):
+    """Textures, models, objects and GUI packs list their files as sounds do: a texture set's
+    whole material first, then its maps by role; a model's files and its pictures to show, its
+    other parts greyed; choosing one shows it."""
+    from test_characters import SAMPLES
+    pack = a_rock_pack(tmp_path)
+    lib.import_asset(project, [pack], "textures", "Rock", category="stone",
+                     roles={r: lib.guess_role(r) for r in lib.images_in([pack])})
+    window = AssetWindow()
+    qtbot.addWidget(window)
+    window.set_project(project)
+    window.show()
+    window.select("textures/stone/rock")
+    rows = [window.files_list.topLevelItem(i).text(0)
+            for i in range(window.files_list.topLevelItemCount())]
+    assert rows[0] == "Material (all maps)"
+    assert "Colour: rock_color.png" in rows and "Normal: rock_normal.png" in rows
+    assert window.files_list.topLevelItem(0).isSelected()
+    assert not window.player.choose.isVisible()  # (the list chooses)
+    assert "rock_color.png" not in window.info.text()  # (listed below, not in the details)
+    normal = next(window.files_list.topLevelItem(i)
+                  for i in range(window.files_list.topLevelItemCount())
+                  if window.files_list.topLevelItem(i).text(0).startswith("Normal"))
+    window.files_list.topLevelItem(0).setSelected(False)
+    normal.setSelected(True)
+    assert window.player.kind == "picture"
+    window.files_list.clearSelection()
+    window.files_list.topLevelItem(0).setSelected(True)  # (back to the whole material)
+    qtbot.waitUntil(lambda: window.player.kind != "preparing", timeout=30000)
+    assert window.player.kind in ("material", "picture")
+    # A model: its file to show, and a picture beside it.
+    model = tmp_path / "model"
+    model.mkdir()
+    (model / "hero.glb").write_bytes((SAMPLES / "superhero_male.glb").read_bytes())
+    a_picture(model, "hero_skin.png")
+    (model / "readme.txt").write_text("hello", "utf-8")
+    lib.import_asset(project, [model], "models", "Hero")
+    window.refresh()
+    window.select("models/hero")
+    rows = {window.files_list.topLevelItem(i).text(0): window.files_list.topLevelItem(i)
+            for i in range(window.files_list.topLevelItemCount())}
+    assert list(rows)[:2] == ["hero.glb", "hero_skin.png"]
+    readme = rows["readme.txt"]
+    assert not readme.flags() & readme.flags().ItemIsSelectable  # (greyed: nothing to show)
+    assert rows["hero.glb"].isSelected()
+
+
+def test_a_fonts_sample_doesnt_stay_on_for_what_comes_after(project, qtbot, tmp_path):
+    from pathlib import Path
+
+    import pytest
+    fonts = [Path(p) for p in ("C:/Windows/Fonts/arial.ttf",
+                               "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+             if Path(p).is_file()]
+    if not fonts:
+        pytest.skip("no font file on this system to try")
+    lib.import_asset(project, [fonts[0]], "fonts", "Sans")
+    lib.import_asset(project, [a_picture(tmp_path, "tile.png")], "images", "Tile")
+    window = AssetWindow()
+    qtbot.addWidget(window)
+    window.set_project(project)
+    window.show()
+    usual = window.player.picture.font()
+    window.select("fonts/sans")
+    assert window.player.kind == "font"
+    assert window.player.picture.font().pointSize() == 20
+    window.select("images/tile")
+    window.player.choose.setCurrentIndex(window.player.choose.currentIndex())
+    window.player.show_asset(None)  # (as when nothing is selected)
+    assert window.player.picture.font() == usual
+    assert window.info.font() == window.font()
 
 
 def test_sounds_in_a_packs_folders_are_listed_by_their_own_names(project, qtbot, tmp_path):

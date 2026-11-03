@@ -438,6 +438,9 @@ class AssetPlayer(QWidget):
         layout.addLayout(controls)
         self.kind = ""  # "", "picture", "model", "sound", "font"
         self.asset: lib.Asset | None = None
+        # The Asset Library window lists every asset's files itself (choosing one shows it),
+        # so its player's own chooser stays hidden; the library picker keeps it.
+        self.listed_outside = False
         self._view = None
         self._angle = 0.0
         self._frame = None  # (centre, size) of the model shown
@@ -463,10 +466,17 @@ class AssetPlayer(QWidget):
         for label, kind, path in self.choices(asset):
             self.choose.addItem(label, (kind, path))
         self.choose.blockSignals(False)
-        # (Sounds are chosen from the window's list of files, with their sizes.)
-        self.choose.setVisible(self.choose.count() > 1 and
-                               (asset is None or asset.type not in lib.ALBUMS))
+        self.choose.setVisible(self.choose.count() > 1 and not self.listed_outside)
         self.show_choice()
+
+    def choose_material(self) -> None:
+        """A texture set's whole material, shown."""
+        for i in range(self.choose.count()):
+            data = self.choose.itemData(i)
+            if data and data[0] == "material":
+                if i != self.choose.currentIndex():
+                    self.choose.setCurrentIndex(i)  # (shows it)
+                return
 
     def choose_file(self, path: Path) -> None:
         """One of the asset's files, shown (or ready to play)."""
@@ -503,9 +513,9 @@ class AssetPlayer(QWidget):
                 out.append((p.name, "sound", p))
             elif asset.type == "fonts" and ext in (".ttf", ".otf"):
                 out.append((p.name, "font", p))
-        if not out:  # (pictures, when that is all it has)
-            out = [(p.name, "picture", p) for p in files
-                   if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
+        # Its pictures too (a model's textures; all a GUI pack or an icon has), after the rest.
+        out += [(p.name, "picture", p) for p in files
+                if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
         return out
 
     def show_choice(self) -> None:
@@ -514,6 +524,8 @@ class AssetPlayer(QWidget):
         self._preparer.cancel()  # (a preparation under way: no longer wanted)
         self.kind = ""
         self.picture.clear()
+        self.picture.setFont(self.font())  # (a font's sample was shown in its own font)
+        self.picture.setWordWrap(False)
         self.clip.clear()
         choice = self.choose.currentData()
         if self.asset is None:
@@ -867,6 +879,9 @@ class LibraryPicker(QDialog):
         super().done(result)
 
 
+MATERIAL_ROW = "\x00material"  # (the files list's row for a texture set's whole material)
+
+
 class AssetWindow(QWidget):
     """The library's window (one for the editor; it follows the open project)."""
 
@@ -914,7 +929,8 @@ class AssetWindow(QWidget):
         self.info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.player = AssetPlayer()
-        # A sound asset's files with their sizes: choosing one is what the player plays.
+        self.player.listed_outside = True
+        # The asset's files with their sizes: choosing one is what the player shows or plays.
         self.files_list = QTreeWidget()
         self.files_list.setHeaderLabels(["File", "Size", "Folder"])
         self.files_list.setRootIsDecorated(False)
@@ -926,7 +942,8 @@ class AssetWindow(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.resizeSection(2, 120)
-        self.files_list.setToolTip("Choose a sound to play it (double-click: play at once)")
+        self.files_list.setToolTip("Choose a file to see it, or a sound to play it "
+                                   "(double-click a sound: play at once)")
         self.files_list.itemSelectionChanged.connect(self._file_chosen)
         self.files_list.itemDoubleClicked.connect(lambda *_: self._play_chosen())
         details = QWidget()
@@ -1056,40 +1073,48 @@ class AssetWindow(QWidget):
         if lib.needs_credit(asset):
             rows.append(f"Credit: {lib.credit(asset)}")
         size = sum(f.get("bytes", 0) for f in asset.files)
-        if asset.type in lib.ALBUMS:  # (listed below, with their sizes)
-            rows.append(f"Files: {len(asset.files)}, {size_text(size)}")
-        else:
-            rows.append(f"Files ({len(asset.files)}, {size / 1e6:.1f} MB): " +
-                        ", ".join(f["path"] for f in asset.files[:8]) +
-                        (" …" if len(asset.files) > 8 else ""))
+        rows.append(f"Files: {len(asset.files)}, {size_text(size)}")  # (listed below)
         if said := lib.problems(asset):
             rows.append("<span style='color:#d05050'>" + "<br>".join(said) + "</span>")
         self.info.setText("<br>".join(rows))
 
     # ---- what it does -----------------------------------------------------------------------
     def show_files(self, asset: lib.Asset | None) -> None:
-        """A sound asset's files, each with its size (the sounds can be chosen to play)."""
+        """The asset's files, each with its size, below its details. What can be shown or
+        played comes first and can be chosen: a texture set's whole material, then its maps;
+        models, sounds and fonts, then pictures (a model's textures). Then what else it holds
+        (a licence, a read-me, a model's .bin), greyed."""
         self.files_list.blockSignals(True)
         self.files_list.clear()
-        sounds = asset is not None and asset.type in lib.ALBUMS
-        self.files_list.setVisible(sounds)
-        if sounds:
+        self.files_list.setVisible(asset is not None)
+        if asset is not None:
+            choices = self.player.choices(asset)
+            shown = {Path(path): label for label, _kind, path in choices if path is not None}
+            kinds = {Path(path): kind for _label, kind, path in choices if path is not None}
             first = None
-            # The sounds first (by name), then what else it holds (a licence, a read-me).
+            if any(kind == "material" for _l, kind, _p in choices):
+                first = QTreeWidgetItem(["Material (all maps)", "", ""])
+                first.setToolTip(0, "The texture set's maps together, on a shape")
+                first.setData(0, ASSET_ROLE, MATERIAL_ROW)
+                self.files_list.addTopLevelItem(first)
+            # The models, sounds and fonts first, then the pictures, then the rest.
+            rank = {"picture": 1, None: 2}
             ordered = sorted(asset.files, key=lambda f: (
-                Path(f["path"]).suffix.lower() not in lib.AUDIO,
+                rank.get(kinds.get(asset.folder / f["path"]), 0),
                 Path(f["path"]).name.lower(), f["path"].lower()))
             for f in ordered:
                 path = asset.folder / f["path"]
-                # Its own name (where it sits in the pack beside it, and all of it on hover).
+                # Its own name (a texture's with its role; where it sits in the pack beside
+                # it, and all of it on hover).
                 folder = Path(f["path"]).parent.as_posix()
-                item = QTreeWidgetItem([Path(f["path"]).name, size_text(f.get("bytes", 0)),
+                item = QTreeWidgetItem([shown.get(path, Path(f["path"]).name),
+                                        size_text(f.get("bytes", 0)),
                                         "" if folder == "." else folder])
                 item.setToolTip(0, f["path"])
                 item.setData(0, ASSET_ROLE, str(path))
                 item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight |
                                       Qt.AlignmentFlag.AlignVCenter)
-                if path.suffix.lower() not in lib.AUDIO:  # (a licence, a read-me)
+                if path not in shown:  # (a licence, a read-me, a model's data)
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                     for column in range(3):
                         item.setForeground(column, Qt.GlobalColor.gray)
@@ -1102,8 +1127,13 @@ class AssetWindow(QWidget):
 
     def _file_chosen(self) -> None:
         items = self.files_list.selectedItems()
-        if items:
-            self.player.choose_file(Path(items[0].data(0, ASSET_ROLE)))
+        if not items:
+            return
+        chosen = items[0].data(0, ASSET_ROLE)
+        if chosen == MATERIAL_ROW:
+            self.player.choose_material()
+        else:
+            self.player.choose_file(Path(chosen))
 
     def _play_chosen(self) -> None:
         self._file_chosen()
