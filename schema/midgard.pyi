@@ -441,6 +441,14 @@ class WeatherApi:
 
     types: list[str]
     """The weather types' ids (read-only)."""
+    wetness: float
+    """How wet the ground is where the player is: 0 dry .. 1 soaked. A script can set it (a
+    flood, a spell that dries the land); then the weather carries on from there."""
+    snow: float
+    """How much snow has settled where the player is: 0 none .. 1 covered. Settable too."""
+    temperature: float
+    """The temperature where the player is, in degrees Celsius: the climate's there (with the
+    season), plus the weather's change (read-only)."""
 
     def current(self) -> Weather:
         """The weather where the player is now."""

@@ -446,11 +446,12 @@ public:
         glm::vec3 eye, target;
     };
     explicit Sky(const Setup& s, std::optional<WeatherLook> weather = std::nullopt,
-                 render::Falling falling = {})
+                 render::Falling falling = {}, render::GroundCover ground = {})
         : setup_(s),
           sky_(render::analytic_sky(glm::radians(s.elevation))),
           weather_(weather),
-          falling_(falling) {}
+          falling_(falling),
+          ground_(ground) {}
     void upload(render::Renderer& r) override {
         cube_ = r.upload_mesh(render::make_cube());
         sphere_ = r.upload_mesh(render::make_sphere());
@@ -508,6 +509,7 @@ public:
             apply(*weather_, env, light);
         }
         env.falling = falling_;
+        env.ground = ground_;
         return env;
     }
 
@@ -516,6 +518,7 @@ private:
     render::AnalyticSky sky_;
     std::optional<WeatherLook> weather_;  // (milestone 5.15)
     render::Falling falling_;
+    render::GroundCover ground_;
     render::MeshId cube_ = 0, sphere_ = 0;
 };
 
@@ -669,7 +672,9 @@ public:
         nlohmann::json body, terrain = nlohmann::json::object();
         if (which == "winter") summer_ = -1.0;  // deep winter: snow down to the shore
         if (which == "autumn") autumn_ = 1.0;   // between summer and winter, the leaves turning
-        if (which == "placed") {
+        // After a snowfall (milestone 5.15): the placed scene in autumn, under settled snow.
+        if (which == "snowfall") ground_.snow = 0.85f;
+        if (which == "placed" || which == "snowfall") {
             // A world type's objects on a bounded area (milestone 5.11): "trees" (a trunk and a
             // crown, both cubes) on the gentle ground, and grey boulders, leaning with it, on the
             // steeper.
@@ -763,7 +768,7 @@ public:
         body["id"] = which;
         scene_.settings.body = body_from_json(body);
         scene_.settings.terrain = terrain_from_json(terrain);
-        if (which == "placed") {  // above a hillside, looking across it
+        if (which == "placed" || which == "snowfall") {  // above a hillside, looking across it
             const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
             eye_ = t.ground({-420.0, 0.0, -380.0}) + glm::dvec3(0.0, 28.0, 0.0);
             look_ = t.ground({-500.0, 0.0, -470.0});
@@ -866,7 +871,11 @@ public:
     }
     render::Light light(const glm::dvec3& origin) const override { return scene_.light(origin); }
     glm::vec4 sky() const override { return {scene_.settings.sky, 1.0f}; }
-    render::Environment environment() const override { return scene_.environment(eye_); }
+    render::Environment environment() const override {
+        render::Environment env = scene_.environment(eye_);
+        env.ground = ground_;
+        return env;
+    }
     render::TerrainLook terrain_look() const override { return streamer_->look(); }
 
 private:
@@ -874,6 +883,7 @@ private:
     std::unique_ptr<TerrainStreamer> streamer_;
     std::unique_ptr<PlacedObjects> placed_;
     render::MeshId cube_ = 0;
+    render::GroundCover ground_;
     WorldLight light_;
     glm::dvec3 eye_{0.0}, look_{0.0, 0.0, -1.0};
     glm::vec3 up_{0, 1, 0};
@@ -891,7 +901,7 @@ std::vector<std::string> names() {
     std::vector<std::string> out = {"materials", "textures",       "compressed", "lights",
                                     "shadows",   "shadows_curved", "sky_day",    "sky_sunset",
                                     "colliders", "skinned",        "sky_cloudy", "sky_storm",
-                                    "sky_rain",  "sky_snow"};
+                                    "sky_rain",  "sky_snow",       "sky_wet",    "sky_snowed"};
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
@@ -899,7 +909,7 @@ std::vector<std::string> names() {
          {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore", "terrain_planet",
           "terrain_planet_low", "terrain_hollow", "terrain_hollow_far", "terrain_habitat_ground",
           "terrain_habitat_rod", "terrain_hollow_light", "terrain_planet_biomes", "terrain_placed",
-          "terrain_winter", "terrain_autumn"})
+          "terrain_snowfall", "terrain_winter", "terrain_autumn"})
         out.push_back(which);
     return out;
 }
@@ -952,6 +962,19 @@ std::unique_ptr<TestScene> make(const std::string& name) {
             Sky::Setup{35.0f, 140.0f, 0.004f, 0.02f, {0, 1.7f, 0}, {0, 1.2f, -20}}, look_of(&type),
             falling);
     }
+    // After the weather (step 6): the ground soaked under a clearing sky, and snow settled.
+    if (name == "sky_wet" || name == "sky_snowed") {
+        const bool wet = name == "sky_wet";
+        weather::WeatherType type = weather::weather_type_from_json(
+            name, name, wet ? R"({"clouds": 0.35, "darkness": 0.1})" : R"({"clouds": 0.5})");
+        render::GroundCover ground;
+        (wet ? ground.wetness : ground.snow) = 1.0f;
+        // (The wet ground faces the sun to shine; the snow has it behind the camera.)
+        const Sky::Setup setup =
+            wet ? Sky::Setup{25.0f, -30.0f, 0.004f, 0.02f, {0, 1.7f, 0}, {0, 1.2f, -20}}
+                : Sky::Setup{35.0f, 140.0f, 0.004f, 0.02f, {0, 1.7f, 0}, {0, 1.2f, -20}};
+        return std::make_unique<Sky>(setup, look_of(&type), render::Falling{}, ground);
+    }
     if (name == "terrain_area") return std::make_unique<TerrainScene>("area");
     if (name == "terrain_strip") return std::make_unique<TerrainScene>("strip");
     if (name == "terrain_habitat") return std::make_unique<TerrainScene>("habitat");
@@ -965,6 +988,7 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "terrain_hollow_light") return std::make_unique<TerrainScene>("hollow_light");
     if (name == "terrain_planet_biomes") return std::make_unique<TerrainScene>("planet_biomes");
     if (name == "terrain_placed") return std::make_unique<TerrainScene>("placed");
+    if (name == "terrain_snowfall") return std::make_unique<TerrainScene>("snowfall");
     if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
     if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
     for (const char* shape : kDayShapes)

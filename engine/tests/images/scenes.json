@@ -105,6 +105,18 @@
       "max_bad": 0.03
     },
     {
+      "name": "sky_wet",
+      "_about": "After the rain (milestone 5.15 step 6): the ground soaked, darker, with the low sun's glare shining on it, the ball wet and glossy, under a clearing sky.",
+      "args": ["--size", "480x270", "--scene", "sky_wet"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "sky_snowed",
+      "_about": "After a snowfall: snow settled on what faces up (the ground, the top of the ball, the tops of the pillars), not on the pillars' sides.",
+      "args": ["--size", "480x270", "--scene", "sky_snowed"],
+      "max_bad": 0.01
+    },
+    {
       "name": "colliders",
       "_about": "Collider outlines (--debug-physics) over the scene: static scenery grey-green, a dynamic crate and ball orange, a kinematic capsule blue, a trigger yellow, a static convex rock grey-green with its faces' diagonals, and the player's capsule cyan. Lines are thin, so drivers draw their pixels a little differently: up to 2% of pixels may differ.",
       "args": ["--size", "480x270", "--scene", "colliders", "--debug-physics"],
@@ -286,6 +298,12 @@
       "name": "terrain_placed",
       "_about": "A world type's objects placed over a bounded area (milestone 5.11): trees (a trunk and a crown) on the gentle ground, grey boulders leaning with the steeper, each at its own turn and size, with their shadows.",
       "args": ["--size", "480x270", "--scene", "terrain_placed"],
+      "max_bad": 0.01
+    },
+    {
+      "name": "terrain_snowfall",
+      "_about": "terrain_placed after a snowfall (milestone 5.15 step 6): settled snow over the hills, patchy where it thins, on the tops of the boulders and the trees' crowns, not on the steepest rock.",
+      "args": ["--size", "480x270", "--scene", "terrain_snowfall"],
       "max_bad": 0.01
     },
     {

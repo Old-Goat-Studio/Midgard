@@ -51,4 +51,5 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 fall;
     vec4 fall_motion;
     vec4 fall_velocity;
+    vec4 ground;  // what the weather left (render::GroundCover): x wetness, y snow (0 .. 1)
 } frame;

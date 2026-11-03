@@ -131,6 +131,9 @@ def on_start(entity):
     except ValueError as e:
         print("refused", e)
     print("types", len(midgard.weather.types))
+    midgard.weather.wetness = 0.5
+    print("ground", round(midgard.weather.wetness, 2), round(midgard.weather.snow, 2),
+          round(midgard.weather.temperature, 1))
 
 def changed(before, now):
     print("changed", before.id, "->", now.id, now.forced)
@@ -158,6 +161,7 @@ def test_scripts_read_force_and_hear_the_weather(project, tmp_path):
     assert "spell clear 0.02 0.98 False" in lines
     assert any(line.startswith("refused there is no weather type 'frogs'") for line in lines)
     assert "types 10" in lines
+    assert "ground 0.5 0.0 10.0" in lines  # (15 degrees without a climate; the storm's -5)
     changes = [line for line in lines if line.startswith("changed")]
     assert changes == ["changed clear -> thunderstorm True", "changed thunderstorm -> clear False"]
     assert dumped["weather"]["now"] == "clear" and not dumped["weather"]["forced"]

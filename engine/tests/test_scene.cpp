@@ -3823,3 +3823,56 @@ TEST_CASE("phones draw a quarter as much rain and snow") {
     for (const Falls f : {Falls::Rain, Falls::Snow, Falls::Ash, Falls::Sand})
         CHECK(std::fmod(480.0, double(falling_box(f))) == 0.0);  // (the game wraps at 480 m)
 }
+
+TEST_CASE("rain wets the ground and it dries; snow settles, then melts into wet ground") {
+    TestPackage pkg({}, R"({"sky": [0.1, 0.2, 0.3]})");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const double scale = game.time().scale();  // (game seconds a real second)
+    REQUIRE(scale > 1.0);
+    const auto hours = [&](double h) {  // the clock running for so many game hours
+        for (int i = 0; i < int(h * 3600.0 / scale); ++i) game.update(actions, 1.0f);
+    };
+    hours(0.1);
+    CHECK(game.ground_cover().wetness == 0.0f);
+    CHECK(game.ground_cover().snow == 0.0f);
+    CHECK(game.temperature_here() == doctest::Approx(15.0));  // (no climate)
+
+    REQUIRE(game.force_weather("rain", 0.0));  // (wetness 0.8, 3 degrees colder)
+    CHECK(game.temperature_here() == doctest::Approx(12.0));
+    hours(0.25);
+    const float quarter = game.ground_cover().wetness;
+    CHECK(quarter > 0.35f);
+    CHECK(quarter < 0.75f);
+    hours(1.0);
+    CHECK(game.ground_cover().wetness == doctest::Approx(0.8).epsilon(0.03));
+    CHECK(game.environment(glm::dvec3(0.0)).ground.wetness == game.ground_cover().wetness);
+
+    REQUIRE(game.force_weather("clear", 0.0));
+    hours(2.0);
+    CHECK(game.ground_cover().wetness == doctest::Approx(0.8 * std::exp(-1.0)).epsilon(0.1));
+    hours(6.0);
+    CHECK(game.ground_cover().wetness < 0.05f);
+
+    REQUIRE(game.force_weather("snow", 0.0));  // (half a downpour of snow: 0.2 an hour)
+    hours(2.0);
+    const float two = game.ground_cover().snow;
+    CHECK(two > 0.3f);
+    CHECK(two < 0.45f);
+    hours(4.0);
+    CHECK(game.ground_cover().snow == 1.0f);
+    CHECK(game.environment(glm::dvec3(0.0)).ground.snow == 1.0f);
+
+    // Clear and mild (15 degrees): it melts within a couple of hours, wetting the ground.
+    REQUIRE(game.force_weather("clear", 0.0));
+    hours(1.0);
+    CHECK(game.ground_cover().snow < 0.5f);
+    CHECK(game.ground_cover().wetness > 0.3f);
+    hours(2.0);
+    CHECK(game.ground_cover().snow == 0.0f);
+
+    // Scripts (and tests) can put some down.
+    game.set_ground_cover({0.25f, 0.5f});
+    CHECK(game.ground_cover().wetness == 0.25f);
+    CHECK(game.ground_cover().snow == 0.5f);
+}

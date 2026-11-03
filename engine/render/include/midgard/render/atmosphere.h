@@ -91,12 +91,21 @@ struct Falling {
 // The box round the camera each falls in (metres across): how far it's seen.
 float falling_box(Falls kind);
 
+// What the weather has left on the ground (milestone 5.15): how wet everything out in the open
+// is (darker and shinier, mostly on what faces up) and how much snow has settled (whitening what
+// faces up: the ground, the tops of rocks and roofs; not water or steep rock).
+struct GroundCover {
+    float wetness = 0.0f;  // 0 dry .. 1 soaked
+    float snow = 0.0f;     // 0 none .. 1 covered
+};
+
 struct Environment {
     bool sky = false;  // false: the frame's clear colour is the whole sky, flat
     SkyColors sky_colors;
     Fog fog;
     Clouds clouds;
     Falling falling;
+    GroundCover ground;
     // Radians: how far below level the visible horizon is, from a camera above a curved world
     // (a planet's ground falls away). The sky's horizon, and the sun setting behind it, are there.
     float horizon_dip = 0.0f;

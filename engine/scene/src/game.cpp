@@ -211,6 +211,7 @@ void Game::update(const Actions& actions, float dt) {
     weather_changes_ = std::exchange(weather_pending_, {});  // (scripts' since the last, too)
     update_weather_look(dt);
     update_falling(dt);
+    update_ground_cover(dt);
     update_sounds(dt);
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
@@ -642,11 +643,60 @@ void Game::update_falling(float dt) {
     falling_.moved = glm::mod(falling_.moved + velocity * double(dt), glm::dvec3(480.0));
 }
 
+double Game::temperature_here() const {
+    const weather::WeatherType* type = weather_type();
+    const double change = type ? type->temperature : 0.0;
+    if (!terrain_ || !scene_.settings.body || !scene_.settings.terrain ||
+        !scene_.settings.terrain->climate)
+        return 15.0 + change;
+    const glm::dvec3 at = player_position();
+    const SurfacePoint p = scene_.settings.body->surface(at);
+    const Terrain& t = terrain_->terrain();
+    return t.temperature_at(p.face, p.u, p.v, p.height) + double(terrain_look().season_offset) +
+           change;
+}
+
+void Game::update_ground_cover(float dt) {
+    const double hours = double(std::max(dt, 0.0f)) * std::max(time_.scale(), 0.0) /
+                         double(local_calendar().seconds_per_hour());
+    if (hours <= 0.0) return;
+    const weather::WeatherType* type = weather_type();
+    const bool raining = falling_.kind == render::Falls::Rain && falling_.amount > 0.01f;
+    const bool snowing = falling_.kind == render::Falls::Snow && falling_.amount > 0.01f;
+    const double temperature = temperature_here();
+    const bool climate = scene_.settings.terrain && scene_.settings.terrain->climate;
+    // Snow: settling, or melting (fast in rain or the warmth, slowly otherwise; never in a
+    // climate's frost).
+    double snow = ground_cover_.snow;
+    if (snowing) {
+        snow += hours * 0.4 * double(falling_.amount);
+    } else if (!(climate && temperature < 0.0)) {
+        const double rate = raining || temperature > 4.0 ? 0.6 : 0.15;
+        snow -= hours * rate;
+    }
+    snow = std::clamp(snow, 0.0, 1.0);
+    const double melted = std::max(double(ground_cover_.snow) - snow, 0.0);
+    // Wetness: up to the weather's in about a quarter of an hour while it rains (or a fog's damp
+    // settles), drying over about two hours after; melting snow wets it.
+    double wet = ground_cover_.wetness;
+    const double target =
+        type ? double(type->wetness) * (raining || type->falls == weather::Falls::none ? 1.0 : 0.0)
+             : 0.0;
+    if (target > wet)
+        wet += (target - wet) * (1.0 - std::exp(-hours / 0.25));
+    else
+        wet *= std::exp(-hours / (temperature > 20.0 ? 1.0 : 2.0));
+    wet = std::clamp(wet + melted * 2.0, 0.0, 1.0);
+    ground_cover_.snow = float(snow);
+    ground_cover_.wetness = float(wet);
+}
+
 render::Environment Game::environment(const glm::dvec3& origin) const {
     render::Environment env = scene_.environment(origin);
     render::Light light;
     apply(look_, env, light);
     env.falling = falling_;
+    env.ground = ground_cover_;
     return env;
 }
 

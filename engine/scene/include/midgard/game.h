@@ -237,6 +237,17 @@ public:
     // easing in and out as it changes (one kind giving way before the next), carried by its wind
     // and gusts.
     const render::Falling& falling() const { return falling_; }
+    // What the weather has left on the ground where the player is (render::GroundCover), as the
+    // clock runs: wet while it rains (up to the weather's wetness, in about a quarter of an
+    // hour), drying over a couple of hours after; snow settling while it snows (covered in two
+    // to four hours) and melting after (in a few hours; at once in rain; not while it's below
+    // freezing in a world with a climate), its water wetting the ground.
+    const render::GroundCover& ground_cover() const { return ground_cover_; }
+    // Scripts and tests: what lies there now.
+    void set_ground_cover(const render::GroundCover& cover) { ground_cover_ = cover; }
+    // The temperature where the player is (degrees Celsius): the climate's there (with the
+    // season), and the weather's change; 15 without a climate.
+    double temperature_here() const;
     // What is underfoot of an entity (midgard/footsteps.h): an object's surface, the terrain's
     // ground, or "default".
     std::string ground_under(entt::entity e) const;
@@ -391,6 +402,8 @@ private:
     std::size_t flashes_ = 0;
     render::Falling falling_;
     void update_falling(float dt);
+    render::GroundCover ground_cover_;
+    void update_ground_cover(float dt);
     void update_weather_sounds();
     glm::dvec3 player_position() const;
     // Footsteps: how far each walker has come since its last step, and the steps taken.

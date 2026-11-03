@@ -22,7 +22,7 @@
       "ci-linux-release": 30,
       "ci-linux-arm64-release": 30
     },
-    "render.rain_phone": {"default": 3, "ci-linux-release": 150, "ci-linux-arm64-release": 200, "_about": "The heaviest rain at the phone tier (8,192 blended streaks) over a plain with a cloudy sky and fog, 640x360: 0.16 ms on the development PC's GPU. CI draws on software Vulkan, slow at blending many small triangles, so its budgets are wide until its timings are seen."},
+    "render.rain_phone": {"default": 3, "ci-linux-release": 30, "ci-linux-arm64-release": 40, "_about": "The heaviest rain at the phone tier (8,192 blended streaks) over a plain with a cloudy sky and fog, 640x360: 0.16 ms on the development PC's GPU. CI draws on software Vulkan: 10.5 ms on Linux x64 and 14.0 ms on arm64 (CI for 50ec41d, 3 November 2026)."},
     "render.skinned_32_phone": {"default": 3, "ci-linux-release": 250, "ci-linux-arm64-release": 300, "_about": "32 skinned characters (8,500 vertices on 65 joints each) with sun shadows, phone quality: 0.35 ms on the development PC's GPU; CI draws on software Vulkan, far slower at vertex work (157 ms on Linux x64, 215 ms on arm64)."},
     "render.terrain_hollow_phone": {
       "default": 16.7,

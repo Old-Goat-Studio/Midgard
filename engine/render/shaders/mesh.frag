@@ -113,9 +113,8 @@ vec3 environment_brdf(vec3 f0, float roughness, float n_dot_v) {
 void main() {
     const vec4 base = texture(base_color_map, v_uv) * pc.base_color;
     const vec4 mr = texture(metallic_roughness_map, v_uv);
-    const float metallic = clamp(pc.params.x * mr.b, 0.0, 1.0);
-    const float roughness = clamp(pc.params.y * mr.g, 0.03, 1.0);
-    const float alpha = roughness * roughness;
+    float metallic = clamp(pc.params.x * mr.b, 0.0, 1.0);
+    float roughness = clamp(pc.params.y * mr.g, 0.03, 1.0);
 
     // The normal, bent by the normal map where the mesh has tangents.
     vec3 n = normalize(v_normal);
@@ -132,7 +131,19 @@ void main() {
     if (!gl_FrontFacing) n = -n;
 
     const vec3 v = normalize(-v_position);  // the camera is at the origin
-    const vec3 albedo = base.rgb;
+    vec3 albedo = base.rgb;
+    // What the weather left: snow settled on what faces up (not on emissive surfaces: lamps,
+    // the sun), and wetness, darker and smoother, most on what faces up.
+    const float facing_up = smoothstep(0.35, 0.8, dot(surface, frame.up.xyz));
+    const float glowing = step(1e-3, dot(pc.emissive.rgb, vec3(1.0)));
+    const float snow = clamp(frame.ground.y * 1.2 - 0.1, 0.0, 1.0) * facing_up * (1.0 - glowing);
+    albedo = mix(albedo, vec3(0.95, 0.96, 0.98), snow);
+    roughness = mix(roughness, 0.75, snow);
+    metallic *= 1.0 - snow;
+    const float wet = frame.ground.x * (1.0 - snow) * (0.4 + 0.6 * facing_up) * (1.0 - glowing);
+    albedo *= 1.0 - 0.35 * wet * (1.0 - metallic);
+    roughness = mix(roughness, min(roughness, 0.12), 0.85 * wet);
+    const float alpha = roughness * roughness;
     const vec3 f0 = mix(vec3(0.04), albedo, metallic);
 
     const vec3 l = to_sun();

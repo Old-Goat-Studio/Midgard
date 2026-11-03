@@ -132,9 +132,15 @@ void main() {
     const float cold = frame.terrain_climate.z > 0.5
                            ? 1.0 - smoothstep(-1.0, 1.0, temperature + detail * 1.5)
                            : smoothstep(line - 3.0, line + 3.0, v_tangent.w + detail * 4.0);
-    const float snow = cold * (1.0 - smoothstep(0.45, 0.6, slope)) * step(0.0, height);
+    // And the snow the weather left (milestone 5.15), patchy as it starts and as it melts.
+    const float settled = smoothstep(0.0, 0.35, frame.ground.y * 1.3 - 0.3 + detail * 0.25);
+    const float snow = max(cold, settled) * (1.0 - smoothstep(0.45, 0.6, slope)) *
+                       step(0.0, height);
     albedo = mix(albedo, linear(vec3(0.92, 0.94, 0.97)), snow);
     albedo *= 1.0 + detail * 0.08;
+    // Wet ground after rain: darker, with the sky and sun shining on it.
+    const float wet = frame.ground.x * (1.0 - snow) * step(0.0, height);
+    albedo *= 1.0 - 0.4 * wet;
 
     // Light in this point's own frame.
     const vec3 camera_up = normalize(frame.up.xyz);
@@ -147,6 +153,9 @@ void main() {
     const vec3 v = normalize(-v_position);
     const vec3 h = normalize(v + l);
     color += frame.sun_color.rgb * pow(max(dot(n, h), 0.0), 60.0) * 0.25 * snow * n_dot_l * lit;
+    const float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+    color += (frame.sun_color.rgb * pow(max(dot(n, h), 0.0), 200.0) * 2.0 * n_dot_l * lit +
+              frame.sky_horizon.rgb * fresnel * 0.6) * wet;
     const vec3 ambient = mix(frame.ambient_ground.rgb, frame.ambient_sky.rgb,
                              clamp(dot(n, up) * 0.5 + 0.5, 0.0, 1.0));
     color += albedo * ambient;

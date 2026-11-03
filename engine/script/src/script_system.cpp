@@ -983,6 +983,26 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def(
             "release", [](const WeatherHandle&) { current_game().release_weather(); },
             "Back to the weather there would have been.")
+        .def_property(
+            "wetness", [](const WeatherHandle&) { return current_game().ground_cover().wetness; },
+            [](const WeatherHandle&, float wetness) {
+                render::GroundCover g = current_game().ground_cover();
+                g.wetness = std::clamp(wetness, 0.0f, 1.0f);
+                current_game().set_ground_cover(g);
+            },
+            "How wet the ground is where the player is, 0 dry .. 1 soaked (settable).")
+        .def_property(
+            "snow", [](const WeatherHandle&) { return current_game().ground_cover().snow; },
+            [](const WeatherHandle&, float snow) {
+                render::GroundCover g = current_game().ground_cover();
+                g.snow = std::clamp(snow, 0.0f, 1.0f);
+                current_game().set_ground_cover(g);
+            },
+            "How much snow has settled where the player is, 0 none .. 1 covered (settable).")
+        .def_property_readonly(
+            "temperature", [](const WeatherHandle&) { return current_game().temperature_here(); },
+            "The temperature where the player is, degrees Celsius: the climate's (with the "
+            "season) and the weather's.")
         .def_property_readonly(
             "types",
             [](const WeatherHandle&) {

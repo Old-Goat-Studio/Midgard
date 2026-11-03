@@ -617,9 +617,17 @@ heavy weather stays smooth (the phone's self-test has a **Weather** check for th
 *For now*, rain and snow also fall under roofs and inside buildings. Keeping them out comes
 with the shelter checks, later in this milestone.
 
+**What it leaves behind.** Rain wets the ground (up to the weather type's **wetness**, in
+about a quarter of an hour of game time), and it dries over a couple of hours after. Wet things
+look darker and shinier, catching the sky and the sun, mostly on what faces up. Snow settles while
+it snows (covering everything in two to four hours) on whatever faces up: the ground, the tops of
+rocks, roofs and trees. It doesn't settle on water, steep rock or anything that glows. Afterwards
+it melts in a few hours (at once in rain), and the melted snow leaves the ground wet. In a world
+with a climate, snow stays as long as it's below freezing there.
+
 You'll be able to change all of this, and make your own weather types (acid rain, a sleet
-storm), in the **Weather** tab of the Calendar panel, which is coming. Next: wet ground after
-rain, and snow that settles.
+storm), in the **Weather** tab of the Calendar panel, which is coming. Next: how warm, wet and
+sheltered the player is.
 
 ---
 
@@ -1114,6 +1122,8 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 | `midgard.weather.force("thunderstorm", hours=2)` | That weather everywhere, for two hours, then the weather comes back. Leave out `hours` to keep it until `release()`. |
 | `midgard.weather.release()` | Back to the weather there would have been. |
 | `midgard.weather.types` | The ids of the weather types. |
+| `midgard.weather.wetness`, `midgard.weather.snow` | How wet the ground is, and how much snow has settled, where the player is (0 to 1). You can set them too: `midgard.weather.snow = 1` for a sudden winter. |
+| `midgard.weather.temperature` | How warm it is where the player is, in °C (the climate's, with the season and the weather). |
 
 ```python
 import midgard
