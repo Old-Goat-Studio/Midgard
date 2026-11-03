@@ -151,6 +151,7 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         p.max_slope = std::clamp(c.value("max_slope", p.max_slope), 0.0f, 89.0f);
         p.step_height = std::max(c.value("step_height", p.step_height), 0.0f);
         p.jump = std::max(c.value("jump", p.jump), 0.0f);
+        p.fly = c.value("fly", false);
         reg.emplace_or_replace<Player>(e, p);
     } else if (name == "script") {
         reg.emplace_or_replace<ScriptRef>(e, c.at("module").get<std::string>());

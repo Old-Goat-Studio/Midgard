@@ -46,6 +46,46 @@ float cloud_noise(vec2 p) {
                mix(cloud_hash(i + vec2(0.0, 1.0)), cloud_hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
+// Stars (render::Stars): each cell of a grid over the sky (a cube's faces, 300 cells across)
+// may hold one, at a point of its own, its brightness and colour from a hash of the cell and the
+// seed; drawn where the sky behind is dark.
+float star_hash(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+vec3 apply_stars(vec3 color, vec3 d) {
+    const float brightness = frame.stars.x;
+    if (brightness <= 0.0) return color;
+    const vec3 a = abs(d);
+    vec3 face;
+    vec2 uv;
+    if (a.x >= a.y && a.x >= a.z) {
+        face = vec3(sign(d.x), 0.0, 0.0);
+        uv = d.yz / a.x;
+    } else if (a.y >= a.z) {
+        face = vec3(0.0, sign(d.y), 0.0);
+        uv = d.xz / a.y;
+    } else {
+        face = vec3(0.0, 0.0, sign(d.z));
+        uv = d.xy / a.z;
+    }
+    const float cells = 300.0;
+    const vec2 g = (uv * 0.5 + 0.5) * cells;
+    const vec2 cell = floor(g);
+    const vec3 key = vec3(cell, dot(face, vec3(1.0, 2.0, 3.0)) * 977.0 + frame.stars.z);
+    if (star_hash(key) > frame.stars.y) return color;
+    const vec2 at = vec2(star_hash(key + 17.0), star_hash(key + 41.0)) * 0.7 + 0.15;
+    const float r = length(g - cell - at);
+    const float size = mix(0.06, 0.16, star_hash(key + 73.0));
+    const float shine = brightness * pow(star_hash(key + 5.0), 3.0) * 4.0 + brightness * 0.15;
+    const float k = star_hash(key + 11.0);
+    const vec3 tint = k < 0.3 ? vec3(1.0, 0.8, 0.6) : k > 0.8 ? vec3(0.7, 0.8, 1.0) : vec3(1.0);
+    const float dark = 1.0 - clamp(dot(color, vec3(0.2126, 0.7152, 0.0722)) * 8.0, 0.0, 1.0);
+    return color + tint * shine * (1.0 - smoothstep(0.0, size, r)) * dark;
+}
+
 vec3 apply_clouds(vec3 color, vec3 d) {
     const float cover = frame.clouds.x;
     if (cover <= 0.001) return color;

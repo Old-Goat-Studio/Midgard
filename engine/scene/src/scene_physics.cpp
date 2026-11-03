@@ -104,6 +104,7 @@ void ScenePhysics::make_character(const Scene& scene) {
         if (player_ == entt::null || entt::to_integral(e) < entt::to_integral(player_)) player_ = e;
     if (player_ == entt::null) return;
     const Player& p = scene.registry.get<Player>(player_);
+    if (p.fly) return;  // (a flying player has no body: the game moves it)
     physics::CharacterDesc d;
     d.radius = p.radius;
     d.height = p.height;

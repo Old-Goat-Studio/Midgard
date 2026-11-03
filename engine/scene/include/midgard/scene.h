@@ -192,6 +192,10 @@ struct Player {
     float max_slope = 50.0f;   // degrees: steeper ground is a wall
     float step_height = 0.3f;  // steps up to this high are walked up
     float jump = 4.5f;         // metres per second upwards (about 1 m high); 0: no jumping
+    // Flies instead (milestone 5.16's system space): no gravity and nothing solid in its way;
+    // it goes where the camera looks (move), up (jump) and down (descend), faster the higher
+    // it is above the world's ground (Game).
+    bool fly = false;
 };
 
 // A Python module in the package's scripts/ folder that drives this entity ("door" is

@@ -243,7 +243,8 @@ void Game::update(const Actions& actions, float dt) {
     scene_.water_time += dt;
     scene_.light_time += dt;
     const PlayerIntent intent = camera_->steer(scene_, actions, dt);
-    if (change_)  // (on the way to another scene: the player stands still)
+    if (!change_) fly(actions, dt);  // (a flying player: the ship in space)
+    if (change_)                     // (on the way to another scene: the player stands still)
         physics_->set_player_intent(glm::vec3(0.0f), false);
     else if (!route_.empty())  // following a path
         physics_->set_player_intent(route_walk(camera_->player()), false);
@@ -546,7 +547,9 @@ void Game::update_weather() {
     const std::int64_t now = time_.now();
     if (forced_ && forced_->until && now >= *forced_->until) forced_.reset();
     weather::Now next;
-    if (forced_) {
+    if (in_space()) {
+        // (Space has no weather; a script's comes back on landing.)
+    } else if (forced_) {
         next = {forced_->weather, -1, true};
     } else if (const auto cell = weather_cell()) {
         next = weather_->at(*cell, now);
@@ -810,6 +813,11 @@ render::Environment Game::environment(const glm::dvec3& origin) const {
     // (Indoors, a roof and walls all round: none falls where the player can see.)
     env.falling.amount *= 1.0f - exposure_.roof * exposure_.walls;
     env.ground = ground_cover_;
+    if (in_space()) {  // (the stars, from the world's seed: milestone 5.16)
+        env.stars.brightness = 1.0f;
+        env.stars.density = 0.35f;
+        env.stars.seed = scene_.settings.body ? std::uint32_t(scene_.settings.body->seed) : 1u;
+    }
     return env;
 }
 
@@ -1223,6 +1231,10 @@ void Game::stream(render::Renderer* renderer, const glm::dvec3& camera, bool wai
         stream_all_ = false;
     }
     if (terrain_) {
+        // From space the whole planet is in view (its far side too, round the curve).
+        if (in_space() && scene_.settings.body)
+            terrain_->set_range(std::max(double(kTerrainViewDistance),
+                                         altitude() + 3.0 * scene_.settings.body->shape.radius()));
         terrain_->update(camera, renderer, wait);
         ++streams_since_load_;
         streamed_ = true;
@@ -1507,6 +1519,114 @@ bool Game::arrival_ready() const {
     return streams_since_load_ > 0 && terrain_->stats().complete;
 }
 
+// ---- system space (milestone 5.16) -------------------------------------------------------------
+
+void Game::enter_space(float fade) {
+    change_scene(kSystemSpace, "", fade);
+}
+
+double Game::altitude() const {
+    if (!scene_.settings.body) return player_position().y;
+    return scene_.settings.body->surface(player_position()).height;
+}
+
+Scene Game::make_space() const {
+    const SceneSettings& from = scene_.settings;
+    if (!from.body || from.body->shape.kind() != Shape::Kind::SphereOutside)
+        throw SceneError("only a planet has space above it: scene '" + scene_.id +
+                         "' isn't on one");
+    Scene space;
+    space.id = kSystemSpace;
+    // The planet as it is (its ground, sculpting and all), with no weather: space has none.
+    space.settings.body = from.body;
+    space.settings.terrain = from.terrain;
+    space.settings.world = from.world;
+    space.settings.recipe = from.recipe;
+    if (space.settings.recipe) space.settings.recipe->weather.clear();
+    space.settings.sun_mode = from.sun_mode;
+    space.settings.sky = glm::vec3(0.0f);
+    space.settings.ambient = glm::vec3(0.03f, 0.03f, 0.04f);
+    space.terrain_stamps = scene_.terrain_stamps;
+    space.objects = scene_.objects;
+    space.environments = scene_.environments;
+    space.sound_events = scene_.sound_events;
+    space.playlists = scene_.playlists;
+    space.ambience = scene_.ambience;
+    space.bus_volumes = scene_.bus_volumes;
+    space.weather_types = scene_.weather_types;
+    // The ship: above where the player is.
+    const Body& body = *from.body;
+    SurfacePoint p = body.surface(player_position());
+    p.height = std::max(p.height, 0.0) + kShipStart;
+    const glm::dvec3 ship = body.position(p);
+    const glm::dvec3 up = body.up(ship);
+    const auto vec = [](const glm::dvec3& v) { return nlohmann::json{v.x, v.y, v.z}; };
+    space.put_entity(
+        "space_ship", "Ship", "",
+        {{"transform", {{"position", vec(ship)}, {"scale", {1.6, 0.6, 3.2}}}},
+         {"player", {{"fly", true}, {"speed", 40}, {"radius", 1.0}, {"height", 2.0}}},
+         {"mesh", {{"asset", kBuiltinCube}}},
+         {"material",
+          {{"color", {0.75, 0.78, 0.85, 1.0}}, {"metallic", 0.6}, {"roughness", 0.35}}}});
+    space.put_entity("space_camera", "Camera", "",
+                     {{"transform", {{"position", vec(ship + up * 6.0)}}},
+                      {"camera",
+                       {{"fov", 60},
+                        {"near", 0.5},
+                        {"far", 4.0e6},
+                        {"view", "third"},
+                        {"views",
+                         {{"third",
+                           {{"distance", 16},
+                            {"height", 1.5},
+                            {"min_distance", 6},
+                            {"max_distance", 400},
+                            {"radius", 0.0}}}}}}}});
+    // The sun: the planet scene's, as placed (it follows the clock there and here alike).
+    for (const entt::entity e : scene_.registry.view<const DirectionalLight, const Transform>()) {
+        const DirectionalLight& l = scene_.registry.get<DirectionalLight>(e);
+        const Transform& t = scene_.registry.get<Transform>(e);
+        space.put_entity("space_sun", "Sun", "",
+                         {{"transform", {{"rotation", {t.rotation.x, t.rotation.y, t.rotation.z}}}},
+                          {"light",
+                           {{"type", "directional"},
+                            {"color", {l.color.x, l.color.y, l.color.z}},
+                            {"intensity", l.intensity},
+                            {"follows_clock", l.follows_clock}}}});
+        break;
+    }
+    return space;
+}
+
+// A flying player: along where the camera looks (move), up (jump) and down (descend), at its
+// speed or a twentieth of its height above the ground a second, whichever is more (run: times
+// its run), turned to face the way it goes.
+void Game::fly(const Actions& actions, float dt) {
+    entt::entity e = entt::null;
+    for (const entt::entity p : scene_.registry.view<const Player>())
+        if (scene_.registry.get<Player>(p).fly) e = p;
+    if (e == entt::null) return;
+    const Player& player = scene_.registry.get<Player>(e);
+    const render::Camera cam = camera(1.0f);
+    const glm::mat3 to_world = glm::inverse(glm::mat3(cam.view));
+    const glm::dvec3 ahead = glm::dvec3(to_world * glm::vec3(0.0f, 0.0f, -1.0f));
+    const glm::dvec3 right = glm::dvec3(to_world * glm::vec3(1.0f, 0.0f, 0.0f));
+    Transform& t = scene_.registry.get<Transform>(e);
+    const glm::dvec3 up =
+        scene_.settings.body ? scene_.settings.body->up(t.position) : glm::dvec3(0.0, 1.0, 0.0);
+    glm::dvec3 way =
+        ahead * double(actions.axis("move_y")) + right * double(actions.axis("move_x")) +
+        up * double((actions.down("jump") ? 1.0f : 0.0f) - (actions.down("descend") ? 1.0f : 0.0f));
+    const double amount = glm::length(way);
+    if (amount < 1e-6) return;
+    way /= std::max(amount, 1.0);
+    const double speed = std::max(double(player.speed), std::abs(altitude()) / 20.0) *
+                         (actions.down("run") ? double(player.run) : 1.0);
+    t.position += way * speed * double(dt);
+    const glm::dvec3 heading = glm::normalize(way);
+    t.rotation = look_rotation(glm::vec3(0.0f), glm::vec3(heading));
+}
+
 // ---- rooms (milestone 5.16) --------------------------------------------------------------------
 
 namespace {
@@ -1616,7 +1736,9 @@ std::string Game::room_state(const std::string& scene) const {
 
 void Game::load_scene(const std::string& id, const std::string& arrival) {
     // Everything that can fail first, so a failed change leaves the scene as it was.
-    Scene next = Scene::load(package_.root / package_.manifest.database, id);
+    const bool to_space = id == kSystemSpace;
+    Scene next =
+        to_space ? make_space() : Scene::load(package_.root / package_.manifest.database, id);
     std::optional<glm::dmat4> at;
     if (!arrival.empty()) {
         const entt::entity a = next.find(arrival);
@@ -1629,9 +1751,11 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
 
     // Leave the scene: its ground, placed objects and physics go, and its entities' sounds stop
     // (a script's music plays on).
-    // The scene left is remembered as it is; the player goes on, as the game began with them.
-    rooms_[scene_.id] = capture_room();
-    if (carried_player_.empty()) {
+    // The scene left is remembered as it is (not space: it's made afresh); the player goes on,
+    // as the game began with them.
+    if (!in_space()) rooms_[scene_.id] = capture_room();
+    space_from_ = to_space ? scene_.id : std::string();
+    if (carried_player_.empty() && scene_.id != kSystemSpace) {
         for (const entt::entity e : scene_.registry.view<const Player>()) {
             const EntityInfo& info = scene_.registry.get<EntityInfo>(e);
             carried_id_ = info.id;
@@ -1654,8 +1778,8 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     scene_ = std::move(next);
     note_loaded();  // (as designed: what moves from here on is what's remembered)
     if (const auto room = rooms_.find(id); room != rooms_.end()) apply_room(room->second);
-    carry_player();
-    if (sounds_)  // (the game's events, as this scene's package has them)
+    if (!to_space) carry_player();  // (in space, the player is the ship)
+    if (sounds_)                    // (the game's events, as this scene's package has them)
         for (const auto& [eid, ev] : scene_.sound_events) sounds_->add(ev);
     if (music_)  // (the music plays on: the next update chooses for the new scene)
         for (const auto& [pid, p] : scene_.playlists) music_->add(p);
@@ -1736,6 +1860,11 @@ bool Game::has_scene(const std::string& scene) const {
 }
 
 std::string Game::arrival_problem(const std::string& scene, const std::string& arrival) const {
+    if (scene == kSystemSpace)  // (space: above a planet only)
+        return scene_.settings.body &&
+                       scene_.settings.body->shape.kind() == Shape::Kind::SphereOutside
+                   ? ""
+                   : "only a planet has space above it: scene '" + scene_.id + "' isn't on one";
     if (!has_scene(scene)) return "there is no scene '" + scene + "' in the game";
     if (arrival.empty()) return "";
     bool found = false;

@@ -4422,3 +4422,101 @@ TEST_CASE("rooms: a change never shows ground not yet made; the picture stays da
         CHECK(frames < 60 * 20);  // (made long before the most it waits)
     }
 }
+
+// ---- system space (milestone 5.16)
+// ---------------------------------------------------------------
+
+namespace {
+
+// A 1 km planet with ground, the player on top, a sun.
+std::unique_ptr<TestPackage> little_planet() {
+    const std::string body =
+        R"({"shape": "sphere_outside", "radius": 1000, "seed": 13, "origin": [0, -1000, 0]})";
+    return std::make_unique<TestPackage>(
+        std::vector<std::pair<std::string, std::string>>{
+            {"e1_player", R"(NULL, '{"transform": {"position": [0, 40, 0]},
+                            "player": {"speed": 5}}')"},
+            {"e2_sun", R"(NULL, '{"transform": {"rotation": [-50, 30, 0]},
+                         "light": {"type": "directional", "intensity": 2}}')"}},
+        R"({"body": )" + body + R"(, "terrain": {"height_scale": 20, "base": 8}})");
+}
+
+}  // namespace
+
+TEST_CASE("system space: up from the planet into space, the planet below, flying, and back") {
+    const auto pkg = little_planet();
+    midgard::Game game(pkg->dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto frame = [&](float dt = 1.0f / 60.0f) {
+        game.update(actions, dt);
+        game.stream_terrain(game.camera(1.0f).origin, false);
+        actions.begin_frame();
+    };
+    for (int i = 0; i < 60; ++i) frame();  // (the player lands on the ground)
+    REQUIRE(game.force_weather("rain", 0.0));
+    const double ground_altitude = game.altitude();
+    CHECK_FALSE(game.in_space());
+
+    game.enter_space(0.2f);
+    for (int i = 0; i < 60 * 30 && game.changing_scene(); ++i) frame();
+    REQUIRE(game.scene_change_error().empty());
+    REQUIRE(game.in_space());
+    CHECK(game.space_from() == "scn_main");
+    // The ship, flying 300 m above where the player was.
+    const midgard::Scene& space = game.scene();
+    const entt::entity ship = space.find("space_ship");
+    REQUIRE((ship != entt::null));
+    CHECK(space.registry.get<midgard::Player>(ship).fly);
+    CHECK(game.altitude() == doctest::Approx(ground_altitude + 300.0).epsilon(0.05));
+    // No gravity: left alone it stays where it is.
+    const glm::dvec3 still = space.world_position(ship);
+    for (int i = 0; i < 120; ++i) frame();
+    CHECK(glm::length(game.scene().world_position(ship) - still) < 1e-6);
+    // The black sky and stars; no weather up here (the rain is the planet's).
+    const auto env = game.environment(game.camera(1.0f).origin);
+    CHECK(env.stars.brightness > 0.0f);
+    CHECK(env.sky_colors.zenith == glm::vec3(0.0f));
+    CHECK(game.weather_now().weather.empty());
+    CHECK(env.falling.kind == midgard::render::Falls::None);
+    // The planet below: its ground, all of it in view, drawn.
+    REQUIRE(game.terrain() != nullptr);
+    CHECK(game.terrain()->stats().complete);
+    CHECK(game.terrain()->stats().drawn > 0);
+    // Flying: up (jump) and down (descend); forward (W) along the view.
+    actions.set("keyboard", "Space", 1.0f);
+    for (int i = 0; i < 60; ++i) frame();
+    actions.set("keyboard", "Space", 0.0f);
+    const double higher = game.altitude();
+    CHECK(higher > ground_altitude + 300.0 + 20.0);
+    actions.set("keyboard", "Left Ctrl", 1.0f);
+    for (int i = 0; i < 30; ++i) frame();
+    actions.set("keyboard", "Left Ctrl", 0.0f);
+    CHECK(game.altitude() < higher);
+    const glm::dvec3 before = game.scene().world_position(ship);
+    actions.set("keyboard", "W", 1.0f);
+    for (int i = 0; i < 60; ++i) frame();
+    actions.set("keyboard", "W", 0.0f);
+    CHECK(glm::length(game.scene().world_position(ship) - before) > 20.0);
+    // Back down to the planet: the player as they were, the rain again.
+    game.change_scene(game.space_from(), "", 0.2f);
+    for (int i = 0; i < 60 * 30 && game.changing_scene(); ++i) frame();
+    REQUIRE(game.scene().id == "scn_main");
+    CHECK_FALSE(game.in_space());
+    CHECK(game.space_from().empty());
+    const entt::entity player = game.scene().find("e1_player");
+    REQUIRE((player != entt::null));
+    CHECK_FALSE(game.scene().registry.get<midgard::Player>(player).fly);
+    CHECK(game.weather_now().weather == "rain");
+}
+
+TEST_CASE("system space: only a planet has space above it") {
+    TestPackage pkg(
+        {{"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]}, "player": {}}')"}});
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    game.update(actions, 1.0f / 60.0f);
+    game.enter_space(0.0f);
+    for (int i = 0; i < 10; ++i) game.update(actions, 1.0f / 60.0f);
+    CHECK_FALSE(game.in_space());
+    CHECK(game.scene_change_error().find("only a planet") != std::string::npos);
+}

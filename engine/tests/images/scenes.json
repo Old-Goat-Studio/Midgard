@@ -307,6 +307,12 @@
       "max_bad": 0.01
     },
     {
+      "name": "space",
+      "_about": "System space (milestone 5.16): the 3 km planet of terrain_planet_biomes from 6 km over its ground, whole against a black sky of stars from its seed (some brighter, some warmer or bluer). Single-pixel stars are drawn a little differently between drivers: up to 3% of pixels may differ.",
+      "args": ["--size", "480x270", "--scene", "space"],
+      "max_bad": 0.03
+    },
+    {
       "name": "terrain_shore",
       "_about": "Low over the sea by a coast (milestone 5.9): water from the Earth-like environment's look, its waves reflecting the sky, the island beyond, and the shallows below showing the ground through foam.",
       "args": ["--size", "480x270", "--scene", "terrain_shore"],

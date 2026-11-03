@@ -33,7 +33,8 @@ InputMap InputMap::defaults() {
         {"view", "gamepad", "y", 1.0f},         {"run", "keyboard", "Left Shift", 1.0f},
         {"run", "gamepad", "leftstick", 1.0f},  {"menu", "keyboard", "Escape", 1.0f},
         {"menu", "gamepad", "start", 1.0f},     {"use", "keyboard", "E", 1.0f},
-        {"use", "gamepad", "x", 1.0f},
+        {"use", "gamepad", "x", 1.0f},          {"descend", "keyboard", "Left Ctrl", 1.0f},
+        {"descend", "gamepad", "b", 1.0f},
     };
     InputMap m;
     for (const Binding& b : kDefaults) m.add(b);

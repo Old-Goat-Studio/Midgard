@@ -732,6 +732,7 @@ smoothing.
 | Change view | V | Y |
 | Zoom | Mouse wheel | |
 | Use (doors, switches) | E | X |
+| Descend (when flying) | Left Ctrl | B |
 | Menu | Escape | Start |
 | Show colliders | F4 | |
 
@@ -800,6 +801,17 @@ How wet they are, the weather a script has forced, and the time all carry on too
 **Scenes remember.** Leave a scene and come back, and it is as you left it: the crates you
 knocked over still lie where they fell, and what a script moved or took away stays moved or
 gone. A saved game remembers this too. (Things a script *made* aren't remembered yet.)
+
+### Space above a planet
+
+Above every planet there is **system space**, which Midgard makes for you: the planet hangs
+below, its real ground seen from far off (the same seas, hills, snow and ice), the sky is black
+and full of stars (placed by the world's seed), and the sun is where it is on the planet. The
+player flies a small ship there: **W A S D** go where the camera looks, **Space** climbs and
+**Left Ctrl** sinks, and the higher you are the faster you go (hold **Shift** for more). There
+is no gravity and no weather in space.
+
+*Coming next:* flying up out of the planet's atmosphere to get there, and coming back down.
 
 ---
 

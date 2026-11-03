@@ -93,6 +93,7 @@ struct FrameData {
     glm::vec4 fall_motion;    // xyz: motion less the camera's place, wrapped; w: streak seconds
     glm::vec4 fall_velocity;  // xyz: m/s; w: size (metres)
     glm::vec4 ground;         // x: wetness, y: snow (render::GroundCover)
+    glm::vec4 stars;          // brightness, density, seed (render::Stars)
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -2441,6 +2442,10 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         data.fall_motion = glm::vec4(wrap(shift.x), wrap(shift.y), wrap(shift.z), 0.03f);
         data.fall_velocity = glm::vec4(falling.velocity, sizes[size_t(falling.kind)]);
     }
+    data.stars = env.sky ? glm::vec4(std::max(env.stars.brightness, 0.0f),
+                                     std::clamp(env.stars.density, 0.0f, 1.0f),
+                                     float(env.stars.seed % 65536u), 0.0f)
+                         : glm::vec4(0.0f);
     data.ground = glm::vec4(std::clamp(env.ground.wetness, 0.0f, 1.0f),
                             std::clamp(env.ground.snow, 0.0f, 1.0f), 0.0f, 0.0f);
     // The terrain's look.

@@ -309,6 +309,23 @@ public:
     std::string arrival_problem(const std::string& scene, const std::string& arrival) const;
     // The scene the player came from (empty until the first change).
     const std::string& previous_scene() const { return previous_scene_; }
+    // ---- system space (milestone 5.16) ----
+    // The space round a planet: a room the game makes, not one designed in the editor. The
+    // planet is there below, its own ground drawn from far off (the same seas, hills and snow),
+    // the sky black with stars from the world's seed, the sun where it is for the planet; the
+    // player flies a ship (Player::fly: where the camera looks, up with jump, down with
+    // descend; faster the higher it is). Built so Phase 6's star systems can replace it.
+    static constexpr const char* kSystemSpace = "@space";
+    static constexpr double kShipStart = 300.0;  // metres above the ground it leaves from
+    // Into space from the planet the player is on, above where they are (a change of scene,
+    // faded). SceneError (as scene_change_error) when the scene isn't a planet's.
+    void enter_space(float fade = 1.0f);
+    bool in_space() const { return scene_.id == kSystemSpace; }
+    // The planet's scene the player left for space ("" when not in space).
+    const std::string& space_from() const { return space_from_; }
+    // How high the player is above the world's ground (sea level, its body's surface): metres.
+    double altitude() const;
+
     // ---- rooms (milestone 5.16) ----
     // Each scene the player has left, as they left it (JSON text): its entities that had moved
     // since it loaded ({"moved": {id: {"position", "rotation", "scale"}}}) and those taken
@@ -399,7 +416,10 @@ private:
     float arrival_waited_ = 0.0f;   // seconds dark, waiting for it
     std::string scene_change_error_;
     std::string previous_scene_;
-    std::map<std::string, std::string> rooms_;                // by scene id
+    std::map<std::string, std::string> rooms_;  // by scene id
+    std::string space_from_;
+    Scene make_space() const;
+    void fly(const Actions& actions, float dt);
     std::map<std::string, Transform> loaded_;                 // the scene's entities as they loaded
     std::string carried_player_, carried_id_, carried_name_;  // components (JSON), id, name
     void note_loaded();

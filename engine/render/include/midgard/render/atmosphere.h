@@ -9,6 +9,8 @@
 // from the sun's height.
 #pragma once
 
+#include <cstdint>
+
 #include <glm/glm.hpp>
 
 namespace midgard::render {
@@ -99,6 +101,14 @@ struct GroundCover {
     float snow = 0.0f;     // 0 none .. 1 covered
 };
 
+// Stars in the sky (milestone 5.16's system space): points scattered over the sky from a seed,
+// some brighter, some warmer or bluer; they show where the sky behind them is dark.
+struct Stars {
+    float brightness = 0.0f;  // 0: none
+    float density = 0.25f;    // 0 .. 1: how many
+    std::uint32_t seed = 0;
+};
+
 struct Environment {
     bool sky = false;  // false: the frame's clear colour is the whole sky, flat
     SkyColors sky_colors;
@@ -106,6 +116,7 @@ struct Environment {
     Clouds clouds;
     Falling falling;
     GroundCover ground;
+    Stars stars;
     // Radians: how far below level the visible horizon is, from a camera above a curved world
     // (a planet's ground falls away). The sky's horizon, and the sun setting behind it, are there.
     float horizon_dip = 0.0f;
