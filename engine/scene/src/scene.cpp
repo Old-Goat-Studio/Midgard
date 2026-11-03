@@ -163,6 +163,10 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         ch.clip = c.value("clip", std::string());
         ch.speed = std::clamp(c.value("speed", 1.0f), 0.0f, 10.0f);
         ch.loop = c.value("loop", true);
+        if (const auto sounds = c.find("sounds"); sounds != c.end() && sounds->is_object())
+            for (const auto& [event, sound] : sounds->items())
+                if (sound.is_string() && !sound.get<std::string>().empty())
+                    ch.sounds[event] = sound.get<std::string>();
         if (const auto rig = c.find("rig"); rig != c.end() && rig->is_object())
             for (const auto& [bone, joint] : rig->items())
                 if (joint.is_string()) ch.rig[bone] = joint.get<std::string>();
@@ -253,9 +257,18 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
     } else if (name == "object") {
         reg.emplace_or_replace<ObjectRef>(e, c.at("id").get<std::string>());
     } else if (name == "physics_material") {
-        reg.emplace_or_replace<PhysicsMaterial>(
-            e, std::max(c.value("friction", 0.5f), 0.0f),
-            std::clamp(c.value("bounciness", 0.0f), 0.0f, 1.0f));
+        reg.emplace_or_replace<PhysicsMaterial>(e, std::max(c.value("friction", 0.5f), 0.0f),
+                                                std::clamp(c.value("bounciness", 0.0f), 0.0f, 1.0f),
+                                                c.value("surface", std::string()));
+    } else if (name == "footsteps") {
+        Footsteps f;
+        f.event = c.value("event", std::string("step"));
+        f.every = std::max(c.value("every", 0.0f), 0.0f);
+        if (const auto sounds = c.find("sounds"); sounds != c.end() && sounds->is_object())
+            for (const auto& [surface, event] : sounds->items())
+                if (event.is_string() && !event.get<std::string>().empty())
+                    f.sounds[surface] = event.get<std::string>();
+        reg.emplace_or_replace<Footsteps>(e, std::move(f));
     } else if (name == "reverb_zone") {
         ReverbZone z;
         z.preset = c.value("preset", std::string("room"));
@@ -311,6 +324,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<SoundSource>(e);
     else if (name == "reverb_zone")
         reg.remove<ReverbZone>(e);
+    else if (name == "footsteps")
+        reg.remove<Footsteps>(e);
     else if (name == "script")
         reg.remove<ScriptRef>(e);
     else if (name == "trigger")
@@ -339,7 +354,7 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
                ScriptRef, Trigger, Arrival, SceneExit, CharacterRef, Sky, RigidBody, ColliderShape,
-               PhysicsMaterial, Group, ObjectRef, SoundSource, ReverbZone>(e);
+               PhysicsMaterial, Group, ObjectRef, SoundSource, ReverbZone, Footsteps>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }

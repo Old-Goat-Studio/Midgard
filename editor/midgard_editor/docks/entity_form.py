@@ -117,7 +117,12 @@ class EntityForm(QWidget):
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
                "rigidbody": "Rigid body", "physics_material": "Physics material",
                "scene_exit": "Scene exit", "arrival": "Arrival point",
-               "character": "Character", "sound": "Sound", "reverb_zone": "Reverb zone"}
+               "character": "Character", "sound": "Sound", "reverb_zone": "Reverb zone",
+               "footsteps": "Footsteps"}
+    # What footsteps sound like on things (physics materials') and on the ground (the terrain's
+    # own), as midgard/footsteps.h knows them.
+    SURFACES = {"grass": "Grass", "sand": "Sand", "rock": "Rock", "snow": "Snow",
+                "water": "Water", "wood": "Wood", "stone": "Stone", "metal": "Metal"}
     # Reverb zones' echoes (the engine's presets: midgard/audio.h).
     REVERB_PRESETS = {"room": "Room", "hall": "Hall", "cave": "Cave", "cathedral": "Cathedral",
                       "tunnel": "Tunnel", "none": "None (no echo)"}
@@ -440,6 +445,77 @@ class EntityForm(QWidget):
                 "Remove the physics material", lambda: self.remove_component(
                     "physics_material"))))
             form.addRow("Bounciness", self.bounciness)
+            self.surface = QComboBox()
+            self.surface.addItem("(none)", "")
+            for key, label in self.SURFACES.items():
+                if key not in ("grass", "sand", "snow", "water"):  # (the ground's own)
+                    self.surface.addItem(label, key)
+            self.surface.setToolTip("What footsteps on it sound like (the Footsteps component "
+                                    "of whoever walks on it says which sound)")
+            self.surface.currentIndexChanged.connect(lambda _i: self._set_value(
+                "physics_material", "surface", self.surface.currentData(), "surface"))
+            form.addRow("Surface", self.surface)
+        self.footsteps_event = self.footsteps_every = None
+        self.footsteps_sounds: dict[str, QComboBox] = {}
+        if "footsteps" in entity.components:
+            self._build_footsteps(form)
+
+    def _build_footsteps(self, form: QFormLayout) -> None:
+        """Footsteps (milestone 5.14): when it steps, and a sound for each surface."""
+        from .. import sound_events
+        self.footsteps_event = QLineEdit()
+        self.footsteps_event.setToolTip("The animation event its character's graph passes as "
+                                        "each foot falls (its walk cycle's events)")
+        self.footsteps_event.editingFinished.connect(lambda: self._set_value(
+            "footsteps", "event", self.footsteps_event.text().strip(), "steps on"))
+        self.footsteps_every = _spin(0.0, 20.0, 0.1, 2)
+        self.footsteps_every.setSuffix(" m")
+        self.footsteps_every.setToolTip("Or a step every so far it moves (0: only on the "
+                                        "animation event): for things without a walk cycle")
+        self.footsteps_every.valueChanged.connect(lambda _v: self._component_value(
+            "footsteps", "every", self.footsteps_every.value()))
+        form.addRow("Steps on", _row(self.footsteps_event, QLabel("or every"),
+                                     self.footsteps_every))
+        events = sound_events.load_all(self.project)
+        for key, label in {**self.SURFACES, "default": "Anything else"}.items():
+            combo = QComboBox()
+            combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            combo.addItem("(silent)" if key == "default" else "(as anything else)", "")
+            for e in events:
+                combo.addItem(e["name"], e["id"])
+            combo.currentIndexChanged.connect(
+                lambda _i, k=key, c=combo: self.set_footstep_sound(k, c.currentData()))
+            form.addRow(f"On {label.lower()}" if key != "default" else "On anything else",
+                        combo)
+            self.footsteps_sounds[key] = combo
+        self.project.sound_events_changed.connect(self._sound_events_changed)
+
+    def set_footstep_sound(self, surface: str, event: str) -> None:
+        entity = self._entity()
+        steps = entity.components["footsteps"]
+        sounds = {k: v for k, v in steps.get("sounds", {}).items() if k != surface}
+        if event:
+            sounds[surface] = event
+        if sounds == steps.get("sounds", {}):
+            return
+        entity.components["footsteps"] = {**steps, "sounds": sounds}
+        self._push(entity, f"footsteps on {surface}")
+
+    def _refresh_footsteps(self, entity: Entity) -> None:
+        if self.footsteps_event is None:
+            return
+        steps = entity.components["footsteps"]
+        self.footsteps_event.setText(steps.get("event", "step"))
+        self.footsteps_every.blockSignals(True)
+        self.footsteps_every.setValue(float(steps.get("every", 0.0)))
+        self.footsteps_every.blockSignals(False)
+        for key, combo in self.footsteps_sounds.items():
+            event = steps.get("sounds", {}).get(key, "")
+            combo.blockSignals(True)
+            if combo.findData(event) < 0:
+                combo.addItem(f"{event} (missing)", event)
+            combo.setCurrentIndex(combo.findData(event))
+            combo.blockSignals(False)
 
     def _refresh_physics(self, entity: Entity) -> None:
         def show(combo: QComboBox, value: Any) -> None:
@@ -480,6 +556,7 @@ class EntityForm(QWidget):
             m = entity.components["physics_material"]
             number(self.friction, m.get("friction", 0.5))
             number(self.bounciness, m.get("bounciness", 0.0))
+            show(self.surface, m.get("surface", ""))
 
     def _set_value(self, component: str, key: str, value: Any, label: str) -> None:
         entity = self._entity()
@@ -594,6 +671,7 @@ class EntityForm(QWidget):
         self._refresh_scene_exit(entity)
         self._refresh_character(entity)
         self._refresh_sound(entity)
+        self._refresh_footsteps(entity)
         if self.reverb_preset is not None:
             zone = entity.components["reverb_zone"]
             self.reverb_preset.blockSignals(True)
@@ -693,6 +771,8 @@ class EntityForm(QWidget):
                                                "size": [2.0, 2.5, 1.0], "fade": 0.5}
         elif kind == "arrival":
             entity.components["arrival"] = {"name": entity.name}
+        elif kind == "footsteps":
+            entity.components["footsteps"] = {"event": "step", "every": 0.0, "sounds": {}}
         elif kind == "reverb_zone":
             entity.components["reverb_zone"] = {"preset": "room", "size": [8.0, 4.0, 8.0],
                                                 "edge": 2.0}

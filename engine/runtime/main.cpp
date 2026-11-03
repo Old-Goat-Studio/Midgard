@@ -449,6 +449,10 @@ public:
                      {"voices", voices},
                      {"reverb", game_.reverb().wet},
                      {"listener", {ear.x, ear.y, ear.z}}};
+            nlohmann::json steps = nlohmann::json::array();
+            for (const auto& s : game_.footsteps())
+                steps.push_back({{"entity", s.entity}, {"surface", s.surface}, {"sound", s.sound}});
+            audio["footsteps"] = steps;
             if (const auto* ambience = game_.ambience())
                 audio["ambience"] = {{"set", ambience->playing()},
                                      {"layers", ambience->layers()},

@@ -34,6 +34,7 @@
 
 #include "midgard/body.h"
 #include "midgard/collider_outlines.h"
+#include "midgard/footsteps.h"
 #include "midgard/game.h"
 #include "midgard/gltf.h"
 #include "midgard/light_markers.h"
@@ -3201,4 +3202,33 @@ TEST_CASE("a flickering light dims and brightens, each its own way, the same eve
     }
     CHECK(flame.size() > 20);
     CHECK(first.first <= 2.0f);
+}
+
+TEST_CASE("footsteps: the terrain's ground underfoot, as it's drawn") {
+    const midgard::TerrainSettings s = midgard::terrain_from_json(json::parse(R"({
+        "base": 10, "height_scale": 50, "feature_size": 300, "snow_line": 35,
+        "sea_level": 0, "ocean_band": 300, "ocean_depth": 20})"));
+    const midgard::Body body = midgard::body_from_json(json::parse(
+        R"({"id": "a", "shape": "bounded_area", "width": 2000, "length": 2000, "seed": 3})"));
+    const midgard::Terrain t(body, s);
+    std::map<std::string, int> found;
+    for (int i = 0; i <= 160; ++i)  // (12.5 m apart: a beach is narrow)
+        for (int j = 0; j <= 160; ++j) {
+            const double u = i / 160.0, v = j / 160.0;
+            const double h = t.height(0, u, v);
+            const glm::dvec3 at = t.position(0, u, v, h);
+            const std::string g = midgard::terrain_ground(t, body, at);
+            ++found[g];
+            CAPTURE(g);
+            CAPTURE(h);
+            if (g == "water") CHECK(h < -0.2);
+            if (g == "snow") CHECK(h > 35.0);
+            if (g == "sand") CHECK(h < 1.75);
+            if (h > 2.0 && h < 30.0 && g != "rock") CHECK(g == "grass");
+        }
+    for (const std::string g : {"water", "sand", "grass", "rock", "snow"}) {
+        CAPTURE(g);
+        CHECK(found[g] > 0);
+    }
+    CHECK(midgard::footstep_surfaces().size() == 8);
 }

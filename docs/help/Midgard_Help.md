@@ -180,7 +180,8 @@ The top rows are the same for everything:
 - **Scale**: its size. 1 is normal, 2 is twice as big.
 
 Below come its components. **Add Component** gives it new abilities: Script, Trigger, Collider,
-Rigid body, Physics material, Scene exit, Arrival point, Character, Sound. Each component has an **✕**
+Rigid body, Physics material, Scene exit, Arrival point, Character, Sound, Reverb zone,
+Footsteps. Each component has an **✕**
 button to take it off again.
 
 *Position, rotation and scale are always relative to the entity's parent.* If a candle is inside
@@ -489,15 +490,37 @@ anywhere) and is chosen just as music is. It has:
 update. Until then they can be played from scripts, and your games already choose and
 crossfade them.*
 
+### Footsteps
+
+Footsteps sound like what's underfoot. To give something footsteps:
+
+1. Select it (the player, a character, a horse) and **Add Component ▸ Footsteps**.
+2. For each surface, choose the sound event a step on it plays: **grass**, **sand**, **rock**,
+   **snow**, **water**, **wood**, **stone**, **metal**, and **anything else** for the rest.
+   Make one sound event per surface with several variations each, so no two steps sound
+   alike.
+3. Say when it steps:
+   - **Steps on**: the name of the animation event its walk cycle marks at each footfall
+   (usually "step"; see *The animation graph* in section 16), or
+   - **or every**: a step every so many metres it moves, for things without a walk cycle.
+
+What's underfoot is worked out at each step. On an object (a bridge, a floor), it's the
+**Surface** you choose in the object's **Physics material** (wood, stone or metal). On terrain,
+it's the ground as it's drawn: sand on beaches, rock on steep slopes, snow high up (or in the
+cold), water in the sea, painted sand or rock where you've painted it, and grass everywhere
+else.
+
+A character can also play sounds on its other animation events (a sword's "swing"), set in its
+component's sounds.
+
 ### In the finished game
 
 When the game is built, Midgard makes every sound it uses smaller: music and ambience become
 **Ogg Vorbis**, effects become **Opus**. Each is checked to be sure the game can play it. CC-BY
 sounds are credited automatically, like models and textures.
 
-*Coming in the next updates:* footsteps that match the ground, and an **Audio** panel to
-make playlists and ambience sets and edit sound events in detail (including how far each one is
-heard).
+*Coming in the next update:* an **Audio** panel to make playlists and ambience sets and edit
+sound events in detail (including how far each one is heard).
 
 ---
 
@@ -524,8 +547,8 @@ Add these with **Add Component**:
   - **kinematic**: a script moves it, and it pushes other things (a lift, a moving platform).
   - **static**: it never moves.
   - **Mass** in kilograms (0 means "work it out from its size").
-- **Physics material**: **Friction** (0 is ice) and **Bounciness** (0 stops dead, 1 bounces
-  back fully).
+- **Physics material**: **Friction** (0 is ice), **Bounciness** (0 stops dead, 1 bounces
+  back fully), and its **Surface** (wood, stone, metal) for footsteps on it.
 - **Trigger**: an invisible box that notices when the player walks in or out. Use it for
   pressure plates, alarms or checkpoints, together with a script.
 

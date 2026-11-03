@@ -193,6 +193,14 @@ public:
     // Where the player is, as the music sees it: the scene, its world type, the biome at the
     // listener and the time of day.
     audio::MusicContext music_context() const;
+    // What is underfoot of an entity (midgard/footsteps.h): an object's surface, the terrain's
+    // ground, or "default".
+    std::string ground_under(entt::entity e) const;
+    // The last steps taken (at most 64, oldest first): who, on what, and the sound it played.
+    struct Step {
+        std::string entity, surface, sound;
+    };
+    const std::vector<Step>& footsteps() const { return steps_; }
     void stream_navigation(bool wait = false);
     // The player walks along these points at its speed (instead of following the controls)
     // until it reaches the last; an empty list stops it. Tests, cutscenes, click-to-move.
@@ -315,6 +323,16 @@ private:
     audio::ReverbSettings reverb_;
     std::unique_ptr<audio::MusicDirector> music_;
     std::unique_ptr<audio::AmbienceDirector> ambience_;
+    // Footsteps: how far each walker has come since its last step, and the steps taken.
+    struct Walk {
+        glm::dvec3 last{0.0};
+        double travelled = 0.0;
+        bool started = false;
+    };
+    std::unordered_map<entt::entity, Walk> walks_;
+    std::vector<Step> steps_;
+    void update_footsteps();
+    void step(entt::entity e, const Footsteps& f);
     void listen();
     bool sound_blocked(audio::VoiceId voice, const glm::dvec3& from, const glm::dvec3& to) const;
     void update_reverb();

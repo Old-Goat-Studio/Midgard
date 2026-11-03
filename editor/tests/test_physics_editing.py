@@ -74,7 +74,7 @@ def test_adding_physics_components_in_the_inspector(qtbot, project):
         "friction": 0.5, "bounciness": 0.8}
     offered = [a.text() for a in form.add_component.menu().actions()]
     assert offered == ["Script", "Trigger", "Scene exit", "Arrival point",
-                       "Character", "Sound", "Reverb zone"]  # (physics: all there)
+                       "Character", "Sound", "Reverb zone", "Footsteps"]  # (physics: all there)
 
     # Every change is one undo step.
     project.undo_stack.undo()

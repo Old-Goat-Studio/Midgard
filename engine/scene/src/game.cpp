@@ -12,7 +12,9 @@
 #include <sqlite3.h>
 
 #include "midgard/collider_outlines.h"
+#include "midgard/footsteps.h"
 #include "midgard/gltf.h"
+#include "midgard/terrain_collision.h"
 #include "midgard/world_surface.h"
 
 namespace midgard {
@@ -386,6 +388,85 @@ void Game::stop_sources() {
         for (const auto& [e, s] : sources_) sounds_->stop(s.voice);
     sources_.clear();
     attached_.clear();  // (a script's sound from one of its entities plays on where it was)
+    walks_.clear();
+}
+
+std::string Game::ground_under(entt::entity e) const {
+    const glm::dvec3 at = scene_.world_position(e);
+    const Body* body = scene_.settings.body ? &*scene_.settings.body : nullptr;
+    const glm::dvec3 up = body ? body->up(at) : glm::dvec3(0, 1, 0);
+    double reach = 1.5;  // (a character stands on its entity; the player in its middle)
+    if (const Player* p = scene_.registry.try_get<Player>(e)) reach += 0.5 * p->height;
+    const glm::dvec3 from = at + up * 0.25;
+    const auto hit = physics_
+                         ? physics_->world().raycast(from, glm::vec3(-up), reach + 0.25,
+                                                     physics::Touching::Solid, physics_->body(e))
+                         : std::nullopt;
+    if (hit && hit->user != kTerrainUser) {
+        // An object: its surface (or its group's, or its parents').
+        for (entt::entity o = static_cast<entt::entity>(hit->user);
+             o != entt::null && scene_.registry.valid(o);) {
+            if (const PhysicsMaterial* m = scene_.registry.try_get<PhysicsMaterial>(o);
+                m && !m->surface.empty())
+                return m->surface;
+            const EntityInfo* info = scene_.registry.try_get<EntityInfo>(o);
+            o = info ? info->parent : entt::null;
+        }
+        return "default";
+    }
+    if (terrain_ && body) return terrain_ground(terrain_->terrain(), *body, hit ? hit->point : at);
+    return "default";
+}
+
+void Game::step(entt::entity e, const Footsteps& f) {
+    Step s;
+    s.entity = scene_.registry.get<EntityInfo>(e).id;
+    s.surface = ground_under(e);
+    auto sound = f.sounds.find(s.surface);
+    if (sound == f.sounds.end()) sound = f.sounds.find("default");
+    if (sound != f.sounds.end()) {
+        s.sound = sound->second;
+        play_sound(s.sound, 1.0f, e);
+    }
+    steps_.push_back(std::move(s));
+    if (steps_.size() > 64) steps_.erase(steps_.begin());
+}
+
+// Footsteps on animation events, or every so many metres; and the sounds characters' other
+// animation events play.
+void Game::update_footsteps() {
+    for (const Characters::Event& ev : characters_.events()) {
+        if (!scene_.registry.valid(ev.entity)) continue;
+        if (const CharacterRef* c = scene_.registry.try_get<CharacterRef>(ev.entity))
+            if (const auto it = c->sounds.find(ev.name); it != c->sounds.end())
+                play_sound(it->second, 1.0f, ev.entity);
+        if (const Footsteps* f = scene_.registry.try_get<Footsteps>(ev.entity);
+            f && ev.name == f->event)
+            step(ev.entity, *f);
+    }
+    for (const entt::entity e : scene_.registry.view<const Footsteps>()) {
+        const Footsteps& f = scene_.registry.get<Footsteps>(e);
+        if (f.every <= 0.0f) continue;
+        const glm::dvec3 at = scene_.world_position(e);
+        Walk& w = walks_[e];
+        if (!w.started) {
+            w = {at, 0.0, true};
+            continue;
+        }
+        // Along the ground (not up and down).
+        const glm::dvec3 up =
+            scene_.settings.body ? scene_.settings.body->up(at) : glm::dvec3(0, 1, 0);
+        const glm::dvec3 moved = at - w.last;
+        w.travelled += glm::length(moved - up * glm::dot(moved, up));
+        w.last = at;
+        if (w.travelled >= f.every) {
+            w.travelled = std::fmod(w.travelled, double(f.every));
+            step(e, f);
+        }
+    }
+    std::erase_if(walks_, [&](const auto& w) {
+        return !scene_.registry.valid(w.first) || !scene_.registry.all_of<Footsteps>(w.first);
+    });
 }
 
 void Game::update_sounds(double dt) {
@@ -425,6 +506,7 @@ void Game::update_sounds(double dt) {
         ++it;
     }
     update_reverb();
+    update_footsteps();
     if (music_ || ambience_) {
         const audio::MusicContext where = music_context();
         if (music_) {

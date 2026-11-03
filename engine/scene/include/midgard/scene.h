@@ -19,6 +19,7 @@
 #include "midgard/ambience.h"
 #include "midgard/body.h"
 #include "midgard/environment.h"
+#include "midgard/footsteps.h"
 #include "midgard/music.h"
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
@@ -229,6 +230,9 @@ struct CharacterRef {
         std::string model, clips, graph, eye;
         glm::vec3 offset{0.0f};
     } first_person;
+    // Sounds its animation graph's events play (milestone 5.14): event -> sound event, from
+    // the character (a sword's "swing", a horse's "snort"; footsteps have their own component).
+    std::map<std::string, std::string> sounds;
 };
 
 enum class ExitActivation { Enter, Use, Script };
@@ -284,6 +288,7 @@ struct ObjectPart {
 struct PhysicsMaterial {
     float friction = 0.5f;
     float bounciness = 0.0f;
+    std::string surface;  // what footsteps on it sound like ("wood", "stone"...; none: default)
 };
 
 // How far a game camera sees over terrain (metres), however near its lens's far plane is.
