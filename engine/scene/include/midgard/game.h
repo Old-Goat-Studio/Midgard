@@ -184,6 +184,12 @@ public:
                               std::optional<glm::dvec3> at = std::nullopt);
     // How much the listener hears of the reverb zones now (the echo's settings).
     audio::ReverbSettings reverb() const { return reverb_; }
+    // The music (midgard/music.h): playlists chosen by where the player is (none: silent).
+    audio::MusicDirector* music() { return music_.get(); }
+    const audio::MusicDirector* music() const { return music_.get(); }
+    // Where the player is, as the music sees it: the scene, its world type, the biome at the
+    // listener and the time of day.
+    audio::MusicContext music_context() const;
     void stream_navigation(bool wait = false);
     // The player walks along these points at its speed (instead of following the controls)
     // until it reaches the last; an empty list stops it. Tests, cutscenes, click-to-move.
@@ -304,6 +310,7 @@ private:
     // Voices that follow an entity (sound components', and scripts' played from one).
     std::unordered_map<audio::VoiceId, entt::entity> attached_;
     audio::ReverbSettings reverb_;
+    std::unique_ptr<audio::MusicDirector> music_;
     void listen();
     bool sound_blocked(audio::VoiceId voice, const glm::dvec3& from, const glm::dvec3& to) const;
     void update_reverb();

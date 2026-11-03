@@ -453,15 +453,38 @@ Caves, halls and cathedrals echo. To make a place echo:
 
 While the camera is inside, sound effects, voices and ambience echo; music and menu sounds don't.
 
+### Music that fits the place and time
+
+Music comes from **playlists**. A playlist is a list of tracks (sound events made from your
+Music) and when it plays:
+
+- in which **scenes**, **world types** and **biomes** (forest, desert, tundra...), and
+- at which **times of day**: **dawn**, **day**, **dusk** or **night**.
+
+Leave a choice empty to mean "anywhere" or "any time". As the player moves about and the day
+goes by, the game plays the playlist that fits best: the one that names the most things that
+are all true right now (a "Forest at night" playlist beats a plain "Forest" one at night), then
+the one with the highest **priority**. When that changes, the old music fades out as the new
+fades in over the playlist's **crossfade** time (3 seconds unless you say). A change has to hold
+for two seconds first, so walking along the edge of a forest doesn't flip the music back and
+forth. Tracks play one after another, in order or shuffled, with an optional **gap** of
+silence between them.
+
+A **stinger** is a short piece of music played over the music when something happens (a
+fanfare for a found secret): the music dips under it and comes back afterwards.
+
+*Making playlists in the editor comes with the Audio panel in a coming update. Until then they
+can be played from scripts, and your games already choose and crossfade them.*
+
 ### In the finished game
 
 When the game is built, Midgard makes every sound it uses smaller: music and ambience become
 **Ogg Vorbis**, effects become **Opus**. Each is checked to be sure the game can play it. CC-BY
 sounds are credited automatically, like models and textures.
 
-*Coming in the next updates:* music that changes with the place and time of day, ambience by
-biome, footsteps that match the ground, and an **Audio** panel to edit sound events in detail
-(including how far each one is heard).
+*Coming in the next updates:* ambience by biome and time of day, footsteps that match the
+ground, and an **Audio** panel to make playlists and edit sound events in detail (including how
+far each one is heard).
 
 ---
 
@@ -771,6 +794,27 @@ def on_trigger_exit(entity, other):
     midgard.audio.set_volume("music", 1.0)
 ```
 
+**A fanfare when a secret is found** (over the music, which dips under it):
+
+```python
+import midgard
+
+def on_trigger_enter(entity, other):
+    midgard.music.stinger("Fanfare")
+```
+
+**Boss music while the boss is near**
+
+```python
+import midgard
+
+def on_trigger_enter(entity, other):
+    midgard.music.play("Boss fight")
+
+def on_trigger_exit(entity, other):
+    midgard.music.release()
+```
+
 **Shake the camera when something lands**
 
 ```python
@@ -916,6 +960,16 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 | `midgard.audio.set_volume(bus, v)` / `.volume(bus)` | A bus's volume: "master", "music", "effects", "voice", "ambience", "interface". |
 | `midgard.audio.playing` | The sound events playing now. |
 | `midgard.audio.enabled` | False when the game has no sound (a server). |
+
+### Music: `midgard.music`
+
+| What | Meaning |
+|---|---|
+| `midgard.music.play("Boss fight")` | Plays that playlist (crossfading), whatever fits where the player is. |
+| `midgard.music.release()` | Back to the playlist that fits where the player is. |
+| `midgard.music.stop()` | Fades the music out until `play()` or `release()`. |
+| `midgard.music.stinger("Fanfare", duck=0.35)` | Plays a short piece over the music, which dips under it. |
+| `midgard.music.playlist`, `midgard.music.track` | What's playing now. |
 
 ### Other
 

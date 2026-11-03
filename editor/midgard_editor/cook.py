@@ -32,6 +32,7 @@ from . import (
     gltf_pack,
     meshes,
     model_materials,
+    music,
     objects,
     scenes,
     sound_events,
@@ -277,6 +278,7 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
         if "sound" in e.components and event not in known:
             warnings.append(f"Entity '{e.name}' plays sound event '{event}', which the project "
                             "doesn't have; it will be silent.")
+    warnings += music.problems(project, events)  # (playlists: tracks no event plays)
     sound_users = texture_users + [(f"Sound event '{e['name']}'", e["event"]) for e in events]
     for user, components in sound_users:
         for sound in sounds.sounds_in(components):

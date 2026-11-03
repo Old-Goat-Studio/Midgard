@@ -271,11 +271,14 @@ render::MeshData Game::load_mesh(const std::string& asset) const {
 
 void Game::set_audio(audio::Mixer* mixer) {
     stop_sources();
+    music_.reset();
     sounds_.reset();
     if (!mixer) return;
     sounds_ = std::make_unique<audio::SoundPlayer>(
         *mixer, [this](const std::string& id) { return read_texture(id); });
     for (const auto& [id, e] : scene_.sound_events) sounds_->add(e);
+    music_ = std::make_unique<audio::MusicDirector>(*sounds_);
+    for (const auto& [id, p] : scene_.playlists) music_->add(p);
     sounds_->set_blocked([this](audio::VoiceId voice, const glm::dvec3& from,
                                 const glm::dvec3& to) { return sound_blocked(voice, from, to); });
     listen();
@@ -347,6 +350,22 @@ void Game::update_reverb() {
     if (sounds_) sounds_->mixer().set_reverb(chosen);
 }
 
+audio::MusicContext Game::music_context() const {
+    audio::MusicContext c;
+    c.scene = scene_.id;
+    if (scene_.settings.world) c.world_type = scene_.settings.world->world_type;
+    c.time = audio::time_of_day(scene_.solar_phase.value_or(0.25));  // (no clock: day)
+    if (terrain_ && scene_.settings.body && scene_.settings.terrain) {
+        const glm::dvec3 at = camera(1.0f).origin;
+        const SurfacePoint p = scene_.settings.body->surface(at);
+        const Terrain& t = terrain_->terrain();
+        const int biome = t.biome_index(p.face, p.u, p.v, t.height(p.face, p.u, p.v));
+        if (biome >= 0 && size_t(biome) < scene_.settings.terrain->biomes.size())
+            c.biome = scene_.settings.terrain->biomes[size_t(biome)].name;
+    }
+    return c;
+}
+
 audio::VoiceId Game::play_sound(const std::string& event, float volume, entt::entity from,
                                 std::optional<glm::dvec3> at) {
     if (!sounds_) return 0;
@@ -403,6 +422,10 @@ void Game::update_sounds(double dt) {
         ++it;
     }
     update_reverb();
+    if (music_) {
+        music_->set_context(music_context());
+        music_->update(dt);
+    }
     sounds_->update(dt);
     for (std::string& p : sounds_->take_problems()) sound_problems_.push_back(std::move(p));
 }
@@ -924,6 +947,8 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     scene_ = std::move(next);
     if (sounds_)  // (the game's events, as this scene's package has them)
         for (const auto& [eid, ev] : scene_.sound_events) sounds_->add(ev);
+    if (music_)  // (the music plays on: the next update chooses for the new scene)
+        for (const auto& [pid, p] : scene_.playlists) music_->add(p);
 
     // The player at the arrival, facing the way it does (level: "up" comes from the world).
     entt::entity player = entt::null;

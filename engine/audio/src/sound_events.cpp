@@ -159,6 +159,7 @@ VoiceId SoundPlayer::play(std::string_view name, const Play& play) {
     options.volume = volume * made.volume;
     options.pitch = between(e->pitch_min, e->pitch_max);
     options.loop = e->loop;
+    options.fade_in = std::max(play.fade_in, 0.0f);
     if (made.spatial) {  // (where it is from the start: no first frame at full volume)
         made.at = *play.at;
         const glm::dvec3 from = listener_ ? listener_->position : glm::dvec3(0.0);
@@ -215,6 +216,14 @@ void SoundPlayer::set_volume(VoiceId voice, float volume) {
     if (it == voices_.end()) return;
     it->second.volume = std::max(volume, 0.0f);
     place(voice, it->second, 0.0);
+}
+
+void SoundPlayer::fade_out(VoiceId voice, float seconds) {
+    if (voices_.contains(voice)) mixer_.fade_out(voice, seconds);
+}
+
+double SoundPlayer::seconds(VoiceId voice) const {
+    return mixer_.voice_seconds(voice);
 }
 
 void SoundPlayer::set_listener(const Listener& listener) {

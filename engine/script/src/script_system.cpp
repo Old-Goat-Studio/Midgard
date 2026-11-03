@@ -50,6 +50,7 @@ entt::registry& registry() {
 // midgard.Entity: a handle on an entity of the running scene, by id.
 struct RoomsHandle {};  // midgard.rooms
 struct AudioHandle {};  // midgard.audio
+struct MusicHandle {};  // midgard.music
 struct SoundHandle {    // a sound playing (midgard.audio.play)
     audio::VoiceId voice = 0;
 };
@@ -742,6 +743,58 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def("__repr__", [](const AudioHandle&) { return std::string("<midgard.audio>"); });
     m.attr("audio") = AudioHandle{};
 
+    const auto music = []() -> audio::MusicDirector* { return current_game().music(); };
+    py::class_<MusicHandle>(m, "Music",
+                            "Music (midgard.music; milestone 5.14): playlists chosen by where "
+                            "the player is, or by a script.")
+        .def(
+            "play",
+            [music](const MusicHandle&, const std::string& playlist) {
+                if (auto* d = music(); d && !d->force(playlist))
+                    throw py::value_error("there is no playlist '" + playlist + "'");
+            },
+            py::arg("playlist"),
+            "Plays a playlist (by name or id), crossfading, whatever fits where the player is, "
+            "until release(). ValueError for one the game hasn't.")
+        .def(
+            "release",
+            [music](const MusicHandle&) {
+                if (auto* d = music()) d->release();
+            },
+            "Back to the playlist that fits where the player is.")
+        .def(
+            "stop",
+            [music](const MusicHandle&) {
+                if (auto* d = music()) d->force("");
+            },
+            "Fades the music out, until play() or release().")
+        .def(
+            "stinger",
+            [music](const MusicHandle&, const std::string& event, float duck) {
+                auto* d = music();
+                const audio::VoiceId voice = d ? d->stinger(event, duck) : 0;
+                return voice ? py::cast(SoundHandle{voice}) : py::none();
+            },
+            py::arg("event"), py::arg("duck") = 0.35f,
+            "Plays a sound event over the music (a fanfare, a discovery), which dips to `duck` "
+            "of its level under it and comes back after. The Sound, or None.")
+        .def_property_readonly(
+            "playlist",
+            [music](const MusicHandle&) {
+                auto* d = music();
+                return d ? d->playing() : std::string();
+            },
+            "The playlist playing, by id (empty: none).")
+        .def_property_readonly(
+            "track",
+            [music](const MusicHandle&) {
+                auto* d = music();
+                return d ? d->track() : std::string();
+            },
+            "The sound event of the track playing (empty: none).")
+        .def("__repr__", [](const MusicHandle&) { return std::string("<midgard.music>"); });
+    m.attr("music") = MusicHandle{};
+
     py::class_<NavHandle>(m, "Nav",
                           "Where agents can walk (midgard.nav; milestone 5.12): paths over the "
                           "scene's navigation mesh, made round the player.")
@@ -1050,6 +1103,7 @@ result = json.dumps({
     "Nav": sorted(n for n in dir(midgard.Nav) if not n.startswith("_")),
     "Audio": sorted(n for n in dir(midgard.Audio) if not n.startswith("_")),
     "Sound": sorted(n for n in dir(midgard.Sound) if not n.startswith("_")),
+    "Music": sorted(n for n in dir(midgard.Music) if not n.startswith("_")),
 })
 )",
              scope);

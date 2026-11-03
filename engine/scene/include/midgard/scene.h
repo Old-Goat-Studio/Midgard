@@ -18,6 +18,7 @@
 
 #include "midgard/body.h"
 #include "midgard/environment.h"
+#include "midgard/music.h"
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
 #include "midgard/sound_events.h"
@@ -345,6 +346,8 @@ public:
     std::unordered_map<std::string, EnvironmentDef> environments;
     // The game's sound events (migration 14; midgard/sound_events.h), by id.
     std::map<std::string, audio::SoundEvent> sound_events;
+    // Its music playlists (migration 15; midgard/music.h), by id.
+    std::map<std::string, audio::Playlist> playlists;
     // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
     std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.

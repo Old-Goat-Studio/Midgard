@@ -291,6 +291,9 @@ VoiceId Mixer::play(SoundId sound, const PlayOptions& options) {
     ma_sound_set_pitch(&v->played, std::clamp(options.pitch, 0.01f, 100.0f));
     ma_sound_set_pan(&v->played, std::clamp(options.pan, -1.0f, 1.0f));
     ma_sound_set_looping(&v->played, options.loop ? MA_TRUE : MA_FALSE);
+    if (options.fade_in > 0.0f)
+        ma_sound_set_fade_in_pcm_frames(&v->played, 0.0f, 1.0f,
+                                        ma_uint64(double(options.fade_in) * sample_rate()));
     check(ma_sound_start(&v->played), "starting '" + it->second->name + "'");
     const VoiceId id = m.next_voice++;
     m.voices[id] = std::move(v);
@@ -349,14 +352,37 @@ ReverbSettings Mixer::reverb() const {
     return {n.room_size.load(), n.damping.load(), n.wet.load(), n.width.load()};
 }
 
+namespace {
+// Playing: started, not at its end, not stopped (a fade-out stops it).
+bool sounding(const ma_sound* s) {
+    return !ma_sound_at_end(s) && ma_sound_is_playing(s);
+}
+}  // namespace
+
 bool Mixer::playing(VoiceId voice) const {
     const auto it = impl_->voices.find(voice);
-    return it != impl_->voices.end() && !ma_sound_at_end(&it->second->played);
+    return it != impl_->voices.end() && sounding(&it->second->played);
 }
 
 std::size_t Mixer::voice_count() const {
     return std::size_t(std::count_if(impl_->voices.begin(), impl_->voices.end(),
-                                     [](auto& v) { return !ma_sound_at_end(&v.second->played); }));
+                                     [](auto& v) { return sounding(&v.second->played); }));
+}
+
+void Mixer::fade_out(VoiceId voice, float seconds) {
+    const auto it = impl_->voices.find(voice);
+    if (it == impl_->voices.end()) return;
+    if (seconds <= 0.0f) {
+        stop(voice);
+        return;
+    }
+    ma_sound_stop_with_fade_in_pcm_frames(&it->second->played,
+                                          ma_uint64(double(seconds) * sample_rate()));
+}
+
+double Mixer::voice_seconds(VoiceId voice) const {
+    const auto it = impl_->voices.find(voice);
+    return it == impl_->voices.end() ? 0.0 : seconds(it->second->sound);
 }
 
 void Mixer::set_voice_volume(VoiceId voice, float volume) {
@@ -390,7 +416,7 @@ void Mixer::mix(std::span<float> out) {
 void Mixer::update() {
     Impl& m = *impl_;
     for (auto it = m.voices.begin(); it != m.voices.end();) {
-        if (ma_sound_at_end(&it->second->played)) {
+        if (!sounding(&it->second->played)) {
             m.free(*it->second);
             it = m.voices.erase(it);
         } else {

@@ -52,6 +52,7 @@ struct PlayOptions {
     // how loud it is for its distance is the caller's (distance_gain), through its volume.
     bool spatial = false;
     glm::vec3 position{0.0f};
+    float fade_in = 0.0f;  // seconds rising from silence (exact, on the audio thread)
 };
 
 // How loud a placed sound is at `distance` metres: all of it within `nearest`, then falling as
@@ -101,6 +102,9 @@ public:
     bool playing(VoiceId voice) const;
     std::size_t voice_count() const;  // playing now
     void set_voice_volume(VoiceId voice, float volume);
+    // Fades a voice out over `seconds` (exactly, on the audio thread), then stops it.
+    void fade_out(VoiceId voice, float seconds);
+    double voice_seconds(VoiceId voice) const;  // how long its sound lasts (0: none)
     // A placed voice: where it is from the listener now, and how muffled (0 clear, 1 heard
     // through a wall: its high sounds cut).
     void set_voice_position(VoiceId voice, const glm::vec3& position);

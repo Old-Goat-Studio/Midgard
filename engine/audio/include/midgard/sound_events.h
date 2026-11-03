@@ -66,6 +66,7 @@ public:
         // Where it's heard from (a placed event; set_position moves it). None, or an event
         // that isn't spatial: heard the same everywhere.
         std::optional<glm::dvec3> at;
+        float fade_in = 0.0f;  // seconds rising from silence
     };
 
     // Who hears (step 4): where, and which way they face. Placed sounds fade with distance
@@ -96,6 +97,8 @@ public:
     void stop_all();
     bool playing(VoiceId voice) const;
     void set_volume(VoiceId voice, float volume);  // times the event's pick
+    void fade_out(VoiceId voice, float seconds);   // then it stops
+    double seconds(VoiceId voice) const;           // how long its sound lasts
     // The events playing now (by id), one entry a voice.
     std::vector<std::string> playing_events() const;
     struct VoiceInfo {

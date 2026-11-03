@@ -325,6 +325,35 @@ audio: Audio
 """Sound."""
 
 
+class Music:
+    """Music (midgard.music): playlists, made in the editor, chosen by where the player is: the
+    scene, its world type, the biome and the time of day. A change of playlist crossfades. A
+    script can choose one itself until it lets go, and play stingers over the music."""
+
+    playlist: str
+    """The playlist playing, by id ("" for none; read-only)."""
+    track: str
+    """The sound event of the track playing ("" for none; read-only)."""
+
+    def play(self, playlist: str) -> None:
+        """Plays a playlist (by name or id), crossfading, whatever fits where the player is,
+        until release(). ValueError for one the game hasn't."""
+
+    def release(self) -> None:
+        """Back to the playlist that fits where the player is."""
+
+    def stop(self) -> None:
+        """Fades the music out, until play() or release()."""
+
+    def stinger(self, event: str, duck: float = 0.35) -> Sound | None:
+        """Plays a sound event over the music (a fanfare, a discovery), which dips to `duck` of
+        its level under it and comes back after. The Sound, or None."""
+
+
+music: Music
+"""Music."""
+
+
 class Rooms:
     """Moving between scenes (midgard.rooms). The player is in one scene at a time; a change
     fades the picture out, swaps the scene (the one left stops: its scripts get on_room_exit,

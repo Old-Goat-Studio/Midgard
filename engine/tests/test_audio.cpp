@@ -510,3 +510,162 @@ TEST_CASE("placed events: their distance's level, following, and muffled while b
     CHECK(w.player.distance_gain(radio) == 1.0f);
     CHECK(rms(mix(w.mixer, 0.2), 0) > 0.3);
 }
+
+#include "midgard/music.h"
+
+namespace {
+
+// How strong one frequency is in the left channel (Goertzel): a sine of amplitude a gives a.
+double strength(const std::vector<float>& s, double hz, std::uint32_t rate = kRate) {
+    const size_t n = s.size() / 2;
+    const double w = 2.0 * kPi * hz / rate, k = 2.0 * std::cos(w);
+    double s1 = 0.0, s2 = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        const double s0 = s[i * 2] + k * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return 2.0 * std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - k * s1 * s2)) / double(n);
+}
+
+// Time passing for the director and the mixer together, in hundredths.
+void play_for(Events& w, midgard::audio::MusicDirector& d, double seconds) {
+    for (int i = 0; i < int(std::lround(seconds * 100)); ++i) {
+        d.update(0.01);
+        w.player.update(0.01);
+        mix(w.mixer, 0.01);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("music: playlists, times of day, and which fits where") {
+    using midgard::audio::playlist_from_json;
+    const auto p = playlist_from_json("mus_forest", "Forest", R"({"tracks": ["a", "b"],
+        "order": "shuffle", "biomes": ["Forest"], "times": ["day", "dawn"], "priority": 2,
+        "crossfade": 4, "gap": [5, 2]})");
+    CHECK(p.tracks.size() == 2);
+    CHECK(p.shuffle);
+    CHECK(p.biomes == std::vector<std::string>{"Forest"});
+    CHECK(p.priority == 2);
+    CHECK(p.crossfade == 4.0f);
+    CHECK(p.gap_min == 2.0f);
+    CHECK(p.gap_max == 5.0f);
+    CHECK_THROWS_AS(playlist_from_json("x", "X", R"({"times": ["noon"]})"),
+                    midgard::audio::AudioError);
+    CHECK_THROWS_AS(playlist_from_json("x", "X", R"({"order": "backwards"})"),
+                    midgard::audio::AudioError);
+    using midgard::audio::time_of_day;
+    CHECK(time_of_day(0.0) == "dawn");
+    CHECK(time_of_day(0.99) == "dawn");
+    CHECK(time_of_day(0.25) == "day");
+    CHECK(time_of_day(0.5) == "dusk");
+    CHECK(time_of_day(0.75) == "night");
+    CHECK(time_of_day(1.25) == "day");
+
+    Events w;
+    midgard::audio::MusicDirector d(w.player);
+    d.add(playlist_from_json("any", "Anywhere", R"({"tracks": ["t"]})"));
+    d.add(playlist_from_json("forest", "Forest", R"({"tracks": ["t"], "biomes": ["Forest"]})"));
+    d.add(playlist_from_json("forest_night", "Forest at night",
+                             R"({"tracks": ["t"], "biomes": ["Forest"], "times": ["night"]})"));
+    d.add(playlist_from_json("loud", "Loud", R"({"tracks": ["t"], "biomes": ["Forest"],
+                                                "priority": 5})"));
+    d.add(playlist_from_json("empty", "Empty", R"({"scenes": ["s"], "times": ["day"]})"));
+    midgard::audio::MusicContext c{"s", "wt", "Desert", "day"};
+    CHECK(d.choose(c)->id == "any");  // (the empty one has no tracks)
+    c.biome = "Forest";
+    CHECK(d.choose(c)->id == "loud");  // (as specific as "forest", higher priority)
+    c.time = "night";
+    CHECK(d.choose(c)->id == "forest_night");  // (the most specific)
+}
+
+TEST_CASE("music: a change of playlist settles, then crossfades in the time it says") {
+    Events w;
+    w.add("low", R"({"sounds": ["snd:long400"], "bus": "music", "loop": true,
+                     "spatial": false})");
+    w.add("high", R"({"sounds": ["snd:long600"], "bus": "music", "loop": true,
+                      "spatial": false})");
+    midgard::audio::MusicDirector d(w.player);
+    using midgard::audio::playlist_from_json;
+    d.add(playlist_from_json("woods", "Woods", R"({"tracks": ["low"], "biomes": ["Forest"],
+                                                  "crossfade": 1})"));
+    d.add(playlist_from_json("sands", "Sands", R"({"tracks": ["high"], "biomes": ["Desert"],
+                                                  "crossfade": 1})"));
+    d.set_context({"s", "", "Forest", "day"});
+    play_for(w, d, 1.5);  // (the first choice at once, faded in over a second)
+    CHECK(d.playing() == "woods");
+    CHECK(d.track() == "low");
+    auto out = mix(w.mixer, 0.1);
+    CHECK(strength(out, 400.0) == doctest::Approx(0.5).epsilon(0.05));
+    // Desert: it must hold two seconds first (a moment back in the forest starts it again).
+    d.set_context({"s", "", "Desert", "day"});
+    play_for(w, d, 1.0);
+    d.set_context({"s", "", "Forest", "day"});
+    play_for(w, d, 0.1);
+    d.set_context({"s", "", "Desert", "day"});
+    play_for(w, d, 1.9);
+    CHECK(d.playing() == "woods");
+    for (int i = 0; i < 20 && d.playing() == "woods"; ++i) play_for(w, d, 0.01);
+    REQUIRE(d.playing() == "sands");
+    // Halfway through the crossfade: half of each; at its end, all of the new.
+    play_for(w, d, 0.45);
+    out = mix(w.mixer, 0.1);  // (0.45 to 0.55 s)
+    CHECK(strength(out, 400.0) == doctest::Approx(0.25).epsilon(0.12));
+    CHECK(strength(out, 600.0) == doctest::Approx(0.25).epsilon(0.12));
+    play_for(w, d, 0.6);
+    out = mix(w.mixer, 0.1);
+    CHECK(strength(out, 400.0) < 0.01);
+    CHECK(strength(out, 600.0) == doctest::Approx(0.5).epsilon(0.05));
+    // A script's choice wins at once; released, the music goes back.
+    CHECK(d.force("Woods"));
+    CHECK_FALSE(d.force("Jazz"));
+    play_for(w, d, 0.05);
+    CHECK(d.playing() == "woods");
+    d.release();
+    play_for(w, d, 2.2);
+    CHECK(d.playing() == "sands");
+    d.force("");  // silence
+    play_for(w, d, 1.2);
+    CHECK(d.playing().empty());
+    CHECK(peak(mix(w.mixer, 0.1)) < 1e-4f);
+}
+
+TEST_CASE("music: tracks follow each other after their gap, and stingers duck the music") {
+    Events w;
+    w.add("a", R"({"sounds": ["snd:500"], "bus": "music", "spatial": false})");
+    w.add("b", R"({"sounds": ["snd:700"], "bus": "music", "spatial": false})");
+    midgard::audio::MusicDirector d(w.player);
+    using midgard::audio::playlist_from_json;
+    d.add(playlist_from_json("two", "Two", R"({"tracks": ["a", "b"], "crossfade": 0,
+                                              "gap": 0.3})"));
+    d.set_context({});
+    play_for(w, d, 0.1);
+    CHECK(d.track() == "a");
+    play_for(w, d, 0.5);  // a (0.5 s) is over: a gap of 0.3 s
+    CHECK(d.track() == "a");
+    CHECK(peak(mix(w.mixer, 0.05)) < 1e-4f);
+    play_for(w, d, 0.3);
+    CHECK(d.track() == "b");
+    play_for(w, d, 0.9);
+    CHECK(d.track() == "a");  // round again
+
+    Events v;
+    v.add("hum", R"({"sounds": ["snd:long300"], "bus": "music", "loop": true,
+                     "spatial": false})");
+    v.add("sting", R"({"sounds": ["snd:900"], "bus": "music", "spatial": false})");
+    midgard::audio::MusicDirector m(v.player);
+    m.add(playlist_from_json("hum", "Hum", R"({"tracks": ["hum"], "crossfade": 0})"));
+    m.set_context({});
+    play_for(v, m, 0.2);
+    CHECK(strength(mix(v.mixer, 0.1), 300.0) == doctest::Approx(0.5).epsilon(0.05));
+    REQUIRE(m.stinger("sting", 0.4f) != 0);
+    play_for(v, m, 0.3);  // (dipped within a quarter second)
+    auto out = mix(v.mixer, 0.1);
+    CHECK(m.duck_level() == doctest::Approx(0.4f));
+    CHECK(strength(out, 300.0) == doctest::Approx(0.2).epsilon(0.1));
+    CHECK(strength(out, 900.0) > 0.3);
+    play_for(v, m, 1.0);  // the stinger over, the music back
+    CHECK(m.duck_level() == doctest::Approx(1.0f));
+    CHECK(strength(mix(v.mixer, 0.1), 300.0) == doctest::Approx(0.5).epsilon(0.05));
+}

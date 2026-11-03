@@ -449,6 +449,17 @@ public:
                      {"voices", voices},
                      {"reverb", game_.reverb().wet},
                      {"listener", {ear.x, ear.y, ear.z}}};
+            if (const auto* music = game_.music()) {
+                const auto c = game_.music_context();
+                audio["music"] = {{"playlist", music->playing()},
+                                  {"track", music->track()},
+                                  {"duck", music->duck_level()},
+                                  {"context",
+                                   {{"scene", c.scene},
+                                    {"world_type", c.world_type},
+                                    {"biome", c.biome},
+                                    {"time", c.time}}}};
+            }
         }
         // The world as generated (midgard/world_type.h): the editor's preview must match it.
         nlohmann::json world_hash;
