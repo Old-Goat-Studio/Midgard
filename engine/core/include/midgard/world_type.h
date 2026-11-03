@@ -13,9 +13,11 @@
 //             "calendar": "cal_standard",          its days and seasons
 //             "terrain": {...},                    the ground's settings (midgard/terrain.h,
 //                                                  without a seed: the world brings that)
-//             "graph": {...}}                      how the ground's height is made
+//             "graph": {...},                      how the ground's height is made
 //                                                  (midgard/worldgen.h); none: the terrain
 //                                                  settings' hills, as in milestone 5.9
+//             "weather": {...}}                    its weather tables, fronts or controlled
+//                                                  weather (midgard/weather_sim.h); none: none
 //   world    {"world_type": "wt_...", "version": 2, "seed": 7}    (no seed: the body's)
 //
 // A version a shipped game could use is never changed or dropped, so a world still generates
@@ -42,7 +44,8 @@ struct WorldRecipe {
     std::string atmosphere;  // an environment's id, or none
     std::string calendar;    // a calendar's id, or none
     TerrainSettings terrain;
-    std::string graph;  // JSON (midgard/worldgen.h's WorldGraph), or empty for none
+    std::string graph;    // JSON (midgard/worldgen.h's WorldGraph), or empty for none
+    std::string weather;  // JSON (midgard/weather_sim.h's WeatherSettings), or empty for none
     bool operator==(const WorldRecipe&) const = default;
 };
 

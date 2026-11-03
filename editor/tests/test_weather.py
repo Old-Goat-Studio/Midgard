@@ -78,3 +78,37 @@ def test_the_engine_refuses_a_weather_type_that_isnt_one(project, tmp_path):
     weather.put(project, {"id": "frogs", "name": "Frogs", "weather": {"falls": "frogs"}})
     with pytest.raises(CookError, match="Frogs"):
         cook(project, tmp_path / "pkg")
+
+
+def a_world_type_with_weather(project, weather_settings):
+    from midgard_editor import world_types
+
+    project.undo_stack.push(world_types.SaveRecipeCommand(
+        project, "wt_moors", {"terrain": {}, "weather": weather_settings}, "Moors"))
+
+
+def test_a_world_types_weather_tables_are_checked(project, tmp_path):
+    a_world_type_with_weather(project, {
+        "tables": [{"name": "Wet", "weather": {"rain": 2, "drizzle": 1},
+                    "after": {"thunderstorm": {"hail": 1}}},
+                   {"name": "Nothing", "weather": {"clear": 0}}],
+        "fronts": {"weather": {"meteors": 1}},
+        "lasts": {"default": [2, 8], "fog": [1, 2]}})
+    found = weather.world_problems(project)
+    assert ("World type 'Moors': weather table 'Wet' has weather 'drizzle', which isn't one "
+            "of the weather types.") in found
+    text = "\n".join(found)
+    assert "'hail'" in text and "'meteors'" in text and "'Nothing' has no weather" in text
+    assert "'thunderstorm'" not in text and "'default'" not in text and "'fog'" not in text
+    result = cook(project, tmp_path / "pkg")
+    assert any("drizzle" in w for w in result.warnings)
+
+
+def test_the_engine_refuses_weather_settings_it_cant_read(project, tmp_path):
+    if engine.module() is None:
+        pytest.skip("the engine isn't here to check")
+    a_world_type_with_weather(project, {"tables": [{"weather": {"rain": 1}}]})
+    cook(project, tmp_path / "ok")
+    a_world_type_with_weather(project, {"tables": "rainy"})
+    with pytest.raises(CookError, match="weather settings"):
+        cook(project, tmp_path / "pkg")

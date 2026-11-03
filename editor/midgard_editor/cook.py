@@ -283,6 +283,7 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
     warnings += music.problems(project, events)  # (playlists: tracks no event plays)
     warnings += ambience.problems(project, events)
     warnings += weather.problems(project, events)  # (weather types: their sounds, their numbers)
+    warnings += weather.world_problems(project)  # (world types' weather tables)
     sound_users = texture_users + [(f"Sound event '{e['name']}'", e["event"]) for e in events]
     for user, components in sound_users:
         for sound in sounds.sounds_in(components):

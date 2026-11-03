@@ -42,6 +42,7 @@
 #include "midgard/terrain.h"
 #include "midgard/terrain_streamer.h"
 #include "midgard/version.h"
+#include "midgard/weather_sim.h"
 #include "midgard/worldgen.h"
 
 namespace {
@@ -431,6 +432,31 @@ std::vector<Benchmark> benchmarks() {
                         mixer->set_reverb(midgard::audio::reverb_preset("hall").value());
                         auto out = std::make_shared<std::vector<float>>(480 * 2);
                         return [mixer, out] { mixer->mix(*out); };
+                    }});
+    list.push_back({"weather.forecast_planet",
+                    "a planet's weather a year into the game, from cold: a cell's own weather "
+                    "replayed from the calendar's start, then two days' forecast there with "
+                    "fronts (a 100 km planet, 4 km cells, a front every 6 to 24 hours)",
+                    30, [](std::string&) -> std::function<void()> {
+                        using namespace midgard::weather;
+                        WeatherTypes types;
+                        for (const char* id : {"clear", "cloudy", "rain", "thunderstorm"})
+                            types[id] = weather_type_from_json(id, id, "{}");
+                        const auto settings = std::make_shared<WeatherSettings>(
+                            weather_settings_from_json(R"({"cell": 4000,
+                            "tables": [{"weather": {"clear": 3, "cloudy": 2, "rain": 1},
+                                        "after": {"thunderstorm": {"rain": 1}}}],
+                            "lasts": {"default": [1, 8]},
+                            "fronts": {"every": [6, 24], "speed": [5, 15], "radius": [3, 8],
+                                       "lasts": [12, 48], "weather": {"thunderstorm": 1}}})"));
+                        const midgard::Shape planet =
+                            midgard::Shape::sphere_outside(100000.0, 9.81);
+                        return [settings, types, planet] {
+                            WeatherSim sim(planet, *settings, types, 7);
+                            const std::int64_t year = 365 * 86400;
+                            const auto spells = sim.forecast({2, 5, 9}, year, year + 2 * 86400);
+                            if (spells.empty()) throw std::runtime_error("no weather");
+                        };
                     }});
     list.push_back({"anim.pose_65_joints",
                     "a 65-joint humanoid's pose sampled from a clip (30 keys a second on every "

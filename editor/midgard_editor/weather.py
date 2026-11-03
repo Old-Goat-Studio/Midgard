@@ -121,6 +121,56 @@ def problems(project: Project, events: list[dict[str, Any]]) -> list[str]:
             for p in problems_of(w["weather"], events)]
 
 
+def settings_problems(settings: Any, type_ids: set[str]) -> list[str]:
+    """What's wrong with a world's weather settings ("weather" in a world type's recipe:
+    midgard/weather_sim.h): weather that isn't one of the types, tables without weather. The
+    engine says what it can't read at all as the game is cooked."""
+    if not isinstance(settings, dict):
+        return []
+    out: list[str] = []
+
+    def known(weather: Any, where: str) -> None:
+        sentence = f"{where} has weather '{weather}', which isn't one of the weather types"
+        if weather not in type_ids and sentence not in out:
+            out.append(sentence)
+
+    for table in settings.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        where = f"weather table '{table.get('name', '')}'"
+        weights = table.get("weather") or {}
+        if not any(isinstance(w, (int, float)) and w > 0 for w in weights.values()):
+            out.append(f"{where} has no weather")
+        for weather in weights:
+            known(weather, where)
+        for before, after in (table.get("after") or {}).items():
+            known(before, where)
+            for weather in after or {}:
+                known(weather, where)
+    for weather in settings.get("lasts") or {}:
+        if weather != "default":
+            known(weather, "how long the weather lasts")
+    for weather in (settings.get("fronts") or {}).get("weather") or {}:
+        known(weather, "the weather fronts")
+    for step in settings.get("controlled") or []:
+        if isinstance(step, dict):
+            known(step.get("weather"), "the controlled weather")
+    return out
+
+
+def world_problems(project: Project) -> list[str]:
+    """What's wrong with the weather of each world type (its latest version), one sentence each."""
+    from . import world_types
+
+    type_ids = {w["id"] for w in load_all(project)}
+    out = []
+    for world_type in world_types.load_all(project):
+        found = world_types.recipe(project, world_type["id"]) or {}
+        out += [f"World type '{world_type['name']}': {p}."
+                for p in settings_problems(found.get("weather"), type_ids)]
+    return out
+
+
 class WeatherCommand(QUndoCommand):
     """Adds (old None), changes or deletes (new None) a weather type; changes to the same
     setting in a row merge into one step."""

@@ -2,6 +2,7 @@
 #include "midgard/world_type.h"
 
 #include "midgard/hash.h"
+#include "midgard/weather_sim.h"
 #include "midgard/worldgen.h"
 
 #include <cmath>
@@ -70,6 +71,7 @@ WorldRecipe recipe_from_json(const nlohmann::json& j) {
     text("atmosphere", r.atmosphere);
     text("calendar", r.calendar);
     if (j.contains("graph") && !j.at("graph").is_null()) r.graph = j.at("graph").dump();
+    if (j.contains("weather") && !j.at("weather").is_null()) r.weather = j.at("weather").dump();
     if (j.contains("terrain")) {
         if (j.at("terrain").is_object() && j.at("terrain").contains("seed"))
             throw std::runtime_error("world type: the seed is the world's, not the recipe's");
@@ -90,6 +92,7 @@ nlohmann::json recipe_to_json(const WorldRecipe& r) {
     if (!r.calendar.empty()) j["calendar"] = r.calendar;
     j["terrain"] = terrain_to_json(r.terrain);
     if (!r.graph.empty()) j["graph"] = nlohmann::json::parse(r.graph);
+    if (!r.weather.empty()) j["weather"] = nlohmann::json::parse(r.weather);
     return j;
 }
 
@@ -104,6 +107,13 @@ std::vector<std::string> recipe_problems(const WorldRecipe& r) {
     if (!r.graph.empty())
         for (const std::string& p : graph_problems(nlohmann::json::parse(r.graph)))
             out.push_back("world type's graph: " + p);
+    if (!r.weather.empty()) {
+        try {
+            weather::weather_settings_from_json(r.weather);
+        } catch (const weather::WeatherError& e) {
+            out.push_back(std::string("world type's ") + e.what());
+        }
+    }
     return out;
 }
 

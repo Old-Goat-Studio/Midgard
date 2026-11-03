@@ -573,9 +573,27 @@ one says:
 - **How it sounds:** sounds that play while it lasts (rain, wind), and the thunder after each
   flash.
 
-You'll be able to change these and make your own (acid rain, a sleet storm) in the **Weather**
-tab of the Calendar panel, which is coming. Next the weather will change by itself with the
-seasons and the land (more snow in the mountains in winter), and you'll see it in the sky.
+**How the weather is chosen.** A world type can have **weather tables**: lists of weather and
+how much of the time each one is there ("clear 3, rain 1" means rain a quarter of the time). A
+table can be for certain **biomes** (the desert gets sandstorms), certain **seasons** (snow in
+winter), both, or everywhere. When several fit, the one for the biome and season wins, then the
+one for the biome, then the one for the season. A table can also say what comes **after** a
+weather: after a thunderstorm, rain, so a storm doesn't stop dead into sunshine. Each weather
+lasts a while (you say how many hours, for example 1 to 6 for rain), then the next is chosen.
+
+The world is divided into **weather cells** a few kilometres across, each with its own weather,
+so it can rain over the hills while the valley is dry. Now and then a **front** forms: a band of
+weather (a storm) that drifts across the world, over the cells in its path, round a cylinder
+and across a planet.
+
+Everything is worked out from the world's **seed** and the clock, so the same world always has
+the same weather, and a **forecast** is always right (unless a script changes the weather).
+**Inside worlds** such as habitats can have **controlled** weather instead: a timetable that
+repeats, such as 20 hours clear, then 4 hours of rain.
+
+You'll be able to change all of this, and make your own weather types (acid rain, a sleet
+storm), in the **Weather** tab of the Calendar panel, which is coming. Next you'll see the
+weather in your game and hear it, and scripts will be able to ask for the forecast.
 
 ---
 

@@ -37,6 +37,7 @@ add_library(midgard_core STATIC
     core/src/calendar.cpp
     core/src/time_service.cpp
     core/src/weather.cpp
+    core/src/weather_sim.cpp
 )
 target_include_directories(midgard_core PUBLIC
     core/include
@@ -415,6 +416,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_model.cpp
         tests/test_audio.cpp
         tests/test_weather.cpp
+        tests/test_weather_sim.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_audio
