@@ -176,6 +176,14 @@ public:
     const audio::SoundPlayer* sounds() const { return sounds_.get(); }
     // Sounds that couldn't be read, events that aren't there (each once), since last asked.
     std::vector<std::string> take_sound_problems();
+    // Plays a sound event for a script: from an entity (following it as it moves), from a
+    // place, or (neither, or an event that isn't spatial) heard the same everywhere. 0 when it
+    // doesn't play (silent game, unknown event, cooling down).
+    audio::VoiceId play_sound(const std::string& event, float volume,
+                              entt::entity from = entt::null,
+                              std::optional<glm::dvec3> at = std::nullopt);
+    // How much the listener hears of the reverb zones now (the echo's settings).
+    audio::ReverbSettings reverb() const { return reverb_; }
     void stream_navigation(bool wait = false);
     // The player walks along these points at its speed (instead of following the controls)
     // until it reaches the last; an empty list stops it. Tests, cutscenes, click-to-move.
@@ -293,6 +301,12 @@ private:
         audio::VoiceId voice = 0;
     };
     std::unordered_map<entt::entity, Source> sources_;
+    // Voices that follow an entity (sound components', and scripts' played from one).
+    std::unordered_map<audio::VoiceId, entt::entity> attached_;
+    audio::ReverbSettings reverb_;
+    void listen();
+    bool sound_blocked(audio::VoiceId voice, const glm::dvec3& from, const glm::dvec3& to) const;
+    void update_reverb();
     std::vector<std::string> sound_problems_;
     void update_sounds(double dt);
     void stop_sources();

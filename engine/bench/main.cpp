@@ -405,7 +405,8 @@ std::vector<Benchmark> benchmarks() {
          }});
     list.push_back({"audio.mix_32_voices",
                     "10 ms of sound mixed (48 kHz stereo) from 32 voices playing on the six "
-                    "buses, each at its own volume, pitch and pan, offline",
+                    "buses, each at its own volume, pitch and pan, half of them placed in 3D "
+                    "(and muffled), with the reverb on, offline",
                     200, [](std::string&) -> std::function<void()> {
                         midgard::audio::MixerOptions options;
                         options.device = false;
@@ -422,8 +423,12 @@ std::vector<Benchmark> benchmarks() {
                             play.pitch = 0.8f + 0.02f * float(v);
                             play.pan = -1.0f + float(v) / 16.0f;
                             play.loop = true;
-                            mixer->play(sound, play);
+                            play.spatial = v % 2 == 0;
+                            play.position = {float(v) - 16.0f, 0.0f, -5.0f};
+                            const auto voice = mixer->play(sound, play);
+                            if (play.spatial) mixer->set_voice_muffle(voice, 0.5f);
                         }
+                        mixer->set_reverb(midgard::audio::reverb_preset("hall").value());
                         auto out = std::make_shared<std::vector<float>>(480 * 2);
                         return [mixer, out] { mixer->mix(*out); };
                     }});

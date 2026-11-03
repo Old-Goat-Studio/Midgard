@@ -22,6 +22,8 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec3.hpp>
+
 namespace midgard::audio {
 
 enum class Bus : std::uint8_t { Master, Music, Effects, Voice, Ambience, Interface };
@@ -45,7 +47,29 @@ struct PlayOptions {
     float pitch = 1.0f;      // 2 an octave up (and twice as fast), 0.5 an octave down
     float pan = 0.0f;        // -1 left, 0 the middle, 1 right
     bool loop = false;
+    // Placed (milestone 5.14 step 4): heard from `position`, metres from the listener in the
+    // world's axes (the listener is the origin: set_listener turns it). Its direction pans it;
+    // how loud it is for its distance is the caller's (distance_gain), through its volume.
+    bool spatial = false;
+    glm::vec3 position{0.0f};
 };
+
+// How loud a placed sound is at `distance` metres: all of it within `nearest`, then falling as
+// nearest / distance (half as loud at twice the distance), and fading out over the last fifth
+// of the way to `farthest`, where it's silent.
+float distance_gain(float distance, float nearest, float farthest);
+
+// A room's echo (Freeverb): how big it sounds (0 to 1), how quickly high sounds die in it
+// (damping, 0 to 1), how much of it is heard (wet, 0 to 1), and how wide (0 mono to 1).
+struct ReverbSettings {
+    float room_size = 0.5f;
+    float damping = 0.5f;
+    float wet = 0.0f;
+    float width = 1.0f;
+};
+// The presets reverb zones name: "room", "hall", "cave", "cathedral", "tunnel" (and "none").
+std::optional<ReverbSettings> reverb_preset(std::string_view name);
+const std::vector<std::string>& reverb_presets();
 
 using SoundId = std::uint32_t;  // a loaded sound (0: none)
 using VoiceId = std::uint64_t;  // a sound playing (0: none)
@@ -77,6 +101,18 @@ public:
     bool playing(VoiceId voice) const;
     std::size_t voice_count() const;  // playing now
     void set_voice_volume(VoiceId voice, float volume);
+    // A placed voice: where it is from the listener now, and how muffled (0 clear, 1 heard
+    // through a wall: its high sounds cut).
+    void set_voice_position(VoiceId voice, const glm::vec3& position);
+    void set_voice_muffle(VoiceId voice, float amount);
+
+    // The listener's facing (it stands at the origin of placed voices' positions).
+    void set_listener(const glm::vec3& forward, const glm::vec3& up);
+
+    // The echo added to the effects, voice and ambience buses (not music or the interface),
+    // eased to over a twentieth of a second.
+    void set_reverb(const ReverbSettings& reverb);
+    ReverbSettings reverb() const;
 
     // Bus volumes (linear, 0 and up): Master is the whole game's.
     void set_volume(Bus bus, float volume);

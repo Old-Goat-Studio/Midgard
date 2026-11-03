@@ -16,6 +16,7 @@ const glm::vec4 kTrigger{1.0f, 0.85f, 0.2f, 1.0f};
 const glm::vec4 kPlayer{0.3f, 0.9f, 0.95f, 1.0f};
 const glm::vec4 kExit{0.85f, 0.4f, 1.0f, 1.0f};     // scene exits
 const glm::vec4 kArrival{0.4f, 1.0f, 0.55f, 1.0f};  // arrivals
+const glm::vec4 kReverb{0.3f, 0.8f, 0.75f, 1.0f};   // reverb zones (milestone 5.14)
 constexpr int kCircleSegments = 24;
 constexpr double kPi = 3.14159265358979323846;
 
@@ -184,9 +185,11 @@ std::vector<render::DebugLine> collider_outlines(const Scene& scene, const glm::
         const auto* player = reg.try_get<Player>(e);
         const auto* exit = reg.try_get<SceneExit>(e);
         const auto* arrival = reg.try_get<Arrival>(e);
-        if (!shape && !trigger && !player && !exit && !arrival) continue;
+        const auto* zone = reg.try_get<ReverbZone>(e);
+        if (!shape && !trigger && !player && !exit && !arrival && !zone) continue;
         const Placement p(scene.world_matrix(e));
         if (exit) box(lines, p, glm::vec3(0.0f), exit->size, kExit);
+        if (zone) box(lines, p, glm::vec3(0.0f), zone->size, kReverb);
         if (arrival) {  // a post a metre and a half tall, and an arrow along -Z at its foot
             const glm::dvec3 at = glm::dvec3(p.m[3]);
             const glm::dvec3 up =

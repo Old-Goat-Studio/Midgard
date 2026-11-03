@@ -147,11 +147,27 @@ VoiceId SoundPlayer::play(std::string_view name, const Play& play) {
     }
     const auto between = [&](float a, float b) { return a + float(rng_.uniform()) * (b - a); };
     const float volume = between(e->volume_min, e->volume_max);
+    Voice made;
+    made.event = e->id;
+    made.picked = volume;
+    made.volume = std::max(play.volume, 0.0f);
+    made.spatial = e->spatial && play.at.has_value();
+    made.nearest = e->min_distance;
+    made.farthest = e->max_distance;
     PlayOptions options;
     options.bus = e->bus;
-    options.volume = volume * std::max(play.volume, 0.0f);
+    options.volume = volume * made.volume;
     options.pitch = between(e->pitch_min, e->pitch_max);
     options.loop = e->loop;
+    if (made.spatial) {  // (where it is from the start: no first frame at full volume)
+        made.at = *play.at;
+        const glm::dvec3 from = listener_ ? listener_->position : glm::dvec3(0.0);
+        options.spatial = true;
+        options.position = glm::vec3(made.at - from);
+        made.gain =
+            audio::distance_gain(float(glm::length(made.at - from)), made.nearest, made.farthest);
+        options.volume *= made.gain;
+    }
     // At most max_voices of it: the oldest goes for the new one.
     if (e->max_voices > 0) {
         std::vector<VoiceId> mine;
@@ -163,7 +179,8 @@ VoiceId SoundPlayer::play(std::string_view name, const Play& play) {
         }
     }
     const VoiceId voice = mixer_.play(chosen, options);
-    voices_[voice] = {e->id, volume};
+    made.check_at = now_;  // (asked at once whether it's behind something)
+    voices_[voice] = made;
     if (e->cooldown > 0.0f) ready_at_[e->id] = now_ + e->cooldown;
     return voice;
 }
@@ -194,8 +211,50 @@ bool SoundPlayer::playing(VoiceId voice) const {
 }
 
 void SoundPlayer::set_volume(VoiceId voice, float volume) {
-    if (const auto it = voices_.find(voice); it != voices_.end())
-        mixer_.set_voice_volume(voice, it->second.picked * std::max(volume, 0.0f));
+    const auto it = voices_.find(voice);
+    if (it == voices_.end()) return;
+    it->second.volume = std::max(volume, 0.0f);
+    place(voice, it->second, 0.0);
+}
+
+void SoundPlayer::set_listener(const Listener& listener) {
+    listener_ = listener;
+    mixer_.set_listener(listener.forward, listener.up);
+}
+
+void SoundPlayer::set_position(VoiceId voice, const glm::dvec3& at) {
+    if (const auto it = voices_.find(voice); it != voices_.end()) it->second.at = at;
+}
+
+float SoundPlayer::occlusion(VoiceId voice) const {
+    const auto it = voices_.find(voice);
+    return it == voices_.end() ? 0.0f : it->second.occlusion;
+}
+
+float SoundPlayer::distance_gain(VoiceId voice) const {
+    const auto it = voices_.find(voice);
+    return it == voices_.end() ? 0.0f : it->second.gain;
+}
+
+// A voice's volume, and for a placed one where it is from the listener, its distance's gain and
+// how muffled it is.
+void SoundPlayer::place(VoiceId id, Voice& v, double dt) {
+    constexpr float kMuffledVolume = 0.4f;  // through a wall: this loud (and dull)
+    if (v.spatial) {
+        const glm::dvec3 from = listener_ ? listener_->position : glm::dvec3(0.0);
+        const glm::dvec3 to = v.at - from;
+        v.gain = audio::distance_gain(float(glm::length(to)), v.nearest, v.farthest);
+        mixer_.set_voice_position(id, glm::vec3(to));
+        if (blocked_ && listener_ && v.gain > 0.0f && now_ >= v.check_at) {
+            v.blocked = blocked_(id, from, v.at) ? 1.0f : 0.0f;
+            v.check_at = now_ + 0.1 + double(id % 7) * 0.013;  // (staggered)
+        }
+        const float ease = dt <= 0.0 ? 0.0f : std::min(1.0f, float(dt / 0.15));
+        v.occlusion += (v.blocked - v.occlusion) * ease;
+        mixer_.set_voice_muffle(id, v.occlusion);
+    }
+    const float through = 1.0f - (1.0f - kMuffledVolume) * v.occlusion;
+    mixer_.set_voice_volume(id, v.picked * v.volume * (v.spatial ? v.gain * through : 1.0f));
 }
 
 std::vector<std::string> SoundPlayer::playing_events() const {
@@ -205,10 +264,19 @@ std::vector<std::string> SoundPlayer::playing_events() const {
     return out;
 }
 
+std::vector<SoundPlayer::VoiceInfo> SoundPlayer::voices() const {
+    std::vector<VoiceInfo> out;
+    for (const auto& [id, v] : voices_)
+        if (mixer_.playing(id)) out.push_back({id, v.event, v.spatial, v.gain, v.occlusion});
+    return out;
+}
+
 void SoundPlayer::update(double dt) {
     now_ += std::max(dt, 0.0);
     for (auto it = voices_.begin(); it != voices_.end();)
         it = mixer_.playing(it->first) ? std::next(it) : voices_.erase(it);
+    for (auto& [id, v] : voices_)
+        if (v.spatial) place(id, v, dt);
     mixer_.update();
 }
 

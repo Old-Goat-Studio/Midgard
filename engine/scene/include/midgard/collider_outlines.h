@@ -4,7 +4,7 @@
 // physics, and in the game they follow the entities as physics moves them.
 //
 // Colours: static scenery grey-green, dynamic bodies orange, kinematic ones blue, triggers
-// yellow, and the player's capsule cyan.
+// yellow, the player's capsule cyan, scene exits violet, arrivals green, reverb zones teal.
 #pragma once
 
 #include <functional>

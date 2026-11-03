@@ -30,7 +30,9 @@ from ..scene_model import Entity, descendants, parents_first, sky_component
 from ..undo import AddEntityCommand, AddObjectCommand, DeleteEntityCommand, SetEntityCommand
 
 ICONS = {"folder": "📁", "group": "🧩", "object": "🧱", "player": "🧍", "camera": "🎥",
-         "light": "☀", "sound": "🔊", "sky": "🌌", "mesh": "■"}
+         "light": "☀", "sound": "🔊", "reverb_zone": "🏛", "sky": "🌌", "mesh": "■"}
+# A new reverb zone: a room-sized box with a room's echo (milestone 5.14).
+REVERB_ZONE = {"preset": "room", "size": [8.0, 4.0, 8.0], "edge": 2.0}
 LIGHT_ICONS = {"directional": "☀", "point": "💡", "spot": "🔦"}
 # New lights: a warm lamp's glow, and a spot pointing down. (A light added with a placed thing
 # selected goes inside it, a little above its origin: a candle's flame, a torch's.)
@@ -133,6 +135,8 @@ class ScenePanel(QWidget):
                               add_menu.addAction("🚪  Scene Exit", self.add_scene_exit))
         add_menu.insertAction(self.add_sky_action,
                               add_menu.addAction("📍  Arrival Point", self.add_arrival))
+        add_menu.insertAction(self.add_sky_action,
+                              add_menu.addAction("🏛  Reverb Zone", self.add_reverb_zone))
         for kind, icon in (("point", "💡"), ("spot", "🔦")):
             add_menu.insertAction(self.add_sky_action, add_menu.addAction(
                 f"{icon}  {LIGHTS[kind][0]}", lambda k=kind: self.add_light(k)))
@@ -327,6 +331,18 @@ class ScenePanel(QWidget):
         entity = Entity(self.project.next_entity_id(), name, self.target_folder(),
                         {"transform": {"position": [1.5 * count, 0.0, 2.0]},
                          "arrival": {"name": name}})
+        self._add(entity)
+        return entity.id
+
+    def add_reverb_zone(self) -> str | None:
+        """Adds a reverb zone: a box where the listener hears effects, voice and ambience echo
+        (a cave, a hall), fading in at its edges. Choose the echo in the Inspector."""
+        if self.project is None:
+            return None
+        name, count = self._unique_name("Reverb Zone")
+        entity = Entity(self.project.next_entity_id(), name, self.target_folder(),
+                        {"transform": {"position": [10.0 * count, 2.0, 0.0]},
+                         "reverb_zone": dict(REVERB_ZONE)})
         self._add(entity)
         return entity.id
 

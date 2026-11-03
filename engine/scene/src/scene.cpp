@@ -256,6 +256,16 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         reg.emplace_or_replace<PhysicsMaterial>(
             e, std::max(c.value("friction", 0.5f), 0.0f),
             std::clamp(c.value("bounciness", 0.0f), 0.0f, 1.0f));
+    } else if (name == "reverb_zone") {
+        ReverbZone z;
+        z.preset = c.value("preset", std::string("room"));
+        if (!audio::reverb_preset(z.preset))
+            throw SceneError("reverb_zone: preset '" + z.preset +
+                             "' isn't room, hall, cave, cathedral, tunnel or none");
+        z.size = glm::max(vec3(c, "size", glm::vec3(4.0f)), glm::vec3(0.01f));
+        z.edge = std::max(c.value("edge", 2.0f), 0.0f);
+        if (c.contains("wet")) z.wet = std::clamp(c.value("wet", 0.0f), 0.0f, 1.0f);
+        reg.emplace_or_replace<ReverbZone>(e, z);
     } else if (name == "sound") {
         SoundSource s;
         s.event = c.value("event", std::string());
@@ -299,6 +309,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<DirectionalLight, LocalLightSource>(e);
     else if (name == "sound")
         reg.remove<SoundSource>(e);
+    else if (name == "reverb_zone")
+        reg.remove<ReverbZone>(e);
     else if (name == "script")
         reg.remove<ScriptRef>(e);
     else if (name == "trigger")
@@ -327,7 +339,7 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
                ScriptRef, Trigger, Arrival, SceneExit, CharacterRef, Sky, RigidBody, ColliderShape,
-               PhysicsMaterial, Group, ObjectRef, SoundSource>(e);
+               PhysicsMaterial, Group, ObjectRef, SoundSource, ReverbZone>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }

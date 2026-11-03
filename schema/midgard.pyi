@@ -90,8 +90,9 @@ class Entity:
         1), easing in; None: lets it go. ValueError for another hand."""
 
     def play_sound(self, event: str, volume: float = 1.0) -> Sound | None:
-        """Plays a sound event (by name or id) from this entity, at volume times the event's.
-        The Sound playing, or None (a silent game, an unknown event, one cooling down)."""
+        """Plays a sound event (by name or id) from this entity, following it as it moves, at
+        volume times the event's. The Sound playing, or None (a silent game, an unknown event,
+        one cooling down)."""
 
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
@@ -303,9 +304,12 @@ class Audio:
     playing: list[str]
     """The sound events playing now, by id: one for each sound playing (read-only)."""
 
-    def play(self, event: str, volume: float = 1.0) -> Sound | None:
-        """Plays a sound event (by name or id), at volume times the event's: the Sound playing,
-        or None (a silent game, an unknown event, one cooling down)."""
+    def play(self, event: str, volume: float = 1.0,
+             at: Entity | Vector | None = None) -> Sound | None:
+        """Plays a sound event (by name or id), at volume times the event's: from an entity
+        (following it) or a place if `at` says (and the event is placed in the world: louder
+        near, muffled behind walls), else heard the same everywhere. The Sound playing, or None
+        (a silent game, an unknown event, one cooling down)."""
 
     def stop_all(self) -> None:
         """Stops every sound playing."""

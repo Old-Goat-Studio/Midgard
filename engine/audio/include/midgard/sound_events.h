@@ -19,6 +19,8 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 #include "midgard/audio.h"
 #include "midgard/det.h"
 
@@ -61,10 +63,34 @@ public:
 
     struct Play {
         float volume = 1.0f;  // times the event's
+        // Where it's heard from (a placed event; set_position moves it). None, or an event
+        // that isn't spatial: heard the same everywhere.
+        std::optional<glm::dvec3> at;
     };
+
+    // Who hears (step 4): where, and which way they face. Placed sounds fade with distance
+    // (distance_gain, by the event's near and far), pan by direction, and are muffled while
+    // `blocked` says something solid is between them and the listener (asked about ten times a
+    // second for each; it eases over about 0.15 s).
+    struct Listener {
+        glm::dvec3 position{0.0};
+        glm::vec3 forward{0.0f, 0.0f, -1.0f};
+        glm::vec3 up{0.0f, 1.0f, 0.0f};
+    };
+    using Blocked =
+        std::function<bool(VoiceId voice, const glm::dvec3& from, const glm::dvec3& to)>;
+    void set_listener(const Listener& listener);
+    void set_blocked(Blocked blocked) { blocked_ = std::move(blocked); }
+    void set_position(VoiceId voice, const glm::dvec3& at);
+    // How muffled a placed voice is now (0 clear, 1 behind a wall), and how loud for its
+    // distance: for tests and the debug overlay.
+    float occlusion(VoiceId voice) const;
+    float distance_gain(VoiceId voice) const;
     // Plays an event (by id or name). 0 when it doesn't: unknown, cooling down, or none of its
     // sounds can be read (problems() says which).
-    VoiceId play(std::string_view event, const Play& play = {});
+    VoiceId play(std::string_view event, const Play& play);
+    // (Not a default argument: Play isn't complete until the class is, for clang and GCC.)
+    VoiceId play(std::string_view event) { return play(event, Play{}); }
     void stop(VoiceId voice);
     void stop_event(const std::string& id);
     void stop_all();
@@ -72,6 +98,13 @@ public:
     void set_volume(VoiceId voice, float volume);  // times the event's pick
     // The events playing now (by id), one entry a voice.
     std::vector<std::string> playing_events() const;
+    struct VoiceInfo {
+        VoiceId voice = 0;
+        std::string event;
+        bool spatial = false;
+        float gain = 1.0f, occlusion = 0.0f;
+    };
+    std::vector<VoiceInfo> voices() const;
 
     // Time passes: cooldowns, and voices that have finished let go.
     void update(double dt);
@@ -92,7 +125,17 @@ private:
     struct Voice {
         std::string event;
         float picked = 1.0f;  // the volume picked for it
+        float volume = 1.0f;  // the player's (Play::volume, set_volume)
+        bool spatial = false;
+        glm::dvec3 at{0.0};
+        float nearest = 1.0f, farthest = 40.0f;
+        float gain = 1.0f;                       // for its distance
+        float occlusion = 0.0f, blocked = 0.0f;  // now, and where it's easing to
+        double check_at = 0.0;
     };
+    void place(VoiceId id, Voice& v, double dt);
+    std::optional<Listener> listener_;
+    Blocked blocked_;
     std::map<VoiceId, Voice> voices_;
     std::map<std::string, std::string> failed_;  // content id -> why
     std::vector<std::string> problems_;

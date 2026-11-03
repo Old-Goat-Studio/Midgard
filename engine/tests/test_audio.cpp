@@ -390,3 +390,123 @@ TEST_CASE("cooldown, at most so many at once, looping, stopping, and problems") 
     CHECK(std::count(w.asked.begin(), w.asked.end(), "snd:missing") == 1);
     CHECK(w.player.take_problems().empty());
 }
+
+TEST_CASE("3D: a placed sound's level by distance, its side, and muffled through walls") {
+    using midgard::audio::distance_gain;
+    // The curve: all of it within near, then near / distance, fading to silence at far.
+    CHECK(distance_gain(0.5f, 1.0f, 40.0f) == 1.0f);
+    CHECK(distance_gain(2.0f, 1.0f, 40.0f) == doctest::Approx(0.5f));
+    CHECK(distance_gain(4.0f, 1.0f, 40.0f) == doctest::Approx(0.25f));
+    CHECK(distance_gain(35.0f, 1.0f, 40.0f) ==
+          doctest::Approx((1.0f / 35.0f) * (40.0f - 35.0f) / (40.0f - 32.2f)));
+    CHECK(distance_gain(40.0f, 1.0f, 40.0f) == 0.0f);
+    CHECK(distance_gain(90.0f, 1.0f, 40.0f) == 0.0f);
+
+    // Panned by direction: on the right, louder on the right (the listener faces -Z).
+    Mixer m = offline();
+    m.set_listener({0, 0, -1}, {0, 1, 0});
+    const auto hum = m.load("hum", tone(300.0, 2.0, 0.5f));
+    PlayOptions placed;
+    placed.spatial = true;
+    placed.loop = true;
+    placed.position = {5, 0, 0};
+    const auto right = m.play(hum, placed);
+    auto out = mix(m, 0.2);
+    CHECK(rms(out, 1) > 3.0 * rms(out, 0));
+    m.set_voice_position(right, {-5, 0, 0});  // moved to the left
+    mix(m, 0.05);
+    out = mix(m, 0.2);
+    CHECK(rms(out, 0) > 3.0 * rms(out, 1));
+    m.set_voice_position(right, {0, 0, -5});  // ahead: both sides alike
+    mix(m, 0.05);
+    out = mix(m, 0.2);
+    CHECK(rms(out, 0) == doctest::Approx(rms(out, 1)).epsilon(0.05));
+    m.stop_all();
+
+    // Muffled: a high sound mostly gone, a low one hardly touched.
+    for (const double hz : {5000.0, 150.0}) {
+        CAPTURE(hz);
+        Mixer w = offline();
+        placed.position = {0, 0, -2};
+        const auto v = w.play(w.load("t", tone(hz, 2.0, 0.5f)), placed);
+        mix(w, 0.05);
+        const double clear = rms(mix(w, 0.2), 0);
+        w.set_voice_muffle(v, 1.0f);
+        mix(w, 0.05);
+        const double muffled = rms(mix(w, 0.2), 0);
+        if (hz > 1000)
+            CHECK(muffled < 0.1 * clear);
+        else
+            CHECK(muffled > 0.8 * clear);
+    }
+}
+
+TEST_CASE("reverb: an echo after a sound on effects, never on music, none when it's dry") {
+    const auto click = [] {  // 20 ms of noise-like tone, then nothing
+        std::vector<float> s(48000, 0.0f);
+        for (size_t i = 0; i < 960; ++i)
+            s[i] = 0.5f * float(std::sin(double(i) * 0.7) * std::sin(double(i) * 0.031));
+        return midgard::audio::wav_bytes(s, 1, 48000);
+    }();
+    const auto tail = [&](Bus bus, float wet) {
+        Mixer m = offline();
+        auto reverb = midgard::audio::reverb_preset("cave").value();
+        reverb.wet = wet;
+        m.set_reverb(reverb);
+        mix(m, 0.1);  // (the echo's level eased in)
+        PlayOptions play;
+        play.bus = bus;
+        m.play(m.load("click", click), play);
+        mix(m, 0.2);
+        return rms(mix(m, 0.3), 0);  // 0.2 to 0.5 s after: only an echo would be heard
+    };
+    CHECK(tail(Bus::Effects, 0.45f) > 0.003);
+    CHECK(tail(Bus::Effects, 0.0f) < 1e-6);
+    CHECK(tail(Bus::Music, 0.45f) < 1e-6);
+    CHECK(midgard::audio::reverb_preset("hall"));
+    CHECK_FALSE(midgard::audio::reverb_preset("bathroom"));
+    CHECK(midgard::audio::reverb_presets().size() == 6);
+}
+
+TEST_CASE("placed events: their distance's level, following, and muffled while blocked") {
+    Events w;
+    w.add("drip", R"({"sounds": ["snd:long500"], "min_distance": 1, "max_distance": 40,
+                      "loop": true})");
+    w.add("radio", R"({"sounds": ["snd:long500"], "spatial": false})");
+    midgard::audio::SoundPlayer::Listener ear;
+    ear.position = {10, 0, 10};  // (anywhere: positions are taken from it)
+    w.player.set_listener(ear);
+    bool wall = false;
+    w.player.set_blocked(
+        [&](midgard::audio::VoiceId, const glm::dvec3&, const glm::dvec3&) { return wall; });
+    midgard::audio::SoundPlayer::Play near;
+    near.at = glm::dvec3(10, 0, 9);  // a metre ahead
+    const auto close = w.player.play("drip", near);
+    const double at_one = rms(mix(w.mixer, 0.2), 0);
+    w.player.set_position(close, {10, 0, 8});  // two metres
+    w.player.update(1.0 / 60.0);
+    CHECK(w.player.distance_gain(close) == doctest::Approx(0.5f));
+    mix(w.mixer, 0.05);
+    CHECK(rms(mix(w.mixer, 0.2), 0) == doctest::Approx(at_one * 0.5).epsilon(0.03));
+    w.player.set_position(close, {10, 0, -45});  // beyond its far: silent
+    w.player.update(1.0 / 60.0);
+    mix(w.mixer, 0.05);
+    CHECK(rms(mix(w.mixer, 0.2), 0) < 1e-4);
+    // Behind a wall: muffled (eased in), then clear again.
+    w.player.set_position(close, {10, 0, 9});
+    wall = true;
+    for (int i = 0; i < 30; ++i) w.player.update(1.0 / 60.0);
+    CHECK(w.player.occlusion(close) > 0.9f);
+    mix(w.mixer, 0.05);
+    CHECK(rms(mix(w.mixer, 0.2), 0) < at_one * 0.45);
+    wall = false;
+    for (int i = 0; i < 40; ++i) w.player.update(1.0 / 60.0);
+    CHECK(w.player.occlusion(close) < 0.05f);
+    // An event that isn't placed: the same everywhere, whatever `at` says.
+    midgard::audio::SoundPlayer::Play far;
+    far.at = glm::dvec3(500, 0, 500);
+    w.player.stop_all();
+    const auto radio = w.player.play("radio", far);
+    CHECK(w.player.distance_gain(radio) == 1.0f);
+    CHECK(rms(mix(w.mixer, 0.2), 0) > 0.3);
+}

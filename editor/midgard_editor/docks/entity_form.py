@@ -117,7 +117,10 @@ class EntityForm(QWidget):
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
                "rigidbody": "Rigid body", "physics_material": "Physics material",
                "scene_exit": "Scene exit", "arrival": "Arrival point",
-               "character": "Character", "sound": "Sound"}
+               "character": "Character", "sound": "Sound", "reverb_zone": "Reverb zone"}
+    # Reverb zones' echoes (the engine's presets: midgard/audio.h).
+    REVERB_PRESETS = {"room": "Room", "hall": "Hall", "cave": "Cave", "cathedral": "Cathedral",
+                      "tunnel": "Tunnel", "none": "None (no echo)"}
     ACTIVATIONS = {"enter": "Walking into it", "use": "Using it (Use: E or gamepad X, inside it)",
                    "script": "Only from a script"}
     SKY_COLOURS = {"color": "Sky colour", "ambient": "Ambient light"}
@@ -273,6 +276,28 @@ class EntityForm(QWidget):
         self.sound_event = self.sound_autoplay = self.sound_volume = None
         if "sound" in entity.components:
             self._build_sound(form)
+        self.reverb_preset = self.reverb_size = self.reverb_edge = None
+        if "reverb_zone" in entity.components:
+            self.reverb_preset = QComboBox()
+            for key, label in self.REVERB_PRESETS.items():
+                self.reverb_preset.addItem(label, key)
+            self.reverb_preset.setToolTip("How the place echoes: effects, voice and ambience are "
+                                          "heard with it while the listener is inside")
+            self.reverb_preset.currentIndexChanged.connect(lambda _i: self._set_value(
+                "reverb_zone", "preset", self.reverb_preset.currentData(), "echo"))
+            form.addRow("Echo", self.reverb_preset)
+            self.reverb_size = Vec3Editor(0.5, 0.01, 100000.0)
+            self.reverb_size.setToolTip("The box where it echoes (in the entity's units)")
+            for box in self.reverb_size.boxes:
+                box.valueChanged.connect(lambda _v: self._set_value(
+                    "reverb_zone", "size", self.reverb_size.value(), "size"))
+            form.addRow("Size", self.reverb_size)
+            self.reverb_edge = _spin(0.0, 100.0, 0.5, 1)
+            self.reverb_edge.setSuffix(" m")
+            self.reverb_edge.setToolTip("The echo fades in over this far outside the box")
+            self.reverb_edge.valueChanged.connect(lambda _v: self._component_value(
+                "reverb_zone", "edge", self.reverb_edge.value()))
+            form.addRow("Fades in over", self.reverb_edge)
         self.script = self.trigger = None
         if "script" in entity.components:
             self.script = QComboBox()
@@ -569,6 +594,18 @@ class EntityForm(QWidget):
         self._refresh_scene_exit(entity)
         self._refresh_character(entity)
         self._refresh_sound(entity)
+        if self.reverb_preset is not None:
+            zone = entity.components["reverb_zone"]
+            self.reverb_preset.blockSignals(True)
+            preset = zone.get("preset", "room")
+            if self.reverb_preset.findData(preset) < 0:
+                self.reverb_preset.addItem(f"{preset} (unknown)", preset)
+            self.reverb_preset.setCurrentIndex(self.reverb_preset.findData(preset))
+            self.reverb_preset.blockSignals(False)
+            self.reverb_size.set_value(zone.get("size", [4.0, 4.0, 4.0]))
+            self.reverb_edge.blockSignals(True)
+            self.reverb_edge.setValue(float(zone.get("edge", 2.0)))
+            self.reverb_edge.blockSignals(False)
         if self.follows_clock is not None:
             self.follows_clock.blockSignals(True)
             self.follows_clock.setChecked(bool(entity.components["light"].get("follows_clock")))
@@ -656,6 +693,9 @@ class EntityForm(QWidget):
                                                "size": [2.0, 2.5, 1.0], "fade": 0.5}
         elif kind == "arrival":
             entity.components["arrival"] = {"name": entity.name}
+        elif kind == "reverb_zone":
+            entity.components["reverb_zone"] = {"preset": "room", "size": [8.0, 4.0, 8.0],
+                                                "edge": 2.0}
         elif kind == "sound":
             from .. import sound_events
             events = sound_events.load_all(self.project)

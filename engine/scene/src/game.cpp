@@ -276,12 +276,94 @@ void Game::set_audio(audio::Mixer* mixer) {
     sounds_ = std::make_unique<audio::SoundPlayer>(
         *mixer, [this](const std::string& id) { return read_texture(id); });
     for (const auto& [id, e] : scene_.sound_events) sounds_->add(e);
+    sounds_->set_blocked([this](audio::VoiceId voice, const glm::dvec3& from,
+                                const glm::dvec3& to) { return sound_blocked(voice, from, to); });
+    listen();
+}
+
+// The listener is the camera: where it is, which way it faces.
+void Game::listen() {
+    if (!sounds_) return;
+    const render::Camera cam = camera(1.0f);
+    const glm::mat3 turn = glm::inverse(glm::mat3(cam.view));
+    audio::SoundPlayer::Listener listener;
+    listener.position = cam.origin;
+    listener.forward = glm::normalize(turn * glm::vec3(0, 0, -1));
+    listener.up = glm::normalize(turn * glm::vec3(0, 1, 0));
+    sounds_->set_listener(listener);
+}
+
+// Something solid between the listener and a placed sound (not the thing making it, nor its
+// parts): a ray through the physics world.
+bool Game::sound_blocked(audio::VoiceId voice, const glm::dvec3& from, const glm::dvec3& to) const {
+    const glm::dvec3 d = to - from;
+    const double distance = glm::length(d);
+    if (distance < 0.5 || !physics_) return false;
+    const auto hit = physics_->world().raycast(from, glm::vec3(d / distance), distance - 0.25);
+    if (!hit) return false;
+    const auto owner = attached_.find(voice);
+    if (owner == attached_.end()) return true;
+    // The source's own body, or one of its parts' or parents': not a wall.
+    const auto hit_entity = static_cast<entt::entity>(hit->user);
+    for (entt::entity e = hit_entity; e != entt::null && scene_.registry.valid(e);) {
+        if (e == owner->second) return false;
+        const EntityInfo* info = scene_.registry.try_get<EntityInfo>(e);
+        e = info ? info->parent : entt::null;
+    }
+    for (entt::entity e = owner->second; e != entt::null && scene_.registry.valid(e);) {
+        if (e == hit_entity) return false;
+        const EntityInfo* info = scene_.registry.try_get<EntityInfo>(e);
+        e = info ? info->parent : entt::null;
+    }
+    return true;
+}
+
+// The echo the listener hears: the reverb zone they're most inside (fading in over its edge).
+void Game::update_reverb() {
+    const glm::dvec3 at = camera(1.0f).origin;
+    float best = 0.0f;
+    audio::ReverbSettings chosen;
+    chosen.wet = 0.0f;
+    for (const entt::entity e : scene_.registry.view<const ReverbZone>()) {
+        const ReverbZone& z = scene_.registry.get<ReverbZone>(e);
+        const glm::dmat4 world = scene_.world_matrix(e);
+        const glm::dvec3 local = glm::dvec3(glm::inverse(world) * glm::dvec4(at, 1.0));
+        glm::dvec3 outside(0.0);
+        for (int i = 0; i < 3; ++i)
+            outside[i] = std::max(0.0, std::abs(local[i]) - double(z.size[i]) / 2.0) *
+                         glm::length(glm::dvec3(world[i]));
+        const double away = glm::length(outside);
+        const float weight = away <= 0.0      ? 1.0f
+                             : z.edge <= 0.0f ? 0.0f
+                                              : float(std::max(0.0, 1.0 - away / z.edge));
+        if (weight > best) {
+            best = weight;
+            chosen = audio::reverb_preset(z.preset).value_or(audio::ReverbSettings{});
+            if (z.wet) chosen.wet = *z.wet;
+            chosen.wet *= weight;
+        }
+    }
+    reverb_ = chosen;
+    if (sounds_) sounds_->mixer().set_reverb(chosen);
+}
+
+audio::VoiceId Game::play_sound(const std::string& event, float volume, entt::entity from,
+                                std::optional<glm::dvec3> at) {
+    if (!sounds_) return 0;
+    audio::SoundPlayer::Play play;
+    play.volume = volume;
+    if (from != entt::null && scene_.registry.valid(from)) at = scene_.world_position(from);
+    play.at = at;
+    const audio::VoiceId voice = sounds_->play(event, play);
+    if (voice && from != entt::null) attached_[voice] = from;
+    return voice;
 }
 
 void Game::stop_sources() {
     if (sounds_)
         for (const auto& [e, s] : sources_) sounds_->stop(s.voice);
     sources_.clear();
+    attached_.clear();  // (a script's sound from one of its entities plays on where it was)
 }
 
 void Game::update_sounds(double dt) {
@@ -302,14 +384,25 @@ void Game::update_sounds(double dt) {
         }
         ++it;
     }
-    // New ones play (once each while their entity stays: a one-shot isn't played again).
+    // New ones play (once each while their entity stays: a one-shot isn't played again), from
+    // where their entity is.
+    listen();
     for (const entt::entity e : scene_.registry.view<const SoundSource>()) {
         const SoundSource& s = scene_.registry.get<SoundSource>(e);
         if (!s.autoplay || sources_.contains(e)) continue;
-        audio::SoundPlayer::Play play;
-        play.volume = s.volume;
-        sources_[e] = {s.event, s.volume, sounds_->play(s.event, play)};
+        sources_[e] = {s.event, s.volume, play_sound(s.event, s.volume, e)};
     }
+    // Placed sounds follow their entities (one that's gone leaves its sound where it was).
+    for (auto it = attached_.begin(); it != attached_.end();) {
+        if (!sounds_->playing(it->first)) {
+            it = attached_.erase(it);
+            continue;
+        }
+        if (scene_.registry.valid(it->second))
+            sounds_->set_position(it->first, scene_.world_position(it->second));
+        ++it;
+    }
+    update_reverb();
     sounds_->update(dt);
     for (std::string& p : sounds_->take_problems()) sound_problems_.push_back(std::move(p));
 }

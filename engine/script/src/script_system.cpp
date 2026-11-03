@@ -54,14 +54,11 @@ struct SoundHandle {    // a sound playing (midgard.audio.play)
     audio::VoiceId voice = 0;
 };
 
-// Plays a sound event for a script: None when the game is silent, the event unknown (a warning
-// in the log, once) or cooling down.
-py::object play_sound(const std::string& event, float volume) {
-    audio::SoundPlayer* sounds = current_game().sounds();
-    if (!sounds) return py::none();
-    audio::SoundPlayer::Play play;
-    play.volume = volume;
-    const audio::VoiceId voice = sounds->play(event, play);
+// Plays a sound event for a script, from an entity (following it), a place, or everywhere:
+// None when the game is silent, the event unknown (a warning in the log, once) or cooling down.
+py::object play_sound(const std::string& event, float volume, entt::entity from,
+                      std::optional<glm::dvec3> at) {
+    const audio::VoiceId voice = current_game().play_sound(event, volume, from, at);
     return voice ? py::cast(SoundHandle{voice}) : py::none();
 }
 struct NavHandle {};  // midgard.nav
@@ -309,13 +306,12 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def(
             "play_sound",
             [](const EntityHandle& h, const std::string& event, float volume) {
-                h.resolve();
-                return play_sound(event, volume);
+                return play_sound(event, volume, h.resolve(), std::nullopt);
             },
             py::arg("event"), py::arg("volume") = 1.0f,
-            "Plays a sound event (by name or id) from this entity, at volume times the "
-            "event's. The Sound playing, or None (a silent game, an unknown event, one cooling "
-            "down).")
+            "Plays a sound event (by name or id) from this entity, following it as it moves, at "
+            "volume times the event's. The Sound playing, or None (a silent game, an unknown "
+            "event, one cooling down).")
         .def(
             "trigger_animation",
             [](const EntityHandle& h, const std::string& name) {
@@ -697,12 +693,19 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
     py::class_<AudioHandle>(m, "Audio", "Sound (midgard.audio; milestone 5.14).")
         .def(
             "play",
-            [](const AudioHandle&, const std::string& event, float volume) {
-                return play_sound(event, volume);
+            [](const AudioHandle&, const std::string& event, float volume, py::object at) {
+                if (at.is_none()) return play_sound(event, volume, entt::null, std::nullopt);
+                if (py::isinstance<EntityHandle>(at))
+                    return play_sound(event, volume, at.cast<EntityHandle>().resolve(),
+                                      std::nullopt);
+                const auto p = at.cast<std::array<double, 3>>();
+                return play_sound(event, volume, entt::null, glm::dvec3(p[0], p[1], p[2]));
             },
-            py::arg("event"), py::arg("volume") = 1.0f,
-            "Plays a sound event (by name or id), at volume times the event's: the Sound "
-            "playing, or None (a silent game, an unknown event, one cooling down).")
+            py::arg("event"), py::arg("volume") = 1.0f, py::arg("at") = py::none(),
+            "Plays a sound event (by name or id), at volume times the event's: from an entity "
+            "(following it) or a place (x, y, z) if `at` says (and the event is placed in the "
+            "world), else heard the same everywhere. The Sound playing, or None (a silent game, "
+            "an unknown event, one cooling down).")
         .def(
             "stop_all",
             [](const AudioHandle&) {

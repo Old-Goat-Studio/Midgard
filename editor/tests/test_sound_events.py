@@ -134,11 +134,11 @@ def read_float_wav(path) -> tuple[array.array, int, int]:
     return samples, rate, channels
 
 
-def levels(path, start: float, end: float) -> float:
-    """The recording's RMS (left) between two times."""
+def levels(path, start: float, end: float, channel: int = 0) -> float:
+    """The recording's RMS (the left channel, or another) between two times."""
     data, rate, channels = read_float_wav(path)
-    left = data[int(start * rate) * channels:int(end * rate) * channels:channels]
-    return math.sqrt(sum(x * x for x in left) / max(len(left), 1))
+    side = data[int(start * rate) * channels + channel:int(end * rate) * channels:channels]
+    return math.sqrt(sum(x * x for x in side) / max(len(side), 1))
 
 
 @needs_scripting

@@ -437,7 +437,19 @@ public:
         const auto phase = game_.scene().solar_phase;
         // Sound (milestone 5.14): what's playing, by event.
         nlohmann::json audio = nullptr;
-        if (const auto* sounds = game_.sounds()) audio = {{"playing", sounds->playing_events()}};
+        if (const auto* sounds = game_.sounds()) {
+            nlohmann::json voices = nlohmann::json::array();
+            for (const auto& v : sounds->voices())
+                voices.push_back({{"event", v.event},
+                                  {"spatial", v.spatial},
+                                  {"gain", v.gain},
+                                  {"occlusion", v.occlusion}});
+            const glm::dvec3 ear = game_.camera(1.0f).origin;  // (the listener)
+            audio = {{"playing", sounds->playing_events()},
+                     {"voices", voices},
+                     {"reverb", game_.reverb().wet},
+                     {"listener", {ear.x, ear.y, ear.z}}};
+        }
         // The world as generated (midgard/world_type.h): the editor's preview must match it.
         nlohmann::json world_hash;
         const midgard::SceneSettings& settings = game_.scene().settings;

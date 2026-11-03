@@ -140,6 +140,17 @@ struct SoundSource {
     float volume = 1.0f;
 };
 
+// A place that echoes (milestone 5.14): a box (in the entity's units, centred on it) where the
+// listener hears effects, voice and ambience with a reverb preset's echo ("room", "hall",
+// "cave", "cathedral", "tunnel"), fading in over `edge` metres outside it. `wet` overrides the
+// preset's amount when set.
+struct ReverbZone {
+    std::string preset = "room";
+    glm::vec3 size{4.0f};
+    float edge = 2.0f;
+    std::optional<float> wet;
+};
+
 struct LocalLightSource {
     bool spot = false;
     glm::vec3 color{1.0f};

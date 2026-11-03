@@ -155,6 +155,7 @@ The **Add** button at the top of the **Scene** panel offers:
   group and all its parts come along.
 - **Scene Exit** and **Arrival Point**: doors between scenes (section 17).
 - **Point Light** and **Spot Light**: lamps (section 11).
+- **Reverb Zone**: a place that echoes (section 12).
 - **Object**: one of your reusable objects (section 8).
 - **Sky**: the scene's sky (one per scene).
 - **Cube, Sphere, Plane, Cylinder, Wedge**: simple shapes, great for building and testing.
@@ -424,15 +425,43 @@ Midgard plays sound effects, music and ambience (background sound such as wind o
 
 In the Scene list, things with a sound show 🔊.
 
+### Sound in 3D
+
+Effects and ambience (not music) are heard from where the thing making them is, like in real
+life:
+
+- **Closer is louder.** Each sound is at full volume within a metre, half as loud at two
+  metres, and fades away completely by 40 metres. A sound that moves (a buzzing drone, a
+  rolling cart) is followed.
+- **Left and right.** A sound to your right comes from your right speaker or headphone.
+- **Through walls.** When something solid (anything with a **Collider**) is between you and a
+  sound, it becomes quieter and duller, like a party heard through a closed door. It eases in
+  and out as you move.
+
+The listener is the game's camera.
+
+### Echoes: reverb zones
+
+Caves, halls and cathedrals echo. To make a place echo:
+
+1. **Add ▸ Reverb Zone** (🏛). A box appears.
+2. Move and size it to cover the room (**Size** in the Inspector, or the Scale gizmo). Turn on
+   **Colliders** in the Viewport toolbar to see it as a teal box.
+3. Choose its **Echo**: **Room**, **Hall**, **Cave**, **Cathedral** or **Tunnel**.
+4. **Fades in over** sets how many metres outside the box the echo begins, so walking into a
+   cave sounds natural rather than switching on.
+
+While the camera is inside, sound effects, voices and ambience echo; music and menu sounds don't.
+
 ### In the finished game
 
 When the game is built, Midgard makes every sound it uses smaller: music and ambience become
 **Ogg Vorbis**, effects become **Opus**. Each is checked to be sure the game can play it. CC-BY
 sounds are credited automatically, like models and textures.
 
-*Coming in the next updates:* sounds heard from where they are in 3D (louder close up, muffled
-behind walls, echoing in caves), music that changes with the place and time of day, ambience by
-biome, footsteps that match the ground, and an **Audio** panel to edit sound events in detail.
+*Coming in the next updates:* music that changes with the place and time of day, ambience by
+biome, footsteps that match the ground, and an **Audio** panel to edit sound events in detail
+(including how far each one is heard).
 
 ---
 
@@ -880,8 +909,8 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 
 | What | Meaning |
 |---|---|
-| `midgard.audio.play("Bell", volume=1)` | Plays a sound event by name; gives a **Sound** (or None). |
-| `entity.play_sound("Bell", volume=1)` | The same, from that entity. |
+| `midgard.audio.play("Bell", volume=1, at=None)` | Plays a sound event by name; gives a **Sound** (or None). `at` is an entity (the sound follows it) or a place `(x, y, z)`; without it, heard the same everywhere. |
+| `entity.play_sound("Bell", volume=1)` | The same, from that entity, following it as it moves. |
 | `sound.stop()`, `sound.playing`, `sound.set_volume(v)` | Stop it, check it, change its volume. |
 | `midgard.audio.stop_all()` | Stops every sound. |
 | `midgard.audio.set_volume(bus, v)` / `.volume(bus)` | A bus's volume: "master", "music", "effects", "voice", "ambience", "interface". |
