@@ -4644,3 +4644,139 @@ TEST_CASE("system space: the cook takes a way out into space from a world with a
     REQUIRE(wrong_report.errors.size() == 1);
     CHECK(wrong_report.errors[0].find("e9_nowhere") != std::string::npos);
 }
+
+// Milestone 5.16's exit: the player walks on the planet, takes off (a jetpack: a script's
+// player.flying), rises out of its atmosphere into space, sees the planet below, flies about,
+// comes back down through the ceiling onto the ground below, and walks on. All the way, the
+// picture is never clear while the ground it shows isn't made.
+TEST_CASE("system space, the exit: up out of the planet's atmosphere into space, and back down") {
+    // (little_planet, with a camera: a scene without one has no one at its controls)
+    const auto pkg = std::make_unique<TestPackage>(
+        std::vector<std::pair<std::string, std::string>>{
+            {"e1_player", R"(NULL, '{"transform": {"position": [0, 40, 0]},
+                            "player": {"speed": 5}}')"},
+            {"e3_camera", R"(NULL, '{"transform": {"position": [0, 45, 6]}, "camera": {}}')"},
+            {"e2_sun", R"(NULL, '{"transform": {"rotation": [-50, 30, 0]},
+                         "light": {"type": "directional", "intensity": 2}}')"}},
+        R"({"body": {"shape": "sphere_outside", "radius": 1000, "seed": 13,
+                     "origin": [0, -1000, 0]},
+            "terrain": {"height_scale": 20, "base": 8}})");
+    midgard::Game game(pkg->dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    bool shown_unmade = false;  // (the picture clear during an arrival)
+    const auto frame = [&] {
+        game.update(actions, 1.0f / 60.0f);
+        game.stream_terrain(game.camera(1.0f).origin, false);
+        if (game.arriving() && game.fade() < 0.999f) shown_unmade = true;
+        actions.begin_frame();
+    };
+    const auto hold = [&](const char* key, int frames) {
+        actions.set("keyboard", key, 1.0f);
+        for (int i = 0; i < frames; ++i) frame();
+        actions.set("keyboard", key, 0.0f);
+    };
+    const auto player_at = [&] {
+        const midgard::Scene& s = game.scene();
+        return s.world_position(s.find(game.in_space() ? "space_ship" : "e1_player"));
+    };
+    const auto on_ground = [&] {
+        return game.terrain() != nullptr &&
+               std::abs(game.terrain()->terrain().above_ground(player_at())) < 1.5;
+    };
+    for (int i = 0;
+         i < 60 * 20 && !(game.physics().character() && game.physics().character()->on_ground() &&
+                          game.terrain()->stats().complete);
+         ++i)
+        frame();  // (its ground made round the player, and the player down on it)
+
+    // On the planet: walking about on its ground.
+    REQUIRE(on_ground());
+    glm::dvec3 from = player_at();
+    hold("W", 90);
+    CHECK(glm::length(player_at() - from) > 3.0);
+    CHECK(on_ground());
+    const double top = game.ceiling();
+    CHECK(top == doctest::Approx(300.0));
+
+    // Up: flying, through the ceiling, into space.
+    game.set_flying(game.scene().find("e1_player"), true);
+    actions.set("keyboard", "Space", 1.0f);
+    int frames = 0;
+    double highest = 0.0;
+    while (!game.in_space() && frames++ < 60 * 60) {
+        highest = std::max(highest, game.altitude());
+        frame();
+    }
+    actions.set("keyboard", "Space", 0.0f);
+    REQUIRE(game.in_space());
+    CHECK(highest > top - 5.0);
+    while (game.changing_scene()) frame();
+    CHECK(game.scene().id == midgard::Game::kSystemSpace);
+    CHECK(game.space_from() == "scn_main");
+    CHECK(game.altitude() > top);
+    CHECK(game.fade() == 0.0f);
+
+    // Space: a black sky and stars, the planet below, all of its ground made and drawn.
+    const auto env = game.environment(game.camera(1.0f).origin);
+    CHECK(env.sky_colors.zenith == glm::vec3(0.0f));
+    CHECK(env.stars.brightness > 0.0f);
+    REQUIRE(game.terrain() != nullptr);
+    CHECK(game.terrain()->stats().complete);
+    CHECK(game.terrain()->stats().drawn > 0);
+    {
+        // The planet in the picture: points on its near side (those facing the ship) in view.
+        const auto& body = *game.scene().settings.body;
+        const glm::dvec3 ship = player_at();
+        const midgard::render::Camera cam = game.camera(16.0f / 9.0f);
+        int seen = 0;
+        std::mt19937 rng(5);
+        std::normal_distribution<double> n;
+        for (int i = 0; i < 2000; ++i) {
+            const glm::dvec3 d = glm::normalize(glm::dvec3(n(rng), n(rng), n(rng)));
+            const glm::dvec3 p = body.origin + d * body.shape.radius();
+            if (glm::dot(d, ship - p) <= 0.0) continue;  // (its far side)
+            const glm::vec4 c =
+                cam.projection * cam.view * glm::vec4(glm::vec3(p - cam.origin), 1.0f);
+            if (c.w > 0.0f && std::abs(c.x) < c.w && std::abs(c.y) < c.w) ++seen;
+        }
+        CHECK(seen > 0);
+        // And below: straight down from the ship is the planet.
+        CHECK(glm::dot(glm::normalize(body.origin - ship), -body.up(ship)) > 0.999);
+    }
+
+    // Flying about up here: across, along the view.
+    from = player_at();
+    hold("W", 60);
+    CHECK(glm::length(player_at() - from) > 20.0);
+    CHECK(game.in_space());
+
+    // Down: through the ceiling, onto the ground below where the ship came down.
+    actions.set("keyboard", "Left Ctrl", 1.0f);
+    frames = 0;
+    glm::dvec3 came_down = player_at();
+    while (game.in_space() && frames++ < 60 * 60) {
+        came_down = player_at();
+        frame();
+    }
+    actions.set("keyboard", "Left Ctrl", 0.0f);
+    REQUIRE_FALSE(game.in_space());
+    while (game.changing_scene()) frame();
+    for (int i = 0; i < 30; ++i) frame();
+    REQUIRE(game.scene().id == "scn_main");
+    CHECK(game.space_from().empty());
+    CHECK(game.fade() == 0.0f);
+    const auto& body = *game.scene().settings.body;
+    const midgard::SurfacePoint below = body.surface(came_down), here = body.surface(player_at());
+    CHECK(here.face == below.face);
+    CHECK(std::abs(here.u - below.u) < 0.01);
+    CHECK(std::abs(here.v - below.v) < 0.01);
+    CHECK(on_ground());
+
+    // And walks on.
+    CHECK_FALSE(game.scene().registry.get<midgard::Player>(game.scene().find("e1_player")).fly);
+    from = player_at();
+    hold("W", 90);
+    CHECK(glm::length(player_at() - from) > 3.0);
+    CHECK(on_ground());
+    CHECK_FALSE(shown_unmade);
+}

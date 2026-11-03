@@ -538,6 +538,24 @@ clothing and status effects, space weather and shared weather in multiplayer are
 fade-in); state carries across; memory returns to its baseline after many changes; the editor
 can Play from any room.
 **Exit:** the player rises out of the planet's atmosphere into space and comes back down.
+*As built:* `Game` keeps each scene as it was left (its rooms, kept in the world save's state
+table, version 4) and carries the player across; an arrival stays dark until its ground is made
+(at most 20 s). System space (`Game::kSystemSpace`, "@space") is made from the scene left: above
+a planet, its whole ground drawn below, a black sky with stars from the seed (`render::Stars`),
+no weather; outside a habitat or hollow world, its hull (built-in cylinder and sphere meshes).
+The player flies a ship there (`Player::fly`; jump up, the new descend action down). A planet's
+atmosphere ceiling (the scene's "ceiling", else a fifth of its radius and at least 300 m) leads
+up into space and back down onto the ground below; docks and exit sites are Scene Exits leading
+to space, coming back in at an arrival point. Scripts: `midgard.rooms.enter_space`, `in_space`,
+`space_from`, `ceiling`, `altitude`, and `entity.flying`. Editor: the Scene Exit's "Space
+(outside this world)" and "Coming back in at", the World Shape dialog's Atmosphere ceiling;
+Play cooks with the open scene first, so any scene plays. The exit is the engine test "system
+space, the exit" (walk, fly up through the ceiling, the planet in view from space, fly about,
+down onto the ground below, walk on; never a clear picture of unmade ground) and the editor
+test of the same in an exported game (`--simulate` with keys held by `--hold`). The phone check
+is the self-test's Space check (the whole planet from space, timed).
+*Known limits:* a scene with no camera has no one at its controls (the player can't walk); the
+sky in space is from the seed only, until Phase 6's star field.
 
 ### 5.17 Shader and material authoring · M
 - **GLSL editor** with highlighting and compile errors with line numbers (glslang through

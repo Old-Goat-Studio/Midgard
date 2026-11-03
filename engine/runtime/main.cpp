@@ -5,8 +5,11 @@
 //   midgard_runtime --check-python      start the game's Python and import the standard library
 //   midgard_runtime --dump-api          the midgard script API's names, as JSON
 //   midgard_runtime --package <dir> --simulate N [--dump-scene] [--record-audio out.wav]
+//                   [--hold KEY:FROM:TO ...]
 //                                       N frames of gameplay and scripts, no window (tests);
-//                                       its sound mixed offline, and written to a WAV if asked
+//                                       its sound mixed offline, and written to a WAV if asked;
+//                                       --hold holds a key ("W", "Left Ctrl") from frame FROM up
+//                                       to frame TO, as a player would (repeatable)
 //   midgard_runtime --package <dir> --headless --editor-link host:port
 //                                       play under the editor without a window or GPU (tests, CI)
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
@@ -110,6 +113,11 @@ struct Options {
     long simulate = -1;  // frames to run without a window
     bool dump_scene = false;
     std::optional<std::string> record_audio;  // --simulate: the sound mixed, to this WAV
+    struct Hold {                             // --simulate: a key held, frames [from, to)
+        std::string key;
+        long from = 0, to = 0;
+    };
+    std::vector<Hold> holds;
     bool headless = false;  // the game loop and live link, without a window or GPU
     long frames = -1;       // run until closed
     uint32_t width = 1280, height = 720;
@@ -539,7 +547,13 @@ public:
                               {"sun", sun},
                               {"season", game_.scene().sun_clock.season},
                               {"audio", audio},
-                              {"weather", weather}}
+                              {"weather", weather},
+                              // Rooms and space (milestone 5.16): how high, and where space is.
+                              {"rooms",
+                               {{"previous", game_.previous_scene()},
+                                {"space_from", game_.space_from()},
+                                {"altitude", game_.altitude()},
+                                {"ceiling", game_.ceiling()}}}}
             .dump();
     }
     std::vector<std::string> status() const override {
@@ -1374,8 +1388,9 @@ int dump_api() {
 #endif
 }
 
-// Gameplay and scripts for a number of frames at 60 per second, with no window or input. Its
-// sound is mixed offline as it goes (each frame's 1/60 s), and written to --record-audio's WAV.
+// Gameplay and scripts for a number of frames at 60 per second, with no window: its only input
+// the keys --hold holds. Its sound is mixed offline as it goes (each frame's 1/60 s), and
+// written to --record-audio's WAV.
 int run_simulation(const Options& opt, Source& source) {
     midgard::Actions actions(source.input_map());
     midgard::audio::MixerOptions offline;
@@ -1387,6 +1402,8 @@ int run_simulation(const Options& opt, Source& source) {
     std::vector<float> recorded;
     for (long frame = 0; frame < opt.simulate; ++frame) {
         actions.begin_frame();
+        for (const Options::Hold& h : opt.holds)
+            actions.set("keyboard", h.key, frame >= h.from && frame < h.to ? 1.0f : 0.0f);
         source.update(actions, 1.0f / 60.0f);
         source.settle();
         mixer.mix(block);
@@ -1496,6 +1513,15 @@ int main(int argc, char** argv) {
             opt.simulate = std::atol(argv[++i]);
         } else if (arg == "--dump-scene") {
             opt.dump_scene = true;
+        } else if (arg == "--hold" && has_value) {  // KEY:FROM:TO (the key may have spaces)
+            const std::string v = argv[++i];
+            const size_t b = v.rfind(':'), a = b == std::string::npos ? b : v.rfind(':', b - 1);
+            if (a == std::string::npos || a == 0) {
+                fail("--hold wants KEY:FROM:TO, such as W:60:120");
+                return 2;
+            }
+            opt.holds.push_back(
+                {v.substr(0, a), std::atol(v.c_str() + a + 1), std::atol(v.c_str() + b + 1)});
         } else if (arg == "--record-audio" && has_value) {
             opt.record_audio = argv[++i];
         } else if (arg == "--headless") {

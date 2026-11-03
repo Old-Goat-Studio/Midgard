@@ -195,7 +195,8 @@ constexpr double kFrameBudgetMs = 1000.0 / 60.0;
 
 // A scene drawn 30 times at 1280 x 720 on this device's quality tier: its median frame time
 // against the frame budget. "Frame time" draws the sunset; "Weather" the heaviest rain
-// (milestone 5.15: the tier's most streaks, under cloud and fog).
+// (milestone 5.15: the tier's most streaks, under cloud and fog); "Space" a whole planet from
+// space against the stars (milestone 5.16: all its ground in view at once).
 Check frame_check(const Options& options, const char* name = "Frame time",
                   const char* scene_name = "sky_sunset") {
     const render::Quality tier = options.quality.value_or(render::default_quality());
@@ -210,7 +211,9 @@ Check frame_check(const Options& options, const char* name = "Frame time",
         scene->upload(renderer);
         renderer.set_environment(scene->environment());
         const render::Camera camera = scene->camera(1280.0f / 720.0f);
+        scene->stream(renderer, camera.origin);  // (its ground, made: none in most)
         const auto draws = scene->draws(camera.origin);
+        renderer.set_terrain_look(scene->terrain_look());
         const render::Light light = scene->light(camera.origin);
         std::vector<double> times;
         for (int i = 0; i < 35; ++i) {
@@ -542,6 +545,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(render_check(options.vulkan_required));
     checks.push_back(frame_check(options));
     checks.push_back(frame_check(options, "Weather", "sky_rain"));
+    checks.push_back(frame_check(options, "Space", "space"));
     checks.push_back(characters_check(options));
     checks.push_back(sound_check(options));
     checks.push_back(package_check(options.package));

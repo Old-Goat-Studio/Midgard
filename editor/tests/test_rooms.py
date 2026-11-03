@@ -105,3 +105,53 @@ def test_scripts_fly_the_player_and_take_it_into_space(project, tmp_path):
     assert "flying False ceiling 400" in lines  # (a fifth of 2 km)
     assert "off we go" in lines
     assert planet["scene"] == "@space"
+
+
+LAUNCH_SCRIPT = """
+import midgard
+
+def on_start(entity):
+    if midgard.rooms.previous == "@space":
+        print("back on the ground")
+        return
+    player = midgard.player()  # a launch pad: thrown up to just under the ceiling, flying
+    x, y, z = player.position
+    player.position = (x, midgard.rooms.ceiling - 20.0, z)
+    player.flying = True
+    print("launched")
+"""
+
+
+@needs_scripting
+def test_the_exit_up_out_of_the_atmosphere_into_space_and_back_down(project, tmp_path):
+    """Milestone 5.16's exit in an exported game: the player rises out of the planet's
+    atmosphere into space (Space held: up), and comes back down onto the ground below (Left Ctrl
+    held: down)."""
+    settings = project.scene_settings()
+    settings["body"] = {"id": "world", "shape": "sphere_outside", "radius": 2000.0,
+                        "gravity": 9.81, "origin": [0.0, -2000.0, 0.0]}
+    project.set_scene_settings(settings)
+    project.put_entity(Entity("e000091", "Launch pad", None, {
+        "transform": {}, "script": {"module": "launch"}}))
+    write_script(project, "launch", LAUNCH_SCRIPT)
+    package = cook(project, tmp_path / "pkg").out_dir
+
+    # Up: through the ceiling (400 m: a fifth of 2 km) into space.
+    up, run = simulate(package, 400, "--hold", "Space:30:240")
+    assert run.returncode == 0, run.stderr
+    assert "launched" in run.stdout.splitlines()
+    assert up["scene"] == "@space"
+    assert up["rooms"]["space_from"] == "scn_main"
+    assert up["rooms"]["altitude"] > 400.0
+    assert up["weather"] is None  # (no weather in space)
+
+    # And back down: through it again, onto the ground below, walking.
+    down, run = simulate(package, 1200, "--hold", "Space:30:240", "--hold",
+                         "Left Ctrl:400:900")
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.splitlines()
+    assert "back on the ground" in lines
+    assert down["scene"] == "scn_main"
+    assert down["rooms"]["previous"] == "@space"
+    assert down["rooms"]["space_from"] == ""
+    assert abs(down["rooms"]["altitude"]) < 30.0  # (on the ground: hills and all)
