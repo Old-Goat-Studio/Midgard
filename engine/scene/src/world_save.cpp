@@ -27,7 +27,11 @@ CREATE TABLE IF NOT EXISTS place (  -- where the player was (version 2)
     rx REAL NOT NULL, ry REAL NOT NULL, rz REAL NOT NULL,  -- Euler degrees
     scene TEXT  -- the scene they were in (version 3)
 );
-PRAGMA user_version = 3;
+CREATE TABLE IF NOT EXISTS state (  -- the game's own state by name, as JSON (version 4)
+    name  TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+PRAGMA user_version = 4;
 )";
 
 struct Db {
@@ -172,6 +176,56 @@ std::optional<WorldPlace> WorldSave::place() const {
     }
     sqlite3_finalize(st);
     return out;
+}
+
+std::optional<std::string> WorldSave::value(const std::string& name) const {
+    const auto all = values(name);
+    const auto it = all.find(name);
+    return it == all.end() ? std::nullopt : std::optional<std::string>(it->second);
+}
+
+std::map<std::string, std::string> WorldSave::values(const std::string& prefix) const {
+    Db db(folder_ / "world.db");
+    db.exec(kWorldSchema);  // (a world from before version 4)
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db.db, "SELECT name, value FROM state WHERE substr(name, 1, ?) = ?", -1,
+                           &st, nullptr) != SQLITE_OK)
+        throw WorldError("world.db has no state");
+    sqlite3_bind_int(st, 1, int(prefix.size()));
+    sqlite3_bind_text(st, 2, prefix.c_str(), -1, SQLITE_TRANSIENT);
+    std::map<std::string, std::string> out;
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const auto* n = sqlite3_column_text(st, 0);
+        const auto* v = sqlite3_column_text(st, 1);
+        if (n && v) out[reinterpret_cast<const char*>(n)] = reinterpret_cast<const char*>(v);
+    }
+    sqlite3_finalize(st);
+    return out;
+}
+
+void WorldSave::save_values(const std::map<std::string, std::string>& values) const {
+    Db db(folder_ / "world.db");
+    db.exec(kWorldSchema);
+    db.exec("BEGIN");
+    for (const auto& [name, value] : values) {
+        sqlite3_stmt* st = nullptr;
+        const char* sql = value.empty() ? "DELETE FROM state WHERE name = ?"
+                                        : "INSERT INTO state (name, value) VALUES (?, ?) "
+                                          "ON CONFLICT(name) DO UPDATE SET value = excluded.value";
+        if (sqlite3_prepare_v2(db.db, sql, -1, &st, nullptr) != SQLITE_OK) {
+            db.exec("ROLLBACK");
+            throw WorldError("world.db has no state");
+        }
+        sqlite3_bind_text(st, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+        if (!value.empty()) sqlite3_bind_text(st, 2, value.c_str(), -1, SQLITE_TRANSIENT);
+        const int rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+        if (rc != SQLITE_DONE) {
+            db.exec("ROLLBACK");
+            throw WorldError("can't save the game's state in world.db");
+        }
+    }
+    db.exec("COMMIT");
 }
 
 void WorldSave::save_place(const WorldPlace& place) const {

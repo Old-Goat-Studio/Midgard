@@ -4168,3 +4168,142 @@ TEST_CASE("a glTF's nodes place its meshes: scaled, turned, moved, and more than
                                 loose.vertices[1].position[2]) -
                       glm::vec3(1, 0, 0)) < 1e-6f);
 }
+
+// ---- rooms (milestone 5.16)
+// ----------------------------------------------------------------------
+
+namespace {
+
+// Two scenes: the Main (the player, fast and gold; a crate that falls; a stone a script moves; a
+// lamp a script removes; a door to the Cave) and the Cave (its own slow, grey player at its
+// arrival).
+std::unique_ptr<TestPackage> two_rooms() {
+    auto pkg = std::make_unique<TestPackage>(std::vector<std::pair<std::string, std::string>>{
+        {"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]},
+                        "player": {"speed": 7}, "mesh": {"asset": "mesh_cube"},
+                        "material": {"color": [0.9, 0.7, 0.1, 1]}}')"},
+        {"e2_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                        "collider": {"size": [40, 1, 40]}}')"},
+        {"e3_crate",
+         R"(NULL, '{"transform": {"position": [5, 3, 0]}, "mesh": {"asset": "mesh_cube"},
+                       "collider": {}, "rigidbody": {}}')"},
+        {"e4_stone",
+         R"(NULL, '{"transform": {"position": [-5, 0.5, 0]}, "mesh": {"asset": "mesh_cube"}}')"},
+        {"e5_lamp", R"(NULL, '{"transform": {"position": [0, 3, -5]},
+                      "light": {"type": "point", "range": 5}}')"},
+    });
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg->dir / "Game.db").c_str(), &db);
+    exec(db, "INSERT INTO string VALUES ('scn_cave.name', 'Cave', '')");
+    exec(db,
+         "INSERT INTO scene (id, name_key, settings) VALUES ('scn_cave', 'scn_cave.name', "
+         "'{\"sky\": [0, 0, 0]}')");
+    exec(db, R"(INSERT INTO entity (id, scene, name, parent, components) VALUES
+        ('e8_cave_player', 'scn_cave', 'Cave Player', NULL,
+         '{"transform": {"position": [0, 1, 0]}, "player": {"speed": 2},
+           "mesh": {"asset": "mesh_cube"}, "material": {"color": [0.5, 0.5, 0.5, 1]}}'),
+        ('e9_in', 'scn_cave', 'In', NULL,
+         '{"transform": {"position": [10, 1, 5]}, "arrival": {"name": "In"}}'),
+        ('e10_back', 'scn_main', 'Back', NULL,
+         '{"transform": {"position": [0, 1, 3]}, "arrival": {"name": "Back"}}'))");
+    sqlite3_close(db);
+    return pkg;
+}
+
+}  // namespace
+
+TEST_CASE("rooms: the player is carried into each scene, and each scene is as it was left") {
+    const auto pkg = two_rooms();
+    midgard::Game game(pkg->dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto frames = [&](int n) {
+        for (int i = 0; i < n; ++i) game.update(actions, 1.0f / 60.0f);
+    };
+    const auto go = [&](const std::string& scene, const std::string& arrival) {
+        game.change_scene(scene, arrival, 0.0f);
+        frames(3);
+        REQUIRE(game.scene().id == scene);
+    };
+    frames(90);  // the crate falls and lands
+    midgard::Scene& main = game.scene();
+    const glm::dvec3 crate_rest = main.world_position(main.find("e3_crate"));
+    CHECK(crate_rest.y < 1.0);
+    main.registry.get<midgard::Transform>(main.find("e4_stone")).position = {-5.0, 0.5, 8.0};
+    CHECK(main.remove_entity("e5_lamp"));  // (as a script would)
+    // The player is wet, and a script has forced the weather.
+    game.set_player_wetness(0.7f);
+    REQUIRE(game.force_weather("fog", 0.0));
+    const std::int64_t before = game.time().now();
+
+    go("scn_cave", "e9_in");
+    // The Cave's player is the one from the Main (fast and gold), at the Cave's arrival.
+    midgard::Scene& cave = game.scene();
+    const entt::entity p = cave.find("e8_cave_player");
+    REQUIRE((p != entt::null));
+    CHECK(cave.registry.get<midgard::Player>(p).speed == doctest::Approx(7.0f));
+    CHECK(cave.registry.get<midgard::Material>(p).color.r == doctest::Approx(0.9f));
+    CHECK(glm::length(cave.world_position(p) - glm::dvec3(10, 1, 5)) < 0.2);
+    CHECK(json::parse(game.carried_player()).at("player").at("speed") == 7);
+    // What goes on with the player: wet, the script's weather, the time.
+    CHECK(game.exposure().wetness > 0.6f);
+    CHECK(game.weather_now().weather == "fog");
+    CHECK(game.weather_now().forced);
+    CHECK(game.time().now() >= before);
+    // The Main, as it was left.
+    const std::string room = game.room_state("scn_main");
+    CHECK(room.find("e3_crate") != std::string::npos);
+    CHECK(room.find("e4_stone") != std::string::npos);
+    CHECK(room.find("e5_lamp") != std::string::npos);
+    CHECK(room.find("e1_player") == std::string::npos);  // (the player goes on with them)
+
+    go("scn_main", "e10_back");
+    midgard::Scene& back = game.scene();
+    CHECK(glm::length(back.world_position(back.find("e3_crate")) - crate_rest) < 0.05);
+    CHECK(glm::length(back.world_position(back.find("e4_stone")) - glm::dvec3(-5, 0.5, 8)) < 1e-6);
+    CHECK((back.find("e5_lamp") == entt::null));
+    const entt::entity home = back.find("e1_player");
+    REQUIRE((home != entt::null));
+    CHECK(glm::length(back.world_position(home) - glm::dvec3(0, 1, 3)) < 0.2);
+    frames(30);  // (the crate stays where it lay: solid again, resting)
+    CHECK(glm::length(back.world_position(back.find("e3_crate")) - crate_rest) < 0.05);
+
+    // Saved with the world: a new game carries on as it was, the Main as it was left, in the
+    // Cave with the Main's player.
+    go("scn_cave", "e9_in");
+    const fs::path world = pkg->dir / "world";
+    game.use_world(world);
+    game.save_world();
+    midgard::Game again(pkg->dir);
+    again.use_world(world);
+    REQUIRE(again.scene().id == "scn_cave");
+    const entt::entity carried = again.scene().find("e8_cave_player");
+    REQUIRE((carried != entt::null));
+    CHECK(again.scene().registry.get<midgard::Player>(carried).speed == doctest::Approx(7.0f));
+    CHECK(again.weather_now().weather == "fog");
+    CHECK(again.exposure().wetness > 0.6f);
+    again.change_scene("scn_main", "e10_back", 0.0f);
+    for (int i = 0; i < 3; ++i) again.update(actions, 1.0f / 60.0f);
+    REQUIRE(again.scene().id == "scn_main");
+    CHECK((again.scene().find("e5_lamp") == entt::null));
+    CHECK(glm::length(again.scene().world_position(again.scene().find("e4_stone")) -
+                      glm::dvec3(-5, 0.5, 8)) < 1e-6);
+}
+
+TEST_CASE("rooms: a saved world starting in the scene it was left in has it as it was left") {
+    const auto pkg = two_rooms();
+    const fs::path world = pkg->dir / "world";
+    {
+        midgard::Game game(pkg->dir);
+        midgard::Actions actions(midgard::InputMap::defaults());
+        game.update(actions, 1.0f / 60.0f);
+        game.scene().registry.get<midgard::Transform>(game.scene().find("e4_stone")).position = {
+            1.0, 0.5, 1.0};
+        game.use_world(world);
+        game.save_world();
+    }
+    midgard::Game again(pkg->dir);
+    again.use_world(world);
+    CHECK(again.scene().id == "scn_main");
+    CHECK(glm::length(again.scene().world_position(again.scene().find("e4_stone")) -
+                      glm::dvec3(1, 0.5, 1)) < 1e-6);
+}

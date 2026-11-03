@@ -5,14 +5,17 @@
 //   world.json   who the world is: id, name, description, seed, the game it belongs to. Read by
 //                the world list without opening a database.
 //   world.db     its state (SQLite). For now the clock (game_time and the time scale, so loading
-//                restores the date to the second) and where the player was. Discovered bodies,
-//                quests, banks and the rest join it in later phases.
+//                restores the date to the second), where the player was, and the game's own
+//                state by name (milestone 5.16: the player carried between scenes, each scene
+//                as the player left it, a script's weather). Discovered bodies, quests, banks
+//                and the rest join it in later phases.
 //
 // Phase 6's world list and New World screen create worlds; until then the runtime keeps one.
 #pragma once
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -62,6 +65,11 @@ public:
     // Where the player was as last saved; none in a new world (or one saved before places were).
     std::optional<WorldPlace> place() const;
     void save_place(const WorldPlace& place) const;
+    // The game's state by name (JSON text): one, or every one whose name starts with `prefix`;
+    // saved all at once (in one transaction; an empty value removes it). Throws WorldError.
+    std::optional<std::string> value(const std::string& name) const;
+    std::map<std::string, std::string> values(const std::string& prefix) const;
+    void save_values(const std::map<std::string, std::string>& values) const;
 
 private:
     std::filesystem::path folder_;

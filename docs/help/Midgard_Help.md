@@ -789,6 +789,16 @@ The **Scenes** panel lists every scene; one is where the game starts. To join tw
 
 The picture fades out and in during the change.
 
+**The player goes with you.** The player is the one from the scene the game starts in: their
+character, speed, footsteps and scripts go into every scene they visit, standing where that
+scene's own player stands (or at the arrival point). A scene doesn't need a player of its own,
+though giving it one is still how you choose where they appear when the game starts there.
+How wet they are, the weather a script has forced, and the time all carry on too.
+
+**Scenes remember.** Leave a scene and come back, and it is as you left it: the crates you
+knocked over still lie where they fell, and what a script moved or took away stays moved or
+gone. A saved game remembers this too. (Things a script *made* aren't remembered yet.)
+
 ---
 
 ## 18. Scripting for beginners

@@ -309,6 +309,16 @@ public:
     std::string arrival_problem(const std::string& scene, const std::string& arrival) const;
     // The scene the player came from (empty until the first change).
     const std::string& previous_scene() const { return previous_scene_; }
+    // ---- rooms (milestone 5.16) ----
+    // Each scene the player has left, as they left it (JSON text): its entities that had moved
+    // since it loaded ({"moved": {id: {"position", "rotation", "scale"}}}) and those taken
+    // away ({"removed": [id]}); none for one never left. Coming back, it is as they left it;
+    // the world save keeps them. (Entities scripts made are not kept yet.)
+    std::string room_state(const std::string& scene) const;
+    // The player is the same in every scene: the player of the scene the game started in (its
+    // components, as designed), carried into each scene it goes to (in the place of that
+    // scene's own player, where it stands, or added). Empty until the first change of scene.
+    const std::string& carried_player() const { return carried_player_; }
     // Called once the picture is dark, just before the scene is left, with the target's id
     // (the scripts' on_room_exit).
     void on_leaving_scene(std::function<void(const std::string&)> callback) {
@@ -378,6 +388,13 @@ private:
     bool stream_all_ = false;  // a scene was just loaded: its view is made in full, at once
     std::string scene_change_error_;
     std::string previous_scene_;
+    std::map<std::string, std::string> rooms_;                // by scene id
+    std::map<std::string, Transform> loaded_;                 // the scene's entities as they loaded
+    std::string carried_player_, carried_id_, carried_name_;  // components (JSON), id, name
+    void note_loaded();
+    std::string capture_room() const;
+    void apply_room(const std::string& room);
+    void carry_player();
     std::function<void(const std::string&)> leaving_;
     std::unordered_set<entt::entity> exits_inside_;  // scene exits the player is in
     // Navigation, made when asked for after it went stale.

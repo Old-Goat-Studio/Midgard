@@ -28,6 +28,7 @@ Game::Game(const std::filesystem::path& package_dir)
     const auto pak_file = package_dir / "game.pak";
     if (std::filesystem::is_regular_file(pak_file)) pak_ = std::make_unique<Pak>(pak_file);
     layers_ = PhysicsLayers::load(package_dir / package_.manifest.database);
+    note_loaded();
     rebuild_physics();
     rebuild_terrain();
     camera_ = std::make_unique<CameraRig>(scene_);
@@ -129,6 +130,40 @@ void Game::use_world(const std::filesystem::path& folder) {
         time_.set_scale(saved->scale);
         update_sun();
     }
+    // The game's own state (milestone 5.16): the scenes as the player left them, the player
+    // carried between them, a script's weather and how wet the player is.
+    for (const auto& [name, value] : world_->values("rooms/")) rooms_[name.substr(6)] = value;
+    if (const auto player = world_->value("player")) {
+        const nlohmann::json p = nlohmann::json::parse(*player, nullptr, false);
+        if (p.is_object()) {
+            carried_id_ = p.value("id", "");
+            carried_name_ = p.value("name", "");
+            carried_player_ = p.value("components", "");
+        }
+    }
+    if (const auto w = world_->value("weather")) {
+        const nlohmann::json j = nlohmann::json::parse(*w, nullptr, false);
+        if (j.is_object() && j.contains("forced")) {
+            Forced f{j.value("forced", ""), std::nullopt};
+            if (j.contains("until") && j.at("until").is_number_integer())
+                f.until = j.at("until").get<std::int64_t>();
+            if (scene_.weather_types.contains(f.weather)) forced_ = std::move(f);
+        }
+        if (j.is_object()) exposure_.wetness = j.value("player_wetness", 0.0f);
+    }
+    // The scene it starts in, as the player left it (before it is left for theirs, below:
+    // what it remembers is then this), with their player.
+    if (const auto room = rooms_.find(scene_.id);
+        room != rooms_.end() || !carried_player_.empty()) {
+        if (room != rooms_.end()) apply_room(room->second);
+        carry_player();
+        rebuild_physics();
+        rebuild_terrain();
+        camera_ = std::make_unique<CameraRig>(scene_);
+        camera_->follow(scene_, 0.0f, camera_sweep());
+    }
+    update_weather();
+    weather_pending_.clear();
     // The player is put back where they were (the character follows on the next step); the
     // camera keeps its view, now round the player's new place.
     const auto place = world_->place();
@@ -154,6 +189,22 @@ void Game::use_world(const std::filesystem::path& folder) {
 void Game::save_world() {
     if (!world_) return;
     world_->save_clock({time_.now(), time_.scale()});
+    std::map<std::string, std::string> state;
+    rooms_[scene_.id] = capture_room();
+    for (const auto& [scene, room] : rooms_) state["rooms/" + scene] = room;
+    if (!carried_player_.empty())
+        state["player"] = nlohmann::json{
+            {"id", carried_id_},
+            {"name", carried_name_},
+            {"components",
+             carried_player_}}.dump();
+    nlohmann::json weather = {{"player_wetness", exposure_.wetness}};
+    if (forced_) {
+        weather["forced"] = forced_->weather;
+        if (forced_->until) weather["until"] = *forced_->until;
+    }
+    state["weather"] = weather.dump();
+    world_->save_values(state);
     const entt::entity player = camera_->player();
     if (player != entt::null && scene_.registry.valid(player)) {
         const Transform& t = scene_.registry.get<Transform>(player);
@@ -1433,6 +1484,113 @@ void Game::update_scene_change(float dt) {
     }
 }
 
+// ---- rooms (milestone 5.16) --------------------------------------------------------------------
+
+namespace {
+
+nlohmann::json transform_json(const Transform& t) {
+    return {{"position", {t.position.x, t.position.y, t.position.z}},
+            {"rotation", {t.rotation.x, t.rotation.y, t.rotation.z}},
+            {"scale", {t.scale.x, t.scale.y, t.scale.z}}};
+}
+
+bool moved(const Transform& a, const Transform& b) {
+    return glm::length(a.position - b.position) > 1e-3 ||
+           glm::length(a.rotation - b.rotation) > 0.01f || glm::length(a.scale - b.scale) > 1e-4f;
+}
+
+// An entity's components as its row in the package's database has them (JSON text).
+std::string designed_components(const std::filesystem::path& database, const std::string& id) {
+    sqlite3* db = nullptr;
+    const std::u8string u8 = database.u8string();
+    std::string out;
+    if (sqlite3_open_v2(std::string(u8.begin(), u8.end()).c_str(), &db, SQLITE_OPEN_READONLY,
+                        nullptr) == SQLITE_OK) {
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT components FROM entity WHERE id = ?", -1, &st,
+                               nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(st) == SQLITE_ROW)
+                if (const auto* c = sqlite3_column_text(st, 0))
+                    out = reinterpret_cast<const char*>(c);
+        }
+        sqlite3_finalize(st);
+    }
+    sqlite3_close(db);
+    return out;
+}
+
+}  // namespace
+
+void Game::note_loaded() {
+    loaded_.clear();
+    for (const entt::entity e : scene_.registry.view<const EntityInfo, const Transform>())
+        loaded_[scene_.registry.get<EntityInfo>(e).id] = scene_.registry.get<Transform>(e);
+}
+
+std::string Game::capture_room() const {
+    nlohmann::json moved_ = nlohmann::json::object(), removed = nlohmann::json::array();
+    for (const auto& [id, was] : loaded_) {
+        const entt::entity e = scene_.find(id);
+        if (e == entt::null) {
+            removed.push_back(id);
+            continue;
+        }
+        if (scene_.registry.all_of<Player>(e)) continue;  // (the player goes on with them)
+        const Transform& now = scene_.registry.get<Transform>(e);
+        if (moved(now, was)) moved_[id] = transform_json(now);
+    }
+    return nlohmann::json{{"moved", moved_}, {"removed", removed}}.dump();
+}
+
+void Game::apply_room(const std::string& room) {
+    if (room.empty()) return;
+    const nlohmann::json j = nlohmann::json::parse(room, nullptr, false);
+    if (!j.is_object()) return;
+    const nlohmann::json moved_ones = j.value("moved", nlohmann::json::object());
+    for (const auto& [id, t] : moved_ones.items()) {  // (named: items() of a temporary dangles)
+        const entt::entity e = scene_.find(id);
+        if (e == entt::null || !scene_.registry.all_of<Transform>(e)) continue;
+        Transform& to = scene_.registry.get<Transform>(e);
+        const auto vec = [&](const char* key, auto& into) {
+            const auto it = t.find(key);
+            if (it != t.end() && it->is_array() && it->size() == 3)
+                for (int k = 0; k < 3; ++k)
+                    into[k] = static_cast<std::remove_reference_t<decltype(into[k])>>(
+                        (*it)[size_t(k)].template get<double>());
+        };
+        vec("position", to.position);
+        vec("rotation", to.rotation);
+        vec("scale", to.scale);
+    }
+    for (const auto& id : j.value("removed", nlohmann::json::array()))
+        if (id.is_string()) scene_.remove_entity(id.get<std::string>());
+}
+
+void Game::carry_player() {
+    if (carried_player_.empty()) return;
+    nlohmann::json c = nlohmann::json::parse(carried_player_, nullptr, false);
+    if (!c.is_object()) return;
+    entt::entity here = entt::null;
+    for (const entt::entity e : scene_.registry.view<const Player>()) here = e;
+    std::string id = carried_id_, name = carried_name_, parent;
+    if (here != entt::null) {  // (in the place of this scene's own, where it stands)
+        const EntityInfo& info = scene_.registry.get<EntityInfo>(here);
+        id = info.id;
+        name = info.name;
+        if (info.parent != entt::null && scene_.registry.valid(info.parent))
+            parent = scene_.registry.get<EntityInfo>(info.parent).id;
+        c["transform"] = transform_json(scene_.registry.get<Transform>(here));
+    }
+    scene_.put_entity(id, name, parent, c);
+}
+
+std::string Game::room_state(const std::string& scene) const {
+    if (scene == scene_.id) return capture_room();
+    const auto it = rooms_.find(scene);
+    return it == rooms_.end() ? std::string() : it->second;
+}
+
 void Game::load_scene(const std::string& id, const std::string& arrival) {
     // Everything that can fail first, so a failed change leaves the scene as it was.
     Scene next = Scene::load(package_.root / package_.manifest.database, id);
@@ -1448,6 +1606,17 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
 
     // Leave the scene: its ground, placed objects and physics go, and its entities' sounds stop
     // (a script's music plays on).
+    // The scene left is remembered as it is; the player goes on, as the game began with them.
+    rooms_[scene_.id] = capture_room();
+    if (carried_player_.empty()) {
+        for (const entt::entity e : scene_.registry.view<const Player>()) {
+            const EntityInfo& info = scene_.registry.get<EntityInfo>(e);
+            carried_id_ = info.id;
+            carried_name_ = info.name;
+            carried_player_ =
+                designed_components(package_.root / package_.manifest.database, info.id);
+        }
+    }
     stop_sources();
     nav_world_.reset();
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
@@ -1460,6 +1629,9 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     outline_meshes_.clear();
     characters_.clear_states();
     scene_ = std::move(next);
+    note_loaded();  // (as designed: what moves from here on is what's remembered)
+    if (const auto room = rooms_.find(id); room != rooms_.end()) apply_room(room->second);
+    carry_player();
     if (sounds_)  // (the game's events, as this scene's package has them)
         for (const auto& [eid, ev] : scene_.sound_events) sounds_->add(ev);
     if (music_)  // (the music plays on: the next update chooses for the new scene)
