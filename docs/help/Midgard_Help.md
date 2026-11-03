@@ -813,15 +813,19 @@ is no gravity and no weather in space.
 
 **Getting there.** A planet's atmosphere has a **ceiling**: fly higher than it (with a jetpack
 or a ship: a script makes the player fly) and you're in space, carrying on from where you
-crossed it. It's a fifth of the planet's radius up, and at least 300 m (you'll be able to set it
-in the editor). Fly back down through it and you come down below where you descended: on the
+crossed it. It's a fifth of the planet's radius up, and at least 300 m, unless you set it. Fly back down through it and you come down below where you descended: on the
 ground there, or still flying just under the ceiling if your player flies.
 
 A **habitat** or a **hollow world** has no sky to fly up through. Its ways out are **docks** and
 **exit sites**: Scene Exits leading to space. Out there you see your world from outside, a huge
 cylinder or ball against the stars, with your ship just outside where you left. Fly back to its
-hull and you go back in, arriving at the exit's arrival point. (Choosing *Space* in a Scene
-Exit's Inspector comes with the next update.)
+hull and you go back in, arriving at the exit's arrival point. To make one, add a **Scene
+Exit**, choose **Space (outside this world)** for where it **Leads to**, and choose where the
+player is **Coming back in at** (an arrival point in the same scene).
+
+A planet's ceiling is set in **World ▸ World Shape…**: **Atmosphere ceiling** (leave it at
+*Automatic* for a fifth of the radius). To get the player off the ground, a script sets
+`player.flying = True` (a jetpack, a launch pad, a ship); `False` walks again.
 
 ---
 
@@ -1086,6 +1090,7 @@ The player's own script also gets `on_trigger_enter(player, trigger)` and `on_tr
 | `entity.color` | Its material colour. |
 | `entity.velocity` | Its speed and direction (physics bodies). Assign to launch a dynamic body. |
 | `entity.on_ground` | True while the player stands on something. |
+| `entity.flying` | The player flies (where the camera looks; up with jump, down with Left Ctrl). `False` walks again. Only the player. |
 | `entity.move(x, y, z)` | Moves it by that much. |
 | `entity.add_force(x, y, z)` | Pushes a dynamic body (call every frame for a steady push). |
 | `entity.add_impulse(x, y, z)` | A sudden shove (a kick, an explosion). |
@@ -1160,6 +1165,18 @@ Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`,
 | `.change(scene, arrival="", fade=0.5)` | Goes to another scene. |
 | `.take_exit(exit_entity)` | Uses a Scene Exit (for doors that only open by script). |
 | `.changing` | True during the fade. |
+| `.enter_space(fade=1.0)` | Into space: above the planet the player is on, or outside the habitat or hollow world. |
+| `.in_space`, `.space_from` | Whether the player is in space, and which scene they left for it. |
+| `.ceiling`, `.altitude` | A planet's atmosphere ceiling, and how high the player is (metres above sea level). |
+
+```python
+import midgard
+
+def on_trigger_enter(entity, other):   # a launch pad
+    player = midgard.player()
+    player.flying = True               # off the ground: fly up past the ceiling into space
+    print("Lift off! Space begins at", round(midgard.rooms.ceiling), "m")
+```
 
 ### Navigation: `midgard.nav`
 

@@ -108,6 +108,8 @@ def flicker_kind(light: dict) -> str:
                 "custom")
 
 
+SPACE = "@space"  # a scene exit into space (the engine's Game::kSystemSpace)
+
 class EntityForm(QWidget):
     open_script = Signal(str)  # a module to open in the Script editor
     open_object = Signal(str)  # an object to show in the Objects panel
@@ -1060,6 +1062,9 @@ class EntityForm(QWidget):
             self.exit_scene.addItem("(choose a scene)", "")
             for s in scenes.load_all(self.project):
                 self.exit_scene.addItem(s["name"], s["id"])
+            # Space (milestone 5.16): a dock or an exit site out of a habitat or a hollow world
+            # (a planet's way is up through its ceiling; it may have one too).
+            self.exit_scene.addItem("Space (outside this world)", SPACE)
             if self.exit_scene.findData(exit_.get("scene", "")) < 0:
                 self.exit_scene.addItem(f"{exit_['scene']} (missing)", exit_["scene"])
             self.exit_scene.setCurrentIndex(self.exit_scene.findData(exit_.get("scene", "")))
@@ -1067,10 +1072,11 @@ class EntityForm(QWidget):
             form.addRow("Leads to", _row(self.exit_scene, _remove_button(
                 "No longer a scene exit", lambda: self.remove_component("scene_exit"))))
             self.exit_arrival = QComboBox()
+            self.exit_arrival_label = QLabel("Arriving at")
             self._fill_arrivals(exit_.get("scene", ""), exit_.get("arrival", ""))
             self.exit_arrival.currentIndexChanged.connect(lambda _i: self._set_value(
                 "scene_exit", "arrival", self.exit_arrival.currentData() or "", "arrival"))
-            form.addRow("Arriving at", self.exit_arrival)
+            form.addRow(self.exit_arrival_label, self.exit_arrival)
             self.exit_activation = QComboBox()
             for key, label in self.ACTIVATIONS.items():
                 self.exit_activation.addItem(label, key)
@@ -1113,10 +1119,17 @@ class EntityForm(QWidget):
         self.exit_fade.blockSignals(False)
 
     def _fill_arrivals(self, scene: str, current: str) -> None:
-        """The arrival points in the exit's target scene, and its player start."""
+        """The arrival points in the exit's target scene, and its player start. Into space:
+        those in this scene, where the player comes back in."""
         self.exit_arrival.blockSignals(True)
         self.exit_arrival.clear()
         self.exit_arrival.addItem("The scene's player start", "")
+        back_in = scene == SPACE
+        self.exit_arrival_label.setText("Coming back in at" if back_in else "Arriving at")
+        self.exit_arrival.setToolTip(
+            "Where the player comes back into this world, flying back to it from space"
+            if back_in else "Where the player appears in the scene it leads to")
+        scene = self.project.scene if back_in else scene
         if scene:
             for e in self.project.entities(scene):
                 if "arrival" in e.components:

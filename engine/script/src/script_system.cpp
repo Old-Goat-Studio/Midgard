@@ -276,6 +276,20 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             })
         .def_property_readonly("exists", &EntityHandle::exists)
         .def_property(
+            "flying",
+            [](const EntityHandle& h) {
+                const Player* p = registry().try_get<Player>(h.resolve());
+                return p != nullptr && p->fly;
+            },
+            [](const EntityHandle& h, bool fly) {
+                const entt::entity e = h.resolve();
+                if (!registry().all_of<Player>(e))
+                    throw py::value_error("entity '" + h.id + "' isn't the player: only it flies");
+                current_game().set_flying(e, fly);
+            },
+            "The player flies (a jetpack, a ship): where the camera looks, up with jump, down "
+            "with descend, with no gravity; False: it walks again. Only the player.")
+        .def_property(
             "position", [](const EntityHandle& h) { return tuple3(h.transform().position); },
             [](const EntityHandle& h, const std::array<double, 3>& v) {
                 h.transform().position = glm::dvec3(v[0], v[1], v[2]);
@@ -706,6 +720,31 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def_property_readonly(
             "changing", [](const RoomsHandle&) { return current_game().changing_scene(); },
             "Whether a change is under way (fading out or in).")
+        .def(
+            "enter_space",
+            [](const RoomsHandle&, float fade) {
+                Game& g = current_game();
+                if (const std::string problem = g.arrival_problem(Game::kSystemSpace, "");
+                    !problem.empty())
+                    throw py::value_error(problem);
+                g.enter_space(fade);
+            },
+            py::arg("fade") = 1.0f,
+            "Into space (milestone 5.16): above the planet the player is on, or outside the "
+            "habitat or hollow world. ValueError on a world with no outside.")
+        .def_property_readonly(
+            "in_space", [](const RoomsHandle&) { return current_game().in_space(); },
+            "Whether the player is in space.")
+        .def_property_readonly(
+            "space_from", [](const RoomsHandle&) { return current_game().space_from(); },
+            "In space: the scene left for it (empty when not in space).")
+        .def_property_readonly(
+            "ceiling", [](const RoomsHandle&) { return current_game().ceiling(); },
+            "A planet's atmosphere ceiling, metres above its sea level: fly above it and you're "
+            "in space (0 off a planet).")
+        .def_property_readonly(
+            "altitude", [](const RoomsHandle&) { return current_game().altitude(); },
+            "How high the player is above the world's sea level (its surface), metres.")
         .def("__repr__", [](const RoomsHandle&) { return std::string("<midgard.rooms>"); });
     m.attr("rooms") = RoomsHandle{};
 

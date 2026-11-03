@@ -39,6 +39,10 @@ class Entity:
     """Its name, as shown in the editor's Scene panel."""
     exists: bool
     """False once the entity has been removed from the scene (read-only)."""
+    flying: bool
+    """The player flies (a jetpack, a ship): where the camera looks, up with jump (Space), down
+    with descend (Left Ctrl), with no gravity; set it False to walk again. Only the player
+    flies (ValueError for another entity)."""
     position: Vector
     """Position in metres, relative to its parent."""
     rotation: Vector
@@ -524,6 +528,21 @@ class Rooms:
     def take_exit(self, exit: Entity) -> None:
         """Takes a scene exit (an entity with a scene_exit), whatever its activation: how a door
         set to "Only from a script" opens. ValueError if the entity isn't one."""
+
+    def enter_space(self, fade: float = 1.0) -> None:
+        """Into space: above the planet the player is on (from where they are), or outside the
+        habitat or hollow world. ValueError on a world with no outside (a bounded area, a
+        flat-wrap cylinder)."""
+
+    in_space: bool
+    """Whether the player is in space (read-only)."""
+    space_from: str
+    """In space: the scene left for it ("" when not in space; read-only)."""
+    ceiling: float
+    """A planet's atmosphere ceiling, metres above its sea level: fly above it and you're in
+    space; fly back down through it and you land below (0 off a planet; read-only)."""
+    altitude: float
+    """How high the player is above the world's sea level, in metres (read-only)."""
 
 
 rooms: Rooms

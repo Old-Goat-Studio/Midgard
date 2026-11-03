@@ -135,6 +135,14 @@ class WorldShapeDialog(QDialog):
         self.sun_mode.setCurrentIndex(max(self.sun_mode.findData(
             project.scene_settings().get("sun_mode", "uniform")), 0))
         self.form.addRow("Day and night", self.sun_mode)
+        # A planet's atmosphere ceiling (milestone 5.16): fly above it into space.
+        self.ceiling = _spin(0.0, 1_000_000.0, float(project.scene_settings().get("ceiling", 0.0)),
+                             " m")
+        self.ceiling.setSingleStep(50.0)
+        self.ceiling.setSpecialValueText("Automatic (a fifth of the radius, at least 300 m)")
+        self.ceiling.setToolTip("How high above sea level space begins: fly above it and you're "
+                                "in space; fly back down through it and you land below")
+        self.form.addRow("Atmosphere ceiling", self.ceiling)
         has_surface = any(e.components.get("mesh", {}).get("asset") == SURFACE
                           for e in project.entities())
         self.add_ground = QCheckBox("Add ground covering the whole world")
@@ -212,6 +220,7 @@ class WorldShapeDialog(QDialog):
                 box.setRange(low, high)
         self.form.setRowVisible(self.gravity, bool(key))
         self.form.setRowVisible(self.sun_mode, key == "sphere_outside")
+        self.form.setRowVisible(self.ceiling, key == "sphere_outside")
         terrain = key in TERRAIN_SHAPES
         self.terrain.setVisible(terrain)
         cylinder = key in ("flat_cylinder", "curved_cylinder")
@@ -288,6 +297,10 @@ class WorldShapeDialog(QDialog):
             settings["sun_mode"] = "latitude"
         else:
             settings.pop("sun_mode", None)  # uniform: the default
+        if body is not None and body["shape"] == "sphere_outside" and self.ceiling.value() > 0:
+            settings["ceiling"] = self.ceiling.value()
+        else:
+            settings.pop("ceiling", None)  # automatic
         add_ground = (body is not None and self.offers_ground and self.add_ground.isChecked()
                       and terrain is None)
         stack = self.project.undo_stack
