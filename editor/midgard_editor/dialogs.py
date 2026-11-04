@@ -172,9 +172,10 @@ class CommitDialog(QDialog):
         self.purchased = master.purchased_paths(project, [f.path for f in self.files])
         names = sorted({a.name for a in self.purchased.values()})
         self.purchased_note = QLabel(
-            f"<b>Purchased assets:</b> {', '.join(names)}. Their original files may not be "
-            "given away: if this project's Git is ever pushed somewhere others can see (a "
-            "public GitHub repository), they go with it." if names else "")
+            f"<b>Not to be given away</b> (purchased, or your own all rights reserved): "
+            f"{', '.join(names)}. If this project's Git is ever pushed somewhere others can "
+            "see (a public GitHub repository), their original files go with it."
+            if names else "")
         self.purchased_note.setWordWrap(True)
         self.keep_out = QPushButton("Keep Them Out of Git")
         self.keep_out.setToolTip("Adds their folders to the project's .gitignore (the files stay "
@@ -211,8 +212,8 @@ class CommitDialog(QDialog):
             if item.data(Qt.ItemDataRole.UserRole) in self.purchased:
                 item.setCheckState(Qt.CheckState.Unchecked)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-        self.purchased_note.setText("The purchased assets are kept out of Git (in the project's "
-                                    ".gitignore, which is ticked to commit).")
+        self.purchased_note.setText("They are kept out of Git (in the project's .gitignore, "
+                                    "which is ticked to commit).")
         self.keep_out.setVisible(False)
         gitignore = ".gitignore"
         if not any(self.list.item(i).data(Qt.ItemDataRole.UserRole) == gitignore

@@ -236,6 +236,8 @@ Only use assets you're allowed to. Midgard accepts these:
   (recolours it, cuts it up), you must offer the changed asset under the same licence.
 - **Purchased** (from the Master Asset Library, below): bought assets. Your games may use
   them, but their **original files may never be given away**.
+- **Own work (all rights reserved)**: things you made yourself and keep for your own games.
+  The artist's name is needed; like purchased ones, their original files are never given away.
 
 ### Looking at assets
 
@@ -290,8 +292,8 @@ In Midgard:
 - Midgard finds the Master where its program keeps it. To use another folder, set
   **Edit ▸ Preferences ▸ Master library**.
 
-**Purchased assets and Git.** When you commit, Midgard warns if purchased assets' files are
-going into Git: if the project is ever pushed somewhere others can see (a public GitHub
+**Purchased assets, your own work, and Git.** When you commit, Midgard warns if the files of
+purchased assets, or of your own all rights reserved work, are going into Git: if the project is ever pushed somewhere others can see (a public GitHub
 repository), they would go with it. **Keep Them Out of Git** leaves them in the project but out
 of its history.
 

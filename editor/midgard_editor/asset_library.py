@@ -64,12 +64,15 @@ LICENCES: dict[str, tuple[str, str, bool]] = {
     "CC-BY-SA-4.0": ("CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/", True),
     "CC-BY-SA-3.0": ("CC BY-SA 3.0", "https://creativecommons.org/licenses/by-sa/3.0/", True),
     "Purchased": ("Purchased", "", False),
+    "Own-Work": ("Own work (all rights reserved)", "", False),
 }
 PURCHASED = "Purchased"
+OWN_WORK = "Own-Work"  # your own, all rights reserved: your games use it, no one else
 SHARE_ALIKE = ("CC-BY-SA-4.0", "CC-BY-SA-3.0")
 # The licences an asset is imported with here (purchased ones come from the Master, with where
 # they were bought).
-IMPORT_LICENCES = ("CC0-1.0", "CC-BY-4.0", "CC-BY-3.0", "CC-BY-SA-4.0", "CC-BY-SA-3.0")
+IMPORT_LICENCES = ("CC0-1.0", "CC-BY-4.0", "CC-BY-3.0", "CC-BY-SA-4.0", "CC-BY-SA-3.0",
+                   "Own-Work")
 # A format 1 asset's id: made from its path, so it is the same every time (as the Master's).
 _V1_NAMESPACE = uuid.UUID("6a1d4f0e-5b8c-4e2a-9f37-0c1d2e3f4a5b")
 
@@ -212,6 +215,8 @@ def problems(asset: Asset) -> list[str]:
             out.append("it needs crediting: its author is needed for its credit")
         if not (asset.title.strip() or asset.source.strip()):
             out.append("it needs crediting: its title or source is needed for its credit")
+    if asset.licence == OWN_WORK and not asset.author.strip():
+        out.append("it is your own work: its artist (author) is needed")
     if asset.licence == PURCHASED:
         p = asset.purchase or {}
         if not str(p.get("seller", "")).strip():
@@ -244,8 +249,9 @@ def share_alike(asset: Asset) -> bool:
 
 
 def may_give_away(asset: Asset) -> bool:
-    """Whether its original files may be passed on (a purchased one's may not)."""
-    return asset.licence in LICENCES and asset.licence != PURCHASED
+    """Whether its original files may be passed on (a purchased one's, or your own all rights
+    reserved work's, may not)."""
+    return asset.licence in LICENCES and asset.licence not in (PURCHASED, OWN_WORK)
 
 
 def credit(asset: Asset) -> str:
@@ -836,7 +842,10 @@ ROLE_SLOTS = {"color": "base_color", "normal": "normal",
               "emissive": "emissive"}
 # Words in file names that say a role (the common packs' namings: ambientCG, Poly Haven...).
 _ROLE_WORDS = (
-    ("metallic_roughness", ("metallicroughness", "roughnessmetallic", "orm", "arm", "mr")),
+    # (A "combined" map: occlusion in red, roughness in green, metallic in blue: glTF reads its
+    # green and blue as its metallic & roughness.)
+    ("metallic_roughness", ("metallicroughness", "roughnessmetallic", "orm", "arm", "mr",
+                            "combined")),
     ("color", ("color", "colour", "basecolor", "basecolour", "albedo", "diffuse", "diff",
                "col", "base", "basecol")),
     ("normal", ("normal", "normalgl", "normaldx", "nor", "norm", "nrm", "nor_gl", "normal_gl")),
@@ -852,9 +861,14 @@ def guess_role(filename: str) -> str:
     it is a kind Midgard doesn't use, like a height map)."""
     words = [w for w in re.split(r"[^a-z0-9]+", Path(filename).stem.lower()) if w]
     joined = "".join(words)
+    # The role word is usually last ("Metal_Floor_001_Emissive" is emissive, not metallic): the
+    # words are read from the end.
+    for word in reversed(words):
+        for role, names in _ROLE_WORDS:
+            if word in names:
+                return role
     for role, names in _ROLE_WORDS:
-        if any(w in names for w in words) or any(joined.endswith(n) for n in names
-                                                    if len(n) > 4):
+        if any(joined.endswith(n) for n in names if len(n) > 4):
             return role
     return ""
 

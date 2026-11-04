@@ -288,3 +288,20 @@ def test_commit_warns_about_purchased_originals_and_keeps_them_out(qtbot, projec
     assert not any(f.path.startswith("library/models/village")
                    for f in vcs.changed_files(project))  # (ignored now)
     assert (project.root / "library/models/village/village.png").is_file()  # (still there)
+
+
+def test_own_work_needs_its_artist_and_is_kept_back_like_purchased(project, master):
+    a = master_asset(master, "textures/floor/tile", "Tile", licence=lib.OWN_WORK)
+    assert any("its artist (author) is needed" in p for p in lib.problems(a))
+    a = master_asset(master, "textures/floor/tile_2", "Tile 2", data=PNG + b"two",
+                     licence=lib.OWN_WORK, author="Richard E Rogers")
+    assert lib.problems(a) == [] and not lib.may_give_away(a) and not lib.needs_credit(a)
+    copy = mst.add_to_project(project, master, a)
+    assert [x.name for x in mst.purchased(project)] == [copy.name]  # (warned about at commit)
+
+
+def test_texture_roles_are_read_from_the_end_of_the_name():
+    roles = [lib.guess_role(f"Metal_Floor_001_{k}.png") for k in
+             ("Color", "Normal", "Ambient occlusion", "Emissive", "Metallic", "Combined")]
+    assert roles == ["color", "normal", "occlusion", "emissive", "metallic",
+                     "metallic_roughness"]

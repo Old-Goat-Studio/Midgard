@@ -133,6 +133,9 @@ class AssetDetailsForm(QWidget):
         if code == lib.PURCHASED:
             text = ("Purchased (from the Master): its original files are never given away; "
                     "where it was bought is changed in the Master Asset Library.")
+        elif code == lib.OWN_WORK:
+            text = ("Your own work, all rights reserved: its artist (the author) is needed. "
+                    "Your games use it; its original files are never given away.")
         elif credited:
             text = ("Its author, and its title or source, are needed; the game's credits name "
                     "it.")

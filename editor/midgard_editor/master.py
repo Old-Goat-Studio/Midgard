@@ -221,9 +221,10 @@ def send_to_master(asset: lib.Asset, master: Master, *, replace: bool = False) -
 
 # ---- purchased originals -----------------------------------------------------------------------
 def purchased(project) -> list[lib.Asset]:
-    """The project's purchased assets (their original files may not be given away)."""
+    """The project's assets whose original files may not be given away: purchased ones, and
+    your own all rights reserved work."""
     assets, _ = lib.scan(project)
-    return [a for a in assets if a.licence == lib.PURCHASED]
+    return [a for a in assets if not lib.may_give_away(a) and a.licence in lib.LICENCES]
 
 
 def purchased_paths(project, paths: list[str]) -> dict[str, lib.Asset]:
