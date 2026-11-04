@@ -79,6 +79,10 @@ public:
     // The time of day for suns that follow the clock (the Calendar dock's scrubber), or none.
     void set_solar_phase(std::optional<double> phase) { scene_.solar_phase = phase; }
     std::optional<double> solar_phase() const { return scene_.solar_phase; }
+    // The seconds surface shaders (and water) see as their time (5.17's previews animate it);
+    // negative: the scene's own.
+    void set_clock(double seconds) { clock_ = seconds; }
+    double clock() const { return clock_; }
     // How far into summer (1) or winter (-1), for the environment's season tints; on a tilted
     // planet in Latitude mode it also sets the year, so the sun's declination follows.
     void set_season(double season) {
@@ -139,6 +143,7 @@ private:
     bool needs_surface() const;  // an entity draws the world's surface
 
     Scene scene_;
+    double clock_ = -1.0;  // (set_clock)
     std::unordered_map<std::string, render::MeshData> mesh_data_;
     std::unordered_map<std::string, render::MeshId> meshes_;  // on the current renderer
     std::unordered_map<std::string, std::vector<uint8_t>> texture_data_;

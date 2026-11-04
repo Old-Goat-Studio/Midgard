@@ -242,6 +242,9 @@ struct Renderer::Impl {
         VkPipeline skinned = VK_NULL_HANDLE;
     };
     std::vector<SurfacePipelines> surface_pipelines;
+    // Pipelines of surface shaders replaced (replace_surface_shader), destroyed once no frame in
+    // flight can still be drawing with them.
+    std::vector<std::pair<SurfacePipelines, uint64_t>> retired_surfaces;
     std::vector<DebugLine> debug_lines;
     Environment environment;
     TerrainLook terrain_look;
@@ -286,6 +289,12 @@ struct Renderer::Impl {
     uint64_t frames_submitted = 0;
 
     void destroy_retired(bool all) {
+        std::erase_if(retired_surfaces, [&](const std::pair<SurfacePipelines, uint64_t>& r) {
+            if (!all && r.second + kFramesInFlight > frames_submitted) return false;
+            if (r.first.still) vkDestroyPipeline(device, r.first.still, nullptr);
+            if (r.first.skinned) vkDestroyPipeline(device, r.first.skinned, nullptr);
+            return true;
+        });
         std::erase_if(retired, [&](Retired& r) {
             if (!all && r.freed_at + kFramesInFlight > frames_submitted) return false;
             destroy_buffer(r.vertices);
@@ -2483,6 +2492,16 @@ ShaderId Renderer::create_surface_shader(std::span<const uint32_t> spirv) {
     if (!made.still) return kErrorShader;
     r.surface_pipelines.push_back(made);
     return static_cast<ShaderId>(r.surface_pipelines.size() - 1);
+}
+
+bool Renderer::replace_surface_shader(ShaderId shader, std::span<const uint32_t> spirv) {
+    Impl& r = *impl_;
+    if (shader <= kErrorShader || shader >= r.surface_pipelines.size()) return false;
+    const Impl::SurfacePipelines made = r.make_surface_pipelines(spirv);
+    if (!made.still) return false;  // (the old one stays)
+    r.retired_surfaces.emplace_back(r.surface_pipelines[shader], r.frames_submitted);
+    r.surface_pipelines[shader] = made;
+    return true;
 }
 
 size_t Renderer::surface_shader_count() const {

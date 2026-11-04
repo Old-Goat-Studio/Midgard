@@ -603,6 +603,16 @@ class ViewportPanel(QWidget):
                 self._sent_content[texture] = hash(data)
         self._put_entity(entity, components)
 
+    def shader_changed(self, shader: str) -> None:
+        """A surface shader saved again: what uses it is drawn with it as it is now."""
+        if self.project is None:
+            return
+        for entity in self.project.entities():
+            if surface_shaders.used_by(entity.components, shader):
+                self._put(entity)
+        self._objects_changed("")  # (objects' parts using it too)
+        self.request_render()
+
     def _send_shader(self, shader: str) -> None:
         """A surface shader (5.17), compiled here; one that doesn't compile is drawn magenta."""
         if not shader:

@@ -43,6 +43,8 @@ std::vector<Message> parse_log(std::string_view log, const Options& options) {
         start = end + 1;
         if (!line.empty() && line.back() == '\r') line.pop_back();
         std::smatch m;
+        // ("'' : compilation terminated" only follows another mistake: left out too.)
+        if (line.find("compilation terminated") != std::string::npos) continue;
         if (std::regex_match(line, m, placed)) {
             Message msg;
             msg.error = m[1] == "ERROR";
@@ -119,16 +121,16 @@ int numbers_of(const std::string& type) {
 // Names a setting can't have: what the code reads and changes, Midgard's own names, GLSL's.
 bool reserved(const std::string& name) {
     static const char* const names[] = {
-        "i",        "s",         "surface",  "color",    "alpha",
-        "metallic", "roughness", "normal",   "emission", "occlusion",
-        "cutout",   "uv",        "position", "view",     "geometry_normal",
-        "up",       "time",      "pc",       "frame",    "main",
-        "hash",     "noise",     "fbm",      "srgb",     "texture",
-        "float",    "int",       "bool",     "vec2",     "vec3",
-        "vec4",     "mat4",      "true",     "false",    "if",
-        "else",     "for",       "while",    "return",   "discard",
-        "in",       "out",       "inout",    "uniform",  "const",
-        "struct",   "void",      "out_color"};
+        "i",           "s",         "surface",  "color",    "alpha",
+        "metallic",    "roughness", "normal",   "emission", "occlusion",
+        "cutout",      "uv",        "position", "view",     "geometry_normal",
+        "up",          "time",      "pc",       "frame",    "main",
+        "hash",        "noise",     "fbm",      "srgb",     "sun",
+        "bend_normal", "texture",   "float",    "int",      "bool",
+        "vec2",        "vec3",      "vec4",     "mat4",     "true",
+        "false",       "if",        "else",     "for",      "while",
+        "return",      "discard",   "in",       "out",      "inout",
+        "uniform",     "const",     "struct",   "void",     "out_color"};
     for (const char* n : names)
         if (name == n) return true;
     return name.starts_with("midgard_") || name.starts_with("gl_") || name.ends_with("_map");

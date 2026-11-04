@@ -291,6 +291,9 @@ class MaterialEditor(QWidget):
         self.shader.setToolTip("Your own surface shader for this material (a file in the "
                                "project's shaders folder); Midgard's own material if none")
         self.shader.activated.connect(lambda _i: self.set_shader(self.shader.currentData()))
+        edit_shader = QPushButton("Edit…")
+        edit_shader.setToolTip("Open the shader in the Shader editor (a new one if none)")
+        edit_shader.clicked.connect(self.edit_shader)
         shader_file = QPushButton("Choose…")
         shader_file.setToolTip("A surface shader file (.glsl), copied into the project's "
                                "shaders folder")
@@ -299,6 +302,7 @@ class MaterialEditor(QWidget):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.shader, 1)
+        layout.addWidget(edit_shader)
         layout.addWidget(shader_file)
         form.addRow("Surface shader", row)
         self.shader_status = QLabel()
@@ -378,6 +382,12 @@ class MaterialEditor(QWidget):
                     problems.append(f"The texture {textures.describe(texture)} can't be shown.")
                 else:
                     renderer.send(texture, data)
+            # A surface shader (5.17): drawn with it, its settings laid out for the engine.
+            if m.get("shader"):
+                shader = surface_shaders.compile_shader(self.project.root, m["shader"])
+                renderer.send(m["shader"], shader.spirv or b"")
+                parts[0]["components"]["material"] = surface_shaders.drawn(
+                    self.project.root, {"material": m})["material"]
         except RuntimeError as e:
             problems.append(str(e))
         self.problem.setText("\n".join(problems))
@@ -491,6 +501,18 @@ class MaterialEditor(QWidget):
             new["shader_settings"] = chosen
         self._push(new, "shader setting " + name, name.replace("_", " "))
 
+    def edit_shader(self) -> None:
+        """The material's shader in the Shader editor; without one, a new one (from the Blank
+        starter), used by this material."""
+        from .. import shader_starters
+        from . import shader_editor
+        shader = self.material().get("shader", "")
+        if not shader:
+            shader = surface_shaders.new_shader(self.project.root, "shader",
+                                                shader_starters.BLANK)
+            self.set_shader(shader)
+        shader_editor.requests().open.emit(shader)
+
     def choose_shader_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(self, "Surface shader", str(self.project.root),
                                               "Surface shaders (*.glsl)")
@@ -576,6 +598,12 @@ class MaterialDialog(QDialog):
         for dialog in list(cls._open.values()):
             dialog.close()
         cls._open.clear()
+
+    @classmethod
+    def refresh_all(cls) -> None:
+        """A shader (or something else they show) changed: the open editors show it again."""
+        for dialog in list(cls._open.values()):
+            dialog.editor.refresh()
 
     @classmethod
     def show_for(cls, project: Project, target, parent: QWidget | None = None) -> "MaterialDialog":

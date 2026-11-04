@@ -200,6 +200,9 @@ public:
     // midgard/shader_compiler.h's compile_surface makes them), for draws to use. kErrorShader
     // (never throws) if it can't be used: not SPIR-V, or the GPU refuses it.
     ShaderId create_surface_shader(std::span<const uint32_t> spirv);
+    // A surface shader made again from new SPIR-V (edited: 5.17's live changes), keeping its
+    // id. False, and the old one kept, if the GPU can't use it (or the id isn't a shader).
+    bool replace_surface_shader(ShaderId shader, std::span<const uint32_t> spirv);
     // How many surface shaders there are (the error shader included).
     size_t surface_shader_count() const;
     // Replaces an uploaded mesh (hot reload). Waits for the GPU to finish with the old one.

@@ -89,11 +89,29 @@ def copy_shader(file: Path, project_root: Path) -> str:
     return ref(dest.stem)
 
 
+def new_shader(project_root: Path, name: str, code: str) -> str:
+    """A new shader file in the project's shaders folder, named after `name` (made unique:
+    "glow 2"), as its content id."""
+    folder = Path(project_root) / FOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    stem = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip(" .") or "shader"
+    dest, n = folder / (stem + SUFFIX), 2
+    while dest.exists():
+        dest, n = folder / f"{stem} {n}{SUFFIX}", n + 1
+    dest.write_text(code, encoding="utf-8")
+    return ref(dest.stem)
+
+
+def used_by(components: dict, shader: str) -> bool:
+    return components_shader(components) == shader
+
+
 def components_shader(components: dict) -> str:
     return components.get("material", {}).get("shader", "") or ""
 
 
-_compiled: dict[str, Result] = {}  # by the code's hash (and name)
+_compiled: dict[str, Result] = {}  # by the code's hash (and name), oldest first
+KEEP = 64
 
 
 def compile_code(code: str, name: str = "surface") -> Result:
@@ -108,6 +126,8 @@ def compile_code(code: str, name: str = "surface") -> Result:
     out = midgard.compile_surface_shader(code, name)
     result = Result(bytes(out["spirv"]) if out["ok"] else None, list(out["messages"]),
                     list(out.get("settings", [])))
+    if len(_compiled) >= KEEP:  # (the Shader editor compiles as you type: the oldest go)
+        del _compiled[next(iter(_compiled))]
     _compiled[key] = result
     return result
 

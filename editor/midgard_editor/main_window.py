@@ -53,6 +53,8 @@ from .docks.project_page import ProjectPage
 from .docks.scene_panel import ScenePanel
 from .docks.scenes_panel import ScenesPanel
 from .docks.script_editor import ScriptEditorPanel
+from .docks.shader_editor import ShaderEditorPanel
+from .docks.shader_editor import requests as shader_requests
 from .docks.terrain_panel import TerrainPanel
 from .docks.viewport import ViewportPanel
 from .docks.world_type_editor import WorldTypePanel
@@ -74,7 +76,7 @@ PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
           "calendar": "Calendar", "environment": "Environment", "terrain": "Terrain",
           "world_types": "World Types", "scenes": "Scenes", "animation": "Animation",
-          "audio": "Audio"}
+          "audio": "Audio", "shaders": "Shader Editor"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -165,6 +167,9 @@ class MainWindow(QMainWindow):
         self.log_panel = LogPanel()
         self.viewport = ViewportPanel()
         self.script_editor = ScriptEditorPanel(settings)
+        self.shader_editor = ShaderEditorPanel()  # surface shaders (5.17)
+        self.shader_editor.shader_saved.connect(self._shader_saved)
+        shader_requests().open.connect(self.edit_shader)
         self.project_page = ProjectPage()
         self.objects_panel = ObjectsPanel()
         self.calendar_panel = CalendarPanel()
@@ -206,7 +211,7 @@ class MainWindow(QMainWindow):
                    "calendar": self.calendar_panel, "environment": self.environment_panel,
                    "terrain": self.terrain_panel, "world_types": self.world_type_panel,
                    "scenes": self.scenes_panel, "animation": self.animation_panel,
-                   "audio": self.audio_panel}
+                   "audio": self.audio_panel, "shaders": self.shader_editor}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -249,6 +254,7 @@ class MainWindow(QMainWindow):
         self._tab_behind_viewport("world_types")
         self._tab_behind_viewport("animation")
         self._tab_behind_viewport("audio")
+        self._tab_behind_viewport("shaders")
         self._place_assistant()
         self._tab_behind_inspector("calendar")
         self._tab_behind_inspector("environment")
@@ -365,6 +371,8 @@ class MainWindow(QMainWindow):
                 self._tab_behind_viewport("animation")
             if "scenes" not in saved:
                 self._tab_beside_scene("scenes")
+            if "shaders" not in saved:
+                self._tab_behind_viewport("shaders")
             if "calendar" not in saved:
                 self._tab_behind_inspector("calendar")
             if "environment" not in saved:
@@ -617,8 +625,10 @@ class MainWindow(QMainWindow):
             self.set_project(None)
 
     def unsaved_scripts_handled(self, can_cancel: bool = True) -> bool:
-        """Asks about scripts with unsaved changes. False if the user cancelled."""
-        modified = [e for e in self.script_editor.editors() if e.document().isModified()]
+        """Asks about scripts (and shaders) with unsaved changes. False if the user
+        cancelled."""
+        modified = [e for e in self.script_editor.editors() + self.shader_editor.editors()
+                    if e.document().isModified()]
         if not modified:
             return True
         buttons = QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
@@ -631,6 +641,7 @@ class MainWindow(QMainWindow):
             return False
         if answer == QMessageBox.StandardButton.Save:
             self.script_editor.save_all()
+            self.shader_editor.save_all()
         return True
 
     def _update_git_action(self) -> None:
@@ -730,6 +741,18 @@ class MainWindow(QMainWindow):
         self.panels["animation"].setAsCurrentTab()
         self.animation_panel.show_entity(entity_id)
 
+    def edit_shader(self, shader: str) -> None:
+        """Shows a surface shader in the Shader editor (the Material editor's Edit button)."""
+        self.panels["shaders"].toggleView(True)
+        self.panels["shaders"].setAsCurrentTab()
+        if shader:
+            self.shader_editor.open_shader(shader)
+
+    def _shader_saved(self, shader: str) -> None:
+        """A shader saved: the Viewport and open Material editors draw it as it is now."""
+        self.viewport.shader_changed(shader)
+        MaterialDialog.refresh_all()
+
     def edit_script(self, module: str) -> None:
         """Shows a script in the Script editor (from the Inspector's Edit button)."""
         if not module:
@@ -792,6 +815,7 @@ class MainWindow(QMainWindow):
         self.scene_panel.set_project(project)
         self.viewport.set_project(project)
         self.script_editor.set_project(project)
+        self.shader_editor.set_project(project)
         self.assistant.set_project(project)
         self.project_page.set_project(project)
         self.objects_panel.set_project(project)

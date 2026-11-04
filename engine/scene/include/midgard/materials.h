@@ -43,6 +43,7 @@ private:
     std::unordered_map<std::string, render::TextureId> textures_;
     std::unordered_map<std::string, render::MaterialId> materials_;
     std::unordered_map<std::string, render::ShaderId> shaders_;
+    std::unordered_map<std::string, render::ShaderId> stale_shaders_;  // forgotten: replace
     std::unordered_set<std::string> failed_;
 };
 

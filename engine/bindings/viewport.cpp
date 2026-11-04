@@ -479,7 +479,9 @@ bool Viewport::render() {
     far_plane = std::max(far_plane, float(inside_view_distance(scene_.settings.body)));
     const float aspect = float(renderer_->width()) / float(std::max(renderer_->height(), 1u));
     camera.projection = render::perspective(glm::radians(fov_), aspect, 0.05f, far_plane);
-    renderer_->set_environment(scene_.environment(camera.origin));
+    render::Environment environment = scene_.environment(camera.origin);
+    if (clock_ >= 0.0) environment.water.time = float(clock_);  // (surface shaders' time too)
+    renderer_->set_environment(environment);
     renderer_->set_terrain_look(terrain_ ? terrain_->look() : render::TerrainLook{});
     return renderer_->render_frame(camera, scene_.light(camera.origin), draws,
                                    glm::vec4(scene_.settings.sky, 1.0f));

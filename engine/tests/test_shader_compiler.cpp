@@ -149,6 +149,8 @@ TEST_CASE("surface shaders: a mistake is reported on the line of the surface cod
     REQUIRE_FALSE(out.ok());
     CHECK(out.messages[0].line == 3);
     CHECK(out.messages[0].text.find("roughnes") != std::string::npos);
+    for (const sc::Message& m : out.messages)  // (glslang's follow-on line is left out)
+        CHECK(m.text.find("compilation terminated") == std::string::npos);
 }
 
 TEST_CASE("surface shaders: code without its surface function says what it needs") {

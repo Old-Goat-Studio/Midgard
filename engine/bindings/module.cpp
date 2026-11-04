@@ -898,6 +898,9 @@ PYBIND11_MODULE(_midgard, m) {
             py::arg("face") = py::none(),
             "Where a ray first meets the terrain: (face, u, v, (x, y, z), height), or None. On "
             "a sphere, `face` gives u and v in that face's terms, carried on past its edges.")
+        .def_property("clock", &Viewport::clock, &Viewport::set_clock,
+                      "The seconds surface shaders and water see as their time (negative: the "
+                      "scene's own).")
         .def_property("season", &Viewport::season, &Viewport::set_season,
                       "How far into summer (1) or winter (-1), for the environment's season "
                       "tints.")

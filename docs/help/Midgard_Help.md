@@ -377,7 +377,8 @@ still does the hard part, so the sun, shadows, lamps, fog, snow and rain all sti
 - Shaders live in your project's **shaders** folder, one file each, ending in **.glsl**.
 - In the **Material editor**, pick one under **Surface shader**, or click **Choose…** to bring
   in a .glsl file from elsewhere (it is copied into the shaders folder). Pick **None** to go
-  back to Midgard's own material.
+  back to Midgard's own material. **Edit…** opens the shader in the **Shader Editor** (with no
+  shader chosen yet, it makes a new one for this material first).
 - Under the choice, the editor tells you whether the shader works. If it has a mistake, it
   names the line, and anything using it is drawn **bright magenta** (pink-purple) until you
   fix it. A mistake never crashes the editor or the game.
@@ -397,15 +398,17 @@ void surface(SurfaceInput i, inout Surface s) {
 ```
 
 What it can **read** (`i.`): `uv` (the texture position), `position`, `view` (towards the
-camera), `geometry_normal`, `up`, and `time` (seconds, repeating every hour).
+camera), `geometry_normal`, `up`, `sun` (towards the sun), and `time` (seconds, repeating
+every hour).
 
 What it can **change** (`s.`): `color`, `alpha` with `cutout` (below the cutout a point isn't
 drawn, which makes holes), `metallic`, `roughness`, `normal` (bumps), `emission` (glow) and
 `occlusion`.
 
 Helpers it can use: `noise(p)` and `fbm(p, layers)` (smooth random patterns from 0 to 1),
-`hash(p)` (a random number), and `srgb(colour)` (a colour as you'd pick it in a colour
-picker). The material's textures are there too, as `base_color_map`, `normal_map` and so on.
+`hash(p)` (a random number), `srgb(colour)` (a colour as you'd pick it in a colour
+picker), and `bend_normal(normal, slope)` (bumps: the normal tilted by how steeply a pattern
+rises across the surface). The material's textures are there too, as `base_color_map`, `normal_map` and so on.
 
 #### Shader settings: one shader, many materials
 
@@ -442,6 +445,28 @@ So one "glow" shader can make a red warning light, a slow blue crystal and a fli
 screen, each just a material with different settings.
 
 If a setting is written wrongly, the editor names its line, just like any other mistake.
+
+#### The Shader Editor
+
+The **Shader Editor** panel (a tab behind the Viewport; **Window** menu if it's closed) is where
+you write shaders.
+
+- **New** starts a shader from a starter: **Blank**, **Water** (moving ripples), **Glow**
+  (a pulsing glow, brightest at the edges), **Dissolve** (holes eaten away, glowing at their
+  edges), **Cartoon** (flat steps of light and an outline; best on rounded shapes) or **Force
+  field** (a see-through glowing honeycomb). Each is a copy you can change freely, and each
+  has settings to try in the Material editor.
+- **Open** lists the project's shaders; each opens in its own tab. **Save** (Ctrl+S) saves
+  it. Tabs with unsaved changes show a `*`.
+- The code is coloured as you type. Start typing and press **Ctrl+Space**, or type `s.` or
+  `i.`, for a list of what fits there.
+- Mistakes are found as you type: each is **underlined in red** on its line (hover over it
+  to read it), and listed below the code. Click one to jump to its line.
+- On the right, a **live preview** shows the shader on a sphere, cube or plane, using the
+  shader's own settings. Drag to turn it; the wheel zooms. **Animate** lets the time run, for
+  shaders that move. While the code has a mistake, the preview keeps showing the last version
+  that worked.
+- When you save, the Viewport and any open Material editors show the shader as it is now.
 
 ---
 

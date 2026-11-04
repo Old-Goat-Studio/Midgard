@@ -41,6 +41,7 @@ struct SurfaceInput {
     vec3 view;             // from the point towards the camera (unit length)
     vec3 geometry_normal;  // the mesh's own normal there, facing the camera (unit length)
     vec3 up;               // "up" at the camera (from the world's shape)
+    vec3 sun;              // towards the sun (unit length)
     float time;            // seconds (it repeats every hour)
 };
 
@@ -65,6 +66,7 @@ SurfaceInput surface_input() {
     const vec3 n = normalize(v_normal);
     i.geometry_normal = gl_FrontFacing ? n : -n;
     i.up = frame.up.xyz;
+    i.sun = -normalize(frame.sun_direction.xyz);
     i.time = frame.clock.x;
     return i;
 }
@@ -254,6 +256,15 @@ float fbm(vec2 p, int octaves) {
         amplitude *= 0.5;
     }
     return total > 0.0 ? sum / total : 0.0;
+}
+
+// A normal tilted by a slope across the surface (bumps: a height pattern's differences along
+// two directions; which two depends on the normal, not on the uvs).
+vec3 bend_normal(vec3 n, vec2 slope) {
+    const vec3 side = abs(n.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    const vec3 t = normalize(cross(n, side));
+    const vec3 b = cross(n, t);
+    return normalize(n - t * slope.x - b * slope.y);
 }
 
 // A colour picked in sRGB (as the editor shows them) made linear, as surfaces use them.

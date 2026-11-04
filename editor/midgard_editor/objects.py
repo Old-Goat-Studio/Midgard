@@ -443,10 +443,11 @@ class ObjectRenderer:
 
     def render(self, object_id: str, parts: list[dict[str, Any]], bounds: list[float],
                width: int, height: int, yaw: float = 35.0, pitch: float = 22.0,
-               zoom: float = 1.0, key_light: bool = False):
+               zoom: float = 1.0, key_light: bool = False, clock: float = -1.0):
         """The object as an image (QImage), or None. Its meshes and textures must have been
         sent. key_light: the lights turn with the camera (so turning the view turns the object
-        under them) and a lamp above and beside the camera shows off shine and reflections."""
+        under them) and a lamp above and beside the camera shows off shine and reflections.
+        clock: the seconds surface shaders see (5.17; negative: none)."""
         from PySide6.QtGui import QImage
         if self.view is None:
             return None
@@ -455,6 +456,8 @@ class ObjectRenderer:
                 self.view.attach_offscreen(width, height)
                 self._size = (width, height)
             self.view.clear()
+            if hasattr(self.view, "clock"):
+                self.view.clock = clock
             self.view.set_settings(json.dumps(self.SETTINGS))
             self.view.set_object(object_id, json.dumps(parts))
             centre = [(bounds[i] + bounds[i + 3]) / 2 for i in range(3)]
