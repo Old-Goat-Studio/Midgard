@@ -39,6 +39,7 @@ add_library(midgard_core STATIC
     core/src/weather.cpp
     core/src/weather_sim.cpp
     core/src/survival.cpp
+    core/src/texture_gen.cpp
 )
 target_include_directories(midgard_core PUBLIC
     core/include
@@ -464,6 +465,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_audio.cpp
         tests/test_weather.cpp
         tests/test_weather_sim.cpp
+        tests/test_texture_gen.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_audio

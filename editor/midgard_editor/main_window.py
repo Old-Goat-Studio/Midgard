@@ -474,6 +474,9 @@ class MainWindow(QMainWindow):
                                              self.add_from_master)
         self.samples_action = add_action(assets, "Add &Sample Assets",
                                          self.add_sample_assets)
+        assets.addSeparator()
+        self.texture_generator_action = add_action(assets, "&Texture Generator…",
+                                                   self.show_texture_generator)
 
         view = bar.addMenu("&View")
         # The viewport toolbar's switch, in the menu too.
@@ -718,6 +721,19 @@ class MainWindow(QMainWindow):
         window.raise_()
         window.activateWindow()
 
+    def show_texture_generator(self) -> None:
+        """The Texture Generator (5.17), one window per project."""
+        from .docks.texture_generator import TextureGenerator
+        if self.project is None:
+            return
+        window = getattr(self, "_texture_generator", None)
+        if window is None or window.project is not self.project:
+            window = TextureGenerator(self.project, self.settings, self)
+            self._texture_generator = window
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
     def add_sample_assets(self) -> tuple[list, list]:
         """Midgard's CC0 samples (the Superhero, its animations, the Avocado) into the
         project's library."""
@@ -841,7 +857,7 @@ class MainWindow(QMainWindow):
         for action in (self.close_action, self.cook_action, self.export_action,
                        self.world_shape_action, self.physics_layers_action,
                        self.library_action, self.import_asset_action, self.samples_action,
-                       self.from_master_action):
+                       self.from_master_action, self.texture_generator_action):
             action.setEnabled(project is not None)
         if self.asset_window is not None:
             self.asset_window.set_project(project)

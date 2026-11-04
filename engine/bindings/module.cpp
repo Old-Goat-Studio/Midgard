@@ -44,6 +44,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/shader_compiler.h"
 #include "midgard/terrain.h"
+#include "midgard/texture_gen.h"
 #include "midgard/validate.h"
 #include "midgard/version.h"
 #include "midgard/world_map.h"
@@ -579,6 +580,28 @@ PYBIND11_MODULE(_midgard, m) {
             return result;
         },
         py::arg("code"), "The whole fragment shader a surface shader becomes.");
+    m.def(
+        "generate_texture",
+        [](const std::string& recipe_json) {
+            std::vector<std::string> problems;
+            const midgard::TextureRecipe recipe =
+                midgard::texture_recipe_from_json(recipe_json, &problems);
+            std::vector<uint8_t> pixels;
+            {
+                py::gil_scoped_release release;
+                pixels = midgard::generate_texture(recipe);
+            }
+            py::dict out;
+            out["size"] = recipe.size;
+            out["pixels"] = py::bytes(reinterpret_cast<const char*>(pixels.data()), pixels.size());
+            out["problems"] = problems;
+            out["recipe"] = midgard::texture_recipe_to_json(recipe);
+            return out;
+        },
+        py::arg("recipe_json"),
+        "The texture generator (5.17, midgard/texture_gen.h): {'size', 'pixels' (RGBA rows, "
+        "top first), 'problems', 'recipe' (as used, JSON)}.");
+    m.def("texture_patterns", &midgard::texture_patterns, "The texture generator's patterns.");
     m.def("terrain_fingerprint", &midgard::terrain_fingerprint,
           "The terrain's fingerprint (equal to schema/tests/terrain_chunks.json everywhere).");
 

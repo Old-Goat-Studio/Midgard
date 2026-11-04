@@ -362,6 +362,37 @@ The first time a model with big textures is used, Midgard converts its textures 
 (this can take a minute for a 4K character). Meanwhile it's shown plain, and its textures
 appear when they're ready. The converted copy is kept, so next time it's instant.
 
+### Making your own textures: the Texture Generator
+
+**Assets ▸ Texture Generator…** makes textures from patterns, with no painting needed.
+
+- **Start from** one of the ready-made looks: Clouds, Marble, Wood, Rock, Flagstones, Bricks,
+  Tiles, Warning stripes, Sand ripples or Hammered metal. Then change anything you like.
+- **Pattern**: Noise, Ridged noise, Cells, Gradient, Radial, Rings, Checker, Stripes, Bricks or
+  Waves. Only the settings the pattern uses are shown:
+  - **Scale**: how many features across the picture. A whole number (4, not 4.5) makes the
+    texture **repeat seamlessly**. Tick **Show it tiled** to see four copies side by side.
+  - **Detail** and **Roughness** (noise): how many finer layers, and how strong they are.
+  - **Warp** bends the pattern; it turns waves into marble or wood grain.
+  - **Angle**, **Width**, **Softness**, **Irregular** and **Variation** shape stripes,
+    bricks and cells.
+  - **Seed** picks a different random version of the same pattern (**New** for another).
+- **Colours**: the pattern runs from its lowest parts (0) to its highest (1); each colour
+  says what colour it is at that point, blending between them. **Add a colour** for more
+  (up to six); **Invert** swaps high and low.
+- **Makes**: **Colours**, or **Bumps** (a normal map, the blue-purple kind that gives a
+  surface its bumps). With colours, **Its bumps too** also saves a matching bump map.
+
+**Saving**:
+- **Save to Project** saves it in your project's **textures/generated** folder (with its
+  recipe, so **Open** brings it back to change later). It is then a picture like any other:
+  choose it in the Material editor.
+- **Add to Library** also puts it in the project's Asset Library (with its bumps, as one
+  texture set), as your own work or as CC0. Type your name in the box beside the licence; it's
+  remembered.
+- **Send to Master** puts it in the project's library and your **Master Asset Library**, for
+  all your projects.
+
 ### About repeating (tiling)
 
 The **1:1, 1:2, 1:4** choice in the library's texture preview is for looking only. In the game,
