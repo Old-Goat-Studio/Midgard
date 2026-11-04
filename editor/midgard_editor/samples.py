@@ -80,9 +80,9 @@ def _arrival(project: Project, scene: str, parent: str, name: str, at: list, yaw
         "transform": {"position": at, "rotation": [0.0, yaw, 0.0]}, "arrival": {"name": name}})
 
 
-def make_scene_tour(parent_dir: Path) -> Project:
+def make_scene_tour(parent_dir: Path, name: str = TOUR) -> Project:
     """The Scene Tour sample project in parent_dir (see the module's docstring)."""
-    project = Project.create(Path(parent_dir), TOUR, "system_map", "Scene Tour")
+    project = Project.create(Path(parent_dir), name, "system_map", "Scene Tour")
     for name in ("Cave", "Island"):
         project.undo_stack.push(scenes.AddSceneCommand(project, name))
     project.undo_stack.clear()  # (a new project: nothing to undo)
@@ -113,6 +113,21 @@ def make_scene_tour(parent_dir: Path) -> Project:
         "transform": {"position": [0.0, 3.0, 0.0]},
         "light": {"type": "point", "color": [1.0, 0.7, 0.4], "intensity": 4.0, "range": 15.0}})
     return project
+
+
+# The samples File ▸ New Sample Project offers: (label, folder name, maker).
+def samples() -> list[tuple[str, str, object]]:
+    from . import world_tour
+    return [("World Tour", world_tour.TOUR, world_tour.make_world_tour),
+            ("Scene Tour", TOUR, make_scene_tour)]
+
+
+def free_name(parent_dir: Path, name: str) -> str:
+    """name, or name2, name3, ... : the first that isn't a folder in parent_dir already."""
+    found, n = name, 2
+    while (Path(parent_dir) / found).exists():
+        found, n = f"{name}{n}", n + 1
+    return found
 
 
 if __name__ == "__main__":  # pragma: no cover

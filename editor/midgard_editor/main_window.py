@@ -427,6 +427,10 @@ class MainWindow(QMainWindow):
         bar = self.menuBar()
         file = bar.addMenu("&File")
         add_action(file, "&New Project…", self.new_project, QKeySequence.StandardKey.New)
+        sample_menu = file.addMenu("New &Sample Project")
+        from . import samples as sample_projects
+        for label, folder, _make in sample_projects.samples():
+            add_action(sample_menu, label, lambda f=folder: self.new_sample(f))
         add_action(file, "&Open Project…", self.open_project_dialog, QKeySequence.StandardKey.Open)
         self.recent_menu = file.addMenu("Open &Recent")
         self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
@@ -597,6 +601,26 @@ class MainWindow(QMainWindow):
         AboutDialog(self, engine_info()).exec()
 
     # ---- projects ----------------------------------------------------------------------
+    def new_sample(self, folder: str) -> Project | None:
+        """A sample project (the World Tour, the Scene Tour) made in the projects folder, under
+        a name not taken there, and opened."""
+        from . import samples as sample_projects
+        if not self.unsaved_scripts_handled():
+            return None
+        label, _folder, make = next(s for s in sample_projects.samples() if s[1] == folder)
+        parent = projects_dir(self.settings)
+        parent.mkdir(parents=True, exist_ok=True)
+        try:
+            project = make(parent, sample_projects.free_name(parent, folder))
+        except (ProjectError, RuntimeError, OSError) as e:
+            QMessageBox.warning(self, "New Sample Project", f"The {label} couldn't be made: {e}")
+            return None
+        project_root = project.config_path
+        project.deleteLater()
+        if self.open_project(project_root):
+            log.info("Made the %s sample in %s", label, project_root.parent)
+        return self.project
+
     def new_project(self) -> None:
         dialog = NewProjectDialog(self.settings, self)
         if dialog.exec() and dialog.project:

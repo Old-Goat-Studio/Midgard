@@ -118,6 +118,26 @@ arrangements ("Two Monitors" is built in).
 That's the whole loop: change something, press Play, look, repeat. Everything you do in the
 editor can be undone with **Ctrl+Z**.
 
+### Sample projects to explore
+
+**File ▸ New Sample Project** makes a ready-made project in your projects folder and opens it
+(a second copy gets a number on its name, so yours is never replaced):
+
+- **World Tour**: a paved hub with four doorways, each into a world of a different shape:
+  - **Archipelago**: islands in a sea, 3 km across, with an edge.
+  - **Habitat**: inside a spinning cylinder 1 km in radius and 5 km long. The land curves
+    up on both sides and meets overhead. A **Dock** pad takes you outside into space.
+  - **Planet**: a small planet 2 km in radius, cold at the poles and warmer towards its
+    middle. The orange **Launch Pad** is a jetpack: fly up through the atmosphere (200 m) into
+    space and back down.
+  - **Hollow World**: inside a sphere 2.5 km in radius, with the far side overhead through
+    the haze. An **Exit Site** pad takes you outside.
+
+  Each world has its own day and night, seasons and weather. Walk all the way round any of
+  them and you come back where you started. The glowing pad behind where you arrive takes
+  you back to the hub (stand on it and press **E**).
+- **Scene Tour**: three small scenes joined by a door and a teleport pad.
+
 ---
 
 ## 4. Getting around the 3D view
