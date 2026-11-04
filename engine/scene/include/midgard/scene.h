@@ -96,6 +96,9 @@ struct Material {
     // in vec4 slots (at most 16) and textures (at most 4, by content id; empty: white).
     std::vector<glm::vec4> shader_values;
     std::array<std::string, 4> shader_textures;
+    // False: lit and shadowed, but it leaves no shadow of its own (see-through things: force
+    // fields, water, ghosts; a shadow doesn't follow a surface shader's cutouts).
+    bool casts_shadow = true;
     // Whether it needs a renderer material of its own (it has textures of either kind).
     bool textured() const {
         for (const std::string& t : textures)

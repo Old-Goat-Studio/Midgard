@@ -113,6 +113,7 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
             for (int i = 0; i < 5; ++i) m.textures[size_t(i)] = t->value(slots[i], "");
         }
         m.shader = c.value("shader", std::string());
+        m.casts_shadow = c.value("casts_shadow", true);
         if (const auto v = c.find("shader_values"); v != c.end() && v->is_array())
             for (const auto& slot : *v) {
                 if (m.shader_values.size() >= 16) break;

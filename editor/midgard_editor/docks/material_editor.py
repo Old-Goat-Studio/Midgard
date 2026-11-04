@@ -16,6 +16,7 @@ from typing import Any
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPixmap, QUndoCommand
 from PySide6.QtWidgets import (
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QDialog,
@@ -261,6 +262,11 @@ class MaterialEditor(QWidget):
         form.addRow("Emission strength", self.emissive_strength)
         form.addRow("Normal strength", self.normal_scale)
         form.addRow("Occlusion strength", self.occlusion_strength)
+        self.casts_shadow = QCheckBox("Casts a shadow")
+        self.casts_shadow.setToolTip("Off for see-through things (force fields, water, "
+                                     "ghosts): a shadow doesn't follow a shader's holes")
+        self.casts_shadow.toggled.connect(self.set_casts_shadow)
+        form.addRow("", self.casts_shadow)
 
         self.slot_labels: dict[str, QLabel] = {}
         for slot, label in textures.SLOTS.items():
@@ -347,6 +353,9 @@ class MaterialEditor(QWidget):
         for key in ("metallic", "roughness", "emissive_strength", "normal_scale",
                     "occlusion_strength"):
             getattr(self, key).set_value(float(value[key]))
+        self.casts_shadow.blockSignals(True)
+        self.casts_shadow.setChecked(m.get("casts_shadow", True) is not False)
+        self.casts_shadow.blockSignals(False)
         self._refresh_shader(m.get("shader", ""), m.get("shader_settings", {}))
         slots = m.get("textures", {})
         for slot, label in self.slot_labels.items():
@@ -430,6 +439,13 @@ class MaterialEditor(QWidget):
             rgb = list(rgb[:3]) + alpha
         self._push({**m, key: [round(c, 4) for c in rgb]}, key,
                    "colour" if key == "color" else "emission colour")
+
+    def set_casts_shadow(self, on: bool) -> None:
+        m = self.material()
+        new = {k: v for k, v in m.items() if k != "casts_shadow"}
+        if not on:
+            new["casts_shadow"] = False
+        self._push(new, "casts_shadow", "shadow")
 
     def set_alpha(self, alpha: float) -> None:
         m = self.material()

@@ -73,6 +73,7 @@ std::vector<std::string> MaterialCache::upload(const Scene& scene, render::Rende
 }
 
 void MaterialCache::apply(const Material& material, render::DrawItem& draw) const {
+    draw.casts_shadow = draw.casts_shadow && material.casts_shadow;
     if (!material.shader.empty()) {
         const auto it = shaders_.find(material.shader);
         draw.shader = it != shaders_.end() ? it->second : render::kErrorShader;

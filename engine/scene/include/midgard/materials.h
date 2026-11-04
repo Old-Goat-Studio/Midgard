@@ -29,7 +29,8 @@ public:
     // forgotten); the returned messages say why.
     std::vector<std::string> upload(const Scene& scene, render::Renderer& renderer,
                                     const Read& read);
-    // The draw uses the material's textures, if they have been uploaded.
+    // The draw uses the material's textures, if they have been uploaded (its surface shader
+    // and settings, and whether it casts a shadow, too).
     void apply(const Material& material, render::DrawItem& draw) const;
     // A texture changed: it and the materials using it are made again on the next upload (a
     // surface shader too: by its content id).

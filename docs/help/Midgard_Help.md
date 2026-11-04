@@ -342,6 +342,8 @@ It shows a live preview (drag to turn it, wheel to zoom). You can set:
 - **Metal** (0 for plastic, wood or stone; 1 for bare metal) and **Roughness** (0 is a mirror
   polish, 1 is completely matte).
 - **Emission**: a glow colour and strength (lamps, screens, lava).
+- **Casts a shadow**: on unless you turn it off. Turn it off for see-through things (a force
+  field, water, a ghost): a shadow is always solid, even where a surface shader cuts holes.
 - **Textures**: each slot has **Choose…** (a picture file) and **Library…** (from your Asset
   Library). Picking a whole texture set from the library fills every slot at once.
 

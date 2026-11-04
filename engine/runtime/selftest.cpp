@@ -2,10 +2,12 @@
 #include "selftest.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <numeric>
 #include <string>
@@ -28,8 +30,11 @@
 #include "midgard/render/renderer.h"
 #include "midgard/shape.h"
 #include "midgard/terrain.h"
+#include "midgard/texture_gen.h"
 #include "midgard/version.h"
 #include "midgard/world_type.h"
+#include "surface_dissolve_frag.h"
+#include "surface_stripes_frag.h"
 #include "test_scenes.h"
 #ifdef MIDGARD_HAS_SCRIPTING
 #include "midgard/script.h"
@@ -185,6 +190,79 @@ Check render_check(bool vulkan_required) {
                     render::gpu_format_name(renderer.texture_format())};
     } catch (const std::exception& e) {
         return no_vulkan("Rendering", e, vulkan_required);
+    }
+}
+
+// Surface shaders (milestone 5.17) on this device: one made from SPIR-V (as games carry them)
+// draws with its own settings (blue stripes, from the draw's settings), a shader that isn't
+// there draws bright magenta, a shader is replaced in place while in use, and the texture
+// generator makes the picture it should (a checker: integer maths, the same everywhere).
+Check shaders_check(bool vulkan_required) {
+    try {
+        // The generator first: an 8 x 8 checker of black and white on 64 x 64 pixels.
+        std::vector<std::string> problems;
+        const TextureRecipe recipe = texture_recipe_from_json(
+            R"({"pattern": "checker", "size": 64, "scale": 8, "softness": 0})", &problems);
+        const std::vector<uint8_t> picture = generate_texture(recipe);
+        for (int y = 0; y < 64; ++y)
+            for (int x = 0; x < 64; ++x) {
+                const bool odd = ((x / 8) + (y / 8)) % 2 != 0;
+                if (picture[size_t(y * 64 + x) * 4] != (odd ? 255 : 0))
+                    return {"Shaders", Status::Fail,
+                            format("the texture generator's checker is wrong at %d, %d", x, y)};
+            }
+
+        render::RendererDesc desc;
+        desc.offscreen = true;
+        desc.width = 64;
+        desc.height = 64;
+        render::Renderer renderer(desc);
+        const render::MeshId cube = renderer.upload_mesh(render::make_cube());
+        const render::ShaderId stripes = renderer.create_surface_shader(surface_stripes_frag);
+        if (stripes == render::kErrorShader)
+            return {"Shaders", Status::Fail, "the GPU refused a surface shader"};
+        render::Camera camera;
+        camera.view = glm::lookAt(glm::vec3(0, 0, 2.2f), glm::vec3(0), glm::vec3(0, 1, 0));
+        camera.projection = render::perspective(glm::radians(50.0f), 1.0f, 0.1f, 10.0f);
+        const std::array<glm::vec4, 2> settings{glm::vec4(0.0f, 0.2f, 1.0f, 0.0f),
+                                                glm::vec4(3.0f, 0.0f, 0.0f, 0.0f)};
+        render::DrawItem item{cube, glm::mat4(1.0f), glm::vec4(0.8f, 0.8f, 0.8f, 1)};
+        item.shader = stripes;
+        item.settings = settings;
+        const auto draw = [&](const render::DrawItem& d) {
+            renderer.render_frame(camera, render::Light{}, {&d, 1}, glm::vec4(0, 0, 0, 1));
+            return renderer.read_pixels();
+        };
+        // Stripes: some of the face blue (from its settings), some its own grey.
+        std::vector<uint8_t> pixels = draw(item);
+        int blue = 0, grey = 0;
+        for (int y = 16; y < 48; ++y)
+            for (int x = 16; x < 48; ++x) {
+                const uint8_t* p = &pixels[size_t(y * 64 + x) * 4];
+                blue += p[2] > p[0] + 60 ? 1 : 0;
+                grey += std::abs(int(p[0]) - int(p[2])) < 25 && p[0] > 60 ? 1 : 0;
+            }
+        if (blue < 100 || grey < 100)
+            return {"Shaders", Status::Fail,
+                    format("the stripes aren't right: %d blue, %d grey pixels", blue, grey)};
+        // A shader that isn't there: magenta.
+        render::DrawItem missing = item;
+        missing.shader = 999;
+        pixels = draw(missing);
+        const uint8_t* centre = &pixels[size_t(32 * 64 + 32) * 4];
+        if (centre[0] < 120 || centre[2] < 120 || centre[1] > 60)
+            return {"Shaders", Status::Fail,
+                    format("a missing shader isn't magenta: %d,%d,%d", centre[0], centre[1],
+                           centre[2])};
+        // Replaced in place (as the editor's live changes do), then drawn.
+        if (!renderer.replace_surface_shader(stripes, surface_dissolve_frag))
+            return {"Shaders", Status::Fail, "a surface shader couldn't be replaced"};
+        draw(item);
+        return {"Shaders", Status::Pass,
+                "made from SPIR-V; stripes from their settings, magenta and a replacement "
+                "drawn"};
+    } catch (const std::exception& e) {
+        return no_vulkan("Shaders", e, vulkan_required);
     }
 }
 
@@ -543,6 +621,7 @@ std::vector<Check> run(const Options& options) {
     checks.push_back(terrain_check());
     checks.push_back(physics_check());
     checks.push_back(render_check(options.vulkan_required));
+    checks.push_back(shaders_check(options.vulkan_required));
     checks.push_back(frame_check(options));
     checks.push_back(frame_check(options, "Weather", "sky_rain"));
     checks.push_back(frame_check(options, "Space", "space"));
