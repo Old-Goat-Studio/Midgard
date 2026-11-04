@@ -110,3 +110,52 @@ TEST_CASE("shader compiler: an empty or wrong-stage shader says why") {
     CHECK_FALSE(wrong.ok());
     CHECK_FALSE(wrong.messages.empty());
 }
+
+// ---- surface shaders (5.17 step 2) --------------------------------------------------------------
+
+TEST_CASE("surface shaders: someone's surface code becomes a whole fragment shader") {
+    const char* stripes = R"(void surface(SurfaceInput i, inout Surface s) {
+    float band = step(0.5, fract(i.uv.x * 8.0));
+    s.color = mix(srgb(vec3(0.9, 0.2, 0.1)), s.color, band);
+    s.roughness = 0.3;
+}
+)";
+    const sc::Compiled out = sc::compile_surface(stripes, "stripes");
+    REQUIRE(out.ok());
+    CHECK(out.spirv[0] == kSpirvMagic);
+    const sc::SurfaceSource source = sc::surface_shader_source(stripes);
+    CHECK(source.lines == 5);
+    CHECK(source.first_line > 100);  // (after Midgard's own surface code)
+    CHECK(source.source.find("void main()") > source.source.find("void surface("));
+}
+
+TEST_CASE("surface shaders: the time, noise and cutouts are there to use") {
+    const char* dissolve = R"(void surface(SurfaceInput i, inout Surface s) {
+    float edge = fbm(i.uv * 6.0, 4) - fract(i.time * 0.1);
+    s.alpha = edge;
+    s.cutout = 0.0;
+    s.emission = vec3(1.0, 0.4, 0.1) * smoothstep(0.08, 0.0, abs(edge)) * 4.0;
+})";  // (no last newline: still whole)
+    CHECK(sc::compile_surface(dissolve).ok());
+}
+
+TEST_CASE("surface shaders: a mistake is reported on the line of the surface code") {
+    const char* broken = R"(void surface(SurfaceInput i, inout Surface s) {
+    s.color = vec3(1.0);
+    s.roughnes = 0.4;
+}
+)";
+    const sc::Compiled out = sc::compile_surface(broken, "broken");
+    REQUIRE_FALSE(out.ok());
+    CHECK(out.messages[0].line == 3);
+    CHECK(out.messages[0].text.find("roughnes") != std::string::npos);
+}
+
+TEST_CASE("surface shaders: code without its surface function says what it needs") {
+    const sc::Compiled out = sc::compile_surface("float helper() { return 1.0; }\n");
+    REQUIRE_FALSE(out.ok());
+    REQUIRE_FALSE(out.messages.empty());
+    CHECK(out.messages[0].line == 0);
+    CHECK(out.messages[0].text.find("void surface(SurfaceInput i, inout Surface s)") !=
+          std::string::npos);
+}

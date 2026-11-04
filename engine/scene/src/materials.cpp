@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/materials.h"
 
+#include <cstring>
+#include <stdexcept>
+
 namespace midgard {
 
 std::string MaterialCache::key(const Material& material) {
@@ -14,6 +17,23 @@ std::vector<std::string> MaterialCache::upload(const Scene& scene, render::Rende
     std::vector<std::string> errors;
     for (entt::entity e : scene.registry.view<const Material>()) {
         const Material& m = scene.registry.get<Material>(e);
+        if (!m.shader.empty() && !shaders_.contains(m.shader)) {
+            render::ShaderId id = render::kErrorShader;
+            try {
+                const std::vector<uint8_t> bytes = read(m.shader);
+                if (bytes.size() % 4 != 0) throw std::runtime_error("it isn't SPIR-V");
+                std::vector<uint32_t> words(bytes.size() / 4);
+                std::memcpy(words.data(), bytes.data(), bytes.size());
+                id = renderer.create_surface_shader(words);
+                if (id == render::kErrorShader)
+                    errors.push_back("surface shader '" + m.shader +
+                                     "': the GPU can't use it (drawn magenta)");
+            } catch (const std::exception& ex) {
+                errors.push_back("surface shader '" + m.shader + "': " + ex.what() +
+                                 " (drawn magenta)");
+            }
+            shaders_.emplace(m.shader, id);
+        }
         if (!m.textured() || materials_.contains(key(m))) continue;
         render::MaterialTextures set;
         render::TextureId* slots[5] = {&set.base_color, &set.metallic_roughness, &set.normal,
@@ -39,6 +59,10 @@ std::vector<std::string> MaterialCache::upload(const Scene& scene, render::Rende
 }
 
 void MaterialCache::apply(const Material& material, render::DrawItem& draw) const {
+    if (!material.shader.empty()) {
+        const auto it = shaders_.find(material.shader);
+        draw.shader = it != shaders_.end() ? it->second : render::kErrorShader;
+    }
     if (!material.textured()) return;
     if (const auto it = materials_.find(key(material)); it != materials_.end())
         draw.material = it->second;
@@ -47,6 +71,7 @@ void MaterialCache::apply(const Material& material, render::DrawItem& draw) cons
 void MaterialCache::forget(const std::string& texture) {
     // (The old texture stays on the GPU until the renderer goes; edits are rare.)
     textures_.erase(texture);
+    shaders_.erase(texture);  // (a surface shader: made again; the old one stays till then)
     failed_.erase(texture);
     const std::string line = texture + '\n';
     for (auto it = materials_.begin(); it != materials_.end();) {
@@ -61,6 +86,7 @@ void MaterialCache::forget(const std::string& texture) {
 void MaterialCache::clear() {
     textures_.clear();
     materials_.clear();
+    shaders_.clear();
     failed_.clear();
 }
 

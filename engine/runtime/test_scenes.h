@@ -6,6 +6,8 @@
 //   textures   one object per material texture: base colour, normal, metal/roughness,
 //              occlusion, emissive
 //   compressed the same, with every texture through KTX2 (Basis UASTC) and the GPU's format
+//   surfaces   surface shaders (5.17): stripes, a glowing dissolve, ripples, and the magenta
+//              error shader, beside the plain material
 //   lights     a dim scene lit by a red point light and a blue spot light
 //   shadows    sun shadows on flat ground, from 2 to 45 metres away (every cascade)
 //   shadows_curved  sun shadows on a small planet, where "up" leans 50 degrees from y

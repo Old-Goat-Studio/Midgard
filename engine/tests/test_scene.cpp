@@ -1096,6 +1096,21 @@ TEST_CASE("objects: validation warns about unknown objects and missing textures"
     CHECK(all.find("tex_missing") != std::string::npos);
 }
 
+TEST_CASE("surface shaders: a material names one; a missing one is warned of (drawn magenta)") {
+    TestPackage pkg({
+        {"e1_box", R"(NULL, '{"mesh": {"asset": "mesh_cube"},
+                          "material": {"shader": "shd:missing"}}')"},
+    });
+    midgard::Game game(pkg.dir);
+    midgard::Scene& scene = game.scene();
+    CHECK(scene.registry.get<midgard::Material>(scene.find("e1_box")).shader == "shd:missing");
+    const midgard::ValidationReport report = midgard::validate_package(pkg.dir);
+    std::string all;
+    for (const std::string& w : report.warnings) all += w + "\n";
+    CHECK(all.find("surface shader 'shd:missing'") != std::string::npos);
+    CHECK(all.find("magenta") != std::string::npos);
+}
+
 TEST_CASE("save_glb writes what load_glb reads back exactly") {
     const midgard::render::MeshData cube = midgard::render::make_cube();
     const midgard::render::MeshData back = midgard::load_glb(midgard::save_glb(cube));

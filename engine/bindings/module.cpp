@@ -523,6 +523,40 @@ PYBIND11_MODULE(_midgard, m) {
         py::arg("first_line") = 1,
         "GLSL compiled to SPIR-V for Vulkan 1.1 (midgard/shader_compiler.h): {'ok', 'spirv' "
         "(bytes), 'messages': [{'line', 'error', 'message'}]}, lines counted from first_line.");
+    m.def(
+        "compile_surface_shader",
+        [](const std::string& code, const std::string& name) {
+            const auto out = midgard::shader::compile_surface(code, name);
+            py::list messages;
+            for (const auto& msg : out.messages) {
+                py::dict d;
+                d["line"] = msg.line;
+                d["error"] = msg.error;
+                d["message"] = msg.text;
+                messages.append(d);
+            }
+            py::dict result;
+            result["ok"] = out.ok();
+            result["spirv"] = py::bytes(reinterpret_cast<const char*>(out.spirv.data()),
+                                        out.spirv.size() * sizeof(uint32_t));
+            result["messages"] = messages;
+            return result;
+        },
+        py::arg("code"), py::arg("name") = "surface",
+        "A surface shader (5.17: 'void surface(SurfaceInput i, inout Surface s)') wrapped in "
+        "Midgard's surface code and compiled, as compile_shader returns it; lines are the code's "
+        "own (0: Midgard's part).");
+    m.def(
+        "surface_shader_source",
+        [](const std::string& code) {
+            const auto out = midgard::shader::surface_shader_source(code);
+            py::dict result;
+            result["source"] = out.source;
+            result["first_line"] = out.first_line;
+            result["lines"] = out.lines;
+            return result;
+        },
+        py::arg("code"), "The whole fragment shader a surface shader becomes.");
     m.def("terrain_fingerprint", &midgard::terrain_fingerprint,
           "The terrain's fingerprint (equal to schema/tests/terrain_chunks.json everywhere).");
 

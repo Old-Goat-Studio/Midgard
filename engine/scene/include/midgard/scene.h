@@ -88,6 +88,10 @@ struct Material {
     float normal_scale = 1.0f;
     float occlusion_strength = 1.0f;
     std::array<std::string, 5> textures;  // empty: none
+    // A surface shader (milestone 5.17): its content id ("shd:<name>", compiled SPIR-V in the
+    // package), drawn with the material's own colour, maps and settings as its starting point.
+    // Empty: Midgard's own material.
+    std::string shader;
     bool textured() const {
         for (const std::string& t : textures)
             if (!t.empty()) return true;

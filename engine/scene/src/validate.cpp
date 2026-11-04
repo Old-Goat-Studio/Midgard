@@ -185,12 +185,18 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
                 report.errors.push_back(who + " is a scene exit to arrival '" + x.arrival +
                                         "', which is not an arrival in scene '" + x.scene + "'");
         }
-        for (entt::entity e : scene.registry.view<const Material>())
-            for (const std::string& texture : scene.registry.get<Material>(e).textures)
+        for (entt::entity e : scene.registry.view<const Material>()) {
+            const Material& material = scene.registry.get<Material>(e);
+            for (const std::string& texture : material.textures)
                 if (!texture.empty() && !content_ids.contains(texture))
                     report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
                                               "' uses texture '" + texture +
                                               "', which is not in the package; drawn without it");
+            if (!material.shader.empty() && !content_ids.contains(material.shader))
+                report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
+                                          "' uses surface shader '" + material.shader +
+                                          "', which is not in the package; drawn magenta");
+        }
         (void)scene.light();
         (void)scene.camera(16.0f / 9.0f);
         // Every collider builds (a missing mesh, a malformed shape or a dynamic mesh is an
@@ -263,6 +269,12 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                                                       '0',  0xBB, '\r', '\n', 0x1A, '\n'};
                     if (bytes.size() < 12 || std::memcmp(bytes.data(), magic, 12) != 0)
                         throw AssetError("not a KTX2 texture");
+                } else if (c.path.size() > 4 && c.path.ends_with(".spv")) {
+                    // A surface shader (milestone 5.17), compiled by the editor.
+                    static const uint8_t magic[4] = {0x03, 0x02, 0x23, 0x07};
+                    if (bytes.size() < 20 || bytes.size() % 4 != 0 ||
+                        std::memcmp(bytes.data(), magic, 4) != 0)
+                        throw AssetError("not a compiled shader (SPIR-V)");
                 } else if (c.path.starts_with("audio/")) {
                     // A sound (milestone 5.14): read through by the game's own decoders.
                     try {

@@ -112,6 +112,7 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
                                     "emissive"};
             for (int i = 0; i < 5; ++i) m.textures[size_t(i)] = t->value(slots[i], "");
         }
+        m.shader = c.value("shader", std::string());
         reg.emplace_or_replace<Material>(e, m);
     } else if (name == "camera") {
         CameraLens lens{c.value("fov", 55.0f), c.value("near", 0.05f), c.value("far", 500.0f)};

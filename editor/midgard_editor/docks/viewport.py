@@ -30,7 +30,15 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QStackedLayout, QToolBar, QVBoxLayout, QWidget
 
-from .. import engine, environments, model_materials, terrain_stamps, textures, world_types
+from .. import (
+    engine,
+    environments,
+    model_materials,
+    surface_shaders,
+    terrain_stamps,
+    textures,
+    world_types,
+)
 from ..cook import BUILTIN_PREFIX, character_assets_used, mesh_asset_data
 from ..objects import ObjectError, object_content
 from ..project import Project
@@ -503,6 +511,9 @@ class ViewportPanel(QWidget):
                 log.warning("Viewport: object %s: %s", obj.name, e)
             else:
                 parts = content.parts
+                for part in parts:  # (surface shaders the parts' materials use)
+                    self._send_shader(surface_shaders.components_shader(
+                        part.get("components", {})))
                 for content_id, (_path, data) in content.files.items():
                     if self._sent_content.get(content_id) == hash(data):
                         continue
@@ -559,6 +570,7 @@ class ViewportPanel(QWidget):
                 except RuntimeError as e:
                     log.warning("Viewport: texture %s: %s", texture, e)
                 self._sent_content[texture] = hash(data)
+        self._send_shader(surface_shaders.components_shader(entity.components))
         assets = [entity.components.get("mesh", {}).get("asset"),
                   *character_assets_used(entity.components)]  # (a character's files too)
         for asset in assets:
@@ -590,6 +602,18 @@ class ViewportPanel(QWidget):
                     log.warning("Viewport: texture %s: %s", texture, e)
                 self._sent_content[texture] = hash(data)
         self._put_entity(entity, components)
+
+    def _send_shader(self, shader: str) -> None:
+        """A surface shader (5.17), compiled here; one that doesn't compile is drawn magenta."""
+        if not shader:
+            return
+        data = surface_shaders.compile_shader(self.project.root, shader).spirv or b""
+        if self._sent_content.get(shader) != hash(data):
+            try:
+                self.view.set_texture(shader, data)
+            except RuntimeError as e:
+                log.warning("Viewport: surface shader %s: %s", shader, e)
+            self._sent_content[shader] = hash(data)
 
     def _put_entity(self, entity, components: dict) -> None:
         try:

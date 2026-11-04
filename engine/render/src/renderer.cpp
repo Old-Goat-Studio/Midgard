@@ -36,6 +36,7 @@
 #include "shadow_vert.h"
 #include "sky_frag.h"
 #include "sky_vert.h"
+#include "surface_error_frag.h"
 #include "terrain_frag.h"
 #include "tonemap_frag.h"
 #include "water_frag.h"
@@ -94,6 +95,7 @@ struct FrameData {
     glm::vec4 fall_velocity;  // xyz: m/s; w: size (metres)
     glm::vec4 ground;         // x: wetness, y: snow (render::GroundCover)
     glm::vec4 stars;          // brightness, density, seed (render::Stars)
+    glm::vec4 clock;          // seconds (repeating hourly): surface shaders' time (5.17)
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -230,6 +232,14 @@ struct Renderer::Impl {
     VkPipeline falling_pipeline = VK_NULL_HANDLE;   // rain and snow, after the water
     uint32_t fall_count = 0;                        // this frame's falling particles
     VkPipeline skinned_pipeline = VK_NULL_HANDLE;   // skinned meshes (as meshes, deformed)
+    // Surface shaders (5.17), by ShaderId: each a pipeline for still and for skinned meshes, as
+    // the mesh pipelines but with its own fragment shader. [0] is unused (Midgard's own
+    // materials are `pipeline`); [1] is the error shader.
+    struct SurfacePipelines {
+        VkPipeline still = VK_NULL_HANDLE;
+        VkPipeline skinned = VK_NULL_HANDLE;
+    };
+    std::vector<SurfacePipelines> surface_pipelines;
     std::vector<DebugLine> debug_lines;
     Environment environment;
     TerrainLook terrain_look;
@@ -789,6 +799,123 @@ struct Renderer::Impl {
         return module;
     }
 
+    // A surface shader's pipelines: the mesh pipelines' state (create_pipeline's: the same
+    // vertex streams, rasterisation, depth and layout), its own fragment shader. Empty when the
+    // GPU refuses it (nothing thrown: the caller falls back to the error shader).
+    SurfacePipelines make_surface_pipelines(std::span<const uint32_t> spirv) {
+        SurfacePipelines out;
+        constexpr uint32_t kSpirvMagic = 0x07230203u;
+        if (spirv.size() < 5 || spirv[0] != kSpirvMagic) return out;
+        VkShaderModuleCreateInfo minfo{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+        minfo.codeSize = spirv.size_bytes();
+        minfo.pCode = spirv.data();
+        VkShaderModule frag = VK_NULL_HANDLE;
+        if (vkCreateShaderModule(device, &minfo, nullptr, &frag) != VK_SUCCESS) return out;
+        VkShaderModule vert = shader(mesh_vert, sizeof(mesh_vert));
+        VkShaderModule svert = shader(mesh_skinned_vert, sizeof(mesh_skinned_vert));
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
+        stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        stages[0].module = vert;
+        stages[0].pName = "main";
+        stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        stages[1].module = frag;
+        stages[1].pName = "main";
+        const VkVertexInputBindingDescription vbind{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+        const std::array<VkVertexInputAttributeDescription, 4> attrs{{
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)},
+            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)},
+            {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)},
+            {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, tangent)},
+        }};
+        VkPipelineVertexInputStateCreateInfo vinput{
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        vinput.vertexBindingDescriptionCount = 1;
+        vinput.pVertexBindingDescriptions = &vbind;
+        vinput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrs.size());
+        vinput.pVertexAttributeDescriptions = attrs.data();
+        const std::array<VkVertexInputBindingDescription, 2> sbinds{{
+            {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
+            {1, sizeof(SkinVertex), VK_VERTEX_INPUT_RATE_VERTEX},
+        }};
+        const std::array<VkVertexInputAttributeDescription, 6> sattrs{{
+            attrs[0],
+            attrs[1],
+            attrs[2],
+            attrs[3],
+            {4, 1, VK_FORMAT_R16G16B16A16_UINT, offsetof(SkinVertex, joints)},
+            {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(SkinVertex, weights)},
+        }};
+        VkPipelineVertexInputStateCreateInfo sinput{
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        sinput.vertexBindingDescriptionCount = static_cast<uint32_t>(sbinds.size());
+        sinput.pVertexBindingDescriptions = sbinds.data();
+        sinput.vertexAttributeDescriptionCount = static_cast<uint32_t>(sattrs.size());
+        sinput.pVertexAttributeDescriptions = sattrs.data();
+        VkPipelineInputAssemblyStateCreateInfo assembly{
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkPipelineViewportStateCreateInfo viewport{
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        viewport.viewportCount = 1;
+        viewport.scissorCount = 1;
+        VkPipelineRasterizationStateCreateInfo raster{
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        raster.polygonMode = VK_POLYGON_MODE_FILL;
+        raster.cullMode = VK_CULL_MODE_BACK_BIT;
+        raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        raster.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo multisample{
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineDepthStencilStateCreateInfo depth_state{
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        depth_state.depthTestEnable = VK_TRUE;
+        depth_state.depthWriteEnable = VK_TRUE;
+        depth_state.depthCompareOp = VK_COMPARE_OP_GREATER;
+        VkPipelineColorBlendAttachmentState blend_att{};
+        blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo blend{
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        blend.attachmentCount = 1;
+        blend.pAttachments = &blend_att;
+        const std::array<VkDynamicState, 2> dyn{VK_DYNAMIC_STATE_VIEWPORT,
+                                                VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo dynamic{
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+        dynamic.dynamicStateCount = static_cast<uint32_t>(dyn.size());
+        dynamic.pDynamicStates = dyn.data();
+        VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        info.stageCount = static_cast<uint32_t>(stages.size());
+        info.pStages = stages.data();
+        info.pVertexInputState = &vinput;
+        info.pInputAssemblyState = &assembly;
+        info.pViewportState = &viewport;
+        info.pRasterizationState = &raster;
+        info.pMultisampleState = &multisample;
+        info.pDepthStencilState = &depth_state;
+        info.pColorBlendState = &blend;
+        info.pDynamicState = &dynamic;
+        info.layout = pipeline_layout;
+        info.renderPass = scene_pass;
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &out.still) !=
+            VK_SUCCESS)
+            out.still = VK_NULL_HANDLE;
+        stages[0].module = svert;
+        info.pVertexInputState = &sinput;
+        if (out.still && vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr,
+                                                   &out.skinned) != VK_SUCCESS) {
+            vkDestroyPipeline(device, out.still, nullptr);
+            out = {};
+        }
+        vkDestroyShaderModule(device, vert, nullptr);
+        vkDestroyShaderModule(device, svert, nullptr);
+        vkDestroyShaderModule(device, frag, nullptr);
+        return out;
+    }
+
     void create_pipeline() {
         // Set 0: the frame's data, the shadow map, and the skinned draws' joint matrices.
         std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
@@ -945,6 +1072,13 @@ struct Renderer::Impl {
             check(skinned_result, "Creating the skinned pipeline");
             info.pVertexInputState = &vinput;
         }
+
+        // Surface shaders: none yet but the error shader.
+        surface_pipelines.assign(1, SurfacePipelines{});
+        surface_pipelines.push_back(make_surface_pipelines(
+            std::span<const uint32_t>(surface_error_frag, sizeof(surface_error_frag) / 4)));
+        if (!surface_pipelines.back().still)
+            throw RenderError("Creating the error surface shader's pipelines");
 
         // Terrain: as the meshes, with its own material.
         VkShaderModule terrain_v = shader(mesh_vert, sizeof(mesh_vert));
@@ -1932,6 +2066,64 @@ struct Renderer::Impl {
         return planes;
     }
 
+    // The draws with surface shaders, a shader at a time: still meshes, then skinned ones.
+    // (Set 0 stays bound: the same layout as the mesh pipelines.)
+    void record_surface_draws(VkCommandBuffer cmd, std::span<const DrawItem> draws,
+                              const std::array<glm::vec4, 6>& planes, const Frame& frame,
+                              MaterialId& bound) {
+        for (ShaderId shader = 1; shader < surface_pipelines.size(); ++shader) {
+            const SurfacePipelines& p = surface_pipelines[shader];
+            if (!p.still) continue;
+            for (const bool skinned : {false, true}) {
+                bool pipeline_bound = false;
+                for (size_t i = 0; i < draws.size(); ++i) {
+                    const DrawItem& d = draws[i];
+                    const ShaderId wanted =
+                        d.shader < surface_pipelines.size() && surface_pipelines[d.shader].still
+                            ? d.shader
+                            : kErrorShader;
+                    if (d.shader == 0 || wanted != shader || d.water || d.terrain ||
+                        d.mesh >= meshes.size())
+                        continue;
+                    const GpuMesh& m = meshes[d.mesh];
+                    const bool is_skinned = m.skinned && !d.skin.empty();
+                    if (is_skinned != skinned || m.index_count == 0) continue;
+                    if (!in_view(planes, d.model, m, skinned ? kSkinReach : 1.0f)) continue;
+                    if (!pipeline_bound) {
+                        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                          skinned ? p.skinned : p.still);
+                        pipeline_bound = true;
+                    }
+                    const MaterialId material = d.material < materials.size() ? d.material : 0;
+                    if (material != bound) {
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                pipeline_layout, 1, 1, &materials[material], 0,
+                                                nullptr);
+                        bound = material;
+                    }
+                    PushData push{
+                        d.model, to_linear(d.color),
+                        glm::vec4(to_linear(d.emissive) * d.emissive_strength,
+                                  skinned ? float(frame.skin_first[i]) : 0.0f),
+                        glm::vec4(d.metallic, d.roughness, d.normal_scale, d.occlusion_strength)};
+                    vkCmdPushConstants(cmd, pipeline_layout,
+                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                       sizeof(push), &push);
+                    if (skinned) {
+                        const std::array<VkBuffer, 2> buffers{m.vertices.buffer, m.skin.buffer};
+                        const std::array<VkDeviceSize, 2> offsets{0, 0};
+                        vkCmdBindVertexBuffers(cmd, 0, 2, buffers.data(), offsets.data());
+                    } else {
+                        VkDeviceSize offset = 0;
+                        vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
+                    }
+                    vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+                }
+            }
+        }
+    }
+
     void record(VkCommandBuffer cmd, VkFramebuffer fb, const std::span<const DrawItem> draws,
                 const glm::vec4& clear_color, VkDescriptorSet set, const Frame& frame,
                 const ShadowCascades& cascades, const glm::mat4& view_proj) {
@@ -1960,12 +2152,16 @@ struct Renderer::Impl {
                                 0, nullptr);
         MaterialId bound = ~0u;
         bool any_water = false, any_terrain = false;
-        bool any_skinned = false;
+        bool any_skinned = false, any_surface = false;
         for (const DrawItem& d : draws) {
             if (d.mesh >= meshes.size()) continue;
             if (d.water || d.terrain) {
                 any_water = any_water || d.water;
                 any_terrain = any_terrain || d.terrain;
+                continue;
+            }
+            if (d.shader != 0) {  // (a surface shader's: drawn below, by shader)
+                any_surface = true;
                 continue;
             }
             const GpuMesh& m = meshes[d.mesh];
@@ -1995,7 +2191,9 @@ struct Renderer::Impl {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skinned_pipeline);
             for (size_t i = 0; i < draws.size(); ++i) {
                 const DrawItem& d = draws[i];
-                if (d.mesh >= meshes.size() || d.skin.empty() || d.water || d.terrain) continue;
+                if (d.mesh >= meshes.size() || d.skin.empty() || d.water || d.terrain ||
+                    d.shader != 0)
+                    continue;
                 const GpuMesh& m = meshes[d.mesh];
                 if (m.index_count == 0 || !m.skinned) continue;
                 if (!in_view(planes, d.model, m, kSkinReach)) continue;
@@ -2020,6 +2218,7 @@ struct Renderer::Impl {
                 vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
             }
         }
+        if (any_surface) record_surface_draws(cmd, draws, planes, frame, bound);
         if (any_terrain) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, terrain_pipeline);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1,
@@ -2167,6 +2366,10 @@ struct Renderer::Impl {
             if (shadow_skinned_layout)
                 vkDestroyPipelineLayout(device, shadow_skinned_layout, nullptr);
             if (skinned_pipeline) vkDestroyPipeline(device, skinned_pipeline, nullptr);
+            for (const SurfacePipelines& p : surface_pipelines) {
+                if (p.still) vkDestroyPipeline(device, p.still, nullptr);
+                if (p.skinned) vkDestroyPipeline(device, p.skinned, nullptr);
+            }
             for (VkFramebuffer fb : shadow_framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
             for (VkImageView v : shadow_layer_views) vkDestroyImageView(device, v, nullptr);
             destroy_image(shadow_map);
@@ -2236,6 +2439,18 @@ TextureId Renderer::upload_ktx2(std::span<const uint8_t> ktx2) {
 
 GpuFormat Renderer::texture_format() const {
     return impl_->texture_format;
+}
+
+ShaderId Renderer::create_surface_shader(std::span<const uint32_t> spirv) {
+    Impl& r = *impl_;
+    const Impl::SurfacePipelines made = r.make_surface_pipelines(spirv);
+    if (!made.still) return kErrorShader;
+    r.surface_pipelines.push_back(made);
+    return static_cast<ShaderId>(r.surface_pipelines.size() - 1);
+}
+
+size_t Renderer::surface_shader_count() const {
+    return impl_->surface_pipelines.size() - 1;
 }
 
 MaterialId Renderer::create_material(const MaterialTextures& textures) {
@@ -2442,6 +2657,7 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         data.fall_motion = glm::vec4(wrap(shift.x), wrap(shift.y), wrap(shift.z), 0.03f);
         data.fall_velocity = glm::vec4(falling.velocity, sizes[size_t(falling.kind)]);
     }
+    data.clock = glm::vec4(std::fmod(std::max(env.water.time, 0.0f), 3600.0f), 0.0f, 0.0f, 0.0f);
     data.stars = env.sky ? glm::vec4(std::max(env.stars.brightness, 0.0f),
                                      std::clamp(env.stars.density, 0.0f, 1.0f),
                                      float(env.stars.seed % 65536u), 0.0f)

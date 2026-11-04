@@ -24,6 +24,9 @@
 #include "midgard/terrain_streamer.h"
 #include "midgard/weather_look.h"
 #include "midgard/world_light.h"
+#include "surface_dissolve_frag.h"
+#include "surface_ripples_frag.h"
+#include "surface_stripes_frag.h"
 
 namespace midgard::test_scenes {
 
@@ -189,6 +192,50 @@ private:
     bool compressed_;
     render::MeshId cube_ = 0, sphere_ = 0;
     render::MaterialId base_ = 0, normal_ = 0, stripes_ = 0, occlusion_ = 0, emissive_ = 0;
+};
+
+// Surface shaders (milestone 5.17): the plain material, then stripes, a dissolve (holes cut by
+// noise, glowing edges) and ripples (bent normals), and a shader the renderer doesn't have,
+// drawn as its error shader (bright magenta).
+class Surfaces : public TestScene {
+public:
+    void upload(render::Renderer& r) override {
+        cube_ = r.upload_mesh(render::make_cube());
+        sphere_ = r.upload_mesh(render::make_sphere());
+        stripes_ = r.create_surface_shader(surface_stripes_frag);
+        dissolve_ = r.create_surface_shader(surface_dissolve_frag);
+        ripples_ = r.create_surface_shader(surface_ripples_frag);
+    }
+    std::vector<DrawItem> draws(const glm::dvec3& origin) const override {
+        const float x[5] = {-3.2f, -1.6f, 0.0f, 1.6f, 3.2f};
+        std::vector<DrawItem> out(5);
+        out[0] = {sphere_, at({x[0], 0, 0}, glm::vec3(1.2f)), glm::vec4(0.8f, 0.75f, 0.6f, 1)};
+        out[1] = {cube_, at({x[1], 0, 0}), glm::vec4(0.8f, 0.75f, 0.6f, 1)};
+        out[1].shader = stripes_;
+        out[2] = {sphere_, at({x[2], 0, 0}, glm::vec3(1.2f)), glm::vec4(0.3f, 0.35f, 0.4f, 1)};
+        out[2].shader = dissolve_;
+        out[3] = {cube_, at({x[3], 0, 0}), glm::vec4(0.6f, 0.65f, 0.7f, 1)};
+        out[3].shader = ripples_;
+        out[4] = {sphere_, at({x[4], 0, 0}, glm::vec3(1.2f)), glm::vec4(0.8f, 0.75f, 0.6f, 1)};
+        out[4].shader = 999;  // (never made: the error shader)
+        for (int i : {1, 3})
+            out[size_t(i)].model =
+                glm::rotate(out[size_t(i)].model, glm::radians(30.0f), glm::vec3(0, 1, 0));
+        return relative(out, origin);
+    }
+    render::Camera camera(float aspect) const override {
+        return look({0, 0.6f, 6.0f}, {0, 0, 0}, aspect, 50.0f);
+    }
+    render::Light light(const glm::dvec3&) const override {
+        render::Light l;
+        l.direction = glm::normalize(glm::vec3(-0.6f, -0.7f, -0.8f));
+        return l;
+    }
+    glm::vec4 sky() const override { return {0.12f, 0.13f, 0.16f, 1.0f}; }
+
+private:
+    render::MeshId cube_ = 0, sphere_ = 0;
+    render::ShaderId stripes_ = 0, dissolve_ = 0, ripples_ = 0;
 };
 
 class Lights : public TestScene {
@@ -914,10 +961,10 @@ const std::pair<const char*, double> kDayTimes[] = {
 }  // namespace
 
 std::vector<std::string> names() {
-    std::vector<std::string> out = {"materials", "textures",       "compressed", "lights",
-                                    "shadows",   "shadows_curved", "sky_day",    "sky_sunset",
-                                    "colliders", "skinned",        "sky_cloudy", "sky_storm",
-                                    "sky_rain",  "sky_snow",       "sky_wet",    "sky_snowed"};
+    std::vector<std::string> out = {
+        "materials",      "textures", "compressed", "surfaces",  "lights",    "shadows",
+        "shadows_curved", "sky_day",  "sky_sunset", "colliders", "skinned",   "sky_cloudy",
+        "sky_storm",      "sky_rain", "sky_snow",   "sky_wet",   "sky_snowed"};
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
@@ -935,6 +982,7 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "skinned") return std::make_unique<Skinned>();
     if (name == "textures") return std::make_unique<Textures>();
     if (name == "compressed") return std::make_unique<Textures>(true);
+    if (name == "surfaces") return std::make_unique<Surfaces>();
     if (name == "lights") return std::make_unique<Lights>();
     if (name == "shadows") return std::make_unique<Shadows>();
     if (name == "colliders") return std::make_unique<Colliders>();

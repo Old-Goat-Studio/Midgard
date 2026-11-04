@@ -36,6 +36,11 @@ using TextureId = uint32_t;
 // A material is a set of textures (glTF's five); its factors come with each DrawItem. 0 is the
 // material with no textures: white base colour, flat normals, no occlusion.
 using MaterialId = uint32_t;
+// A surface shader (milestone 5.17): someone's own code for a mesh's surface (shaders/
+// surface.glsl), lit as Midgard's materials are. 0 is Midgard's own (mesh.frag); kErrorShader is
+// bright magenta, drawn for one that couldn't be used.
+using ShaderId = uint32_t;
+inline constexpr ShaderId kErrorShader = 1;
 inline constexpr TextureId kNoTexture = ~0u;
 inline constexpr int kMaxLocalLights = 8;
 
@@ -118,6 +123,7 @@ struct DrawItem {
     float normal_scale = 1.0f;
     float occlusion_strength = 1.0f;
     MaterialId material = 0;
+    ShaderId shader = 0;       // its surface shader (0: Midgard's own material)
     bool casts_shadow = true;  // false: lit and shadowed, but leaves no shadow of its own
     // A water surface: drawn after everything solid, blended, in the environment's Water look
     // (its colour and material are ignored). Its vertices' tangent w is the depth below them.
@@ -180,6 +186,12 @@ public:
     // The compressed format this GPU reads (BC7, ASTC 4x4 or ETC2, else RGBA8).
     GpuFormat texture_format() const;
     MaterialId create_material(const MaterialTextures& textures);
+    // A surface shader from its SPIR-V (a fragment shader made from shaders/surface.glsl, as
+    // midgard/shader_compiler.h's compile_surface makes them), for draws to use. kErrorShader
+    // (never throws) if it can't be used: not SPIR-V, or the GPU refuses it.
+    ShaderId create_surface_shader(std::span<const uint32_t> spirv);
+    // How many surface shaders there are (the error shader included).
+    size_t surface_shader_count() const;
     // Replaces an uploaded mesh (hot reload). Waits for the GPU to finish with the old one.
     void replace_mesh(MeshId id, const MeshData& mesh);
     // Frees a mesh (streamed terrain chunks): it isn't drawn from now on, its id may be given

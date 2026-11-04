@@ -53,4 +53,5 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 fall_velocity;
     vec4 ground;  // what the weather left (render::GroundCover): x wetness, y snow (0 .. 1)
     vec4 stars;   // render::Stars: x brightness (0: none), y density, z seed
+    vec4 clock;   // x: seconds of play (repeating every hour), for surface shaders (5.17)
 } frame;

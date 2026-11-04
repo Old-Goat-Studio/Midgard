@@ -39,6 +39,27 @@ struct Options {
 // The source compiled to SPIR-V, or its mistakes. Thread safe.
 Compiled compile_glsl(std::string_view source, Stage stage, const Options& options = {});
 
+// ---- surface shaders (5.17) ------------------------------------------------------------------
+// Someone's own code for a mesh's surface: a function
+//
+//     void surface(SurfaceInput i, inout Surface s) { ... }
+//
+// that changes the surface (its colour, alpha and cutout, metallic, roughness, normal, emission,
+// occlusion; each starts as the material's own) from what it reads (uv, position, view,
+// geometry_normal, up, time), with the material's maps (base_color_map ...) and helpers (hash,
+// noise, fbm, srgb) to hand: render/shaders/surface.glsl. Midgard lights it as its own
+// materials (sun and shadows, lamps, ambient light, snow and wetness, fog).
+struct SurfaceSource {
+    std::string source;  // the whole fragment shader
+    int first_line = 1;  // the line the code starts on in it
+    int lines = 0;       // how many lines the code has
+};
+SurfaceSource surface_shader_source(std::string_view code);
+
+// A surface shader compiled: the code wrapped as above, its mistakes on its own lines (a mistake
+// in Midgard's part, after the code, has line 0).
+Compiled compile_surface(std::string_view code, std::string_view name = "surface");
+
 // glslang's log ("ERROR: shader:12: 'x' : undeclared identifier ...") as messages, each line
 // moved by first_line (exposed for tests).
 std::vector<Message> parse_log(std::string_view log, const Options& options);

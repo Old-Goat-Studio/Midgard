@@ -368,6 +368,45 @@ The **1:1, 1:2, 1:4** choice in the library's texture preview is for looking onl
 how often a texture repeats depends on the shape's own texture layout. The built-in Cube, Plane
 and other shapes show the texture once per metre of face, so a bigger cube shows more repeats.
 
+### Surface shaders: your own look for a material
+
+A **surface shader** is a short piece of code that changes how a surface looks: stripes,
+glowing cracks, holes that eat away, ripples, anything you can describe with maths. Midgard
+still does the hard part, so the sun, shadows, lamps, fog, snow and rain all still work on it.
+
+- Shaders live in your project's **shaders** folder, one file each, ending in **.glsl**.
+- In the **Material editor**, pick one under **Surface shader**, or click **Choose…** to bring
+  in a .glsl file from elsewhere (it is copied into the shaders folder). Pick **None** to go
+  back to Midgard's own material.
+- Under the choice, the editor tells you whether the shader works. If it has a mistake, it
+  names the line, and anything using it is drawn **bright magenta** (pink-purple) until you
+  fix it. A mistake never crashes the editor or the game.
+- When you make the game, each shader is turned into a form the game uses directly, so the
+  game itself never needs to understand shader code. Mistakes show up in the cook's warnings,
+  with their line numbers.
+
+A shader is one function. The material's own colour, textures and settings are its starting
+point, and it changes only what it wants to:
+
+```glsl
+void surface(SurfaceInput i, inout Surface s) {
+    float band = step(0.5, fract(i.uv.x * 8.0));          // 8 stripes across
+    s.color = mix(srgb(vec3(0.9, 0.2, 0.1)), s.color, band); // red ones
+    s.roughness = 0.3;                                       // a bit shiny
+}
+```
+
+What it can **read** (`i.`): `uv` (the texture position), `position`, `view` (towards the
+camera), `geometry_normal`, `up`, and `time` (seconds, repeating every hour).
+
+What it can **change** (`s.`): `color`, `alpha` with `cutout` (below the cutout a point isn't
+drawn, which makes holes), `metallic`, `roughness`, `normal` (bumps), `emission` (glow) and
+`occlusion`.
+
+Helpers it can use: `noise(p)` and `fbm(p, layers)` (smooth random patterns from 0 to 1),
+`hash(p)` (a random number), and `srgb(colour)` (a colour as you'd pick it in a colour
+picker). The material's textures are there too, as `base_color_map`, `normal_map` and so on.
+
 ---
 
 ## 10. Terrain: hills, valleys, sand and snow

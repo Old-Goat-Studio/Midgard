@@ -60,7 +60,8 @@ set(SHADER_HEADERS)
 # Each shader becomes a header with a C array named after it (mesh.vert -> mesh_vert).
 foreach(shader mesh.vert mesh_skinned.vert mesh.frag water.frag terrain.frag shadow.vert
         shadow_skinned.vert sky.vert sky.frag line.vert line.frag
-        overlay.vert overlay.frag fullscreen.vert tonemap.frag falling.vert falling.frag)
+        overlay.vert overlay.frag fullscreen.vert tonemap.frag falling.vert falling.frag
+        surface_error.frag)
     string(REPLACE "." "_" name "${shader}")
     set(src "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/${shader}")
     set(out "${SHADER_OUT}/${name}.h")
@@ -69,10 +70,27 @@ foreach(shader mesh.vert mesh_skinned.vert mesh.frag water.frag terrain.frag sha
         COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --vn ${name} -o "${out}" "${src}"
         DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/frame.glsl"
                 "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/atmosphere.glsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/surface.glsl"
         COMMENT "Compiling shader ${shader}")
     list(APPEND SHADER_HEADERS "${out}")
 endforeach()
-add_custom_target(midgard_shaders DEPENDS ${SHADER_HEADERS})
+# The surface shaders the runtime's "surfaces" test scene draws (5.17), compiled the same way.
+set(TEST_SHADER_HEADERS)
+foreach(shader surface_stripes.frag surface_dissolve.frag surface_ripples.frag)
+    string(REPLACE "." "_" name "${shader}")
+    set(src "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test_shaders/${shader}")
+    set(out "${SHADER_OUT}/${name}.h")
+    add_custom_command(
+        OUTPUT "${out}"
+        COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --vn ${name}
+                -I"${CMAKE_CURRENT_SOURCE_DIR}/render/shaders" -o "${out}" "${src}"
+        DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/frame.glsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/atmosphere.glsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/surface.glsl"
+        COMMENT "Compiling test shader ${shader}")
+    list(APPEND TEST_SHADER_HEADERS "${out}")
+endforeach()
+add_custom_target(midgard_shaders DEPENDS ${SHADER_HEADERS} ${TEST_SHADER_HEADERS})
 
 # ---- render: the Vulkan renderer -----------------------------------------------------------
 add_library(midgard_render STATIC
@@ -103,8 +121,21 @@ target_link_libraries(midgard_render
 # Games carry compiled shaders, so only where the editor runs (not Android) is glslang linked.
 if(NOT ANDROID)
     find_package(glslang CONFIG REQUIRED)
-    add_library(midgard_shader STATIC shader/src/shader_compiler.cpp)
-    target_include_directories(midgard_shader PUBLIC shader/include)
+    # Surface shaders are wrapped in Midgard's own surface code (frame, atmosphere, surface):
+    # built into the compiler as text, so the editor compiles them as the engine draws them.
+    set(SURFACE_TEMPLATE "${CMAKE_CURRENT_BINARY_DIR}/generated/shader/surface_template.h")
+    set(SURFACE_PARTS "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/frame.glsl"
+                      "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/atmosphere.glsl"
+                      "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/surface.glsl")
+    add_custom_command(
+        OUTPUT "${SURFACE_TEMPLATE}"
+        COMMAND "${CMAKE_COMMAND}" -DOUTPUT=${SURFACE_TEMPLATE} -DNAME=kSurfaceTemplate
+                "-DINPUTS=${SURFACE_PARTS}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_text.cmake"
+        DEPENDS ${SURFACE_PARTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_text.cmake"
+        COMMENT "Embedding the surface shader template")
+    add_library(midgard_shader STATIC shader/src/shader_compiler.cpp "${SURFACE_TEMPLATE}")
+    target_include_directories(midgard_shader PUBLIC shader/include
+                               PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/shader")
     target_link_libraries(midgard_shader
         PRIVATE glslang::glslang glslang::SPIRV glslang::glslang-default-resource-limits
                 midgard_options)
@@ -336,6 +367,8 @@ if(MIDGARD_BUILD_PROGRAMS)
         midgard_core midgard_render midgard_scene midgard_link midgard_audio SDL3::SDL3
         Vulkan::Headers midgard_options)
     target_include_directories(midgard_runtime PRIVATE ${Stb_INCLUDE_DIR})  # the window icon
+    target_include_directories(midgard_runtime PRIVATE "${SHADER_OUT}")  # (test shaders)
+    add_dependencies(midgard_runtime midgard_shaders)
     if(ANDROID)
         target_link_libraries(midgard_runtime PRIVATE miniz::miniz)  # unpacking Python
     endif()

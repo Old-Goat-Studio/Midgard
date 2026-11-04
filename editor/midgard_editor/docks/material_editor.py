@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import meshes, objects, textures
+from .. import meshes, objects, surface_shaders, textures
 from ..objects import ObjectError
 from ..project import Project
 from .objects_panel import PreviewLabel
@@ -285,6 +285,25 @@ class MaterialEditor(QWidget):
             form.addRow(f"{label} texture", row)
             self.slot_labels[slot] = name
 
+        # A surface shader (5.17): the project's shaders/<name>.glsl files.
+        self.shader = QComboBox()
+        self.shader.setToolTip("Your own surface shader for this material (a file in the "
+                               "project's shaders folder); Midgard's own material if none")
+        self.shader.activated.connect(lambda _i: self.set_shader(self.shader.currentData()))
+        shader_file = QPushButton("Choose…")
+        shader_file.setToolTip("A surface shader file (.glsl), copied into the project's "
+                               "shaders folder")
+        shader_file.clicked.connect(self.choose_shader_file)
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.shader, 1)
+        layout.addWidget(shader_file)
+        form.addRow("Surface shader", row)
+        self.shader_status = QLabel()
+        self.shader_status.setWordWrap(True)
+        form.addRow(self.shader_status)
+
         self.reset = QPushButton("Back to the Model's Material")
         self.reset.setToolTip("Undo every change to this material (one step you can undo)")
         self.reset.clicked.connect(self.reset_to_original)
@@ -319,6 +338,7 @@ class MaterialEditor(QWidget):
         for key in ("metallic", "roughness", "emissive_strength", "normal_scale",
                     "occlusion_strength"):
             getattr(self, key).set_value(float(value[key]))
+        self._refresh_shader(m.get("shader", ""))
         slots = m.get("textures", {})
         for slot, label in self.slot_labels.items():
             label.setText(textures.describe(slots[slot]) if slots.get(slot) else "None")
@@ -418,6 +438,43 @@ class MaterialEditor(QWidget):
         if slots:
             new["textures"] = slots
         self._push(new, "texture " + slot, textures.SLOTS[slot].lower() + " texture")
+
+    def _refresh_shader(self, shader: str) -> None:
+        self.shader.blockSignals(True)
+        self.shader.clear()
+        self.shader.addItem("None (Midgard's own material)", "")
+        for name in surface_shaders.names(self.project.root):
+            self.shader.addItem(name, surface_shaders.ref(name))
+        if shader and self.shader.findData(shader) < 0:
+            self.shader.addItem(f"{surface_shaders.parse(shader) or shader} (missing)", shader)
+        self.shader.setCurrentIndex(max(0, self.shader.findData(shader)))
+        self.shader.blockSignals(False)
+        if not shader:
+            self.shader_status.setText("")
+            return
+        result = surface_shaders.compile_shader(self.project.root, shader)
+        if result.ok:
+            self.shader_status.setStyleSheet("color: #60a060;")
+            self.shader_status.setText("The shader compiles.")
+        else:
+            mistakes = [m for m in result.messages if m.get("error", True)] or result.messages
+            self.shader_status.setStyleSheet("color: #d08030;")
+            self.shader_status.setText(
+                "Drawn bright magenta until it's fixed: " +
+                "; ".join(surface_shaders.describe(m) for m in mistakes[:3]))
+
+    def set_shader(self, shader: str | None) -> None:
+        m = self.material()
+        new = {k: v for k, v in m.items() if k != "shader"}
+        if shader:
+            new["shader"] = shader
+        self._push(new, "shader", "surface shader")
+
+    def choose_shader_file(self) -> None:
+        file, _ = QFileDialog.getOpenFileName(self, "Surface shader", str(self.project.root),
+                                              "Surface shaders (*.glsl)")
+        if file:
+            self.set_shader(surface_shaders.copy_shader(Path(file), self.project.root))
 
     def use_image(self, slot: str, file: Path) -> None:
         """An image file in a slot (copied into textures/ if it is outside the project)."""

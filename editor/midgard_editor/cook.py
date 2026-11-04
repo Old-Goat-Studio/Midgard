@@ -38,6 +38,7 @@ from . import (
     scenes,
     sound_events,
     sounds,
+    surface_shaders,
     textures,
     weather,
 )
@@ -267,6 +268,28 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
                                 "not in the project (or can't be read); it is drawn without it.")
             else:
                 files[texture] = (textures.pak_path(texture), data)
+    # Surface shaders the materials use (milestone 5.17), compiled to SPIR-V: one that doesn't
+    # compile is left out (drawn magenta), its mistakes warned of with their lines.
+    for user, components in texture_users:
+        shader = surface_shaders.components_shader(components)
+        if not shader or shader in files:
+            continue
+        name = surface_shaders.parse(shader) or shader
+        files[shader] = ("", b"")  # (warned once; taken out below)
+        path = surface_shaders.source_path(project.root, shader)
+        if path is None or not path.is_file():
+            warnings.append(f"{user} uses surface shader '{name}', which is not in the "
+                            "project; it is drawn magenta.")
+            continue
+        result = surface_shaders.compile_shader(project.root, shader)
+        if result.ok:
+            files[shader] = (surface_shaders.pak_path(shader), result.spirv)
+            continue
+        mistakes = [m for m in result.messages if m.get("error", True)] or result.messages
+        warnings.append(f"{user} uses surface shader '{name}', which doesn't compile; it is "
+                        "drawn magenta. " + "; ".join(surface_shaders.describe(m)
+                                                       for m in mistakes[:5]))
+    files = {k: v for k, v in files.items() if v[0]}
     # Models used as meshes: their own textures (milestone 5.13a).
     for e in all_entities:
         for texture, data in model_materials.textures_of(project, e.components).items():
@@ -457,6 +480,8 @@ def _cook_credits(project: Project, out: Path, content: list[dict[str, str]],
 def _already_warned(engine_warning: str, warnings: list[str]) -> bool:
     """The editor already warns about meshes and objects it couldn't find; the engine's
     version of the same warning would only repeat it."""
+    if "surface shader" in engine_warning:  # (5.17: the editor said why already)
+        return any("surface shader" in w for w in warnings)
     return "not in the package" in engine_warning and any("not in the project" in w
                                                           for w in warnings)
 
