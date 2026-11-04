@@ -1489,7 +1489,9 @@ Scripts can use Python's standard library (`math`, `random` and so on).
 - **Pause** (F6) and **Stop** (Shift+F5).
 - **Cook** (Ctrl+B): just packs the game, to check for problems; the Log lists any.
 - **Export…** (Ctrl+E): makes a finished game for **Windows**, **Linux** or **Android** in a
-  folder you choose, ready to share.
+  folder you choose, ready to share. On an Android phone, play with a game controller
+  (Bluetooth or USB) for now: on-screen controls come with the menus and HUD (Phase 6). The
+  phone's Back button ends the game.
 
 The first Play after adding a big model takes longer while its textures are converted; later
 Plays are quick.

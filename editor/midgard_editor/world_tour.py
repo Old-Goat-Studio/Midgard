@@ -119,6 +119,65 @@ AMBIENCE = {
                      ("Calm wind", ["dawn", "day", "dusk", "night"], 0.3)],
 }
 
+CHECKLIST = '''# The World Tour: things to try
+
+A hub and four worlds, one of each shape Midgard makes, each its own size, with its own day and
+night, seasons, weather and sounds. Tick each box as you try it.
+
+**Controls:** W A S D walk · mouse looks · hold Left Shift to run · Space jumps · V changes the
+view (behind, through her eyes, from above) · mouse wheel zooms · E uses a pad · F3 shows the
+information overlay · Escape ends the game. **Flying** (the Planet's launch pad): Space climbs,
+Left Ctrl sinks, W A S D go where you look, Shift goes faster.
+
+## In the editor
+
+- [ ] The **Scenes** panel lists five scenes: Main (the hub), Archipelago, Habitat, Planet and
+      Hollow World. Double-click one to open it in the Viewport.
+- [ ] **World ▸ World Shape…** in each world shows its shape and size: an area 3 km square, a
+      cylinder 1 km in radius and 5 km long, a planet 2 km in radius (its atmosphere 200 m
+      up), a hollow world 2.5 km in radius.
+- [ ] The **World Types** panel shows each world's recipe (the engine's own samples).
+- [ ] **Assets ▸ Asset Library**: the character, its animations, the footsteps, ambience loops
+      and the tune, all free (CC0) with their credits.
+- [ ] The **Audio** panel: the footsteps on each kind of ground, each world's ambience by time
+      of day, and the music.
+- [ ] **Calendar** panel: drag the scrubber; the sun moves through the day.
+
+## Playing (press F5)
+
+- [ ] **The hub:** a paved square, four coloured doorways, birdsong by day; another walker
+      strolls round. Walk into a doorway to go to that world.
+- [ ] Wherever you arrive, the **glowing pad** behind you takes you back to the hub (stand on
+      it, press E). The first time you arrive, the sky is clear for an hour; then the world's
+      own weather comes in.
+- [ ] **Archipelago** (blue door): islands in a sea, and the sound of the sea. Walk to the
+      shore: sand underfoot sounds different from grass.
+- [ ] **Habitat** (yellow door): inside a spinning cylinder. Look up: the land curves up both
+      sides and meets overhead. Walk across it and all the way round: you come back where you
+      started. The **Dock** (the pale pad: stand on it, press E) takes you outside into space,
+      the habitat's hull beside you; hold Left Ctrl to go back down into it, by the Dock.
+- [ ] **Planet** (green door): you arrive on a snowy mountain near the pole. Walk away down the
+      slopes into warmer land. The orange **Launch Pad** is a jetpack: hold Space (and Shift)
+      to climb out through the atmosphere (200 m) into space, the whole planet below; hold
+      Left Ctrl to come back down, landing on the ground below you.
+- [ ] **Hollow World** (purple door): inside a sphere, the far side overhead through the haze,
+      an eerie hum. The **Exit Site** takes you outside.
+- [ ] Press **V** in each world: behind her, through her eyes (her arms), from above. Her feet
+      stay on the slopes.
+- [ ] Wait (or drag the Calendar's scrubber while playing): the day turns to night, with the
+      night's sounds, on every world.
+
+## On your phone
+
+1. Get the **Android runtime template** that matches your Midgard (from the Midgard team, or
+   from the build server's runtime-template-android-arm64 download).
+2. **Build ▸ Export…**, choose **Android**, **Install Template…** and pick it.
+3. Export the World Tour, copy the .apk to your phone and install it.
+- [ ] It opens in the hub, with its music. Phones have no on-screen controls yet (they come
+      with Phase 6's menus and HUD): connect a game controller (Bluetooth or USB) to walk.
+- [ ] Visit each world; it runs smoothly, with sound. The phone's Back button ends it.
+'''
+
 WELCOME = '''"""A fair welcome: the first time you arrive in a world, its sky is clear for an hour
 (of game time); then its own weather comes back (midgard.weather.force)."""
 import midgard
@@ -467,7 +526,12 @@ class _Builder:
                          (0.95, 0.9, 0.5))
             if name == "Planet":  # a jetpack up through the atmosphere into space
                 self.pad_launch(scene, world, height)
+        self.checklist()
         return p
+
+    def checklist(self) -> None:
+        """CHECKLIST.md in the project: what to try, in the editor, playing and on a phone."""
+        (self.p.root / "CHECKLIST.md").write_text(CHECKLIST, encoding="utf-8")
 
     def pad_launch(self, scene: str, world: str, height: float) -> None:
         (self.p.root / "scripts").mkdir(exist_ok=True)

@@ -172,3 +172,10 @@ def test_a_world_greets_you_with_a_clear_sky(tour, tmp_path):
     assert run.returncode == 0, run.stderr
     dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
     assert dump["weather"]["now"] == "clear" and dump["weather"]["forced"] is True
+
+
+@needs_engine
+def test_the_tour_comes_with_its_checklist(tour):
+    checklist = (tour.root / "CHECKLIST.md").read_text("utf-8")
+    for world in ("Archipelago", "Habitat", "Planet", "Hollow World", "On your phone"):
+        assert world in checklist
