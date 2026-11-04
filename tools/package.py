@@ -67,6 +67,7 @@ def build_editor() -> None:
             *data(ROOT / "Themes", "Themes"),
             *data(ROOT / "schema", "schema"),
             *data(ROOT / "midgard512.png", "."),
+            *data(ROOT / "midgard.png", "."),  # (the Help PDF's title page)
             *data(ROOT / "icons", "icons"),
             *data(ROOT / "docs" / "help", "docs/help"),  # Help ▸ Midgard Help
             # Midgard's CC0 sample assets (Assets ▸ Add Sample Assets), with their sources.

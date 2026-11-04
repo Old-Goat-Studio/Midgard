@@ -593,7 +593,7 @@ class MainWindow(QMainWindow):
             log.info("Theme: %s", key)
 
     def show_help(self) -> None:
-        """The guide (docs/help/Midgard_Help.md) as a PDF, in the system's PDF viewer."""
+        """The guide (docs/help/Midgard_Help.md) in its window: navigation, search, PDF."""
         from .help import show_help
         show_help(self.settings.dir, self)
 

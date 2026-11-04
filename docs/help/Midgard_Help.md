@@ -101,7 +101,11 @@ arrangements ("Two Monitors" is built in).
   Assets** (free sample characters and animations to practise with).
 - **View**: show colliders and gizmos; choose a colour **Theme**.
 - **Window**: show or hide panels; layouts.
-- **Help**: this guide, and **About Midgard**.
+- **Help**: this guide (**F1**), and **About Midgard**. The guide opens in its own window: its
+  sections are listed down the left (click one to go there; the list follows as you read),
+  the **Search** box finds every place a word appears (Enter for the next, Shift+Enter for the
+  one before), and **Save as PDF…** saves the whole guide to print: a title page, the
+  contents with each section's page, then the guide with its pages numbered.
 
 ---
 
