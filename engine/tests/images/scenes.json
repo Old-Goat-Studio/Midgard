@@ -41,7 +41,7 @@
     },
     {
       "name": "surfaces",
-      "_about": "Surface shaders (5.17): left to right the plain material, red gloss stripes, a dissolve (holes cut by noise with glowing edges), ripples (bent normals, a faint blue glow) and a shader the renderer doesn't have, drawn bright magenta. Noise is computed on the GPU, where drivers may round differently, so up to 1% of pixels may differ.",
+      "_about": "Surface shaders (5.17): left to right the plain material, blue gloss stripes (six: their colour and count are the draw's settings), a dissolve (holes cut by noise with glowing edges), ripples (bent normals, a faint blue glow) and a shader the renderer doesn't have, drawn bright magenta. Noise is computed on the GPU, where drivers may round differently, so up to 1% of pixels may differ.",
       "args": ["--size", "960x480", "--scene", "surfaces"],
       "max_bad": 0.01
     },

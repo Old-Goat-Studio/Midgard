@@ -407,6 +407,42 @@ Helpers it can use: `noise(p)` and `fbm(p, layers)` (smooth random patterns from
 `hash(p)` (a random number), and `srgb(colour)` (a colour as you'd pick it in a colour
 picker). The material's textures are there too, as `base_color_map`, `normal_map` and so on.
 
+#### Shader settings: one shader, many materials
+
+A shader can declare **settings**: values that each material using it chooses for itself.
+Write them at the top of the shader, one per line:
+
+```glsl
+setting color tint = vec3(1.0, 0.4, 0.1);   // Glow colour
+setting float speed = 2.0;                  // How fast it pulses, 0 .. 10
+setting bool sparkle = true;
+setting texture pattern;                    // The pattern
+
+void surface(SurfaceInput i, inout Surface s) {
+    float pulse = 0.5 + 0.5 * sin(i.time * speed);
+    s.emission = tint * pulse * texture(pattern, i.uv).rgb;
+}
+```
+
+- The value after `=` is the shader's own (its default).
+- The comment after a setting is its label in the Material editor. A range such as
+  `0 .. 10` in it sets the slider's ends (otherwise 0 to 1).
+- The kinds of setting are: `float` (a number), `int` (a whole number), `bool` (on or off),
+  `color` (a colour, picked with a colour picker), `vec2`, `vec3` and `vec4` (two, three or
+  four numbers), `texture` (a picture) and `data_texture` (a picture holding numbers, such as
+  a mask, noise or bumps).
+- A shader can have up to 16 number settings and 4 textures.
+
+In the **Material editor**, under the shader's name, **Shader settings** shows a control for
+each one: a slider, a tick box, a colour button, number boxes, or a texture with
+**Choose…**. A material shows the shader's own values until you change them. The **↺** button
+next to a setting puts back the shader's own value. Every change can be undone.
+
+So one "glow" shader can make a red warning light, a slow blue crystal and a flickering green
+screen, each just a material with different settings.
+
+If a setting is written wrongly, the editor names its line, just like any other mistake.
+
 ---
 
 ## 10. Terrain: hills, valleys, sand and snow

@@ -4,6 +4,7 @@
 // offscreen target (screenshots, tests, CI with a software Vulkan driver).
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -41,6 +42,9 @@ using MaterialId = uint32_t;
 // bright magenta, drawn for one that couldn't be used.
 using ShaderId = uint32_t;
 inline constexpr ShaderId kErrorShader = 1;
+// What a surface shader's settings (5.17) can hold: numbers in vec4 slots, and textures.
+inline constexpr uint32_t kShaderSettings = 16;
+inline constexpr uint32_t kShaderMaps = 4;
 inline constexpr TextureId kNoTexture = ~0u;
 inline constexpr int kMaxLocalLights = 8;
 
@@ -123,7 +127,11 @@ struct DrawItem {
     float normal_scale = 1.0f;
     float occlusion_strength = 1.0f;
     MaterialId material = 0;
-    ShaderId shader = 0;       // its surface shader (0: Midgard's own material)
+    ShaderId shader = 0;  // its surface shader (0: Midgard's own material)
+    // The surface shader's settings (5.17), in the slots its compiler gave them (at most
+    // kShaderSettings; its textures are the material's shader_maps). The caller keeps them
+    // until render_frame returns.
+    std::span<const glm::vec4> settings;
     bool casts_shadow = true;  // false: lit and shadowed, but leaves no shadow of its own
     // A water surface: drawn after everything solid, blended, in the environment's Water look
     // (its colour and material are ignored). Its vertices' tangent w is the depth below them.
@@ -150,6 +158,8 @@ struct MaterialTextures {
     TextureId normal = kNoTexture;              // linear, tangent space
     TextureId occlusion = kNoTexture;           // linear: R
     TextureId emissive = kNoTexture;            // sRGB
+    // A surface shader's textures (5.17's settings; kNoTexture: white).
+    std::array<TextureId, kShaderMaps> shader_maps{kNoTexture, kNoTexture, kNoTexture, kNoTexture};
 };
 
 struct RendererDesc {

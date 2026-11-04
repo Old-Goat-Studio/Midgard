@@ -59,7 +59,12 @@ def describe(texture: str) -> str:
 
 def material_textures(material: dict) -> list[str]:
     """The texture ids a material component uses."""
-    return [t for t in material.get("textures", {}).values() if isinstance(t, str) and t]
+    slots = [t for t in material.get("textures", {}).values() if isinstance(t, str) and t]
+    chosen = material.get("shader_settings", {})  # (a surface shader's textures, 5.17)
+    if isinstance(chosen, dict):
+        slots += [t for t in chosen.values()
+                  if isinstance(t, str) and t.startswith(PREFIX) and t not in slots]
+    return slots
 
 
 def components_textures(components: dict) -> list[str]:

@@ -38,6 +38,7 @@ from .. import meshes, objects, surface_shaders, textures
 from ..objects import ObjectError
 from ..project import Project
 from .objects_panel import PreviewLabel
+from .shader_settings import ShaderSettings
 
 log = logging.getLogger(__name__)
 
@@ -303,6 +304,10 @@ class MaterialEditor(QWidget):
         self.shader_status = QLabel()
         self.shader_status.setWordWrap(True)
         form.addRow(self.shader_status)
+        self.shader_settings = ShaderSettings(project.root)
+        self.shader_settings.value_changed.connect(self.set_shader_setting)
+        self.shader_settings.setVisible(False)
+        form.addRow(self.shader_settings)
 
         self.reset = QPushButton("Back to the Model's Material")
         self.reset.setToolTip("Undo every change to this material (one step you can undo)")
@@ -338,7 +343,7 @@ class MaterialEditor(QWidget):
         for key in ("metallic", "roughness", "emissive_strength", "normal_scale",
                     "occlusion_strength"):
             getattr(self, key).set_value(float(value[key]))
-        self._refresh_shader(m.get("shader", ""))
+        self._refresh_shader(m.get("shader", ""), m.get("shader_settings", {}))
         slots = m.get("textures", {})
         for slot, label in self.slot_labels.items():
             label.setText(textures.describe(slots[slot]) if slots.get(slot) else "None")
@@ -439,7 +444,7 @@ class MaterialEditor(QWidget):
             new["textures"] = slots
         self._push(new, "texture " + slot, textures.SLOTS[slot].lower() + " texture")
 
-    def _refresh_shader(self, shader: str) -> None:
+    def _refresh_shader(self, shader: str, chosen: dict | None = None) -> None:
         self.shader.blockSignals(True)
         self.shader.clear()
         self.shader.addItem("None (Midgard's own material)", "")
@@ -451,8 +456,11 @@ class MaterialEditor(QWidget):
         self.shader.blockSignals(False)
         if not shader:
             self.shader_status.setText("")
+            self.shader_settings.show_settings([], {})
             return
         result = surface_shaders.compile_shader(self.project.root, shader)
+        if result.settings or result.ok:  # (a shader that doesn't compile: its last settings)
+            self.shader_settings.show_settings(result.settings, chosen or {})
         if result.ok:
             self.shader_status.setStyleSheet("color: #60a060;")
             self.shader_status.setText("The shader compiles.")
@@ -469,6 +477,19 @@ class MaterialEditor(QWidget):
         if shader:
             new["shader"] = shader
         self._push(new, "shader", "surface shader")
+
+    def set_shader_setting(self, name: str, value) -> None:
+        """A shader setting's value for this material (None: the shader's own again)."""
+        m = self.material()
+        chosen = dict(m.get("shader_settings", {}))
+        if value is None:
+            chosen.pop(name, None)
+        else:
+            chosen[name] = value
+        new = {k: v for k, v in m.items() if k != "shader_settings"}
+        if chosen:
+            new["shader_settings"] = chosen
+        self._push(new, "shader setting " + name, name.replace("_", " "))
 
     def choose_shader_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(self, "Surface shader", str(self.project.root),

@@ -132,7 +132,8 @@ if(NOT ANDROID)
         COMMAND "${CMAKE_COMMAND}" -DOUTPUT=${SURFACE_TEMPLATE} -DNAME=kSurfaceTemplate
                 "-DINPUTS=${SURFACE_PARTS}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_text.cmake"
         DEPENDS ${SURFACE_PARTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_text.cmake"
-        COMMENT "Embedding the surface shader template")
+        COMMENT "Embedding the surface shader template"
+        VERBATIM)  # (the list of parts is one argument: unquoted, a Unix shell splits it at ';')
     add_library(midgard_shader STATIC shader/src/shader_compiler.cpp "${SURFACE_TEMPLATE}")
     target_include_directories(midgard_shader PUBLIC shader/include
                                PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/shader")

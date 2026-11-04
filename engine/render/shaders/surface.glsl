@@ -15,6 +15,7 @@ layout(push_constant) uniform Push {
     vec4 base_color;
     vec4 emissive;
     vec4 params;  // metallic, roughness, normal scale, occlusion strength
+    vec4 extra;   // x: where a surface shader's settings start (the palette, in vec4s)
 } pc;
 
 layout(set = 1, binding = 0) uniform sampler2D base_color_map;          // sRGB

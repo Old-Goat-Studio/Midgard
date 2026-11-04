@@ -1281,8 +1281,7 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
     materials_.forget(asset);
     bool texture_used = false;
     for (entt::entity e : scene_.registry.view<const Material>())
-        for (const std::string& t : scene_.registry.get<Material>(e).textures)
-            texture_used = texture_used || t == asset;
+        texture_used = texture_used || scene_.registry.get<Material>(e).uses(asset);
     if (texture_used)
         materials_.upload(scene_, renderer,
                           [this](const std::string& t) { return read_texture(t); });

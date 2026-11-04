@@ -197,7 +197,14 @@ def model_of(components: dict) -> str:
 
 
 def effective(project, components: dict) -> dict:
-    """The components as drawn: the model's material under the entity's own."""
+    """The components as drawn: the model's material under the entity's own, and a surface
+    shader's settings laid out for the engine (surface_shaders.drawn)."""
+    from . import surface_shaders
+    merged = _with_model_material(project, components)
+    return surface_shaders.drawn(project.root, merged)
+
+
+def _with_model_material(project, components: dict) -> dict:
     asset = _model_of(components)
     if not asset:
         return components

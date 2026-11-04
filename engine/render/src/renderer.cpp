@@ -104,7 +104,8 @@ struct PushData {
     glm::mat4 model;
     glm::vec4 base_color;
     glm::vec4 emissive;
-    glm::vec4 params;  // metallic, roughness, normal scale, occlusion strength
+    glm::vec4 params;       // metallic, roughness, normal scale, occlusion strength
+    glm::vec4 extra{0.0f};  // x: where a surface shader's settings start in the palette (vec4s)
 };
 static_assert(sizeof(PushData) <= 128);
 
@@ -122,7 +123,8 @@ constexpr uint32_t kMaterialsPerPool = 64;
 // How far a skinned mesh's limbs may reach past its bind pose's bounding sphere, as a multiple of
 // its radius (for culling: a character raising its arms, a tail swinging).
 constexpr float kSkinReach = 1.6f;
-constexpr uint32_t kMaterialBindings = 5;
+// A material's textures: its five own, then a surface shader's four (5.17's settings).
+constexpr uint32_t kMaterialBindings = 5 + kShaderMaps;
 
 struct Buffer {
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -263,10 +265,12 @@ struct Renderer::Impl {
         uint32_t line_vertices = 0;      // depth-tested lines first in the buffer,
         uint32_t top_line_vertices = 0;  // then those drawn over everything
         // Skinned draws' joint matrices, one after another (set 0, binding 2), and where each
-        // draw's start (by its index in the frame's draws).
+        // draw's start (by its index in the frame's draws); after them, surface shaders'
+        // settings (5.17), four vec4s to a matrix, and where each draw's start (in vec4s).
         Buffer palette;
         std::uint32_t palette_capacity = 0;  // matrices
         std::vector<std::uint32_t> skin_first;
+        std::vector<std::uint32_t> settings_first;
     };
     std::array<Frame, kFramesInFlight> frames{};
     uint32_t frame_index = 0;
@@ -930,7 +934,8 @@ struct Renderer::Impl {
         bindings[2].binding = 2;
         bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[2].descriptorCount = 1;
-        bindings[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        // (surface shaders read their settings from it too)
+        bindings[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo linfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
         linfo.bindingCount = static_cast<uint32_t>(bindings.size());
         linfo.pBindings = bindings.data();
@@ -1689,10 +1694,31 @@ struct Renderer::Impl {
     // its fence has passed, so the old one is unused), and where each draw's start.
     void prepare_palette(Frame& f, const std::span<const DrawItem> draws) {
         f.skin_first.assign(draws.size(), 0);
+        f.settings_first.assign(draws.size(), 0);
         std::uint32_t total = 0;
         for (size_t i = 0; i < draws.size(); ++i) {
             f.skin_first[i] = total;
             total += static_cast<std::uint32_t>(draws[i].skin.size());
+        }
+        // (A surface draw without settings reads zeros: a block of them after the rest.)
+        std::uint32_t zeros = 0;
+        bool any_without = false;
+        for (size_t i = 0; i < draws.size(); ++i) {
+            if (draws[i].shader == 0) continue;
+            const size_t n = std::min(draws[i].settings.size(), size_t(kShaderSettings));
+            if (n == 0) {
+                any_without = true;
+                continue;
+            }
+            f.settings_first[i] = total * 4;
+            total += static_cast<std::uint32_t>((n + 3) / 4);
+        }
+        if (any_without) {
+            zeros = total;
+            total += kShaderSettings / 4;
+            for (size_t i = 0; i < draws.size(); ++i)
+                if (draws[i].shader != 0 && draws[i].settings.empty())
+                    f.settings_first[i] = zeros * 4;
         }
         if (total > f.palette_capacity) {
             destroy_buffer(f.palette);
@@ -1704,6 +1730,13 @@ struct Renderer::Impl {
         auto* out = static_cast<glm::mat4*>(f.palette.mapped);
         for (size_t i = 0; i < draws.size(); ++i)
             std::copy(draws[i].skin.begin(), draws[i].skin.end(), out + f.skin_first[i]);
+        auto* values = static_cast<glm::vec4*>(f.palette.mapped);
+        for (size_t i = 0; i < draws.size(); ++i) {
+            const size_t n = std::min(draws[i].settings.size(), size_t(kShaderSettings));
+            if (draws[i].shader == 0 || n == 0) continue;
+            std::copy_n(draws[i].settings.begin(), n, values + f.settings_first[i]);
+        }
+        if (any_without) std::fill_n(out + zeros, kShaderSettings / 4, glm::mat4(0.0f));
         if (total > 0)
             vmaFlushAllocation(allocator, f.palette.allocation, 0,
                                VkDeviceSize(total) * sizeof(glm::mat4));
@@ -2019,10 +2052,12 @@ struct Renderer::Impl {
     }
 
     MaterialId create_material(const MaterialTextures& t) {
-        const TextureId chosen[kMaterialBindings] = {t.base_color, t.metallic_roughness, t.normal,
-                                                     t.occlusion, t.emissive};
-        const TextureId defaults[kMaterialBindings] = {white_srgb, white_linear, flat_normal,
-                                                       white_linear, white_srgb};
+        const TextureId chosen[kMaterialBindings] = {
+            t.base_color,     t.metallic_roughness, t.normal,         t.occlusion,     t.emissive,
+            t.shader_maps[0], t.shader_maps[1],     t.shader_maps[2], t.shader_maps[3]};
+        const TextureId defaults[kMaterialBindings] = {white_srgb,   white_linear, flat_normal,
+                                                       white_linear, white_srgb,   white_linear,
+                                                       white_linear, white_linear, white_linear};
         std::array<VkDescriptorImageInfo, kMaterialBindings> images{};
         std::array<VkWriteDescriptorSet, kMaterialBindings> writes{};
         const VkDescriptorSet set = allocate_material_set();
@@ -2105,7 +2140,8 @@ struct Renderer::Impl {
                         d.model, to_linear(d.color),
                         glm::vec4(to_linear(d.emissive) * d.emissive_strength,
                                   skinned ? float(frame.skin_first[i]) : 0.0f),
-                        glm::vec4(d.metallic, d.roughness, d.normal_scale, d.occlusion_strength)};
+                        glm::vec4(d.metallic, d.roughness, d.normal_scale, d.occlusion_strength),
+                        glm::vec4(float(frame.settings_first[i]), 0.0f, 0.0f, 0.0f)};
                     vkCmdPushConstants(cmd, pipeline_layout,
                                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                        sizeof(push), &push);

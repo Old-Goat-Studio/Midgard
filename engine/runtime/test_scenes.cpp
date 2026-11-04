@@ -2,6 +2,7 @@
 #include "test_scenes.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -194,7 +195,8 @@ private:
     render::MaterialId base_ = 0, normal_ = 0, stripes_ = 0, occlusion_ = 0, emissive_ = 0;
 };
 
-// Surface shaders (milestone 5.17): the plain material, then stripes, a dissolve (holes cut by
+// Surface shaders (milestone 5.17): the plain material, then stripes (blue, six bands: from its
+// settings), a dissolve (holes cut by
 // noise, glowing edges) and ripples (bent normals), and a shader the renderer doesn't have,
 // drawn as its error shader (bright magenta).
 class Surfaces : public TestScene {
@@ -212,6 +214,7 @@ public:
         out[0] = {sphere_, at({x[0], 0, 0}, glm::vec3(1.2f)), glm::vec4(0.8f, 0.75f, 0.6f, 1)};
         out[1] = {cube_, at({x[1], 0, 0}), glm::vec4(0.8f, 0.75f, 0.6f, 1)};
         out[1].shader = stripes_;
+        out[1].settings = stripe_settings_;  // (blue, six bands: its settings reach it)
         out[2] = {sphere_, at({x[2], 0, 0}, glm::vec3(1.2f)), glm::vec4(0.3f, 0.35f, 0.4f, 1)};
         out[2].shader = dissolve_;
         out[3] = {cube_, at({x[3], 0, 0}), glm::vec4(0.6f, 0.65f, 0.7f, 1)};
@@ -236,6 +239,8 @@ public:
 private:
     render::MeshId cube_ = 0, sphere_ = 0;
     render::ShaderId stripes_ = 0, dissolve_ = 0, ripples_ = 0;
+    std::array<glm::vec4, 2> stripe_settings_{glm::vec4(0.1f, 0.3f, 0.9f, 0.0f),
+                                              glm::vec4(6.0f, 0.0f, 0.0f, 0.0f)};
 };
 
 class Lights : public TestScene {

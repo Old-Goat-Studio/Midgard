@@ -92,9 +92,26 @@ struct Material {
     // package), drawn with the material's own colour, maps and settings as its starting point.
     // Empty: Midgard's own material.
     std::string shader;
+    // Its settings (5.17 step 3), as the editor laid them out from the shader's own: numbers
+    // in vec4 slots (at most 16) and textures (at most 4, by content id; empty: white).
+    std::vector<glm::vec4> shader_values;
+    std::array<std::string, 4> shader_textures;
+    // Whether it needs a renderer material of its own (it has textures of either kind).
     bool textured() const {
         for (const std::string& t : textures)
             if (!t.empty()) return true;
+        for (const std::string& t : shader_textures)
+            if (!t.empty()) return true;
+        return false;
+    }
+    // Whether it uses a content id (a texture of either kind, or its shader).
+    bool uses(const std::string& id) const {
+        if (id.empty()) return false;
+        if (shader == id) return true;
+        for (const std::string& t : textures)
+            if (t == id) return true;
+        for (const std::string& t : shader_textures)
+            if (t == id) return true;
         return false;
     }
 };

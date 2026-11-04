@@ -146,3 +146,138 @@ def test_the_material_editor_picks_a_shader_and_undoes_it(qtbot, project):
     project.undo_stack.undo()
     assert "shader" not in material()
     assert editor.shader.currentData() == ""
+
+
+# ---- settings (5.17 step 3) -------------------------------------------------------------------
+
+GLOW = """setting color tint = vec3(1.0, 0.0, 0.0);   // Glow colour
+setting float strength = 2.0;               // 0 .. 10
+setting bool pulse = false;
+setting texture pattern;
+void surface(SurfaceInput i, inout Surface s) {
+    float beat = pulse ? 0.5 + 0.5 * sin(i.time) : 1.0;
+    s.emission = tint * strength * beat * texture(pattern, i.uv).rgb;
+}
+"""
+
+LAYOUT = [
+    {"name": "tint", "type": "color", "label": "Glow colour", "value": [1.0, 0.0, 0.0],
+     "min": 0.0, "max": 1.0, "slot": 0, "line": 1},
+    {"name": "strength", "type": "float", "label": "Strength", "value": [2.0],
+     "min": 0.0, "max": 10.0, "slot": 1, "line": 2},
+    {"name": "pulse", "type": "bool", "label": "Pulse", "value": [0.0],
+     "min": 0.0, "max": 1.0, "slot": 2, "line": 3},
+    {"name": "pattern", "type": "texture", "label": "Pattern", "value": [],
+     "min": 0.0, "max": 1.0, "slot": 0, "line": 4},
+]
+
+
+def test_settings_are_laid_out_in_their_slots():
+    values, maps = surface_shaders.pack(LAYOUT, {})
+    assert values == [[1.0, 0.0, 0.0, 0.0], [2.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]]
+    assert maps == [""]
+    values, maps = surface_shaders.pack(LAYOUT, {
+        "tint": [0.0, 0.5, 1.0], "strength": 7, "pulse": True, "pattern": "tex:a.png",
+        "gone": 3.0})  # (a setting the shader no longer has: left out)
+    assert values == [[0.0, 0.5, 1.0, 0.0], [7.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]
+    assert maps == ["tex:a.png"]
+    # A value that doesn't fit its setting is the shader's own.
+    values, _ = surface_shaders.pack(LAYOUT, {"tint": [1, 2], "strength": "lots"})
+    assert values[0] == [1.0, 0.0, 0.0, 0.0] and values[1] == [2.0, 0.0, 0.0, 0.0]
+
+
+def test_a_setting_texture_is_cooked_and_shown(project):
+    from midgard_editor import textures
+    material = {"shader": "shd:glow", "shader_settings": {"pattern": "tex:textures/p.png"},
+                "textures": {"base_color": "tex:textures/b.png"}}
+    assert textures.material_textures(material) == ["tex:textures/b.png", "tex:textures/p.png"]
+
+
+@needs_compiler
+def test_the_engine_gets_the_settings_in_their_slots(project):
+    shader = write_shader(project, "glow", GLOW)
+    result = surface_shaders.compile_shader(project.root, shader)
+    assert result.ok, result.messages
+    assert [s["name"] for s in result.settings] == ["tint", "strength", "pulse", "pattern"]
+    assert result.settings[0]["label"] == "Glow colour"
+    assert result.settings[1]["max"] == 10.0
+    components = {"material": {"shader": shader, "shader_settings": {"strength": 5.0}}}
+    drawn = surface_shaders.drawn(project.root, components)
+    assert drawn["material"]["shader_values"][1] == [5.0, 0.0, 0.0, 0.0]
+    assert "shader_textures" not in drawn["material"]  # (no texture chosen: white)
+    assert components["material"] == {"shader": shader,
+                                      "shader_settings": {"strength": 5.0}}  # (unchanged)
+    plain = {"material": {"color": [1, 1, 1, 1]}}
+    assert surface_shaders.drawn(project.root, plain) is plain
+
+
+@needs_compiler
+def test_the_material_editor_shows_and_changes_settings(qtbot, project):
+    from midgard_editor.docks.material_editor import EntityMaterial, MaterialEditor
+    shader = write_shader(project, "glow", GLOW)
+    add_box(project, {"material": {"shader": shader}})
+    editor = MaterialEditor(project, EntityMaterial(project, "e000050"))
+    qtbot.addWidget(editor)
+    panel = editor.shader_settings
+    assert not panel.isHidden()
+    assert list(panel.controls) == ["tint", "strength", "pulse", "pattern"]
+    material = lambda: project.entity("e000050").components["material"]  # noqa: E731
+    assert panel.controls["strength"].value() == 2.0  # (the shader's own)
+
+    panel.controls["strength"].box.setValue(6.5)
+    panel.controls["pulse"].setChecked(True)
+    assert material()["shader_settings"] == {"strength": 6.5, "pulse": True}
+    panel.value_changed.emit("strength", None)  # ↺: the shader's own again
+    assert material()["shader_settings"] == {"pulse": True}
+    assert panel.controls["strength"].value() == 2.0
+    project.undo_stack.undo()
+    assert material()["shader_settings"]["strength"] == 6.5
+    assert panel.controls["strength"].value() == 6.5
+
+    editor.set_shader("")  # (no shader: no settings)
+    assert panel.isHidden()
+
+
+@needs_compiler
+def test_the_cook_lays_out_the_settings_for_the_game(project, tmp_path):
+    import json
+    import sqlite3
+    shader = write_shader(project, "glow", GLOW)
+    add_box(project, {"material": {"shader": shader,
+                                   "shader_settings": {"tint": [0.0, 1.0, 0.0]}}})
+    result = cook(project, tmp_path / "pkg")
+    con = sqlite3.connect(result.out_dir / "HelloCube.db")
+    components = json.loads(con.execute("SELECT components FROM entity WHERE id = 'e000050'")
+                            .fetchone()[0])
+    con.close()
+    assert components["material"]["shader_values"][0] == [0.0, 1.0, 0.0, 0.0]
+    assert components["material"]["shader_values"][1] == [2.0, 0.0, 0.0, 0.0]
+
+
+@needs_compiler
+@pytest.mark.skipif(not about.runtime_candidates(), reason="engine not built here")
+def test_the_game_draws_with_a_materials_own_settings(project, tmp_path):
+    shader = write_shader(project, "tinted", """setting color tint = vec3(1.0, 0.0, 0.0);
+void surface(SurfaceInput i, inout Surface s) {
+    s.color = vec3(0.0);
+    s.emission = tint * 2.0;
+}
+""")
+    add_box(project, {"transform": {"position": [0.0, 0.75, -1.5], "scale": [1.5, 1.5, 1.5]},
+                      "material": {"shader": shader,
+                                   "shader_settings": {"tint": [0.0, 0.0, 1.0]}}})
+    out = cook(project, tmp_path / "pkg").out_dir
+    shot = tmp_path / "shot.png"
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--screenshot", str(shot), "--size", "320x180"],
+                         capture_output=True, text=True, timeout=60)
+    if run.returncode != 0 and "Vulkan" in (run.stderr + run.stdout):
+        pytest.skip("no Vulkan driver available: " + run.stderr.strip())
+    assert run.returncode == 0, run.stderr
+    from PySide6.QtGui import QImage
+    image = QImage(str(shot))
+    pixels = [image.pixelColor(x, y) for y in range(0, image.height(), 2)
+              for x in range(0, image.width(), 2)]
+    blue = sum(1 for c in pixels if c.blue() > c.red() + 80 and c.blue() > c.green() + 80)
+    red = sum(1 for c in pixels if c.red() > c.blue() + 80 and c.red() > c.green() + 80)
+    assert blue > 50 and red < 10, (blue, red)  # (the material's blue, not the shader's red)

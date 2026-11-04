@@ -187,7 +187,10 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
         }
         for (entt::entity e : scene.registry.view<const Material>()) {
             const Material& material = scene.registry.get<Material>(e);
-            for (const std::string& texture : material.textures)
+            std::vector<std::string> used(material.textures.begin(), material.textures.end());
+            used.insert(used.end(), material.shader_textures.begin(),
+                        material.shader_textures.end());
+            for (const std::string& texture : used)
                 if (!texture.empty() && !content_ids.contains(texture))
                     report.warnings.push_back("entity '" + scene.registry.get<EntityInfo>(e).id +
                                               "' uses texture '" + texture +

@@ -41,6 +41,7 @@
 #include "midgard/pak.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
+#include "midgard/render/renderer.h"
 #include "midgard/shader_compiler.h"
 #include "midgard/terrain.h"
 #include "midgard/validate.h"
@@ -523,9 +524,27 @@ PYBIND11_MODULE(_midgard, m) {
         py::arg("first_line") = 1,
         "GLSL compiled to SPIR-V for Vulkan 1.1 (midgard/shader_compiler.h): {'ok', 'spirv' "
         "(bytes), 'messages': [{'line', 'error', 'message'}]}, lines counted from first_line.");
+    static_assert(midgard::shader::kMaxSettings == int(midgard::render::kShaderSettings) &&
+                  midgard::shader::kMaxMaps == int(midgard::render::kShaderMaps));
+    const auto settings_list = [](const std::vector<midgard::shader::Setting>& settings) {
+        py::list out;
+        for (const auto& st : settings) {
+            py::dict d;
+            d["name"] = st.name;
+            d["type"] = st.type;
+            d["label"] = st.label;
+            d["value"] = st.value;
+            d["min"] = st.min;
+            d["max"] = st.max;
+            d["slot"] = st.slot;
+            d["line"] = st.line;
+            out.append(d);
+        }
+        return out;
+    };
     m.def(
         "compile_surface_shader",
-        [](const std::string& code, const std::string& name) {
+        [settings_list](const std::string& code, const std::string& name) {
             const auto out = midgard::shader::compile_surface(code, name);
             py::list messages;
             for (const auto& msg : out.messages) {
@@ -540,20 +559,23 @@ PYBIND11_MODULE(_midgard, m) {
             result["spirv"] = py::bytes(reinterpret_cast<const char*>(out.spirv.data()),
                                         out.spirv.size() * sizeof(uint32_t));
             result["messages"] = messages;
+            result["settings"] = settings_list(out.settings);
             return result;
         },
         py::arg("code"), py::arg("name") = "surface",
         "A surface shader (5.17: 'void surface(SurfaceInput i, inout Surface s)') wrapped in "
         "Midgard's surface code and compiled, as compile_shader returns it; lines are the code's "
-        "own (0: Midgard's part).");
+        "own (0: Midgard's part); 'settings': [{'name', 'type', 'label', 'value', 'min', "
+        "'max', 'slot', 'line'}] (5.17 step 3).");
     m.def(
         "surface_shader_source",
-        [](const std::string& code) {
+        [settings_list](const std::string& code) {
             const auto out = midgard::shader::surface_shader_source(code);
             py::dict result;
             result["source"] = out.source;
             result["first_line"] = out.first_line;
             result["lines"] = out.lines;
+            result["settings"] = settings_list(out.settings);
             return result;
         },
         py::arg("code"), "The whole fragment shader a surface shader becomes.");

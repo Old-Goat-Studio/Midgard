@@ -113,6 +113,19 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
             for (int i = 0; i < 5; ++i) m.textures[size_t(i)] = t->value(slots[i], "");
         }
         m.shader = c.value("shader", std::string());
+        if (const auto v = c.find("shader_values"); v != c.end() && v->is_array())
+            for (const auto& slot : *v) {
+                if (m.shader_values.size() >= 16) break;
+                glm::vec4 value(0.0f);
+                if (slot.is_number()) value.x = slot.get<float>();
+                if (slot.is_array())
+                    for (size_t k = 0; k < std::min<size_t>(slot.size(), 4); ++k)
+                        if (slot[k].is_number()) value[int(k)] = slot[k].get<float>();
+                m.shader_values.push_back(value);
+            }
+        if (const auto t = c.find("shader_textures"); t != c.end() && t->is_array())
+            for (size_t k = 0; k < std::min<size_t>(t->size(), 4); ++k)
+                if ((*t)[k].is_string()) m.shader_textures[k] = (*t)[k].get<std::string>();
         reg.emplace_or_replace<Material>(e, m);
     } else if (name == "camera") {
         CameraLens lens{c.value("fov", 55.0f), c.value("near", 0.05f), c.value("far", 500.0f)};

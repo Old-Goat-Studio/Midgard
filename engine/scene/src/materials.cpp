@@ -9,6 +9,7 @@ namespace midgard {
 std::string MaterialCache::key(const Material& material) {
     std::string key;
     for (const std::string& t : material.textures) key += t + '\n';
+    for (const std::string& t : material.shader_textures) key += t + '\n';
     return key;
 }
 
@@ -36,10 +37,12 @@ std::vector<std::string> MaterialCache::upload(const Scene& scene, render::Rende
         }
         if (!m.textured() || materials_.contains(key(m))) continue;
         render::MaterialTextures set;
-        render::TextureId* slots[5] = {&set.base_color, &set.metallic_roughness, &set.normal,
-                                       &set.occlusion, &set.emissive};
-        for (size_t i = 0; i < 5; ++i) {
-            const std::string& texture = m.textures[i];
+        render::TextureId* slots[9] = {
+            &set.base_color,     &set.metallic_roughness, &set.normal,
+            &set.occlusion,      &set.emissive,           &set.shader_maps[0],
+            &set.shader_maps[1], &set.shader_maps[2],     &set.shader_maps[3]};
+        for (size_t i = 0; i < 9; ++i) {
+            const std::string& texture = i < 5 ? m.textures[i] : m.shader_textures[i - 5];
             if (texture.empty() || failed_.contains(texture)) continue;
             if (const auto it = textures_.find(texture); it != textures_.end()) {
                 *slots[i] = it->second;
@@ -62,6 +65,7 @@ void MaterialCache::apply(const Material& material, render::DrawItem& draw) cons
     if (!material.shader.empty()) {
         const auto it = shaders_.find(material.shader);
         draw.shader = it != shaders_.end() ? it->second : render::kErrorShader;
+        draw.settings = material.shader_values;  // (the scene's own: kept while it draws)
     }
     if (!material.textured()) return;
     if (const auto it = materials_.find(key(material)); it != materials_.end())

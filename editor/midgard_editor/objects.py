@@ -298,6 +298,11 @@ def object_content(project, obj: ObjectDef) -> CookedObject:
                     content.warnings.append(f"mesh '{asset}' is not in the project")
                 else:
                     content.files[asset] = (asset, data)
+    # Surface shaders' settings, laid out for the engine (5.17).
+    from . import surface_shaders
+    content.parts = [{**part, "components": surface_shaders.drawn(
+        project.root, part.get("components", {}))} if part.get("components") else part
+        for part in content.parts]
     # Image files the materials use (the Material editor's choices).
     for part in content.parts:
         for texture in textures.components_textures(part.get("components", {})):

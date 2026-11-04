@@ -159,3 +159,77 @@ TEST_CASE("surface shaders: code without its surface function says what it needs
     CHECK(out.messages[0].text.find("void surface(SurfaceInput i, inout Surface s)") !=
           std::string::npos);
 }
+
+// ---- shader settings (5.17 step 3)
+// ---------------------------------------------------------------
+
+TEST_CASE("shader settings: each declared setting is read, and the code compiles with it") {
+    const char* glow = R"(setting float speed = 2.0;            // How fast it pulses, 0 .. 10
+setting color tint = vec3(1.0, 0.4, 0.1);
+setting bool sparkle = true;
+setting int rings = 3;
+setting vec2 scale = 2.0;
+setting texture pattern;                 // The pattern
+setting data_texture mask;
+void surface(SurfaceInput i, inout Surface s) {
+    float pulse = 0.5 + 0.5 * sin(i.time * speed);
+    s.emission = tint * pulse * texture(pattern, i.uv * scale).rgb * texture(mask, i.uv).r;
+    if (sparkle) s.roughness = float(rings) * 0.1;
+    s.colr = vec3(1.0);
+}
+)";
+    const sc::CompiledSurface out = sc::compile_surface(glow, "glow");
+    REQUIRE_FALSE(out.ok());  // (the mistake on line 12 is the code's own)
+    REQUIRE(out.messages.size() >= 1);
+    CHECK(out.messages[0].line == 12);
+    REQUIRE(out.settings.size() == 7);
+    const sc::Setting& speed = out.settings[0];
+    CHECK(speed.name == "speed");
+    CHECK(speed.type == "float");
+    CHECK(speed.label == "How fast it pulses");
+    CHECK(speed.value == std::vector<float>{2.0f});
+    CHECK(speed.min == 0.0f);
+    CHECK(speed.max == 10.0f);
+    CHECK(speed.slot == 0);
+    CHECK(speed.line == 1);
+    CHECK(out.settings[1].label == "Tint");
+    CHECK(out.settings[1].value == std::vector<float>{1.0f, 0.4f, 0.1f});
+    CHECK(out.settings[1].slot == 1);
+    CHECK(out.settings[2].value == std::vector<float>{1.0f});
+    CHECK(out.settings[3].max == 10.0f);                             // (an int's range)
+    CHECK(out.settings[4].value == std::vector<float>{2.0f, 2.0f});  // (one number for both)
+    CHECK(out.settings[4].max == 2.0f);  // (its range takes in its value)
+    CHECK(out.settings[5].texture());
+    CHECK(out.settings[5].slot == 0);
+    CHECK(out.settings[5].label == "The pattern");
+    CHECK(out.settings[6].slot == 1);
+
+    std::string fixed = glow;
+    fixed.replace(fixed.find("    s.colr = vec3(1.0);\n"), 24, "");
+    CHECK(sc::compile_surface(fixed).ok());
+}
+
+TEST_CASE("shader settings: a setting that can't be is reported on its line") {
+    const auto first = [](const char* code) {
+        const sc::CompiledSurface out = sc::compile_surface(code);
+        REQUIRE_FALSE(out.ok());
+        REQUIRE_FALSE(out.messages.empty());
+        return out.messages[0];
+    };
+    const char* tail = "void surface(SurfaceInput i, inout Surface s) {}\n";
+    CHECK(first((std::string("setting float speed = fast;\n") + tail).c_str())
+              .text.find("'fast' isn't a number") != std::string::npos);
+    const sc::Message colour = first((std::string("\nsetting colour tint;\n") + tail).c_str());
+    CHECK(colour.line == 2);
+    CHECK(colour.text.find("isn't a type of setting") != std::string::npos);
+    CHECK(first((std::string("setting float roughness = 1.0;\n") + tail).c_str())
+              .text.find("can't be called 'roughness'") != std::string::npos);
+    CHECK(first((std::string("setting float a;\nsetting vec2 a;\n") + tail).c_str()).line == 2);
+    CHECK(first((std::string("setting vec3 v = vec3(1, 2);\n") + tail).c_str())
+              .text.find("has 3 numbers") != std::string::npos);
+    CHECK(first((std::string("setting float speed 2.0;\n") + tail).c_str())
+              .text.find("a setting is written") != std::string::npos);
+    std::string many;
+    for (int k = 0; k < 5; ++k) many += "setting texture t" + std::to_string(k) + ";\n";
+    CHECK(first((many + tail).c_str()).line == 5);
+}
