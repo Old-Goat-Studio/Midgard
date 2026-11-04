@@ -4572,6 +4572,25 @@ TEST_CASE("system space: up through a planet's ceiling, and down again onto the 
     CHECK(std::abs(game.terrain()->terrain().above_ground(at)) < 1.5);  // (on the ground)
 }
 
+TEST_CASE("system space: a planet's own ceiling holds in space above it too") {
+    TestPackage pkg(
+        {{"e1_player", R"(NULL, '{"transform": {"position": [0, 40, 0]}, "player": {}}')"}},
+        R"({"body": {"shape": "sphere_outside", "radius": 1000, "seed": 13,
+                     "origin": [0, -1000, 0]},
+            "terrain": {"height_scale": 20, "base": 8}, "ceiling": 150})");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    for (int i = 0; i < 30; ++i) game.update(actions, 1.0f / 60.0f);
+    CHECK(game.ceiling() == doctest::Approx(150.0));
+    game.enter_space(0.0f);
+    for (int i = 0; i < 60 * 30 && game.changing_scene(); ++i) {
+        game.update(actions, 1.0f / 60.0f);
+        game.stream_terrain(game.camera(1.0f).origin, false);
+    }
+    REQUIRE(game.in_space());
+    CHECK(game.ceiling() == doctest::Approx(150.0));  // (not the rule's 300 m)
+}
+
 TEST_CASE("system space: out of a habitat by its dock, round its hull, and back in") {
     TestPackage pkg(
         {{"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 0]}, "player": {}}')"},

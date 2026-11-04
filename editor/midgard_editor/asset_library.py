@@ -733,13 +733,41 @@ def asset_of(project, file: Path, assets: list[Asset] | None = None) -> Asset | 
     return None
 
 
+def asset_with_contents(file: Path, assets: list[Asset]) -> Asset | None:
+    """The library asset holding a file with these contents (a copy of one of its files, as an
+    object's model copied out of the library is)."""
+    try:
+        digest = sha256(file)
+    except OSError:
+        return None
+    return next((a for a in assets if any(f.get("sha256") == digest for f in a.files)), None)
+
+
 def used_by(project, content_ids) -> list[Asset]:
     """The library assets a game's content uses: models ("lib:"), images ("tex:" paths inside
-    library/) and sounds ("snd:" paths inside library/), each once, by name."""
+    library/), sounds ("snd:" paths inside library/), and the models objects were made from
+    ("obj:" content, its object's model a copy of a library asset's file), each once, by
+    name."""
     from . import sounds, textures
     assets, _ = scan(project)
     found: dict[str, Asset] = {}
+    objects_seen: set[str] = set()
     for content in content_ids:
+        if content.startswith("obj:"):  # an object's mesh or texture: its model's asset
+            object_id = content[4:].split("/", 1)[0]
+            if object_id in objects_seen:
+                continue
+            objects_seen.add(object_id)
+            obj = project.object(object_id) if hasattr(project, "object") else None
+            if obj is not None and obj.source:
+                for source in [obj.source] + [lod.get("source", "")
+                                              for lod in obj.settings.get("lods", [])]:
+                    model = Path(project.objects_dir) / source if source else None
+                    if model is None or not model.is_file():
+                        continue
+                    if (asset := asset_with_contents(model, assets)) is not None:
+                        found[asset.id] = asset
+            continue
         file = model_file(project, content) if content.startswith(MODEL_PREFIX) else None
         if file is None and (parsed := textures.parse(content)) is not None:
             file = Path(project.root) / parsed[0]

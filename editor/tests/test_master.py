@@ -305,3 +305,15 @@ def test_texture_roles_are_read_from_the_end_of_the_name():
              ("Color", "Normal", "Ambient occlusion", "Emissive", "Metallic", "Combined")]
     assert roles == ["color", "normal", "occlusion", "emissive", "metallic",
                      "metallic_roughness"]
+
+
+def test_an_object_made_from_a_library_model_credits_that_model(project, master):
+    from midgard_editor.objects import ObjectDef, copy_model
+    tree = master_asset(master, "models/fir", "Fir", data=b"glTF fir tree", licence="CC-BY-4.0",
+                        author="LOLIPOP", title="Fir")
+    copy = mst.add_to_project(project, master, tree)
+    source = copy_model(copy.folder / "fir.png", project.objects_dir)  # (any file of it)
+    project.put_object(ObjectDef("obj_fir", "Fir", source, {}, []))
+    used = lib.used_by(project, ["obj:obj_fir/0", "obj:obj_fir/tex0"])
+    assert [a.name for a in used] == ["Fir"]
+    assert lib.credits(used) == [lib.credit(copy)]

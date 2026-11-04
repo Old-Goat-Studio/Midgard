@@ -1551,6 +1551,7 @@ Scene Game::make_space() const {
         space.settings.world = from.world;
         space.settings.recipe = from.recipe;
         if (space.settings.recipe) space.settings.recipe->weather.clear();
+        space.settings.ceiling = from.ceiling;  // (its own, if set: the one crossed back down)
     }  // (an inside world: its hull, from outside, below; no body: up is +Y out here)
     space.settings.sun_mode = from.sun_mode;
     space.settings.sky = glm::vec3(0.0f);
