@@ -133,6 +133,8 @@ editor can be undone with **Ctrl+Z**.
   - **Hollow World**: inside a sphere 2.5 km in radius, with the far side overhead through
     the haze. An **Exit Site** pad takes you outside.
 
+  The first time you arrive in a world, its sky is clear for an hour (a small script,
+  `fair_welcome`, does it with `midgard.weather.force`); then its own weather comes back.
   Each world has its own day and night, seasons, weather and sounds (the sea on the
   Archipelago, wind on the Planet, a hum in the Habitat), with music throughout. You walk as
   an animated character (press **V** for first person, third person or the view from above),

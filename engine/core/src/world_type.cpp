@@ -325,7 +325,7 @@ const std::vector<SampleWorldType>& sample_world_types() {
                "climate": {"temperature": 18, "latitude_cooling": 10, "lapse_rate": 6.5,
                            "variation": 2, "season_swing": 0}},
              "graph": {"output": "height", "nodes": {
-               "base": {"op": "noise", "size": 800, "octaves": 5, "salt": "hollow"},
+               "base": {"op": "noise", "size": 800, "octaves": 4, "salt": "hollow"},
                "scaled": {"op": "multiply", "in": [50, "base"]},
                "smoothed": {"op": "smooth", "in": ["scaled"], "radius": 15},
                "height": {"op": "add", "in": [8, "smoothed"]}}}})",

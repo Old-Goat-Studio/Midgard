@@ -18,7 +18,8 @@
 //                                       places the demo scene far from the world's origin;
 //                                       --exposure brightens it (highlights roll off);
 //                                       --scene <name> draws a built-in test scene instead
-//                                       (runtime/test_scenes.h lists them)
+//                                       (runtime/test_scenes.h lists them); --frames N then
+//                                       draws it N more times and says the median frame time
 //   --quality desktop|phone             the renderer's quality tier (by default phone on phones,
 //                                       desktop elsewhere), for a window, a screenshot or the
 //                                       self-test
@@ -977,6 +978,21 @@ int run_screenshot(const Options& opt, Source& source) {
     if (!render::write_png(*opt.screenshot, opt.width, opt.height, renderer.read_pixels())) {
         std::fprintf(stderr, "error: could not write %s\n", opt.screenshot->c_str());
         return 1;
+    }
+    // With --frames N: the same view drawn N more times, the median frame time said (the
+    // World Tour's speed budgets, milestone 5.18).
+    if (opt.frames > 0) {
+        std::vector<double> times;
+        for (long i = 0; i < opt.frames; ++i) {
+            const auto start = std::chrono::steady_clock::now();
+            renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
+            times.push_back(
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                    .count());
+        }
+        std::sort(times.begin(), times.end());
+        say("Frame time: %.3f ms median over %ld frames%s\n", times[times.size() / 2], opt.frames,
+            renderer.software() ? " (software renderer)" : "");
     }
     say("Rendered %ux%u on %s to %s\n", opt.width, opt.height, renderer.device_name().c_str(),
         opt.screenshot->c_str());

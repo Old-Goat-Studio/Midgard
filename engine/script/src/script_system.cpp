@@ -1190,9 +1190,7 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         "The sky colour (r, g, b).");
     m.def(
         "set_sky",
-        [](float r, float g, float b) {
-            current_game().scene().settings.sky = {r, g, b};
-        },
+        [](float r, float g, float b) { current_game().scene().settings.sky = {r, g, b}; },
         py::arg("r"), py::arg("g"), py::arg("b"), "Changes the sky colour.");
 }
 

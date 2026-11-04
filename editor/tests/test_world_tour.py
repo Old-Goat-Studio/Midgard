@@ -154,3 +154,21 @@ def test_the_running_tour_plays_its_music_and_ambience(tour, tmp_path):
     walker = next(e for e in dump["entities"] if e.get("name") == "Walker")
     assert walker["position"][0] > -6.5
     assert any(f["surface"] == "stone" for f in audio["footsteps"])
+
+
+@needs_engine
+def test_a_world_greets_you_with_a_clear_sky(tour, tmp_path):
+    """The first time you arrive, an hour of clear weather (then the world's own)."""
+    import subprocess
+
+    from midgard_editor import about
+    if not about.runtime_candidates():
+        pytest.skip("the runtime isn't built here")
+    archipelago = next(s["id"] for s in scenes.load_all(tour) if s["name"] == "Archipelago")
+    out = cook(tour, tmp_path / "pkg", entry_scene=archipelago).out_dir
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--simulate", "60", "--dump-scene"],
+                         capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr
+    dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
+    assert dump["weather"]["now"] == "clear" and dump["weather"]["forced"] is True

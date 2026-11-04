@@ -119,6 +119,28 @@ AMBIENCE = {
                      ("Calm wind", ["dawn", "day", "dusk", "night"], 0.3)],
 }
 
+WELCOME = '''"""A fair welcome: the first time you arrive in a world, its sky is clear for an hour
+(of game time); then its own weather comes back (midgard.weather.force)."""
+import midgard
+
+welcomed = set()
+
+
+def welcome():
+    scene = midgard.rooms.current
+    if scene not in welcomed:
+        welcomed.add(scene)
+        midgard.weather.force("clear", hours=1.0)
+
+
+def on_start(entity):  # (the game starting here)
+    welcome()
+
+
+def on_room_enter(entity, came_from):  # (arriving through a door or a pad)
+    welcome()
+'''
+
 WALKER = '''"""The Walker: strolls round the hub, finding the way on the navigation mesh
 (midgard.nav.path), pausing at each corner. Its walk animation follows how fast it moves."""
 import math
@@ -370,6 +392,12 @@ class _Builder:
                                           "rotation": [-15.0, 0.0, 0.0]}
         self.p.put_entity(camera, scene)
 
+    def welcome(self, scene: str, parent: str) -> None:
+        (self.p.root / "scripts").mkdir(exist_ok=True)
+        (self.p.root / "scripts" / "fair_welcome.py").write_text(WELCOME, encoding="utf-8")
+        self.put(scene, "Fair Welcome", parent, {"transform": {},
+                                                 "script": {"module": "fair_welcome"}})
+
     def walker(self, scene: str, parent: str) -> None:
         (self.p.root / "scripts").mkdir(exist_ok=True)
         (self.p.root / "scripts" / "walker.py").write_text(WALKER, encoding="utf-8")
@@ -427,6 +455,8 @@ class _Builder:
             self.daylight(scene, inside.get(name, "env_earth"))
             self.player(scene, [0.0, height + 1.0, 3.0])
             self.ambience(scene, name)
+            if "controlled" not in WEATHER[name]:  # (the habitat's is set by its keepers)
+                self.welcome(scene, world)
             self.pad(scene, world, "Pad Home", [0.0, height, -3.0], MAIN_SCENE, back, color)
             self.lamp(scene, world, "Pad Lamp", [2.5, height, -3.0])
             if name in ("Habitat", "Hollow World"):  # a way out into space
