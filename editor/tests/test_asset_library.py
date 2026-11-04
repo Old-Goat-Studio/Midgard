@@ -48,7 +48,7 @@ def test_only_known_licences_and_credited_ones_are_allowed(project):
     assert any("its title or source is needed" in p for p in said)
     other = make(project, "Other", licence="CC-BY-NC-4.0", author="Someone")
     assert any("isn't allowed (only CC0-1.0, CC-BY-4.0, CC-BY-3.0, CC-BY-SA-4.0, "
-               "CC-BY-SA-3.0, Purchased, Own-Work)" in p for p in lib.problems(other))
+               "CC-BY-SA-3.0, Purchased, Own-Work, OFL-1.1)" in p for p in lib.problems(other))
 
 
 def test_changed_and_missing_files_are_noticed(project):

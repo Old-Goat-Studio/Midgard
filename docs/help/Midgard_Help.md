@@ -236,6 +236,8 @@ Only use assets you're allowed to. Midgard accepts these:
   (recolours it, cuts it up), you must offer the changed asset under the same licence.
 - **Purchased** (from the Master Asset Library, below): bought assets. Your games may use
   them, but their **original files may never be given away**.
+- **SIL Open Font License (OFL)**: fonts free to use and ship with your games (not to sell on
+  their own; a changed font gets a new name). No credit needed.
 - **Own work (all rights reserved)**: things you made yourself and keep for your own games.
   The artist's name is needed; like purchased ones, their original files are never given away.
 

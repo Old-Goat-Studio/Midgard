@@ -65,6 +65,7 @@ LICENCES: dict[str, tuple[str, str, bool]] = {
     "CC-BY-SA-3.0": ("CC BY-SA 3.0", "https://creativecommons.org/licenses/by-sa/3.0/", True),
     "Purchased": ("Purchased", "", False),
     "Own-Work": ("Own work (all rights reserved)", "", False),
+    "OFL-1.1": ("SIL Open Font License 1.1", "https://openfontlicense.org/", False),
 }
 PURCHASED = "Purchased"
 OWN_WORK = "Own-Work"  # your own, all rights reserved: your games use it, no one else
@@ -72,7 +73,7 @@ SHARE_ALIKE = ("CC-BY-SA-4.0", "CC-BY-SA-3.0")
 # The licences an asset is imported with here (purchased ones come from the Master, with where
 # they were bought).
 IMPORT_LICENCES = ("CC0-1.0", "CC-BY-4.0", "CC-BY-3.0", "CC-BY-SA-4.0", "CC-BY-SA-3.0",
-                   "Own-Work")
+                   "Own-Work", "OFL-1.1")
 # A format 1 asset's id: made from its path, so it is the same every time (as the Master's).
 _V1_NAMESPACE = uuid.UUID("6a1d4f0e-5b8c-4e2a-9f37-0c1d2e3f4a5b")
 
