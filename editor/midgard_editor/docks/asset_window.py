@@ -86,8 +86,10 @@ class AssetDetailsForm(QWidget):
         self.description.setMaximumHeight(70)
         form.addRow("Description", self.description)
         self.licence = QComboBox()
-        for code, (label, _deed, _credit) in lib.LICENCES.items():
-            self.licence.addItem(label, code)
+        for code in lib.IMPORT_LICENCES:
+            self.licence.addItem(lib.LICENCES[code][0], code)
+        if asset is not None and asset.licence not in lib.IMPORT_LICENCES:  # (from the Master)
+            self.licence.addItem(licence_label(asset.licence), asset.licence)
         self.licence.setCurrentIndex(max(0, self.licence.findData(
             asset.licence if asset else "CC0-1.0")))
         self.licence.currentIndexChanged.connect(lambda _i: self._credit_fields())
@@ -126,10 +128,20 @@ class AssetDetailsForm(QWidget):
         self.category_label.setVisible(visible)
 
     def _credit_fields(self) -> None:
-        credited = lib.LICENCES[self.licence.currentData()][2]
-        self.note.setText("CC BY: its author, and its title or source, are needed; the game's "
-                          "credits name it." if credited else
-                          "CC0: no credit is needed (naming the author is kind all the same).")
+        code = self.licence.currentData()
+        credited = lib.LICENCES.get(code, ("", "", False))[2]
+        if code == lib.PURCHASED:
+            text = ("Purchased (from the Master): its original files are never given away; "
+                    "where it was bought is changed in the Master Asset Library.")
+        elif credited:
+            text = ("Its author, and its title or source, are needed; the game's credits name "
+                    "it.")
+        else:
+            text = "CC0: no credit is needed (naming the author is kind all the same)."
+        if code in lib.SHARE_ALIKE:
+            text += (" Share-alike: a game that changes it must offer the changed asset under "
+                     "the same licence.")
+        self.note.setText(text)
 
     def values(self) -> dict:
         type_ = self.type.currentData()
@@ -955,7 +967,22 @@ class AssetWindow(QWidget):
         self.remove_button.clicked.connect(self.remove_selected)
         self.show_button = QPushButton("Show in Folder")
         self.show_button.clicked.connect(self.show_in_folder)
-        for b in (self.import_button, self.details_button, self.remove_button, self.show_button):
+        # The Master Asset Library (milestone 5.13b): copies from it, kept up to date, and new
+        # assets given to it.
+        self.from_master_button = QPushButton("Add from Master…")
+        self.from_master_button.clicked.connect(lambda: self.add_from_master())
+        self.update_button = QPushButton("Update from Master")
+        self.update_button.setToolTip("The Master has a newer version of this asset: bring the "
+                                      "project's copy up to it")
+        self.update_button.clicked.connect(lambda: self.update_from_master())
+        self.send_button = QPushButton("Send to Master")
+        self.send_button.setToolTip("Give this asset to the Master Asset Library, for your "
+                                    "other projects")
+        self.send_button.clicked.connect(lambda: self.send_to_master())
+        self.quiet = False  # (tests: questions and reports aren't shown)
+        self.last_report = ""
+        for b in (self.import_button, self.from_master_button, self.details_button,
+                  self.update_button, self.send_button, self.remove_button, self.show_button):
             bar.addWidget(b)
         outer.addLayout(bar)
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -1030,8 +1057,9 @@ class AssetWindow(QWidget):
             self.assets, self.unreadable = lib.scan(self.project)
             self.title.setText(f"{self.project.name}'s library: {len(self.assets)} asset"
                                f"{'' if len(self.assets) == 1 else 's'}")
-        for b in (self.import_button, self.show_button):
+        for b in (self.import_button, self.show_button, self.from_master_button):
             b.setEnabled(self.project is not None)
+        self._master_assets = None  # (read again when wanted)
         for i in range(self.types.count()):
             item = self.types.item(i)
             key = item.data(ASSET_ROLE)
@@ -1105,8 +1133,10 @@ class AssetWindow(QWidget):
         if (asset.id if asset else None) != (shown.id if shown else None):
             self.player.show_asset(asset)
             self.show_files(asset)
-        for b in (self.details_button, self.remove_button):
+        for b in (self.details_button, self.remove_button, self.send_button):
             b.setEnabled(asset is not None)
+        newer = self.newer_in_master(asset) if asset is not None else None
+        self.update_button.setVisible(newer is not None)
         if asset is None:
             text = "Select an asset to see it." if self.project else ""
             if self.unreadable:
@@ -1123,6 +1153,25 @@ class AssetWindow(QWidget):
                 rows.append(f"{label}: {value}")
         if lib.needs_credit(asset):
             rows.append(f"Credit: {lib.credit(asset)}")
+        if asset.tags:
+            rows.append(f"Tags: {', '.join(asset.tags)}")
+        if asset.licence == lib.PURCHASED and asset.purchase:
+            p = asset.purchase
+            rows.append("Bought: " + ", ".join(x for x in (
+                p.get("product"), f"from {p['seller']}" if p.get("seller") else "",
+                p.get("date"), f"order {p['order']}" if p.get("order") else "") if x))
+        if lib.share_alike(asset):
+            rows.append("<i>Share-alike: changed versions under the same licence.</i>")
+        if not lib.may_give_away(asset):
+            rows.append("<i>Its original files may not be given away.</i>")
+        if asset.origin:
+            from .. import master as mst
+            origin = f"From the Master (version {asset.origin.get('version', 1)})"
+            if mst.changed_here(asset):
+                origin += ", changed here since"
+            if newer is not None:
+                origin += f"; the Master has version {newer.version}"
+            rows.append(origin)
         size = sum(f.get("bytes", 0) for f in asset.files)
         rows.append(f"Files: {len(asset.files)}, {size_text(size)}")  # (listed below)
         if said := lib.problems(asset):
@@ -1218,6 +1267,112 @@ class AssetWindow(QWidget):
         log.info("Removed '%s' from the library", asset.name)
         self.refresh()
         return True
+
+    # ---- the Master Asset Library (milestone 5.13b) ------------------------------------------
+    def _settings(self):
+        return getattr(self.parent(), "settings", None)
+
+    def master(self):
+        """The Master library (None, and why said, if there is none)."""
+        from .. import master as mst
+        try:
+            return mst.find_master(self._settings())
+        except mst.MasterError as e:
+            self._tell("Master Asset Library", str(e), warning=True)
+            return None
+
+    def master_assets(self) -> list[lib.Asset]:
+        from .. import master as mst
+        if self._master_assets is None:
+            try:
+                self._master_assets = mst.find_master(self._settings()).scan()[0]
+            except mst.MasterError:
+                self._master_assets = []
+        return self._master_assets
+
+    def newer_in_master(self, asset: lib.Asset) -> lib.Asset | None:
+        from .. import master as mst
+        if not asset.origin:
+            return None
+        try:
+            found = mst.find_master(self._settings())
+        except mst.MasterError:
+            return None
+        return mst.newer_in_master(asset, found, self.master_assets())
+
+    def _tell(self, title: str, text: str, warning: bool = False) -> None:
+        self.last_report = text
+        if not self.quiet:
+            (QMessageBox.warning if warning else QMessageBox.information)(self, title, text)
+
+    def _ask(self, title: str, text: str) -> bool:
+        if self.quiet:
+            return True
+        return QMessageBox.question(self, title, text) == QMessageBox.StandardButton.Yes
+
+    def add_from_master(self, run: bool = True):
+        """Assets ▸ Add from Master…: the Master's assets, chosen and copied into the library."""
+        from .master_dialog import AddFromMasterDialog
+        found = self.master() if self.project is not None else None
+        if found is None:
+            return None
+        dialog = AddFromMasterDialog(self.project, found, self)
+        dialog.quiet = self.quiet
+        if run:
+            dialog.exec()
+            self.refresh()
+            if dialog.added:
+                self.select(dialog.added[0].id)
+        return dialog
+
+    def update_from_master(self) -> lib.Asset | None:
+        from .. import master as mst
+        asset = self.selected()
+        newer = self.newer_in_master(asset) if asset is not None else None
+        found = self.master() if newer is not None else None
+        if found is None:
+            return None
+        if mst.changed_here(asset) and not self._ask(
+                "Update from Master", f"'{asset.name}' has been changed in this project. Replace "
+                f"it with the Master's version {newer.version} all the same?"):
+            return None
+        self.player.show_asset(None)
+        mst.update_from_master(asset, found, newer)
+        log.info("Updated '%s' from the Master (version %d)", asset.name, newer.version)
+        self.refresh()
+        self.select(asset.id)
+        return asset
+
+    def send_to_master(self) -> lib.Asset | None:
+        """The selected asset given to the Master (a changed copy of the Master's own: as the
+        Master's next version, if wished)."""
+        from .. import master as mst
+        asset = self.selected()
+        found = self.master() if asset is not None else None
+        if found is None:
+            return None
+        replace = False
+        if asset.origin and asset.origin.get("library") == found.id:
+            if not mst.changed_here(asset):
+                self._tell("Send to Master", f"'{asset.name}' came from the Master and hasn't "
+                           "changed: there is nothing new to send.")
+                return None
+            if not self._ask("Send to Master", f"'{asset.name}' came from the Master and was "
+                             "changed here. Make it the Master's next version (your other "
+                             "projects can then update to it)?"):
+                return None
+            replace = True
+        try:
+            given = mst.send_to_master(asset, found, replace=replace)
+        except (mst.MasterError, lib.LibraryError, OSError) as e:
+            self._tell("Send to Master", f"Not sent: {e}", warning=True)
+            return None
+        self._tell("Send to Master", f"'{asset.name}' is in the Master Asset Library "
+                   f"(version {given.version}).")
+        log.info("Sent '%s' to the Master (version %d)", asset.name, given.version)
+        self.refresh()
+        self.select(asset.id)
+        return given
 
     def show_in_folder(self) -> None:
         if self.project is None:

@@ -12,21 +12,27 @@ textures), one folder per asset:
     library/models/superhero/ ...
     library/music/<album, or miscellaneous>/<asset>/ ...
 
-asset.json: {"format": 1, "name", "type", "category", "description", "licence" ("CC0-1.0",
-"CC-BY-4.0" or "CC-BY-3.0"), "author", "source" (where it came from), "title" (the work's own
-title, for its credit), "imported" (a date), "files": [{"path", "sha256", "bytes"}]}.
+asset.json follows the library format shared with the Master Asset Library (milestone 5.13b;
+its docs/library_format.md): {"format": 2, "id" (the asset's own id, the same in the Master and
+every copy), "version", "name", "type", "category", "description", "tags", "licence",
+"author", "source" (where it came from), "title" (the work's own title, for its credit),
+"imported" (a date), "files": [{"path", "sha256", "bytes"}], "fingerprint" (its files as one
+SHA-256), "purchase" (where a purchased one was bought), "origin" (where a copy from the Master
+came from)}. Format 1 (5.13a's) is read too, and written as 2 when it changes.
 
-Assets are always copied in, never linked. CC0 assets need nothing more; CC-BY ones need their
-author, and their title or source, and are credited automatically (`credit`). Nothing else is
-allowed in."""
+Assets are always copied in, never linked. CC0 assets need nothing more; CC BY and CC BY-SA ones
+need their author, and their title or source, and are credited automatically (`credit`).
+Purchased ones (from the Master) need their seller and the seller's licence, kept with them;
+their original files are never given away."""
 import hashlib
 import json
 import re
 import shutil
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-FORMAT = 1
+FORMAT = 2
 FOLDER = "library"
 METADATA = "asset.json"
 LICENCE_FILE = "LICENSE.md"
@@ -55,7 +61,17 @@ LICENCES: dict[str, tuple[str, str, bool]] = {
                 "https://creativecommons.org/publicdomain/zero/1.0/", False),
     "CC-BY-4.0": ("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/", True),
     "CC-BY-3.0": ("CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/", True),
+    "CC-BY-SA-4.0": ("CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/", True),
+    "CC-BY-SA-3.0": ("CC BY-SA 3.0", "https://creativecommons.org/licenses/by-sa/3.0/", True),
+    "Purchased": ("Purchased", "", False),
 }
+PURCHASED = "Purchased"
+SHARE_ALIKE = ("CC-BY-SA-4.0", "CC-BY-SA-3.0")
+# The licences an asset is imported with here (purchased ones come from the Master, with where
+# they were bought).
+IMPORT_LICENCES = ("CC0-1.0", "CC-BY-4.0", "CC-BY-3.0", "CC-BY-SA-4.0", "CC-BY-SA-3.0")
+# A format 1 asset's id: made from its path, so it is the same every time (as the Master's).
+_V1_NAMESPACE = uuid.UUID("6a1d4f0e-5b8c-4e2a-9f37-0c1d2e3f4a5b")
 
 
 class LibraryError(Exception):
@@ -75,6 +91,12 @@ class Asset:
     title: str = ""
     imported: str = ""
     files: list[dict] = field(default_factory=list)  # {"path", "sha256", "bytes"}
+    uid: str = ""         # its own id ("id" in asset.json; Asset.id is where it is)
+    version: int = 1      # one more each time its files change
+    tags: list[str] = field(default_factory=list)
+    fingerprint: str = ""  # its files as one SHA-256
+    purchase: dict | None = None  # where a purchased one was bought
+    origin: dict | None = None    # a copy from the Master: which, and which version
     # From its import (not saved): files left out, and what to know.
     skipped: list[tuple[str, str]] = field(default_factory=list, compare=False, repr=False)
     warnings: list[str] = field(default_factory=list, compare=False, repr=False)
@@ -92,10 +114,12 @@ class Asset:
         return [self.folder / f["path"] for f in self.files]
 
     def to_json(self) -> dict:
-        return {"format": FORMAT, "name": self.name, "type": self.type,
-                "category": self.category, "description": self.description,
-                "licence": self.licence, "author": self.author, "source": self.source,
-                "title": self.title, "imported": self.imported, "files": self.files}
+        return {"format": FORMAT, "id": self.uid, "version": self.version, "name": self.name,
+                "type": self.type, "category": self.category, "description": self.description,
+                "tags": self.tags, "licence": self.licence, "author": self.author,
+                "source": self.source, "title": self.title, "imported": self.imported,
+                "files": self.files, "fingerprint": self.fingerprint or fingerprint(self.files),
+                "purchase": self.purchase, "origin": self.origin}
 
 
 def library_dir(project) -> Path:
@@ -128,11 +152,21 @@ def read(folder: Path) -> Asset:
         doc = json.loads((folder / METADATA).read_text("utf-8"))
     except (OSError, ValueError) as e:
         raise LibraryError(f"{folder.name}: {METADATA} can't be read: {e}") from e
-    if not isinstance(doc, dict) or doc.get("format") != FORMAT:
+    if not isinstance(doc, dict) or doc.get("format") not in (1, 2):
         raise LibraryError(f"{folder.name}: {METADATA} isn't one this editor reads")
-    fields = {k: doc.get(k, "") for k in ("name", "type", "category", "description", "licence",
-                                          "author", "source", "title", "imported")}
-    return Asset(folder=folder, files=list(doc.get("files", [])), **fields)
+    fields = {k: doc.get(k) or "" for k in ("name", "type", "category", "description",
+                                            "licence", "author", "source", "title", "imported")}
+    files = [f for f in doc.get("files", []) if isinstance(f, dict) and "path" in f]
+    asset = Asset(folder=folder, files=files, **fields)
+    asset.uid = str(doc.get("id") or "") if doc["format"] == 2 else ""
+    if not asset.uid:
+        asset.uid = str(uuid.uuid5(_V1_NAMESPACE, asset.id))
+    asset.version = int(doc.get("version") or 1)
+    asset.tags = [str(t) for t in doc.get("tags") or []]
+    asset.fingerprint = str(doc.get("fingerprint") or fingerprint(files))
+    asset.purchase = doc.get("purchase") if isinstance(doc.get("purchase"), dict) else None
+    asset.origin = doc.get("origin") if isinstance(doc.get("origin"), dict) else None
+    return asset
 
 
 def scan(project) -> tuple[list[Asset], list[str]]:
@@ -148,6 +182,13 @@ def scan(project) -> tuple[list[Asset], list[str]]:
             problems.append(str(e))
     assets.sort(key=lambda a: (a.type, a.category, a.name.lower()))
     return assets, problems
+
+
+def fingerprint(files: list[dict]) -> str:
+    """An asset's files as one SHA-256: a line "<path>\t<sha256>\n" per file, sorted by path
+    (the library format's)."""
+    lines = sorted((f["path"], f.get("sha256", "")) for f in files)
+    return hashlib.sha256("".join(f"{p}\t{d}\n" for p, d in lines).encode()).hexdigest()
 
 
 def sha256(file: Path) -> str:
@@ -166,11 +207,20 @@ def problems(asset: Asset) -> list[str]:
     if asset.licence not in LICENCES:
         allowed = ", ".join(LICENCES)
         out.append(f"its licence, '{asset.licence or 'none'}', isn't allowed (only {allowed})")
-    elif LICENCES[asset.licence][2]:
+    elif needs_credit(asset):
         if not asset.author.strip():
-            out.append("it is CC BY: its author is needed for its credit")
+            out.append("it needs crediting: its author is needed for its credit")
         if not (asset.title.strip() or asset.source.strip()):
-            out.append("it is CC BY: its title or source is needed for its credit")
+            out.append("it needs crediting: its title or source is needed for its credit")
+    if asset.licence == PURCHASED:
+        p = asset.purchase or {}
+        if not str(p.get("seller", "")).strip():
+            out.append("it was bought: who sold it is needed")
+        licence_file = str(p.get("licence_file", ""))
+        if not licence_file:
+            out.append("it was bought: the seller's licence is needed, kept with it")
+        elif not any(f.get("path") == licence_file for f in asset.files):
+            out.append(f"its licence file, {licence_file}, isn't one of its files")
     if not asset.files:
         out.append("it has no files")
     for f in asset.files:
@@ -184,13 +234,27 @@ def problems(asset: Asset) -> list[str]:
 
 # ---- credits ---------------------------------------------------------------------------------
 def needs_credit(asset: Asset) -> bool:
+    if asset.licence == PURCHASED:
+        return bool((asset.purchase or {}).get("credit"))
     return asset.licence in LICENCES and LICENCES[asset.licence][2]
+
+
+def share_alike(asset: Asset) -> bool:
+    return asset.licence in SHARE_ALIKE
+
+
+def may_give_away(asset: Asset) -> bool:
+    """Whether its original files may be passed on (a purchased one's may not)."""
+    return asset.licence in LICENCES and asset.licence != PURCHASED
 
 
 def credit(asset: Asset) -> str:
     """Its credit (title, author, source, licence): '"Rusty Plates" by Ana Ruiz
     (https://example.org/rusty), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)'."""
     name, deed, _ = LICENCES.get(asset.licence, (asset.licence, "", False))
+    if asset.licence == PURCHASED:
+        seller = (asset.purchase or {}).get("seller")
+        name = f"from {seller}" if seller else "purchased"
     title = asset.title or asset.name
     text = f'"{title}" by {asset.author or "an unknown author"}'
     if asset.source:
@@ -219,25 +283,47 @@ def licence_text(asset: Asset) -> str:
         lines.append(f"- Source: {asset.source}")
     if asset.imported:
         lines.append(f"- Imported: {asset.imported}")
-    if attribute:
+    if asset.tags:
+        lines.append(f"- Tags: {', '.join(asset.tags)}")
+    if asset.licence == PURCHASED and asset.purchase:
+        lines += ["", "Bought:", ""]
+        for label, key in (("Seller", "seller"), ("Product", "product"), ("Order", "order"),
+                           ("Date", "date"), ("The seller's licence", "licence_file")):
+            if asset.purchase.get(key):
+                lines.append(f"- {label}: {asset.purchase[key]}")
+        lines += ["", "Its original files may not be given away."]
+    if share_alike(asset):
+        lines += ["", "Share-alike: changed versions of it must be offered under the same "
+                  "licence."]
+    if needs_credit(asset):
         lines += ["", "Credit (shown in the game's credits):", "", credit(asset)]
     lines += ["", "## Files", ""] + [f"- {f['path']}" for f in asset.files]
     return "\n".join(lines) + "\n"
 
 
 def write(asset: Asset) -> None:
-    """Its asset.json and LICENSE.md."""
+    """Its asset.json and LICENSE.md (as format 2: an id is made if it has none)."""
+    if not asset.uid:
+        asset.uid = str(uuid.uuid4())
     asset.folder.mkdir(parents=True, exist_ok=True)
     (asset.folder / METADATA).write_text(json.dumps(asset.to_json(), indent=2) + "\n", "utf-8")
     (asset.folder / LICENCE_FILE).write_text(licence_text(asset), "utf-8")
 
 
-def record_files(asset: Asset) -> None:
-    """Its files as they are now (every file in its folder but its own two)."""
+def record_files(asset: Asset) -> bool:
+    """Its files as they are now (every file in its folder but its own two), and its
+    fingerprint. Returns whether they changed (its version goes up when they did)."""
+    before = asset.fingerprint
     asset.files = [{"path": p.relative_to(asset.folder).as_posix(), "sha256": sha256(p),
                     "bytes": p.stat().st_size}
                    for p in sorted(asset.folder.rglob("*"))
-                   if p.is_file() and p.name not in (METADATA, LICENCE_FILE)]
+                   if p.is_file() and p.relative_to(asset.folder).as_posix() not in
+                   (METADATA, LICENCE_FILE)]
+    asset.fingerprint = fingerprint(asset.files)
+    changed = bool(before) and before != asset.fingerprint
+    if changed:
+        asset.version += 1
+    return changed
 
 
 def remove(asset: Asset) -> None:

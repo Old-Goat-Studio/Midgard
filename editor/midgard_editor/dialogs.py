@@ -166,6 +166,22 @@ class CommitDialog(QDialog):
                       "with the scripts that go with them.")
         note.setWordWrap(True)
         note.setEnabled(False)
+        # Purchased assets' originals may not be given away: in Git, they go wherever the
+        # project's history is pushed.
+        from . import master
+        self.purchased = master.purchased_paths(project, [f.path for f in self.files])
+        names = sorted({a.name for a in self.purchased.values()})
+        self.purchased_note = QLabel(
+            f"<b>Purchased assets:</b> {', '.join(names)}. Their original files may not be "
+            "given away: if this project's Git is ever pushed somewhere others can see (a "
+            "public GitHub repository), they go with it." if names else "")
+        self.purchased_note.setWordWrap(True)
+        self.keep_out = QPushButton("Keep Them Out of Git")
+        self.keep_out.setToolTip("Adds their folders to the project's .gitignore (the files stay "
+                                 "in the project, just not in its history)")
+        self.keep_out.clicked.connect(self.keep_purchased_out)
+        self.purchased_note.setVisible(bool(names))
+        self.keep_out.setVisible(bool(names))
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         self.commit_button = self.buttons.addButton("Commit",
                                                     QDialogButtonBox.ButtonRole.AcceptRole)
@@ -177,10 +193,35 @@ class CommitDialog(QDialog):
         layout.addWidget(QLabel("Files to commit"))
         layout.addWidget(self.list)
         layout.addWidget(note)
+        layout.addWidget(self.purchased_note)
+        layout.addWidget(self.keep_out)
         layout.addWidget(QLabel("Message"))
         layout.addWidget(self.message)
         layout.addWidget(self.buttons)
         self.message.setFocus()
+        self._update()
+
+    def keep_purchased_out(self) -> None:
+        """The purchased assets' folders into .gitignore, and their files unticked."""
+        from . import master
+        assets = list({id(a): a for a in self.purchased.values()}.values())
+        master.keep_out_of_git(self.project, assets)
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) in self.purchased:
+                item.setCheckState(Qt.CheckState.Unchecked)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+        self.purchased_note.setText("The purchased assets are kept out of Git (in the project's "
+                                    ".gitignore, which is ticked to commit).")
+        self.keep_out.setVisible(False)
+        gitignore = ".gitignore"
+        if not any(self.list.item(i).data(Qt.ItemDataRole.UserRole) == gitignore
+                   for i in range(self.list.count())):
+            item = QListWidgetItem(f"{gitignore}   (changed)")
+            item.setData(Qt.ItemDataRole.UserRole, gitignore)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            self.list.addItem(item)
         self._update()
 
     def ticked(self) -> list[str]:
@@ -226,6 +267,17 @@ class PreferencesDialog(QDialog):
         row.addWidget(self.projects)
         row.addWidget(browse)
         form.addRow("Projects folder", row)
+        from .master import master_dir
+        self.master = QLineEdit(str(master_dir(settings)))
+        self.master.setToolTip("The Master Asset Library's folder: Assets ▸ Add from Master… "
+                               "takes copies from it. Left as it is, it is where the Master "
+                               "Asset Library program keeps it.")
+        browse_master = QPushButton("Browse…")
+        browse_master.clicked.connect(self._browse_master)
+        row = QHBoxLayout()
+        row.addWidget(self.master)
+        row.addWidget(browse_master)
+        form.addRow("Master library", row)
         self.error_log = QCheckBox("Keep an error log (error.log in the project's folder)")
         self.error_log.setToolTip("The last 100 keys and clicks, and errors, so a crash can be "
                                   "understood. Turn it off for speed (each project can too, on "
@@ -266,6 +318,12 @@ class PreferencesDialog(QDialog):
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
+    def _browse_master(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Master Asset Library",
+                                                  self.master.text())
+        if folder:
+            self.master.setText(folder)
+
     def _browse_projects(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Projects folder", self.projects.text())
         if folder:
@@ -280,6 +338,10 @@ class PreferencesDialog(QDialog):
                 QMessageBox.warning(self, "Preferences", f"The projects folder can't be made: {e}")
                 return
             self.settings.set("projects_dir", folder)
+        from .master import master_dir
+        master = self.master.text().strip()
+        if master and master != str(master_dir(self.settings)):  # (changed: kept)
+            self.settings.set("master_library_dir", master)
         self.settings.set("open_last_project", self.open_last.isChecked())
         self.settings.set("error_log", self.error_log.isChecked())
         self.settings.set("backup_keep", self.keep.value())

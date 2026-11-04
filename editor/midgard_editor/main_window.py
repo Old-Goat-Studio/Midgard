@@ -462,6 +462,8 @@ class MainWindow(QMainWindow):
                                          "Ctrl+Shift+L")
         self.import_asset_action = add_action(assets, "&Import Into Library…",
                                               self.import_into_library)
+        self.from_master_action = add_action(assets, "Add from &Master…",
+                                             self.add_from_master)
         self.samples_action = add_action(assets, "Add &Sample Assets",
                                          self.add_sample_assets)
 
@@ -694,6 +696,11 @@ class MainWindow(QMainWindow):
             self.asset_window.set_project(self.project)
         return self.asset_window
 
+    def add_from_master(self) -> None:
+        """Assets ▸ Add from Master…: copies from the Master Asset Library (milestone 5.13b)."""
+        self.show_asset_library()
+        self.asset_window.add_from_master()
+
     def show_asset_library(self) -> None:
         window = self.library_window()
         window.show()
@@ -807,7 +814,8 @@ class MainWindow(QMainWindow):
         self._update_git_action()
         for action in (self.close_action, self.cook_action, self.export_action,
                        self.world_shape_action, self.physics_layers_action,
-                       self.library_action, self.import_asset_action, self.samples_action):
+                       self.library_action, self.import_asset_action, self.samples_action,
+                       self.from_master_action):
             action.setEnabled(project is not None)
         if self.asset_window is not None:
             self.asset_window.set_project(project)

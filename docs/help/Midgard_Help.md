@@ -227,11 +227,15 @@ Photoshop file inside a zip) are skipped and listed.
 
 ### Licences and credits
 
-Only use assets you're allowed to. Midgard accepts two kinds:
+Only use assets you're allowed to. Midgard accepts these:
 
 - **CC0**: free for anything, no credit needed.
 - **CC-BY**: free, but you must credit the author. Midgard does this for you: the **Project
   Page** shows the credits your game needs, and every exported game includes a `CREDITS.txt`.
+- **CC-BY-SA** (share-alike): free, with a credit, and if your game changes the asset
+  (recolours it, cuts it up), you must offer the changed asset under the same licence.
+- **Purchased** (from the Master Asset Library, below): bought assets. Your games may use
+  them, but their **original files may never be given away**.
 
 ### Looking at assets
 
@@ -256,6 +260,40 @@ textures…"); you can carry on working meanwhile. After that it shows at once.
 - In the **Inspector**, rows that take a model or picture have a **Library…** button.
 - A character's **Model** and **Animations from** come from the library.
 - In the Material editor, **Library…** puts a whole texture set on a material in one step.
+
+### The Master Asset Library: every asset you have, for all your projects
+
+The **Master Asset Library** is a separate program, installed beside Midgard, with a vault-door
+icon. It holds every asset you have, whether downloaded, bought, made yourself or collected from
+your projects. Each project's own library takes **copies** from it, so a project is always
+complete by itself, even on another computer.
+
+In the Master Asset Library program:
+
+- **Import…** brings in files, folders and zips (or drop them on its window), the same way as
+  here, with **tags** to find them by later. Downloads are checked: a zip can't put anything
+  outside the library, and a file that isn't what its name says is left out.
+- **File ▸ Collect from a Midgard Project…** gathers what a project's library already has.
+- **Purchased** assets record who sold them, what, when, the order number, and the seller's
+  licence (a file kept with the asset).
+- Search, filter by tag or licence, and look at any asset (models and textures in 3D).
+
+In Midgard:
+
+- **Assets ▸ Add from Master…** (or **Add from Master…** in the library window): find assets,
+  choose them and press **Add to Project**. Those the project already has are greyed.
+- An asset copied from the Master says so in its details. When the Master gets a newer
+  version, the library window offers **Update from Master**.
+- **Send to Master** gives one of your project's assets to the Master, for your other
+  projects. If it came from the Master and you changed it here, it can become the Master's
+  next version.
+- Midgard finds the Master where its program keeps it. To use another folder, set
+  **Edit ▸ Preferences ▸ Master library**.
+
+**Purchased assets and Git.** When you commit, Midgard warns if purchased assets' files are
+going into Git: if the project is ever pushed somewhere others can see (a public GitHub
+repository), they would go with it. **Keep Them Out of Git** leaves them in the project but out
+of its history.
 
 ---
 

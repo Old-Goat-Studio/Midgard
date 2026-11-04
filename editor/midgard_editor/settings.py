@@ -21,6 +21,7 @@ DEFAULTS: dict[str, Any] = {
     "use_x11": False,            # Linux: start under XWayland for full multi-monitor support
     "last_project_dir": "",
     "projects_dir": "",          # where projects are made ("": Documents/Midgard Projects)
+    "master_library_dir": "",    # the Master Asset Library ("": where its program keeps it)
     "error_log": True,           # error.log (error_log.py); off for speed
     "open_last_project": True,   # start with the project worked on last (if it's still there)
     "export_dir": "",            # last Build ▸ Export output folder

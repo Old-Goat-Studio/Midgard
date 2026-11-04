@@ -29,7 +29,8 @@ def test_assets_are_written_and_read_back(project):
                  imported="2026-11-02")
     assert asset.id == "textures/metal/rusty_plates"
     doc = json.loads((asset.folder / "asset.json").read_text("utf-8"))
-    assert doc["format"] == 1 and doc["files"][0]["path"] == "rusty_basecolor.png"
+    assert doc["format"] == 2 and doc["files"][0]["path"] == "rusty_basecolor.png"
+    assert len(doc["id"]) == 36 and doc["version"] == 1 and len(doc["fingerprint"]) == 64
     assert len(doc["files"][0]["sha256"]) == 64
     again = lib.read(asset.folder)
     assert again == asset
@@ -39,15 +40,15 @@ def test_assets_are_written_and_read_back(project):
     assert lib.problems(again) == []
 
 
-def test_only_cc0_and_credited_cc_by_are_allowed(project):
+def test_only_known_licences_and_credited_ones_are_allowed(project):
     assert lib.problems(make(project, "Free", licence="CC0-1.0")) == []
     bare = make(project, "Bare", licence="CC-BY-4.0")
     said = lib.problems(bare)
     assert any("its author is needed" in p for p in said)
     assert any("its title or source is needed" in p for p in said)
     other = make(project, "Other", licence="CC-BY-NC-4.0", author="Someone")
-    assert any("isn't allowed (only CC0-1.0, CC-BY-4.0, CC-BY-3.0)" in p
-               for p in lib.problems(other))
+    assert any("isn't allowed (only CC0-1.0, CC-BY-4.0, CC-BY-3.0, CC-BY-SA-4.0, "
+               "CC-BY-SA-3.0, Purchased)" in p for p in lib.problems(other))
 
 
 def test_changed_and_missing_files_are_noticed(project):
