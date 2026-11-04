@@ -683,6 +683,8 @@ public:
             } else if (type == "asset.changed") {
                 const std::string id = message.at("id").get<std::string>();
                 if (renderer) game_.reload_asset(id, *renderer);
+                for (const std::string& problem : game_.take_reload_problems())
+                    warn("%s\n", problem.c_str());
                 acknowledge("applied asset.changed " + id);
                 return;
             } else {

@@ -752,6 +752,8 @@ class MainWindow(QMainWindow):
         """A shader saved: the Viewport and open Material editors draw it as it is now."""
         self.viewport.shader_changed(shader)
         MaterialDialog.refresh_all()
+        if self.session is not None and self.session.running:
+            self.session.files_saved()  # (the running game changes at once, 5.17)
 
     def edit_script(self, module: str) -> None:
         """Shows a script in the Script editor (from the Inspector's Edit button)."""

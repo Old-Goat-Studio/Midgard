@@ -13,8 +13,10 @@ talks to it over a TCP live link, so an engine crash never takes the editor down
 
 Hot reload: entity edits (the sky's too) travel in the message itself. Meshes are rewritten
 in the cooked package first (cook.recook), then named in row.changed / asset.changed. Mesh files
-in the project's objects/ folder and scripts in its scripts/ folder are watched, so saving one
-(from a modelling tool or a text editor) shows in the game.
+in the project's objects/ folder, scripts in its scripts/ folder and surface shaders in its
+shaders/ folder are watched, so saving one (from a modelling tool, a text editor or the Shader
+editor) shows in the game. A shader that doesn't compile isn't sent: the game keeps drawing the
+last version that worked (milestone 5.17).
 
 Each message is a 4-byte big-endian length followed by UTF-8 JSON
 (schema/live_link.schema.json).
@@ -29,7 +31,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
-from . import environments, sound_events, terrain_stamps, weather
+from . import environments, sound_events, surface_shaders, terrain_stamps, weather
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .objects import ObjectError, object_content
 from .project import Project
@@ -327,11 +329,20 @@ class PlaySession(QObject):
             log.error("Hot reload of the assets failed: %s", e)
             return
         for warning in result.warnings:
+            if "surface shader" in warning and "drawn magenta" in warning:
+                warning += " The running game keeps the last version that worked."
             log.warning(warning)
         self._cooked_assets = {c["id"] for c in result.manifest["content"]}
         for asset in sorted(changed & self._cooked_assets):
             log.info("Reloading %s", asset)
             self.send({"type": "asset.changed", "id": asset})
+        # A surface shader changed: the materials using it go again, as their settings may now
+        # sit in other slots (surface_shaders.drawn).
+        shaders = {a for a in changed & self._cooked_assets
+                   if a.startswith(surface_shaders.PREFIX)}
+        for entity in self.project.entities() if shaders else []:
+            if surface_shaders.components_shader(entity.components) in shaders:
+                self.send(entity_message(self.project, entity.id))
         for item in sorted(c for c in changed if c.startswith(SCRIPT_PREFIX)):
             self.send({"type": "script.changed", "module": item[len(SCRIPT_PREFIX):]})
         self._watch_assets()
@@ -420,6 +431,12 @@ class PlaySession(QObject):
         """An object edited, re-imported, added or removed: the running game follows."""
         self._sync_objects()
 
+    def files_saved(self) -> None:
+        """Something the game uses was saved by the editor itself (a surface shader): cooked
+        again for the running game (as a watched file would be)."""
+        if self.socket is not None:
+            self._asset_timer.start()
+
     def _files_changed(self, _paths: list) -> None:
         """Model or image files saved on disk: cooked again for the running game."""
         if self.socket is not None:
@@ -438,7 +455,9 @@ class PlaySession(QObject):
         watch list, so the list is rebuilt after every reload."""
         wanted = set()
         for folder, suffix in ((self.project.objects_dir, ".glb"),
-                               (self.project.root / "scripts", ".py")):
+                               (self.project.root / "scripts", ".py"),
+                               (self.project.root / surface_shaders.FOLDER,
+                                surface_shaders.SUFFIX)):
             if folder.is_dir():
                 wanted.add(str(folder))
                 wanted |= {str(p) for p in folder.rglob("*")

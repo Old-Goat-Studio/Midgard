@@ -467,6 +467,10 @@ you write shaders.
   shaders that move. While the code has a mistake, the preview keeps showing the last version
   that worked.
 - When you save, the Viewport and any open Material editors show the shader as it is now.
+- **While the game is playing** (Play), saving a shader changes it in the running game at once:
+  no need to stop and start again. If the saved shader has a mistake, it isn't sent: the game
+  keeps drawing the last version that worked, and the Log says so. Fix it and save again.
+  Shaders saved from another text editor are picked up the same way.
 
 ---
 

@@ -1277,14 +1277,16 @@ bool Game::reload_asset(const std::string& asset, render::Renderer& renderer) {
         if (sounds_) sounds_->forget(asset);
         return true;
     }
-    // A texture: the materials using it are made again from the new package.
+    // A texture (or a surface shader, 5.17): the materials using it are made again from the
+    // new package; a shader in place of its old one, which stays if the new one can't be used.
     materials_.forget(asset);
     bool texture_used = false;
     for (entt::entity e : scene_.registry.view<const Material>())
         texture_used = texture_used || scene_.registry.get<Material>(e).uses(asset);
     if (texture_used)
-        materials_.upload(scene_, renderer,
-                          [this](const std::string& t) { return read_texture(t); });
+        for (std::string& problem : materials_.upload(
+                 scene_, renderer, [this](const std::string& t) { return read_texture(t); }))
+            reload_problems_.push_back(std::move(problem));
     bool used = false;
     for (entt::entity e : scene_.registry.view<const MeshRef>())
         for (const std::string& a : scene_.registry.get<MeshRef>(e).assets())

@@ -247,3 +247,57 @@ def test_the_real_game_hot_reloads(project, session, qtbot):
     qtbot.waitUntil(lambda: sum(m.get("text") == "applied asset.changed asset:rock.glb"
                                 for m in received) > before, timeout=5000)
     assert not [m for m in received if m.get("level") in ("warn", "error")]
+
+
+@pytest.mark.skipif(not runtime_candidates(), reason="engine not built here")
+def test_a_surface_shader_changes_in_the_running_game(project, session, qtbot, caplog):
+    """5.17 step 5: a shader saved while the game plays is swapped in at once; one with a
+    mistake isn't sent, so the game keeps the last version that worked."""
+    from midgard_editor import engine
+    if engine.module() is None or not hasattr(engine.module(), "compile_surface_shader"):
+        pytest.skip("needs the engine module with the surface shader compiler")
+    folder = project.root / "shaders"
+    folder.mkdir()
+    code = """setting color glow = vec3(1.0, 0.0, 0.0);
+void surface(SurfaceInput i, inout Surface s) {
+    s.emission = glow;
+}
+"""
+    (folder / "glow.glsl").write_text(code, encoding="utf-8")
+    cube = project.entity("e000004")
+    cube.components["material"] = {**cube.components.get("material", {}), "shader": "shd:glow"}
+    project.undo_stack.push(SetEntityCommand(project, cube, "shader"))
+    package = cook(project).out_dir
+    received = []
+    session.message_received.connect(received.append)
+    session.start(runtime_candidates()[0], package)
+    qtbot.waitUntil(lambda: session.state == State.PLAYING, timeout=20000)
+
+    def count(text: str) -> int:
+        return sum(m.get("text") == text for m in received)
+
+    # A new setting, before the old one: its values move to other slots, so the material goes
+    # to the game again with the shader.
+    (folder / "glow.glsl").write_text(
+        "setting float strength = 2.0;\n" + code.replace("s.emission = glow;",
+                                                         "s.emission = glow * strength;"),
+        encoding="utf-8")
+    session.files_saved()  # (as the Shader editor's Save does)
+    qtbot.waitUntil(lambda: count("applied asset.changed shd:glow") == 1, timeout=10000)
+    qtbot.waitUntil(lambda: count("applied entity.put e000004") >= 1, timeout=5000)
+    sent = live_link.entity_message(project, "e000004")["entity"]["components"]
+    assert sent["material"]["shader_values"][:2] == [[2.0, 0.0, 0.0, 0.0],
+                                                     [1.0, 0.0, 0.0, 0.0]]
+
+    # A mistake: not sent (the game keeps the last version), and the log says so.
+    (folder / "glow.glsl").write_text(code.replace("s.emission", "s.emision"), encoding="utf-8")
+    session.files_saved()
+    qtbot.waitUntil(lambda: "keeps the last version that worked" in caplog.text, timeout=10000)
+    qtbot.wait(500)
+    assert count("applied asset.changed shd:glow") == 1
+    # Fixed again: swapped in.
+    (folder / "glow.glsl").write_text(code, encoding="utf-8")
+    session.files_saved()
+    qtbot.waitUntil(lambda: count("applied asset.changed shd:glow") == 2, timeout=10000)
+    assert not [m for m in received if m.get("level") in ("warn", "error")], received
+

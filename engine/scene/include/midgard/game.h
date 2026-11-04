@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json_fwd.hpp>
@@ -83,6 +84,8 @@ public:
     // Re-reads manifest.json and game.pak, then the mesh or texture with this content id.
     // Returns false if nothing in the scene uses it. Throws on a broken package.
     bool reload_asset(const std::string& asset, render::Renderer& renderer);
+    // What went wrong in reload_asset since last asked (a shader the GPU refused, ...).
+    std::vector<std::string> take_reload_problems() { return std::exchange(reload_problems_, {}); }
 
     // Terrain (midgard/terrain_streamer.h): chooses the chunks to draw from `camera`, generates
     // those missing on the game's job system and uploads them. Call once a frame before
@@ -370,6 +373,7 @@ public:
     const std::string& scene_change_error() const { return scene_change_error_; }
 
 private:
+    std::vector<std::string> reload_problems_;  // (take_reload_problems)
     render::MeshData load_mesh(const std::string& asset) const;
     void refresh_camera(entt::entity edited);
     CameraSweep camera_sweep() const;
