@@ -74,8 +74,31 @@ def main() -> int:
     check_camera_preview()
     check_viewport()
     check_bodies()
+    check_shader_compiler()
     print("_midgard: all checks passed")
     return 0
+
+
+def check_shader_compiler() -> None:
+    """GLSL to SPIR-V for the editor (milestone 5.17), mistakes by line."""
+    good = _midgard.compile_shader("#version 450\nlayout(location = 0) out vec4 c;\n"
+                                   "void main() { c = vec4(1.0); }\n")
+    assert good["ok"] and good["spirv"][:4] == bytes.fromhex("03022307"), good
+    assert len(good["spirv"]) % 4 == 0 and good["messages"] == []
+    bad = _midgard.compile_shader("#version 450\nlayout(location = 0) out vec4 c;\n"
+                                  "void main() { c = vec4(nope); }\n", "fragment", "glow")
+    assert not bad["ok"] and bad["spirv"] == b"", bad
+    assert bad["messages"][0]["line"] == 3 and bad["messages"][0]["error"], bad
+    assert "nope" in bad["messages"][0]["message"], bad
+    vertex = _midgard.compile_shader("#version 450\nvoid main() { gl_Position = vec4(0.0); }\n",
+                                     "vertex")
+    assert vertex["ok"], vertex
+    try:
+        _midgard.compile_shader("void main() {}", "geometry")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a geometry stage was accepted")
 
 
 # The shapes of schema/tests/shape_points.json, as body settings.

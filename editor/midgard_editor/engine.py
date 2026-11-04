@@ -58,3 +58,13 @@ def validate(package_dir: Path) -> dict | None:
     "assets"}), or None without the module."""
     m = module()
     return m.validate(Path(package_dir)) if m else None
+
+
+def compile_shader(source: str, stage: str = "fragment", name: str = "shader",
+                   first_line: int = 1) -> dict | None:
+    """GLSL compiled to SPIR-V by the engine (milestone 5.17): {"ok", "spirv", "messages":
+    [{"line", "error", "message"}]}; None without the engine module (or an older one)."""
+    midgard = module()
+    if midgard is None or not hasattr(midgard, "compile_shader"):
+        return None
+    return midgard.compile_shader(source, stage, name, first_line)

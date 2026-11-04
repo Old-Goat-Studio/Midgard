@@ -38,6 +38,7 @@
     "opusfile",
     "libvorbis",
     "libopusenc",
-    { "name": "glslang", "host": true, "features": ["tools"] }
+    { "name": "glslang", "host": true, "features": ["tools"] },
+    { "name": "glslang", "platform": "!android" }
   ]
 }

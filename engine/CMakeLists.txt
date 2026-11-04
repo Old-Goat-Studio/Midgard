@@ -99,6 +99,17 @@ target_link_libraries(midgard_render
             KTX::ktx midgard_options
 )
 
+# ---- shader: GLSL to SPIR-V inside Midgard (milestone 5.17), for the editor ------------------
+# Games carry compiled shaders, so only where the editor runs (not Android) is glslang linked.
+if(NOT ANDROID)
+    find_package(glslang CONFIG REQUIRED)
+    add_library(midgard_shader STATIC shader/src/shader_compiler.cpp)
+    target_include_directories(midgard_shader PUBLIC shader/include)
+    target_link_libraries(midgard_shader
+        PRIVATE glslang::glslang glslang::SPIRV glslang::glslang-default-resource-limits
+                midgard_options)
+endif()
+
 # ---- input: the actions layer (platform independent) ----------------------------------------
 add_library(midgard_input STATIC input/src/input.cpp)
 target_include_directories(midgard_input PUBLIC input/include)
@@ -364,7 +375,7 @@ if(MIDGARD_BUILD_PYTHON AND NOT CMAKE_CROSSCOMPILING)
         pybind11_add_module(_midgard bindings/module.cpp bindings/viewport.cpp
                             bindings/audio_preview.cpp bindings/weather_preview.cpp)
         target_link_libraries(_midgard PRIVATE midgard_scene midgard_link midgard_audio_encode
-                              volk::volk
+                              midgard_shader volk::volk
                               Vulkan::Headers midgard_options)
         if(UNIX)
             target_link_libraries(_midgard PRIVATE ${CMAKE_DL_LIBS})
@@ -424,6 +435,10 @@ if(MIDGARD_BUILD_TESTS)
         midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_audio
         midgard_audio_encode midgard_options doctest::doctest
         unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
+    if(TARGET midgard_shader)
+        target_sources(midgard_tests PRIVATE tests/test_shader_compiler.cpp)
+        target_link_libraries(midgard_tests PRIVATE midgard_shader)
+    endif()
     target_compile_definitions(midgard_tests PRIVATE
         MIDGARD_SCHEMA_DIR="${PROJECT_SOURCE_DIR}/schema"
         MIDGARD_ASSETS_DIR="${PROJECT_SOURCE_DIR}/assets")

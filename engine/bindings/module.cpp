@@ -41,6 +41,7 @@
 #include "midgard/pak.h"
 #include "midgard/render/ktx.h"
 #include "midgard/render/mesh_data.h"
+#include "midgard/shader_compiler.h"
 #include "midgard/terrain.h"
 #include "midgard/validate.h"
 #include "midgard/version.h"
@@ -488,6 +489,40 @@ PYBIND11_MODULE(_midgard, m) {
             }
         },
         py::arg("stamp_json"), "What the cook refuses in a terrain stamp (midgard/terrain.h).");
+    // The shader compiler (milestone 5.17): GLSL to SPIR-V, mistakes by line.
+    m.def(
+        "compile_shader",
+        [](const std::string& source, const std::string& stage, const std::string& name,
+           int first_line) {
+            if (stage != "fragment" && stage != "vertex")
+                throw py::value_error("stage is 'fragment' or 'vertex', not '" + stage + "'");
+            midgard::shader::Options options;
+            options.name = name;
+            options.first_line = first_line;
+            const auto out =
+                midgard::shader::compile_glsl(source,
+                                              stage == "vertex" ? midgard::shader::Stage::Vertex
+                                                                : midgard::shader::Stage::Fragment,
+                                              options);
+            py::list messages;
+            for (const auto& msg : out.messages) {
+                py::dict d;
+                d["line"] = msg.line;
+                d["error"] = msg.error;
+                d["message"] = msg.text;
+                messages.append(d);
+            }
+            py::dict result;
+            result["ok"] = out.ok();
+            result["spirv"] = py::bytes(reinterpret_cast<const char*>(out.spirv.data()),
+                                        out.spirv.size() * sizeof(uint32_t));
+            result["messages"] = messages;
+            return result;
+        },
+        py::arg("source"), py::arg("stage") = "fragment", py::arg("name") = "shader",
+        py::arg("first_line") = 1,
+        "GLSL compiled to SPIR-V for Vulkan 1.1 (midgard/shader_compiler.h): {'ok', 'spirv' "
+        "(bytes), 'messages': [{'line', 'error', 'message'}]}, lines counted from first_line.");
     m.def("terrain_fingerprint", &midgard::terrain_fingerprint,
           "The terrain's fingerprint (equal to schema/tests/terrain_chunks.json everywhere).");
 
