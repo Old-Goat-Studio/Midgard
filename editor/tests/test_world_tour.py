@@ -102,3 +102,55 @@ def test_file_new_sample_project_makes_and_opens_it(window, settings, tmp_path):
     assert again.name == "WorldTour2"
     window.new_sample(samples.TOUR)
     assert window.project.name == "SceneTour"
+
+
+# ---- step 2: life ------------------------------------------------------------------------------
+@needs_engine
+def test_the_sounds_are_midgards_cc0_samples_in_the_projects_library(tour):
+    from midgard_editor import asset_library as lib
+    assets, problems = lib.scan(tour)
+    assert problems == []
+    by_name = {a.name: a for a in assets}
+    for name in ("Footsteps on grass", "Footsteps on snow", "Sea", "Calm wind", "Desert Theme",
+                 "Superhero", "Universal Animation Library"):
+        assert by_name[name].licence == "CC0-1.0", name
+    assert by_name["Desert Theme"].author == "yd"
+    assert by_name["Sea"].author == "Nox Sound"
+
+
+@needs_engine
+def test_each_scene_has_the_character_and_its_own_ambience(tour):
+    from midgard_editor import ambience, music
+    sets = {a["ambience"]["scenes"][0]: a for a in ambience.load_all(tour)}
+    for s in scenes.load_all(tour):
+        player = by_name(tour, s["id"])["Player"].components
+        assert player["character"]["model"] == world_tour.HERO
+        assert player["character"]["ik"] == {"feet": True}
+        assert set(player["footsteps"]["sounds"]) >= {"grass", "rock", "sand", "snow"}
+        assert by_name(tour, s["id"])["Camera"].components["camera"]["view"] == "third"
+        assert s["id"] in sets, s["name"]
+    [playlist] = music.load_all(tour)
+    assert playlist["playlist"]["scenes"] == []  # (everywhere)
+    assert "Walker" in by_name(tour, MAIN_SCENE)
+
+
+@needs_engine
+def test_the_running_tour_plays_its_music_and_ambience(tour, tmp_path):
+    import subprocess
+
+    from midgard_editor import about
+    if not about.runtime_candidates():
+        pytest.skip("the runtime isn't built here")
+    out = cook(tour, tmp_path / "pkg").out_dir
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--simulate", "300", "--dump-scene"],
+                         capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr
+    dump = json.loads(run.stdout[run.stdout.index("{"):run.stdout.rindex("}") + 1])
+    audio = dump["audio"]
+    assert audio["music"]["playlist"] == "mus_tour"
+    assert audio["ambience"]["set"] == f"amb_{MAIN_SCENE}"
+    # The walker has set off, and its steps sound on the hub's stone.
+    walker = next(e for e in dump["entities"] if e.get("name") == "Walker")
+    assert walker["position"][0] > -6.5
+    assert any(f["surface"] == "stone" for f in audio["footsteps"])

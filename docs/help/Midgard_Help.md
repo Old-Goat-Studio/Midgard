@@ -133,9 +133,15 @@ editor can be undone with **Ctrl+Z**.
   - **Hollow World**: inside a sphere 2.5 km in radius, with the far side overhead through
     the haze. An **Exit Site** pad takes you outside.
 
-  Each world has its own day and night, seasons and weather. Walk all the way round any of
-  them and you come back where you started. The glowing pad behind where you arrive takes
-  you back to the hub (stand on it and press **E**).
+  Each world has its own day and night, seasons, weather and sounds (the sea on the
+  Archipelago, wind on the Planet, a hum in the Habitat), with music throughout. You walk as
+  an animated character (press **V** for first person, third person or the view from above),
+  with footsteps that sound like the ground under you; another character strolls round the
+  hub. Walk all the way round any world and you come back where you started. The glowing pad
+  behind where you arrive takes you back to the hub (stand on it and press **E**).
+
+  All its sounds and the character are Midgard's free samples, in the project's Asset Library
+  with their credits.
 - **Scene Tour**: three small scenes joined by a door and a teleport pad.
 
 ---
@@ -954,8 +960,9 @@ body, select it, **Add Component ▸ Character**, then:
   feet on slopes and steps; **Looks at** turns the head to the player or another entity.
 - **Arms in first person**: shows the player's arms when looking through its eyes.
 
-**Add Sample Assets** (Assets menu) gives you free characters and a big animation library to
-practise with.
+**Add Sample Assets** (Assets menu) gives you free (CC0) things to practise with: a character
+and a big animation library, a small textured model, footsteps on five kinds of ground, eight
+ambience loops (birds, night, sea, wind, rain, a station's hum, an eerie drone) and a calm tune.
 
 ### The animation graph
 

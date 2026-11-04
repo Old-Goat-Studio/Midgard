@@ -810,6 +810,24 @@ SAMPLES = (
      ("models/avocado/Avocado.gltf", "models/avocado/Avocado.bin",
       "models/avocado/Avocado_baseColor.png", "models/avocado/Avocado_normal.png",
       "models/avocado/Avocado_roughnessMetallic.png")),
+    # Sounds (milestone 5.18: the World Tour's): footsteps, ambience loops and a tune.
+    *(("effects", f"Footsteps on {surface}", f"Eight walking steps on {surface}.",
+       tuple(f"sounds/nox_footsteps/{surface}/{surface}_{i:02d}.ogg" for i in range(1, 9)),
+       "nox_footsteps") for surface in ("grass", "rock", "sand", "snow", "metal")),
+    *(("ambiance", name, description, (f"sounds/nox_ambience/{file}.ogg",), "nox_ambience")
+      for name, description, file in (
+          ("Meadow birds", "Birds and flies in a calm meadow (a loop).",
+           "ambiance_nature_meadow_birds_flies_calm_loop"),
+          ("Forest birds", "Birds in a forest (a loop).", "ambiance_forest_birds_loop"),
+          ("Night", "Crickets and a calm night (a loop).", "ambiance_night_loop"),
+          ("Sea", "Waves on a shore (a loop).", "ambiance_sea_loop"),
+          ("Calm wind", "A calm wind (a loop).", "ambiance_wind_calm_loop"),
+          ("Calm rain", "Calm rain (a loop).", "ambiance_rain_calm_loop"),
+          ("Sci-fi bunker", "The hum of machinery inside a station (a loop).",
+           "atmosphere_scifi_bunker_loop"),
+          ("Eerie drone", "A low, eerie hum (a loop).", "atmosphere_drone_hum_eerie_loop"))),
+    ("music", "Desert Theme", "A calm desert tune (yd's 'caravan').",
+     ("sounds/music/caravan.ogg",), "desert_theme"),
 )
 
 
@@ -837,7 +855,7 @@ def add_samples(project) -> tuple[list[Asset], list[str]]:
     """Midgard's sample assets copied into the project's library (those it hasn't already).
     Returns the assets added, and what was left out (with why)."""
     added, left = [], []
-    for type_, name, description, files in SAMPLES:
+    for type_, name, description, files, *album in SAMPLES:
         paths = [samples_dir() / f for f in files]
         if not all(p.is_file() for p in paths):
             left.append(f"{name}: not with this editor")
@@ -846,6 +864,7 @@ def add_samples(project) -> tuple[list[Asset], list[str]]:
         try:
             added.append(import_asset(
                 project, paths, type_, name, description=description,
+                category=album[0] if album else "",
                 licence=source.get("license", ""), author=source.get("author", ""),
                 source=source.get("source", ""), title=source.get("title", "")))
         except LibraryError as e:

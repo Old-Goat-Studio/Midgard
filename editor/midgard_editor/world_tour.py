@@ -11,9 +11,14 @@ one of each shape, each the engine's own sample world type at its own size and s
     Hollow World inside a sphere 2.5 km in radius: the far side overhead, an exit site to space
 
 Each world has the Earth's day and night (its sun follows the clock, by its own shape's light
-model), seasons from the standard calendar and its own weather. Where you arrive in a world, the
-ground is flattened round you at its own height there (kept above the sea), with the pad home
-behind you.
+model), seasons from the standard calendar, its own weather and its own ambience; music plays
+throughout. You walk as Midgard's sample character (Quaternius' Superhero, animated: idle, walk,
+jog, sprint and jump; feet on slopes; first, third and top views with V), with footsteps on each
+kind of ground; another strolls round the hub. The sounds are Midgard's own CC0 samples (Nox
+Sound's footsteps and ambiences, yd's Desert Theme), put in the project's Asset Library.
+
+Where you arrive in a world, the ground is flattened round you at its own height there (kept
+above the sea), with the pad home behind you.
 
     python -m midgard_editor.world_tour <folder>     makes <folder>/WorldTour
 """
@@ -21,7 +26,18 @@ import json
 import sys
 from pathlib import Path
 
-from . import engine, environments, scenes, world_types
+from . import (
+    ambience,
+    asset_library,
+    engine,
+    environments,
+    music,
+    scenes,
+    sound_events,
+    sounds,
+    weather,
+    world_types,
+)
 from .physics_dialogs import origin
 from .project import MAIN_SCENE, Project
 from .scene_model import Entity
@@ -57,6 +73,95 @@ WEATHER = {
                      "lasts": {"default": [1, 3]}},
 }
 PLANET_CEILING = 200.0  # metres up: the atmosphere's ceiling, and space beyond it
+
+# The character (Midgard's samples, in the project's library once added).
+HERO = "lib:models/superhero/superhero_male.glb"
+HERO_SKIN = "tex:library/models/superhero/superhero_male_basecolor.png"
+MOVES = "lib:models/universal_animation_library/animation_library.glb"
+# The player's animation graph: idle, walk, jog and sprint blended by speed, and jumping.
+LOCOMOTION = {
+    "parameters": {"grounded": True}, "triggers": [], "root_motion": False,
+    "layers": [{
+        "name": "Base", "start": "Locomotion", "any_pos": [-220, -120],
+        "states": {
+            "Locomotion": {"blend": "speed", "loop": True, "pos": [0, 0],
+                           "clips": [["Idle_Loop", 0], ["Walk_Loop", 1.5],
+                                     ["Jog_Fwd_Loop", 4], ["Sprint_Loop", 8]]},
+            "JumpStart": {"clip": "Jump_Start", "loop": False, "pos": [260, -120]},
+            "Fall": {"clip": "Jump_Loop", "loop": True, "pos": [520, 0]},
+            "Land": {"clip": "Jump_Land", "loop": False, "pos": [260, 120]}},
+        "transitions": [
+            {"from": "Locomotion", "to": "JumpStart",
+             "when": [["grounded", "<", 0.5], ["vertical_speed", ">", 1]], "blend": 0.1},
+            {"from": "Locomotion", "to": "Fall",
+             "when": [["grounded", "<", 0.5], ["vertical_speed", "<", -1]], "blend": 0.2},
+            {"from": "JumpStart", "to": "Fall", "after": 1, "blend": 0.15},
+            {"from": "JumpStart", "to": "Land", "when": [["grounded", ">", 0.5]], "blend": 0.1},
+            {"from": "Fall", "to": "Land", "when": [["grounded", ">", 0.5]], "blend": 0.1},
+            {"from": "Land", "to": "Locomotion", "when": [["speed", ">", 0.5]], "blend": 0.15},
+            {"from": "Land", "to": "Locomotion", "after": 1, "blend": 0.2}]}]}
+# The walker's: idle and walk by speed.
+STROLL = {"parameters": {}, "triggers": [], "root_motion": False,
+          "layers": [{"name": "Base", "start": "Move", "any_pos": [-220, -120],
+                      "states": {"Move": {"blend": "speed", "loop": True, "pos": [0, 0],
+                                          "clips": [["Idle_Loop", 0], ["Walk_Loop", 1.4]]}},
+                      "transitions": []}]}
+# Each world's ambience: (sample sound, times of day, volume) layers.
+AMBIENCE = {
+    "Hub": [("Meadow birds", ["dawn", "day"], 0.45), ("Night", ["dusk", "night"], 0.5)],
+    "Archipelago": [("Sea", ["dawn", "day", "dusk", "night"], 0.5),
+                    ("Forest birds", ["dawn", "day"], 0.3), ("Night", ["night"], 0.4)],
+    "Habitat": [("Sci-fi bunker", ["dawn", "day", "dusk", "night"], 0.3),
+                ("Meadow birds", ["dawn", "day"], 0.3)],
+    "Planet": [("Calm wind", ["dawn", "day", "dusk", "night"], 0.5),
+               ("Night", ["night"], 0.35)],
+    "Hollow World": [("Eerie drone", ["dawn", "day", "dusk", "night"], 0.35),
+                     ("Calm wind", ["dawn", "day", "dusk", "night"], 0.3)],
+}
+
+WALKER = '''"""The Walker: strolls round the hub, finding the way on the navigation mesh
+(midgard.nav.path), pausing at each corner. Its walk animation follows how fast it moves."""
+import math
+
+import midgard
+
+CORNERS = [(-7.0, 0.0, -2.0), (7.0, 0.0, -2.0), (7.0, 0.0, 8.0), (-7.0, 0.0, 8.0)]
+SPEED = 1.4  # metres a second
+walkers = {}
+
+
+def on_start(entity):
+    walkers[entity.id] = {"corner": 0, "path": [], "wait": 1.0}
+
+
+def on_update(entity, dt):
+    s = walkers.setdefault(entity.id, {"corner": 0, "path": [], "wait": 1.0})
+    if s["wait"] > 0.0:
+        s["wait"] -= dt
+        return
+    if not s["path"]:
+        target = CORNERS[s["corner"] % len(CORNERS)]
+        s["corner"] += 1
+        path = midgard.nav.path(entity.position, target, partial=True)
+        if not path:
+            s["wait"] = 1.0  # (the navigation mesh is still being made)
+            return
+        s["path"] = list(path[1:]) or [target]
+    x, y, z = entity.position
+    tx, ty, tz = s["path"][0]
+    dx, dz = tx - x, tz - z
+    d = math.hypot(dx, dz)
+    step = SPEED * dt
+    if d <= step:
+        entity.position = (tx, ty, tz)
+        s["path"].pop(0)
+        if not s["path"]:
+            s["wait"] = 2.0  # a pause at each corner
+        return
+    entity.position = (x + dx / d * step, ty, z + dz / d * step)
+    # Facing the way it walks (characters face -Z at no turn).
+    entity.rotation = (0.0, math.degrees(math.atan2(-dx, -dz)), 0.0)
+'''
 
 LAUNCH_PAD = '''"""The Planet's launch pad: a jetpack. Step on it and you fly.
 
@@ -205,6 +310,77 @@ class _Builder:
     def name_of(self, scene: str) -> str:
         return self.scene_names[scene]
 
+    # ---- life: sounds, the player, the walker -----------------------------------------------
+    def sounds(self) -> None:
+        """Midgard's CC0 sample sounds into the project's library, and the sound events, music
+        and weather sounds made from them."""
+        added, _left = asset_library.add_samples(self.p)
+        self.library = {a.name: a for a in added}
+
+        def event(asset: str, name: str, **settings) -> str:
+            files = sorted(p for p in self.library[asset].folder.iterdir()
+                           if p.suffix == ".ogg")
+            e = sound_events.event_for_sound(self.p, files[0], name)
+            if len(files) > 1:  # (one of them each time)
+                e["event"]["sounds"] = [
+                    {"sound": sounds.ref(f.relative_to(self.p.root).as_posix()), "weight": 1}
+                    for f in files]
+            e["event"].update(settings)
+            sound_events.put(self.p, e)
+            return e["id"]
+
+        steps = {surface: event(f"Footsteps on {surface}", f"Steps on {surface}",
+                                volume=[0.45, 0.65], pitch=[0.95, 1.05])
+                 for surface in ("grass", "rock", "sand", "snow", "metal")}
+        self.footsteps = {"every": 1.6, "sounds": {"default": steps["grass"], **steps,
+                                                   "stone": steps["rock"]}}
+        self.loops = {name: event(name, name) for name in
+                      ("Meadow birds", "Forest birds", "Night", "Sea", "Calm wind",
+                       "Calm rain", "Sci-fi bunker", "Eerie drone")}
+        tune = event("Desert Theme", "Desert Theme")
+        music.put(self.p, {"id": "mus_tour", "name": "World Tour", "playlist": {
+            "tracks": [tune], "scenes": [], "crossfade": 3}})
+        for type_id in ("rain", "thunderstorm"):  # rain you can hear
+            found = weather.load(self.p, type_id)
+            if found is not None:
+                found["weather"]["sounds"] = [{"event": self.loops["Calm rain"], "volume": 0.8}]
+                weather.put(self.p, found)
+
+    def ambience(self, scene: str, name: str) -> None:
+        layers = [{"event": self.loops[sound], "times": times, "volume": volume}
+                  for sound, times, volume in AMBIENCE[name]]
+        ambience.put(self.p, {"id": f"amb_{scene}", "name": name, "ambience": {
+            "layers": layers, "scenes": [scene], "crossfade": 4}})
+
+    def player(self, scene: str, at: list) -> None:
+        """The player as the animated character, the camera behind her in third person."""
+        player = self.named(scene, "Player")
+        player.components = {
+            "transform": {"position": list(at), "rotation": [0.0, 0.0, 0.0]},
+            "material": {"color": [1.0, 1.0, 1.0, 1.0], "textures": {"base_color": HERO_SKIN}},
+            "player": {"speed": 4.0},
+            "character": {"model": HERO, "clips": MOVES, "clip": "Idle_Loop", "speed": 1.0,
+                          "graph": LOCOMOTION, "ik": {"feet": True}, "first_person": {}},
+            "footsteps": dict(self.footsteps)}
+        self.p.put_entity(player, scene)
+        camera = self.named(scene, "Camera")
+        camera.components["camera"] = {"fov": 55, "near": 0.05, "far": 8000, "view": "third",
+                                       "views": {"third": {"distance": 5.0, "height": 0.6}}}
+        camera.components["transform"] = {"position": [at[0], at[1] + 2.5, at[2] + 5.0],
+                                          "rotation": [-15.0, 0.0, 0.0]}
+        self.p.put_entity(camera, scene)
+
+    def walker(self, scene: str, parent: str) -> None:
+        (self.p.root / "scripts").mkdir(exist_ok=True)
+        (self.p.root / "scripts" / "walker.py").write_text(WALKER, encoding="utf-8")
+        self.put(scene, "Walker", parent, {
+            "transform": {"position": [-7.0, 0.0, -2.0]},
+            "material": {"color": [0.55, 0.7, 1.0, 1.0], "textures": {"base_color": HERO_SKIN}},
+            "character": {"model": HERO, "clips": MOVES, "clip": "Idle_Loop", "speed": 1.0,
+                          "graph": STROLL, "ik": {"feet": True}},
+            "footsteps": dict(self.footsteps),
+            "script": {"module": "walker"}})
+
     def build(self) -> Project:
         p = self.p
         self.scene_ids: dict[str, str] = {}
@@ -214,6 +390,7 @@ class _Builder:
             self.scene_ids[name] = cmd.scene
         p.undo_stack.clear()  # (a new project: nothing to undo)
         self.scene_names = {v: k for k, v in self.scene_ids.items()}
+        self.sounds()
         # The calendar: the standard one, starting on a spring morning (seasons come round).
         with p.connect() as con:
             con.execute("UPDATE calendar SET start_month = 4, start_day = 20, "
@@ -231,9 +408,11 @@ class _Builder:
         ground.components["material"] = {"color": [0.55, 0.53, 0.5, 1.0], "roughness": 0.9}
         p.put_entity(ground, MAIN_SCENE)
         self.daylight(MAIN_SCENE)
-        player = self.named(MAIN_SCENE, "Player")
-        player.components["transform"]["position"] = [0.0, 0.5, 6.0]
-        p.put_entity(player, MAIN_SCENE)
+        ground.components["physics_material"] = {"friction": 0.6, "surface": "stone"}
+        p.put_entity(ground, MAIN_SCENE)
+        self.player(MAIN_SCENE, [0.0, 0.9, 6.0])
+        self.walker(MAIN_SCENE, hub)
+        self.ambience(MAIN_SCENE, "Hub")
         for i, (name, sample_id, color) in enumerate(WORLDS):
             scene = self.scene_ids[name]
             x = -9.0 + 6.0 * i
@@ -246,6 +425,8 @@ class _Builder:
             self.lamp(MAIN_SCENE, hub, f"{name} Lamp", [x + 1.9, 0.0, -11.3])
             inside = {"Habitat": "env_inside_habitat", "Hollow World": "env_inside_hollow"}
             self.daylight(scene, inside.get(name, "env_earth"))
+            self.player(scene, [0.0, height + 1.0, 3.0])
+            self.ambience(scene, name)
             self.pad(scene, world, "Pad Home", [0.0, height, -3.0], MAIN_SCENE, back, color)
             self.lamp(scene, world, "Pad Lamp", [2.5, height, -3.0])
             if name in ("Habitat", "Hollow World"):  # a way out into space

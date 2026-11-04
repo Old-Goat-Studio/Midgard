@@ -25,14 +25,16 @@ def test_the_exit_samples_and_a_cc_by_texture_in_a_game_with_its_credits(
     qtbot.addWidget(window)
     window.set_project(project)
     added, left = window.add_sample_assets()
-    assert [a.name for a in added] == ["Superhero", "Universal Animation Library", "Avocado"]
+    assert [a.name for a in added][:3] == ["Superhero", "Universal Animation Library", "Avocado"]
+    assert len(added) == len(lib.SAMPLES)  # (and the sounds, from 5.18)
     assert left == []
     assert all(a.licence == "CC0-1.0" and a.author for a in added)
     assert added[0].author == "Quaternius" and added[2].author == "Microsoft"
     assert window.asset_window.isVisible()
-    assert "3 assets" in window.asset_window.title.text()
+    assert f"{len(lib.SAMPLES)} assets" in window.asset_window.title.text()
     again, left = window.add_sample_assets()
-    assert again == [] and len(left) == 3 and all("already" in why for why in left)
+    assert again == [] and len(left) == len(lib.SAMPLES)
+    assert all("already" in why for why in left)
     window.asset_window.close()
 
     # A CC BY texture (and a non-commercial one refused).

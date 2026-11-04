@@ -24,3 +24,24 @@ title = "Universal Base Characters (Superhero Male, packed from .gltf + .bin int
 author = "Quaternius"
 source = "https://quaternius.com"
 license = "CC0-1.0"
+
+[[asset]]
+path = "sounds/nox_footsteps/"
+title = "Essentials Series: Footsteps (8 walking steps each on grass, rock, sand, snow and metal, encoded from WAV to Ogg Vorbis)"
+author = "Nox Sound"
+source = "https://www.asoundeffect.com/sounddesigner/nox-sound/"
+license = "CC0-1.0"
+
+[[asset]]
+path = "sounds/nox_ambience/"
+title = "Essentials Series: Nature and Atmosphere loops (meadow birds, forest birds, night, sea, calm wind, calm rain, sci-fi bunker, eerie drone; encoded from WAV to Ogg Vorbis)"
+author = "Nox Sound"
+source = "https://www.asoundeffect.com/sounddesigner/nox-sound/"
+license = "CC0-1.0"
+
+[[asset]]
+path = "sounds/music/"
+title = "Desert Theme (caravan.ogg, as is)"
+author = "yd"
+source = "https://opengameart.org/content/desert-theme"
+license = "CC0-1.0"
