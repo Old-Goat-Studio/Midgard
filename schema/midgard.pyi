@@ -43,6 +43,11 @@ class Entity:
     """The player flies (a jetpack, a ship): where the camera looks, up with jump (Space), down
     with descend (Left Ctrl), with no gravity; set it False to walk again. Only the player
     flies (ValueError for another entity)."""
+    speed: float
+    """The player's walking speed, metres a second (running multiplies it). Only the player
+    (ValueError for another entity)."""
+    following: bool
+    """True while the player is walking a route given to follow() (read-only)."""
     position: Vector
     """Position in metres, relative to its parent."""
     rotation: Vector
@@ -60,6 +65,11 @@ class Entity:
 
     def move(self, x: float, y: float, z: float) -> None:
         """Moves the entity by (x, y, z) metres. A physics body jumps there with it."""
+
+    def follow(self, points: list[Vector]) -> None:
+        """The player walks through these points (in the scene's frame) at its speed, as if
+        steered, instead of following the controls, until it reaches the last (a cutscene,
+        click-to-move, a guided tour); [] stops it. Only the player (ValueError otherwise)."""
 
     def add_force(self, x: float, y: float, z: float) -> None:
         """Pushes a dynamic rigid body with a force in newtons, for the next physics step (call it

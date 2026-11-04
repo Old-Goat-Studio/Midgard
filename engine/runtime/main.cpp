@@ -68,6 +68,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -541,6 +542,7 @@ public:
         return nlohmann::json{{"entities", entities},
                               {"scene", game_.scene().id},
                               {"world_hash", world_hash},
+                              {"camera", view_name(game_.camera_rig().view())},
                               {"sky", {sky.x, sky.y, sky.z}},
                               {"time", game_.time().now()},
                               {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},
@@ -1404,8 +1406,11 @@ int run_simulation(const Options& opt, Source& source) {
     std::vector<float> recorded;
     for (long frame = 0; frame < opt.simulate; ++frame) {
         actions.begin_frame();
+        // (A key held more than once, at different times, is down while any of them is.)
+        std::map<std::string, float> keys;
         for (const Options::Hold& h : opt.holds)
-            actions.set("keyboard", h.key, frame >= h.from && frame < h.to ? 1.0f : 0.0f);
+            keys[h.key] = std::max(keys[h.key], frame >= h.from && frame < h.to ? 1.0f : 0.0f);
+        for (const auto& [key, value] : keys) actions.set("keyboard", key, value);
         source.update(actions, 1.0f / 60.0f);
         source.settle();
         mixer.mix(block);

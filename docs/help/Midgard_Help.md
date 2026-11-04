@@ -1301,6 +1301,9 @@ The player's own script also gets `on_trigger_enter(player, trigger)` and `on_tr
 | `entity.velocity` | Its speed and direction (physics bodies). Assign to launch a dynamic body. |
 | `entity.on_ground` | True while the player stands on something. |
 | `entity.flying` | The player flies (where the camera looks; up with jump, down with Left Ctrl). `False` walks again. Only the player. |
+| `entity.speed` | The player's walking speed in metres a second (running multiplies it). Only the player. |
+| `entity.follow(points)` | The player walks through these points at its speed, as if steered (a guided tour, a cutscene, click-to-move); `[]` stops it. Only the player. |
+| `entity.following` | True while the player is walking a route from `follow`. |
 | `entity.move(x, y, z)` | Moves it by that much. |
 | `entity.add_force(x, y, z)` | Pushes a dynamic body (call every frame for a steady push). |
 | `entity.add_impulse(x, y, z)` | A sudden shove (a kick, an explosion). |

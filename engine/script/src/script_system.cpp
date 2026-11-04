@@ -290,6 +290,45 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             "The player flies (a jetpack, a ship): where the camera looks, up with jump, down "
             "with descend, with no gravity; False: it walks again. Only the player.")
         .def_property(
+            "speed",
+            [](const EntityHandle& h) {
+                const Player* p = registry().try_get<Player>(h.resolve());
+                if (p == nullptr) throw py::value_error("entity '" + h.id + "' isn't the player");
+                return p->speed;
+            },
+            [](const EntityHandle& h, float speed) {
+                Player* p = registry().try_get<Player>(h.resolve());
+                if (p == nullptr) throw py::value_error("entity '" + h.id + "' isn't the player");
+                if (!(speed > 0.0f) || speed > 1000.0f)
+                    throw py::value_error("a speed is more than 0 and at most 1000 m/s");
+                p->speed = speed;
+            },
+            "The player's walking speed, metres a second (running multiplies it). Only the "
+            "player.")
+        .def(
+            "follow",
+            [](const EntityHandle& h, const std::vector<std::array<double, 3>>& points) {
+                const entt::entity e = h.resolve();
+                if (!registry().all_of<Player>(e))
+                    throw py::value_error("entity '" + h.id +
+                                          "' isn't the player: only it "
+                                          "follows a route");
+                std::vector<glm::dvec3> route;
+                route.reserve(points.size());
+                for (const auto& p : points) route.emplace_back(p[0], p[1], p[2]);
+                current_game().follow_path(std::move(route));
+            },
+            py::arg("points"),
+            "The player walks through these points (in the scene's frame) at its speed, as if "
+            "steered, instead of following the controls, until it reaches the last (a cutscene, "
+            "click-to-move, a guided tour); [] stops it. Only the player.")
+        .def_property_readonly(
+            "following",
+            [](const EntityHandle& h) {
+                return registry().all_of<Player>(h.resolve()) && current_game().following_path();
+            },
+            "True while the player is walking a route given to follow().")
+        .def_property(
             "position", [](const EntityHandle& h) { return tuple3(h.transform().position); },
             [](const EntityHandle& h, const std::array<double, 3>& v) {
                 h.transform().position = glm::dvec3(v[0], v[1], v[2]);
@@ -1151,7 +1190,9 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         "The sky colour (r, g, b).");
     m.def(
         "set_sky",
-        [](float r, float g, float b) { current_game().scene().settings.sky = {r, g, b}; },
+        [](float r, float g, float b) {
+            current_game().scene().settings.sky = {r, g, b};
+        },
         py::arg("r"), py::arg("g"), py::arg("b"), "Changes the sky colour.");
 }
 
