@@ -249,7 +249,8 @@ fonts. It's kept inside the project folder (in `library/`), so it travels with t
 **Assets ▸ Import Into Library…** (or **Import** in the library window):
 
 1. Choose files, a folder or a .zip file.
-2. Choose the type (Textures, Models, Music…), a category, and a name.
+2. Choose the type (Textures, Models, Music…), where it goes (a texture's kind, or a sound's
+   album), and a name.
 3. Choose the **licence** and fill in who made it (see below).
 4. For textures, a table shows every picture: choose what each one is for (colour, normal,
    roughness, metal, ambient occlusion, glow) or "not used". Midgard renames them for you.
@@ -290,6 +291,36 @@ as a licence or a model's data, are greyed.
 
 The first time a big texture set is shown, Midgard prepares it (it says "Preparing the
 textures…"); you can carry on working meanwhile. After that it shows at once.
+
+### Organizing the library
+
+Inside each type (Textures, Music, Models…) you can sort your assets into **collections**, like
+folders, and put collections inside collections as deep as you like. Texture kinds (Metal,
+Wood…) and albums are collections too. Everything stays in the order you put it in.
+
+- **Drag** assets and collections to move them: drop on a collection to put them inside it,
+  or between two rows to put them there. Choose several with Ctrl or Shift first to move them
+  together.
+- **Drop on a type** in the list on the left to move sounds between Music, Ambiance and FX, or
+  pictures between Images, GUI and Icons. (A texture can't become a model.)
+- **Right-click**, or press **Organize**, for:
+  - **Rename…** (F2): an asset or a collection.
+  - **New Collection…** (Ctrl+Shift+N): inside the chosen collection, or beside the chosen
+    asset.
+  - **Delete Collection**: only an empty one. Move its assets out first.
+  - **Move To…** (Ctrl+Shift+M): choose where from a list, without dragging.
+  - **Move Up** (Alt+Up) and **Move Down** (Alt+Down).
+  - **Sort A-Z**: collections first, then assets, each by name.
+
+**Your game keeps working.** When you rename or move something, Midgard changes everything in
+your game that uses it to match, all at once: scenes, materials, sounds, characters, the
+project's settings. If any part can't be changed (a file open in another program, say), nothing
+is changed and Midgard tells you why. Undo is cleared afterwards, because what it would put
+back uses the old names. If one of your scripts names an asset being moved, Midgard shows you
+the lines and asks whether to change them too, leave them for you, or cancel.
+
+The **Master Asset Library** program organizes its library the same way, with the same
+commands.
 
 ### Using assets
 
