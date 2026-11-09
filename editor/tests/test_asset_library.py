@@ -87,8 +87,11 @@ def test_folders_by_type_kind_and_album(project):
     assert lib.type_folder(project, "textures", "wood") == root / "textures" / "wood"
     assert lib.type_folder(project, "effects") == root / "effects" / "miscellaneous"
     assert lib.type_folder(project, "models") == root / "models"
-    with pytest.raises(lib.LibraryError):
-        lib.type_folder(project, "textures", "cheese")
+    assert lib.type_folder(project, "textures") == root / "textures" / "miscellaneous"
+    # Any collection, as deep as you like (format 3), each part made a folder name.
+    assert lib.type_folder(project, "textures", "Cheese") == root / "textures" / "cheese"
+    assert lib.type_folder(project, "models", "Props/Old Chairs") == \
+        root / "models" / "props" / "old_chairs"
     with pytest.raises(lib.LibraryError):
         lib.type_folder(project, "sounds")
 

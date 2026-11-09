@@ -12,6 +12,9 @@ textures), one folder per asset:
     library/models/superhero/ ...
     library/music/<album, or miscellaneous>/<asset>/ ...
 
+Inside each type, folders that aren't assets are collections, as deep as you like, each with
+its name and order in a collection.json (library format version 3: library_tree).
+
 asset.json follows the library format shared with the Master Asset Library (milestone 5.13b;
 its docs/library_format.md): {"format": 2, "id" (the asset's own id, the same in the Master and
 every copy), "version", "name", "type", "category", "description", "tags", "licence",
@@ -136,17 +139,18 @@ def slug(name: str) -> str:
     return s or "asset"
 
 
-def type_folder(project, type_: str, category: str = "") -> Path:
-    """Where assets of a type (and kind, or album) go."""
+def type_folder(project, type_: str, collection: str = "") -> Path:
+    """Where assets of a type go, in a collection: its path in the type's folder, "/" between
+    collections ("nox_footsteps/grass"), or an album's or kind's name ("NOX Footsteps"), each
+    part made a folder name (library format version 3: library_tree). Textures and sounds
+    without one go in miscellaneous (as texture kinds and albums always did); other types in
+    the type's folder."""
     if type_ not in TYPES:
         raise LibraryError(f"there is no asset type '{type_}'")
-    kinds = TYPES[type_][1]
-    if kinds and category not in kinds:
-        raise LibraryError(f"textures are one of: {', '.join(kinds)}")
-    folder = library_dir(project) / type_
-    if type_ in ALBUMS:
-        return folder / slug(category or MISCELLANEOUS)
-    return folder / category if category else folder
+    parts = [slug(p) for p in collection.replace("\\", "/").split("/") if p.strip()]
+    if not parts and (type_ in ALBUMS or TYPES[type_][1]):
+        parts = [MISCELLANEOUS]
+    return Path(library_dir(project), type_, *parts)
 
 
 # ---- reading ---------------------------------------------------------------------------------
