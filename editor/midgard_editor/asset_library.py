@@ -321,6 +321,15 @@ def write(asset: Asset) -> None:
     (asset.folder / LICENCE_FILE).write_text(licence_text(asset), "utf-8")
 
 
+def update_fields(folder: Path, fields: dict) -> None:
+    """For organizing (library_tree): changes fields of the asset in a folder, writing its
+    asset.json and LICENSE.md as write() does."""
+    asset = read(Path(folder))
+    for key, value in fields.items():
+        setattr(asset, key, value)
+    write(asset)
+
+
 def record_files(asset: Asset) -> bool:
     """Its files as they are now (every file in its folder but its own two), and its
     fingerprint. Returns whether they changed (its version goes up when they did)."""

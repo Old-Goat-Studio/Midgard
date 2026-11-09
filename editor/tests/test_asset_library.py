@@ -308,3 +308,21 @@ def test_two_pictures_with_one_role_are_refused(project, tmp_path):
                          roles={"a.png": "color", "b.png": "color"})
     single = lib.import_asset(project, [a], "textures", "Plain", category="wood")
     assert lib.texture_set(single) == {"color": single.folder / "a.png"}  # (a lone one)
+
+
+def test_organizing_keeps_licence_md_and_everything_else_in_step(project):
+    from midgard_editor import library_tree as lt
+    root = lib.library_dir(project)
+    rusty = make(project, licence="CC-BY-4.0", author="Ana Ruiz", title="Rusty",
+                 tags=["sci-fi"])
+    moved = lt.rename_asset(root, rusty.id, "Old Plates", lib.update_fields)
+    assert moved == [("textures/metal/rusty_plates", "textures/metal/old_plates")]
+    again = lib.read(root / "textures/metal/old_plates")
+    assert again.name == "Old Plates" and again.id == "textures/metal/old_plates"
+    assert (again.uid, again.version, again.fingerprint, again.tags) == \
+        (rusty.uid, rusty.version, rusty.fingerprint, ["sci-fi"])  # (only its name changed)
+    assert (again.folder / "LICENSE.md").read_text("utf-8").startswith("# Old Plates")
+    assert lib.problems(again) == []
+    lt.new_collection(root, "textures", "Sci-fi")
+    lt.move(root, [again.id], "textures/sci_fi", update_asset=lib.update_fields)
+    assert [a.id for a in lib.scan(project)[0]] == ["textures/sci_fi/old_plates"]
