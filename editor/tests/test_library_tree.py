@@ -303,3 +303,30 @@ def test_sort_a_to_z_puts_collections_first(tmp_path):
     assert shown(tmp_path, "models") == ["Props", "apple", "Zebra"]
     asset(tmp_path, "models/mango", "Mango")  # (new: at the end)
     assert shown(tmp_path, "models") == ["Props", "apple", "Zebra", "Mango"]
+
+
+def test_the_last_part_of_a_change_is_given_what_moved_and_can_undo_it(tmp_path):
+    asset(tmp_path, "models/apple", "Apple")
+    asset(tmp_path, "music/song", "Song")
+    lt.new_collection(tmp_path, "models", "Box")
+    seen = []
+    lt.rename_asset(tmp_path, "models/apple", "Pear", then=seen.append)
+    assert seen == [[("models/apple", "models/pear")]]
+    lt.rename_asset(tmp_path, "models/pear", "PEAR", then=seen.append)  # (nothing moved)
+    assert len(seen) == 1
+    before = {p.relative_to(tmp_path).as_posix(): p.read_bytes()
+              for p in tmp_path.rglob("*") if p.is_file()}
+
+    def fails(moved):
+        raise lt.OrganizeError("the game couldn't be changed")
+    with pytest.raises(lt.OrganizeError, match="game"):
+        lt.rename_asset(tmp_path, "models/pear", "Plum", then=fails)
+    with pytest.raises(lt.OrganizeError, match="game"):
+        lt.rename_collection(tmp_path, "models/box", "Crate", then=fails)
+    with pytest.raises(lt.OrganizeError, match="game"):
+        lt.move(tmp_path, ["models/pear"], "models/box", then=fails)
+    with pytest.raises(lt.OrganizeError, match="game"):
+        lt.move(tmp_path, ["music/song"], "effects", then=fails)  # (its type put back too)
+    after = {p.relative_to(tmp_path).as_posix(): p.read_bytes()
+             for p in tmp_path.rglob("*") if p.is_file()}
+    assert after == before

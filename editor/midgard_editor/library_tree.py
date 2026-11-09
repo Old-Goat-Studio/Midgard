@@ -172,12 +172,14 @@ def find(nodes: Iterable[Node], path: str) -> Node | None:
 # ---- organizing: renaming, moving, ordering --------------------------------------------------
 # Each change is all or nothing: if any part of it fails (a file in use, say), what it had done is
 # put back, and OrganizeError says why. Each returns the folders it moved, (old path, new path) in
-# the library, so a game using them can be changed to match (Midgard).
+# the library, so a game using them can be changed to match (Midgard): given `then`, it is called
+# with them as the change's last part (when any moved), and if it raises, the change is undone.
 SIMILAR = (("music", "ambiance", "effects"), ("images", "gui", "icons"))  # may swap assets
 ONLY_IN = {".ico": "icons"}  # files only one type may hold
 LICENCE_FILE = "LICENSE.md"
 
 Moved = list[tuple[str, str]]
+Then = Callable[[Moved], None]  # the last part of a change: given the folders moved
 UpdateAsset = Callable[[Path, dict], None]  # writes fields of an asset (its asset.json, LICENSE.md)
 
 
@@ -339,7 +341,7 @@ def _pin_name(journal: _Journal, root: Path, path: str) -> None:
 
 
 def rename_asset(root: Path, path: str, name: str,
-                 update_asset: UpdateAsset | None = None) -> Moved:
+                 update_asset: UpdateAsset | None = None, then: Then | None = None) -> Moved:
     """Renames an asset; its folder follows its new name."""
     root, name = Path(root), name.strip()
     if not name:
@@ -355,10 +357,13 @@ def rename_asset(root: Path, path: str, name: str,
             return []
         journal.rename(folder, target)
         _renamed_in_order(journal, folder.parent, folder.name, target.name)
-    return [(path, target.relative_to(root).as_posix())]
+        moved = [(path, target.relative_to(root).as_posix())]
+        if then is not None:
+            then(moved)
+    return moved
 
 
-def rename_collection(root: Path, path: str, name: str) -> Moved:
+def rename_collection(root: Path, path: str, name: str, then: Then | None = None) -> Moved:
     """Renames a collection; its folder follows its new name."""
     root, name = Path(root), name.strip()
     if not name:
@@ -372,7 +377,10 @@ def rename_collection(root: Path, path: str, name: str) -> Moved:
             return []
         journal.rename(folder, target)
         _renamed_in_order(journal, folder.parent, folder.name, target.name)
-    return [(path, target.relative_to(root).as_posix())]
+        moved = [(path, target.relative_to(root).as_posix())]
+        if then is not None:
+            then(moved)
+    return moved
 
 
 def new_collection(root: Path, parent: str, name: str, index: int | None = None) -> str:
@@ -415,7 +423,7 @@ def delete_collection(root: Path, path: str) -> None:
 
 
 def move(root: Path, paths: list[str], to: str, index: int | None = None,
-         update_asset: UpdateAsset | None = None) -> Moved:
+         update_asset: UpdateAsset | None = None, then: Then | None = None) -> Moved:
     """Moves assets and collections into a type or collection (`to`), at `index` in its order
     (at the end when None), keeping their order among themselves. Moving within the same place
     puts them in a new order. Between types, only similar ones (SIMILAR), and every asset moved
@@ -473,6 +481,8 @@ def move(root: Path, paths: list[str], to: str, index: int | None = None,
             if gone & set(info["order"]):
                 journal.keep(folder / COLLECTION_FILE)
                 write_info(folder, order=[n for n in info["order"] if n not in gone])
+        if moved and then is not None:
+            then(moved)
     return moved
 
 
