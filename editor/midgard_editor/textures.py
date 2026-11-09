@@ -198,6 +198,7 @@ class Preparer(QObject):
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self.token = 0
+        self._thread: threading.Thread | None = None
 
     @staticmethod
     def waiting(project_root: Path, texture_ids) -> list[str]:
@@ -219,11 +220,19 @@ class Preparer(QObject):
             with contextlib.suppress(RuntimeError):  # (its window has closed)
                 self.ready.emit(token)
 
-        threading.Thread(target=prepare, name="prepare textures", daemon=True).start()
+        self._thread = threading.Thread(target=prepare, name="prepare textures", daemon=True)
+        self._thread.start()
         return token
 
     def cancel(self) -> None:
         self.token += 1
+
+    def finish(self, timeout: float = 30.0) -> None:
+        """Cancels, and waits for the picture being prepared now (so its file is let go)."""
+        self.cancel()
+        if self._thread is not None:
+            self._thread.join(timeout)
+            self._thread = None
 
     def wanted(self, token: int) -> bool:
         return token == self.token

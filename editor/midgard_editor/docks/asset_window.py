@@ -11,7 +11,8 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
+import shiboken6
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -40,6 +42,9 @@ from PySide6.QtWidgets import (
 )
 
 from .. import asset_library as lib
+from .. import library_refs as refs
+from .. import library_tree as lt
+from ..organize_ui import Backend, LibraryTree, Organizer, TypeList, fill
 from ..project import Project
 
 log = logging.getLogger(__name__)
@@ -844,6 +849,19 @@ class AssetPlayer(QWidget):
         elif self.kind == "model":
             (self.timer.start if on else self.timer.stop)()
 
+    def release(self) -> None:
+        """Lets go of the files it shows (before they are renamed or moved: Windows won't move a
+        folder while a sound in it is open)."""
+        self._preparer.finish()  # (a texture being made ready for the engine is read)
+        self.show_asset(None)
+        if self._audio is not None:  # (let go at once: the player is made again when wanted)
+            player, output = self._audio
+            self._audio = None
+            player.stop()
+            player.setSource(QUrl())
+            shiboken6.delete(player)
+            shiboken6.delete(output)
+
     def stop(self) -> None:
         self.timer.stop()
         if self._audio is not None:
@@ -948,6 +966,24 @@ class LibraryPicker(QDialog):
 MATERIAL_ROW = "\x00material"  # (the files list's row for a texture set's whole material)
 
 
+class GameBackend(Backend):
+    """Organizing a project's library: renames and moves change the game to match
+    (library_refs), asking first about scripts that name what moves."""
+
+    def __init__(self, project: Project, confirm):
+        super().__init__(lib.library_dir(project), lib.update_fields)
+        self.project, self.confirm = project, confirm
+
+    def rename_asset(self, path: str, name: str) -> lt.Moved:
+        return refs.rename_asset(self.project, path, name, self.confirm)
+
+    def rename_collection(self, path: str, name: str) -> lt.Moved:
+        return refs.rename_collection(self.project, path, name, self.confirm)
+
+    def move(self, paths: list[str], to: str, index: int | None) -> lt.Moved:
+        return refs.move(self.project, paths, to, index, self.confirm)
+
+
 class AssetWindow(QWidget):
     """The library's window (one for the editor; it follows the open project)."""
 
@@ -984,12 +1020,19 @@ class AssetWindow(QWidget):
         self.send_button.clicked.connect(lambda: self.send_to_master())
         self.quiet = False  # (tests: questions and reports aren't shown)
         self.last_report = ""
+        self.organize_button = QPushButton("Organize")
+        self.organize_button.setToolTip("Rename, move and put in order assets and collections "
+                                        "(or drag them; right-click for the same). The game is "
+                                        "changed to match.")
         for b in (self.import_button, self.from_master_button, self.details_button,
-                  self.update_button, self.send_button, self.remove_button, self.show_button):
+                  self.update_button, self.send_button, self.remove_button, self.show_button,
+                  self.organize_button):
             bar.addWidget(b)
         outer.addLayout(bar)
         split = QSplitter(Qt.Orientation.Horizontal)
-        self.types = QListWidget()
+        self.types = TypeList(ASSET_ROLE)
+        self.types.setToolTip("Drop assets on a type to move them there (between similar "
+                              "types: music, ambiance and FX; images, GUI and icons)")
         self.types.setMaximumWidth(200)
         for key, (label, _kinds) in lib.TYPES.items():
             item = QListWidgetItem(label)
@@ -998,7 +1041,7 @@ class AssetWindow(QWidget):
         self.types.currentRowChanged.connect(lambda _r: self.show_type())
         split.addWidget(self.types)
         right = QSplitter(Qt.Orientation.Vertical)
-        self.tree = QTreeWidget()
+        self.tree = LibraryTree()
         self.tree.setHeaderLabels(["Name", "Licence", "Files", "Description"])
         self.tree.setIconSize(QSize(THUMB, THUMB))
         self.tree.setColumnWidth(0, 260)
@@ -1041,6 +1084,19 @@ class AssetWindow(QWidget):
         split.addWidget(right)
         split.setSizes([180, 820])
         outer.addWidget(split, 1)
+        # Organizing (renaming, moving, ordering): the game is changed to match (library_refs).
+        self.organizer = Organizer(self, self.tree,
+                                   [(k, v[0]) for k, v in lib.TYPES.items()], self.types)
+        self.organizer.changed.connect(self._organized)
+        self.organizer.before_change = self.player.release
+        self.fix_scripts: bool | None = None  # (tests: the answer to "change the scripts?")
+        menu = QMenu(self.organize_button)
+        o = self.organizer
+        for a in (o.rename_action, o.new_action, o.delete_action, None, o.move_to_action,
+                  o.up_action, o.down_action, o.sort_action):
+            menu.addSeparator() if a is None else menu.addAction(a)
+        menu.aboutToShow.connect(o.update_actions)
+        self.organize_button.setMenu(menu)
         self.types.setCurrentRow(0)
         self.set_project(None)
 
@@ -1060,8 +1116,11 @@ class AssetWindow(QWidget):
             self.assets, self.unreadable = lib.scan(self.project)
             self.title.setText(f"{self.project.name}'s library: {len(self.assets)} asset"
                                f"{'' if len(self.assets) == 1 else 's'}")
-        for b in (self.import_button, self.show_button, self.from_master_button):
+        for b in (self.import_button, self.show_button, self.from_master_button,
+                  self.organize_button):
             b.setEnabled(self.project is not None)
+        self.organizer.set_backend(
+            None if self.project is None else GameBackend(self.project, self._confirm))
         self._master_assets = None  # (read again when wanted)
         for i in range(self.types.count()):
             item = self.types.item(i)
@@ -1075,20 +1134,20 @@ class AssetWindow(QWidget):
         return item.data(ASSET_ROLE) if item else "models"
 
     def show_type(self) -> None:
-        """The selected type's assets, in their folders (kinds, albums)."""
-        selected = self.selected()
-        self.tree.clear()
+        """The chosen type's collections and assets, in their order."""
         type_ = self.current_type()
-        folders: dict[str, QTreeWidgetItem] = {}
-        for asset in (a for a in self.assets if a.type == type_):
-            parent = None
-            if asset.category:
-                if asset.category not in folders:
-                    folders[asset.category] = QTreeWidgetItem(
-                        self.tree, [asset.category.replace("_", " ").capitalize()])
-                    folders[asset.category].setExpanded(True)
-                parent = folders[asset.category]
-            item = QTreeWidgetItem(parent or self.tree, [
+        self.tree.root_path = type_
+        by_path = {a.id: a for a in self.assets}
+        nodes = []
+        if self.project is not None:
+            nodes = lt.tree(lib.library_dir(self.project), [(type_, lib.TYPES[type_][0])],
+                            [(a.id, a.name, a.category) for a in self.assets])[0].children
+
+        def add_asset(parent, node: lt.Node) -> QTreeWidgetItem | None:
+            asset = by_path.get(node.path)
+            if asset is None:
+                return None
+            item = QTreeWidgetItem(parent, [
                 asset.name, licence_label(asset.licence), str(len(asset.files)),
                 asset.description.splitlines()[0] if asset.description else ""])
             item.setData(0, ASSET_ROLE, asset.id)
@@ -1096,9 +1155,46 @@ class AssetWindow(QWidget):
                 item.setIcon(0, icon)
             if lib.problems(asset):
                 item.setForeground(0, Qt.GlobalColor.red)
-            if selected and asset.id == selected.id:
-                item.setSelected(True)
+            return item
+        fill(self.tree, nodes, add_asset)
+        self.organizer.update_actions()
         self.show_selected()
+
+    # ---- organizing -------------------------------------------------------------------------
+    def _confirm(self, uses: refs.Uses) -> bool:
+        """Before a change the game must follow: whether to change the scripts naming what
+        moves too (asked only when there are some); Cancelled if you say no to the whole
+        change."""
+        if not uses.scripts:
+            return False
+        if self.fix_scripts is not None or self.quiet:
+            return bool(self.fix_scripts)
+        lines = "\n".join(f"{s.file}, line {s.line}: {s.text}" for s in uses.scripts[:12])
+        more = len(uses.scripts) - 12
+        box = QMessageBox(QMessageBox.Icon.Question, "Scripts name what is moving",
+                          f"The game's {uses.summary()} will be changed to match. These script "
+                          f"lines name the old paths too:\n\n{lines}" +
+                          (f"\n… and {more} more" if more > 0 else "") +
+                          "\n\nChange them as well?", parent=self)
+        fix = box.addButton("Change the Scripts Too", QMessageBox.ButtonRole.YesRole)
+        box.addButton("Leave the Scripts", QMessageBox.ButtonRole.NoRole)
+        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(fix)
+        box.exec()
+        if box.clickedButton() is cancel:
+            raise refs.Cancelled("you said no")
+        return box.clickedButton() is fix
+
+    def _organized(self, path: str) -> None:
+        """Something was organized: the library shown again, with `path` chosen."""
+        self.refresh()
+        if path:
+            type_ = path.split("/")[0]
+            for i in range(self.types.count()):
+                if self.types.item(i).data(ASSET_ROLE) == type_:
+                    self.types.setCurrentRow(i)
+            self.tree.clearSelection()
+            self.tree.select_path(path)
 
     def thumbnail(self, asset: lib.Asset) -> QIcon | None:
         """A picture's own image (models' come with the player)."""
@@ -1112,7 +1208,7 @@ class AssetWindow(QWidget):
         return None
 
     def selected(self) -> lib.Asset | None:
-        items = self.tree.selectedItems()
+        items = [i for i in self.tree.selectedItems() if i.data(0, ASSET_ROLE)]
         if not items:
             return None
         asset_id = items[0].data(0, ASSET_ROLE)

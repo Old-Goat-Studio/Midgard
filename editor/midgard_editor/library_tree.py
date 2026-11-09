@@ -135,7 +135,7 @@ def _album_name(collection: Node, assets: dict[str, tuple[str, str]]) -> str:
     for child in collection.children:
         category = assets.get(child.path, ("", ""))[1] if child.kind == "asset" else ""
         if category and slug(category) == collection.folder_name and \
-                category.lower() != collection.folder_name:
+                category != collection.folder_name:
             return category
     return ""
 
