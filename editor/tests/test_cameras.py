@@ -35,7 +35,7 @@ def test_older_projects_gain_the_view_action_when_they_open(tmp_path):
     con = sqlite3.connect(db)
     assert con.execute("SELECT kind FROM input_action WHERE id = 'view'").fetchone() == ("button",)
     assert sorted(con.execute("SELECT device, control FROM input_binding WHERE action = 'view'")) \
-        == [("gamepad", "y"), ("keyboard", "V")]
+        == [("gamepad", "y"), ("keyboard", "V"), ("touch", "view")]  # (touch: migration 20)
     assert con.execute("SELECT control FROM input_binding WHERE action = 'jump' "
                        "AND device = 'keyboard'").fetchone() == ("V",)
     con.close()
@@ -56,7 +56,7 @@ def test_older_projects_gain_the_run_action_when_they_open(tmp_path):
     con = sqlite3.connect(db)
     assert con.execute("SELECT kind FROM input_action WHERE id = 'run'").fetchone() == ("button",)
     assert sorted(con.execute("SELECT device, control FROM input_binding WHERE action = 'run'")) \
-        == [("gamepad", "leftstick"), ("keyboard", "Left Shift")]
+        == [("gamepad", "leftstick"), ("keyboard", "Left Shift"), ("touch", "run")]
     con.close()
 
 
@@ -284,3 +284,14 @@ def test_the_running_game_gets_camera_edits(project, qtbot, tmp_path, editor):
         assert "views" not in sent()[-1]["entity"]["components"]["camera"]
     finally:
         session.stop()
+
+
+def test_projects_have_the_touch_controls_bound(project):
+    # Migration 20: the phone's on-screen controls are a "touch" device bound to the actions.
+    with project.connect() as con:
+        touch = dict(((a, c), s) for a, c, s in con.execute(
+            "SELECT action, control, scale FROM input_binding WHERE device = 'touch'"))
+    assert touch == {("move_x", "stick_x"): 1.0, ("move_y", "stick_y"): 1.0,
+                     ("look_x", "drag_x"): 0.3, ("look_y", "drag_y"): -0.3,
+                     ("jump", "jump"): 1.0, ("use", "use"): 1.0, ("run", "run"): 1.0,
+                     ("view", "view"): 1.0, ("descend", "descend"): 1.0}

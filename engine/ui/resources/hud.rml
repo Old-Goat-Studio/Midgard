@@ -77,10 +77,19 @@
             #minimap { width: 120dp; height: 120dp; }
             #prompt { bottom: 150dp; }
         }
+        /* With the touch controls (the stick and buttons fill the bottom corners): the minimap
+           at the top right, the numbers under it, the prompt above the controls. */
+        #frame.touch #minimap { top: 16dp; bottom: auto; width: 120dp; height: 120dp; }
+        #frame.touch #right { top: 148dp; }
+        @media (orientation: portrait) {
+            #frame.touch #minimap { top: 52dp; width: 104dp; height: 104dp; }
+            #frame.touch #right { top: 168dp; }
+            #frame.touch #prompt { bottom: 280dp; }
+        }
     </style>
 </head>
 <body data-model="hud">
-    <div id="frame" data-if="visible">
+    <div id="frame" data-if="visible" data-class-touch="touch">
         <div id="bars">
             <div class="stat shadow" data-for="bar : bars" data-attr-id="'bar-' + bar.id">
                 <span class="name">{{bar.name}}</span><span class="value">{{bar.text}}</span>

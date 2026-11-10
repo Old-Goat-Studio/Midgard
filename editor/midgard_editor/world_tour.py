@@ -173,8 +173,9 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
    from the build server's runtime-template-android-arm64 download).
 2. **Build ▸ Export…**, choose **Android**, **Install Template…** and pick it.
 3. Export the World Tour, copy the .apk to your phone and install it.
-- [ ] It opens in the hub, with its music. Phones have no on-screen controls yet (they come
-      with Phase 6's menus and HUD): connect a game controller (Bluetooth or USB) to walk.
+- [ ] It opens in the hub, with its music, and the on-screen touch controls: the stick
+      bottom left, drag on the right half to look, Jump, Use, Run and View bottom right (or
+      connect a game controller: the controls go away until you touch the screen).
 - [ ] Visit each world; it runs smoothly, with sound. The phone's Back button ends it.
 '''
 

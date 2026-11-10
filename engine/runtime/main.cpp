@@ -25,6 +25,9 @@
 //                                       with --ui-touch also a finger's, fail the run);
 //                                       --ui-scale S scales it, --safe-area l,t,r,b (pixels)
 //                                       keeps it clear of a pretend notch
+//   --touch-controls                    the on-screen touch controls (6.0) from the start,
+//                                       with the mouse as a finger (to try them without a
+//                                       touch screen; a phone shows them by itself)
 //   --hud-test                          the HUD (6.0) with made-up stats, notes, a timer, a
 //                                       prompt and the crosshair, in a window or a screenshot;
 //                                       --show-hud puts a game's own HUD in a screenshot (which
@@ -108,6 +111,7 @@
 #include "midgard/profile.h"
 #include "midgard/render/renderer.h"
 #include "midgard/ui/hud.h"
+#include "midgard/ui/touch.h"
 #include "midgard/ui/ui.h"
 #include "midgard/version.h"
 #include "selftest.h"
@@ -154,8 +158,9 @@ struct Options {
     bool ui_touch = false;  // a screenshot's screen checks include a finger's (target sizes)
     float ui_scale = 1.0f;  // the player's UI scale, on top of the display's density
     std::optional<midgard::ui::Insets> safe_area;  // a pretend safe area, in pixels
-    bool hud_test = false;  // the HUD with made-up stats, notes, a timer and a prompt
-    bool show_hud = false;  // a screenshot of a game with its HUD (a window always has it)
+    bool hud_test = false;        // the HUD with made-up stats, notes, a timer and a prompt
+    bool show_hud = false;        // a screenshot of a game with its HUD (a window always has it)
+    bool touch_controls = false;  // the touch controls from the start, the mouse a finger
 };
 
 int usage() {
@@ -166,7 +171,7 @@ int usage() {
         "                       [--profile out.json] [--player-profile <dir>] [--world <dir>]\n"
         "                       [--quality desktop|phone] [--ui-test [--ui-touch]]\n"
         "                       [--ui-scale S] [--safe-area l,t,r,b] [--hud-test]\n"
-        "                       [--show-hud]\n"
+        "                       [--show-hud] [--touch-controls]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
 }
@@ -279,6 +284,8 @@ public:
     virtual std::vector<std::string> status() const { return {}; }
     // What the HUD shows (6.0); none: no HUD (the demo and test scenes).
     virtual std::optional<midgard::ui::HudData> hud() const { return std::nullopt; }
+    // The player is flying (the touch controls show their Down button).
+    virtual bool flying() const { return false; }
     // A HUD is shown from now on (the game makes what only it needs: the minimap's ground).
     virtual void hud_shown() {}
     // How dark the picture is (a scene change fading out and in): 0 clear, 1 black.
@@ -666,6 +673,12 @@ public:
     }
     void hud_shown() override { game_.want_minimap(); }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
+    bool flying() const override {
+        const entt::entity p = game_.camera_rig().player();
+        const auto* player =
+            p == entt::null ? nullptr : game_.scene().registry.try_get<midgard::Player>(p);
+        return player && player->fly;
+    }
     std::string title() const override { return game_.package().manifest.game_name; }
     std::optional<std::filesystem::path> icon() const override {
         const auto file = game_.package().root / "icon.png";
@@ -887,6 +900,7 @@ void feed(midgard::Actions& actions, const SDL_Event& e) {
                             e.type == SDL_EVENT_KEY_DOWN ? 1.0f : 0.0f);
             break;
         case SDL_EVENT_MOUSE_MOTION:
+            if (e.motion.which == SDL_TOUCH_MOUSEID) break;  // (a finger: the touch controls')
             actions.add_delta("mouse", "delta_x", e.motion.xrel);
             actions.add_delta("mouse", "delta_y", e.motion.yrel);
             break;
@@ -1164,6 +1178,33 @@ midgard::ui::Insets window_safe_area(SDL_Window* window) {
             float(h - safe.y - safe.h) * px};
 }
 
+// The mouse as a finger (--touch-controls): the left button down, moving with it held, and
+// up, as finger -1 (false: not one of those).
+bool mouse_finger(SDL_Window* window, const SDL_Event& e, midgard::ui::Input& in) {
+    using T = midgard::ui::Input::Type;
+    const float px = SDL_GetWindowPixelDensity(window);
+    in.touch = -1;
+    switch (e.type) {
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (e.button.which == SDL_TOUCH_MOUSEID || e.button.button != SDL_BUTTON_LEFT)
+                return false;
+            in.type = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? T::TouchDown : T::TouchUp;
+            in.x = e.button.x * px;
+            in.y = e.button.y * px;
+            return true;
+        case SDL_EVENT_MOUSE_MOTION:
+            if (e.motion.which == SDL_TOUCH_MOUSEID || !(e.motion.state & SDL_BUTTON_LMASK))
+                return false;
+            in.type = T::TouchMove;
+            in.x = e.motion.x * px;
+            in.y = e.motion.y * px;
+            return true;
+        default:
+            return false;
+    }
+}
+
 // One SDL event as the UI's input (false: not one the UI takes).
 bool ui_input(SDL_Window* window, const SDL_Event& e, midgard::ui::Input& in) {
     using T = midgard::ui::Input::Type;
@@ -1276,10 +1317,17 @@ int run_screenshot(const Options& opt, Source& source) {
         uo.platform = ui_log_only();
         ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
     }
+    std::unique_ptr<midgard::ui::TouchControls> touch;  // (after the UI: it goes first)
     if (hud_data) {
         hud = std::make_unique<midgard::ui::Hud>(*ui);
         if (!opt.hud_test) source.hud_shown();
         hud->show(opt.hud_test ? *hud_data : *source.hud());  // (with the minimap's ground)
+        if (opt.touch_controls) {                             // (as a phone shows them, at rest)
+            touch = std::make_unique<midgard::ui::TouchControls>(*ui);
+            touch->set_shown(true);
+            touch->update();
+            hud->set_touch(true);
+        }
     }
     if (opt.ui_test) {
         Rml::ElementDocument* screen = midgard::ui::open_test_screen(*ui);
@@ -1485,6 +1533,13 @@ int run_window(const Options& opt, Source& source) {
         // the notch. Without its fonts the game still runs, with no screens.
         std::unique_ptr<midgard::ui::Ui> ui;
         std::unique_ptr<midgard::ui::Hud> hud;  // (after the UI: it goes first)
+        std::unique_ptr<midgard::ui::TouchControls> touch;
+        // The touch controls: on a phone without a controller, or asked for (with the mouse as
+        // a finger). A finger shows them; a key, a mouse click or a controller hides them.
+        bool touch_wanted = opt.touch_controls;
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+        touch_wanted = touch_wanted || !SDL_HasGamepad();
+#endif
         try {
             midgard::ui::Options uo;
             uo.width = desc.width;
@@ -1498,11 +1553,13 @@ int run_window(const Options& opt, Source& source) {
             if (opt.hud_test || source.hud()) {
                 hud = std::make_unique<midgard::ui::Hud>(*ui);
                 if (!opt.hud_test) source.hud_shown();
+                touch = std::make_unique<midgard::ui::TouchControls>(*ui);
             }
             if (opt.ui_test && !midgard::ui::open_test_screen(*ui))
                 warn("The UI test screen didn't open\n");
         } catch (const std::exception& e) {
             warn("No in-game UI: %s\n", e.what());
+            touch.reset();
             hud.reset();
         }
         midgard::Actions actions(source.input_map());
@@ -1511,7 +1568,8 @@ int run_window(const Options& opt, Source& source) {
         // Shift+F1 or switching away frees it. An exported game captures it from the start.
         bool captured = false;
         const auto capture = [&](bool on) {
-            on = on && source.wants_mouse_look();
+            // (with the touch controls asked for, the mouse is a finger: never captured)
+            on = on && source.wants_mouse_look() && !opt.touch_controls;
             if (on == captured) return;
             captured = on;
             SDL_SetWindowRelativeMouseMode(window, on);
@@ -1575,6 +1633,41 @@ int run_window(const Options& opt, Source& source) {
                         e.type == SDL_EVENT_KEY_DOWN &&
                         (e.key.scancode == SDL_SCANCODE_F3 || e.key.scancode == SDL_SCANCODE_F4 ||
                          e.key.scancode == SDL_SCANCODE_F5 || e.key.scancode == SDL_SCANCODE_F6);
+                    // The touch controls take the fingers (and, asked for, the mouse as one)
+                    // while no menu is up. A finger shows them; anything else hides them.
+                    if (touch && !ui->modal()) {
+                        const bool finger =
+                            e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
+                            e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED;
+                        if (finger && ui_input(window, e, in)) {
+                            if (in.type == midgard::ui::Input::Type::TouchDown && !touch_wanted) {
+                                touch_wanted = true;
+                                touch->set_shown(true);
+                            }
+                            if (touch->handle(in)) continue;
+                        }
+                        if (opt.touch_controls && mouse_finger(window, e, in)) {
+                            touch->handle(in);
+                            continue;
+                        }
+                        const bool other_device =
+                            (e.type == SDL_EVENT_KEY_DOWN && !editor_key && !e.key.repeat &&
+                             e.key.scancode != SDL_SCANCODE_AC_BACK &&  // (a phone's own keys)
+                             e.key.scancode != SDL_SCANCODE_VOLUMEUP &&
+                             e.key.scancode != SDL_SCANCODE_VOLUMEDOWN) ||
+                            e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+                            (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                             e.button.which != SDL_TOUCH_MOUSEID);
+                        if (other_device && touch_wanted && !opt.touch_controls) {
+                            touch_wanted = false;
+                            touch->set_shown(false);
+                        }
+                        // (a finger's pretend mouse: the touch controls had the finger)
+                        if ((e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                             e.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+                            e.button.which == SDL_TOUCH_MOUSEID)
+                            continue;
+                    }
                     if (!editor_key && ui_input(window, e, in) && ui->handle(in)) {
                         if (e.type == SDL_EVENT_KEY_UP || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP)
                             feed(actions, e);  // (a key let go reaches the game: none stick)
@@ -1673,6 +1766,19 @@ int run_window(const Options& opt, Source& source) {
                 capture(!is_modal && !link);
                 was_modal = is_modal;
             }
+            // The touch controls: hidden under a menu; what they do reaches the game as the
+            // "touch" device (schema/migrations/0020_touch.sql binds it).
+            if (touch) {
+                touch->set_shown(touch_wanted && !is_modal);
+                touch->set_flying(source.flying());
+                if (hud) hud->set_touch(touch->shown());
+                const midgard::ui::TouchControls::Output o = touch->take();
+                actions.set("touch", "stick_x", o.stick_x);
+                actions.set("touch", "stick_y", o.stick_y);
+                actions.add_delta("touch", "drag_x", o.drag_x);
+                actions.add_delta("touch", "drag_y", o.drag_y);
+                for (const auto& [name, value] : o.buttons) actions.set("touch", name, value);
+            }
             // The menu action quits until in-game menus exist (Phase 6).
             if (actions.pressed("menu") && !is_modal) running = false;
             MIDGARD_PROFILE_SCOPE("frame");
@@ -1701,6 +1807,7 @@ int run_window(const Options& opt, Source& source) {
                 renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
                                                       : std::vector<render::DebugLine>{});
                 if (ui) {
+                    if (touch) touch->update();
                     if (hud) {
                         if (const auto data =
                                 opt.hud_test ? std::optional(sample_hud()) : source.hud())
@@ -2002,6 +2109,8 @@ int main(int argc, char** argv) {
             opt.hud_test = true;
         } else if (arg == "--show-hud") {
             opt.show_hud = true;
+        } else if (arg == "--touch-controls") {
+            opt.touch_controls = true;
         } else if (arg == "--ui-touch") {
             opt.ui_touch = true;
         } else if (arg == "--ui-scale" && has_value) {

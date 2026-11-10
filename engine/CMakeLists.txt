@@ -129,7 +129,7 @@ file(MAKE_DIRECTORY "${UI_GEN}")
 # The base style sheet and the test screen, as text; the fonts, as bytes.
 set(UI_TEXT_SOURCES)
 foreach(pair "base.rcss:kUiBaseRcss:ui_base_rcss.h" "test_screen.rml:kUiTestScreen:ui_test_screen.h"
-        "hud.rml:kUiHudRml:ui_hud_rml.h")
+        "hud.rml:kUiHudRml:ui_hud_rml.h" "touch.rml:kUiTouchRml:ui_touch_rml.h")
     string(REPLACE ":" ";" parts "${pair}")
     list(GET parts 0 file)
     list(GET parts 1 name)
@@ -167,6 +167,7 @@ add_library(midgard_ui STATIC
     ui/src/checks.cpp
     ui/src/test_screen.cpp
     ui/src/hud.cpp
+    ui/src/touch.cpp
     ui/src/fonts.cpp
     ${UI_TEXT_SOURCES}
     ${UI_FONT_SOURCES}
@@ -525,6 +526,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_ui.cpp
         tests/test_stats.cpp
         tests/test_hud.cpp
+        tests/test_touch.cpp
         tests/test_compass.cpp
     )
     target_link_libraries(midgard_tests PRIVATE

@@ -467,6 +467,13 @@ class MainWindow(QMainWindow):
         self.pause_action = add_action(build, "P&ause", self.toggle_pause, "F6")
         self.pause_action.setCheckable(True)
         self.stop_action = add_action(build, "&Stop", self.stop_game, "Shift+F5")
+        # The phone's on-screen controls, tried with the mouse (6.0): the next Play shows them.
+        self.touch_action = add_action(build, "Play with &Touch Controls",
+                                       self._set_touch_controls)
+        self.touch_action.setCheckable(True)
+        self.touch_action.setChecked(bool(self.settings.get("play_touch_controls", False)))
+        self.touch_action.setToolTip("Play shows a phone's on-screen stick and buttons, with the "
+                                     "mouse as a finger")
         build.addSeparator()
         self.export_action = add_action(build, "&Export…", self.export_game, "Ctrl+E")
 
@@ -978,14 +985,18 @@ class MainWindow(QMainWindow):
         if fresh or not self.can_continue():
             shutil.rmtree(folder, ignore_errors=True)  # the scene's start, the calendar's start
         folder.mkdir(parents=True, exist_ok=True)
+        extra = ["--world", str(folder / "world"), "--player-profile", str(folder / "profile")]
+        if self.touch_action.isChecked():
+            extra.append("--touch-controls")
         try:
-            self.session.start(runtimes[0], package,
-                               ["--world", str(folder / "world"),
-                                "--player-profile", str(folder / "profile")])
+            self.session.start(runtimes[0], package, extra)
         except LinkError as e:
             QMessageBox.warning(self, "Play", str(e))
             return
         log.info("%s %s", "Playing" if fresh else "Continuing", package)
+
+    def _set_touch_controls(self, on: bool | None = None) -> None:
+        self.settings.set("play_touch_controls", bool(self.touch_action.isChecked()))
 
     def toggle_pause(self) -> None:
         if self.session is None:

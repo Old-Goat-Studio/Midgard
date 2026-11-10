@@ -99,7 +99,7 @@ struct Hud::Impl {
     Rml::Vector<NumberRow> numbers;
     Rml::Vector<TimerRow> timers;
     Rml::Vector<NoteRow> notes;
-    bool compass = false, minimap = false, has_ground = false;
+    bool compass = false, minimap = false, has_ground = false, touch = false;
     float compass_left = 0.0f, arrow = 0.0f, ground_left = 0.0f, ground_top = 0.0f,
           ground_width = 100.0f;
     Rml::Vector<CompassMark> marks = compass_marks();
@@ -168,6 +168,7 @@ Hud::Hud(Ui& ui) : impl_(std::make_unique<Impl>(ui)) {
     model.Bind("ground_width", &h.ground_width);
     model.Bind("map_marks", &h.map_marks);
     model.Bind("visible", &h.visible);
+    model.Bind("touch", &h.touch);
     model.Bind("crosshair", &h.crosshair);
     model.Bind("has_prompt", &h.has_prompt);
     model.Bind("prompt", &h.prompt);
@@ -190,6 +191,10 @@ Hud::~Hud() {
         h.ui.context()->Update();  // (the screen goes before the data it shows)
     }
     h.ui.context()->RemoveDataModel("hud");
+}
+
+void Hud::set_touch(bool touch) {
+    impl_->set(impl_->touch, touch, "touch");
 }
 
 Rml::ElementDocument* Hud::document() {

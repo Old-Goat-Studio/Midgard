@@ -20,21 +20,43 @@ std::string key(const std::string& device, const std::string& control) {
 
 InputMap InputMap::defaults() {
     // The same defaults as schema/migrations/0003_input.sql, 0007_camera_view.sql,
-    // 0008_run.sql and 0013_use.sql, for older packages.
+    // 0008_run.sql, 0013_use.sql and 0020_touch.sql, for older packages.
     // (A plain array: MSVC 19.40 crashes on a range-for over a braced initializer list here.)
     static const Binding kDefaults[] = {
-        {"move_x", "keyboard", "D", 1.0f},      {"move_x", "keyboard", "A", -1.0f},
-        {"move_x", "gamepad", "leftx", 1.0f},   {"move_y", "keyboard", "W", 1.0f},
-        {"move_y", "keyboard", "S", -1.0f},     {"move_y", "gamepad", "lefty", -1.0f},
-        {"look_x", "mouse", "delta_x", 0.15f},  {"look_x", "gamepad", "rightx", 120.0f},
-        {"look_y", "mouse", "delta_y", -0.15f}, {"look_y", "gamepad", "righty", -90.0f},
-        {"zoom", "mouse", "wheel", -1.0f},      {"jump", "keyboard", "Space", 1.0f},
-        {"jump", "gamepad", "a", 1.0f},         {"view", "keyboard", "V", 1.0f},
-        {"view", "gamepad", "y", 1.0f},         {"run", "keyboard", "Left Shift", 1.0f},
-        {"run", "gamepad", "leftstick", 1.0f},  {"menu", "keyboard", "Escape", 1.0f},
-        {"menu", "gamepad", "start", 1.0f},     {"use", "keyboard", "E", 1.0f},
-        {"use", "gamepad", "x", 1.0f},          {"descend", "keyboard", "Left Ctrl", 1.0f},
+        {"move_x", "keyboard", "D", 1.0f},
+        {"move_x", "keyboard", "A", -1.0f},
+        {"move_x", "gamepad", "leftx", 1.0f},
+        {"move_y", "keyboard", "W", 1.0f},
+        {"move_y", "keyboard", "S", -1.0f},
+        {"move_y", "gamepad", "lefty", -1.0f},
+        {"look_x", "mouse", "delta_x", 0.15f},
+        {"look_x", "gamepad", "rightx", 120.0f},
+        {"look_y", "mouse", "delta_y", -0.15f},
+        {"look_y", "gamepad", "righty", -90.0f},
+        {"zoom", "mouse", "wheel", -1.0f},
+        {"jump", "keyboard", "Space", 1.0f},
+        {"jump", "gamepad", "a", 1.0f},
+        {"view", "keyboard", "V", 1.0f},
+        {"view", "gamepad", "y", 1.0f},
+        {"run", "keyboard", "Left Shift", 1.0f},
+        {"run", "gamepad", "leftstick", 1.0f},
+        {"menu", "keyboard", "Escape", 1.0f},
+        {"menu", "gamepad", "start", 1.0f},
+        {"use", "keyboard", "E", 1.0f},
+        {"use", "gamepad", "x", 1.0f},
+        {"descend", "keyboard", "Left Ctrl", 1.0f},
         {"descend", "gamepad", "b", 1.0f},
+        // The on-screen touch controls (midgard/ui/touch.h): the stick, dragging to look (dp),
+        // and the buttons.
+        {"move_x", "touch", "stick_x", 1.0f},
+        {"move_y", "touch", "stick_y", 1.0f},
+        {"look_x", "touch", "drag_x", 0.3f},
+        {"look_y", "touch", "drag_y", -0.3f},
+        {"jump", "touch", "jump", 1.0f},
+        {"use", "touch", "use", 1.0f},
+        {"run", "touch", "run", 1.0f},
+        {"view", "touch", "view", 1.0f},
+        {"descend", "touch", "descend", 1.0f},
     };
     InputMap m;
     for (const Binding& b : kDefaults) m.add(b);

@@ -971,20 +971,46 @@ smoothing.
 
 ### Controls in the game
 
-| Action | Keyboard and mouse | Gamepad |
-|---|---|---|
-| Walk | W A S D | Left stick |
-| Look | Mouse | Right stick |
-| Run | Hold Left Shift | Click left stick |
-| Jump | Space | A |
-| Change view | V | Y |
-| Zoom | Mouse wheel | |
-| Use (doors, switches) | E | X |
-| Descend (when flying) | Left Ctrl | B |
-| Menu | Escape | Start |
-| Show colliders | F4 | |
+| Action | Keyboard and mouse | Gamepad | Touch (a phone) |
+|---|---|---|---|
+| Walk | W A S D | Left stick | The stick, bottom left |
+| Look | Mouse | Right stick | Drag on the right half |
+| Run | Hold Left Shift | Click left stick | **Run** (tap on, tap off) |
+| Jump | Space | A | **Jump** |
+| Change view | V | Y | **View** |
+| Zoom | Mouse wheel | | |
+| Use (doors, switches) | E | X | **Use** |
+| Descend (when flying) | Left Ctrl | B | **Down** |
+| Menu | Escape | Start | The phone's Back button |
+| Show colliders | F4 | | |
 
 Walking is relative to the camera, and the player turns to face the way it walks.
+
+### Touch controls: playing on a phone
+
+On a phone the game shows **on-screen controls** by itself, so no game controller is needed:
+
+- **The stick**, bottom left. Put a thumb anywhere on the left half of the screen: the stick
+  comes to it. Push it the way to walk; the further, the faster. Let go and it goes back to
+  its resting place, drawn faint. Pull past its rim and it follows your thumb.
+- **Looking**: drag a finger anywhere on the right half (not on a button) to turn the camera.
+- **Buttons**, bottom right: **Jump**, **Use** (doors, levers, pads), **Run** (a switch: tap it
+  to run, it lights up; tap again to walk), **View** (first person, third person, from above)
+  and, while flying, **Down**.
+
+Each finger does one thing, so you can walk, look and jump at once. A phone held upright gets a
+narrower layout, the buttons closer to the edge. Everything stays clear of the notch and the
+rounded corners, and is the same size to a finger on every phone. While the controls show, the
+HUD's minimap moves to the top right, above the scores.
+
+Connect a game controller (or a keyboard) and press a button: the controls go away. Touch the
+screen and they come back.
+
+**Trying them on your computer:** tick **Build ▸ Play with Touch Controls**, then **Play**. The
+controls show, and the **mouse is a finger**: hold the left button and drag on the stick to
+walk, drag on the right half to look, click the buttons. The mouse isn't captured, so you
+don't need Esc. Untick it to play with the mouse and keyboard again (Midgard remembers which
+you chose).
 
 **Swimming.** Where the sea is deeper than the player's shoulders, the player swims: it floats
 with the water at its shoulders instead of sinking to the sea floor, and swims along the surface
@@ -1666,11 +1692,13 @@ Scripts can use Python's standard library (`math`, `random` and so on).
   make in the editor while it runs (moving things, colours, scripts) appear in the game at once.
 - **Continue** (Ctrl+F5): starts where you last left off.
 - **Pause** (F6) and **Stop** (Shift+F5).
+- **Play with Touch Controls**: when ticked, Play shows a phone's on-screen controls, with
+  the mouse as a finger (section 15).
 - **Cook** (Ctrl+B): just packs the game, to check for problems; the Log lists any.
 - **Export…** (Ctrl+E): makes a finished game for **Windows**, **Linux** or **Android** in a
-  folder you choose, ready to share. On an Android phone, play with a game controller
-  (Bluetooth or USB) for now: on-screen controls come with the menus and HUD (Phase 6). The
-  phone's Back button ends the game.
+  folder you choose, ready to share. On an Android phone the game shows its on-screen touch
+  controls (section 15), or plays with a game controller (Bluetooth or USB). The phone's Back
+  button ends the game.
 
 The first Play after adding a big model takes longer while its textures are converted; later
 Plays are quick.

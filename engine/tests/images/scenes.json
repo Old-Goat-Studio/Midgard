@@ -380,6 +380,16 @@
       "name": "hud_phone",
       "_about": "The same HUD on a phone held upright (1.5 pixels a dp), clear of a pretend notch and gesture bar: the compass on top, the bars and the right-hand column sharing the width under it, a smaller minimap, and the prompt above it.",
       "args": ["--size", "540x1170", "--hud-test", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone"]
+    },
+    {
+      "name": "touch_landscape",
+      "_about": "The on-screen touch controls (milestone 6.0) over the HUD, held sideways: the stick resting bottom left, Jump, Use, Run and View bottom right, the minimap moved to the top right above the numbers.",
+      "args": ["--size", "1280x720", "--hud-test", "--touch-controls"]
+    },
+    {
+      "name": "touch_phone",
+      "_about": "The touch controls on a phone held upright (1.5 pixels a dp, a pretend notch and gesture bar): the narrow layout, the buttons drawn in towards the right edge clear of the stick, the prompt above them.",
+      "args": ["--size", "540x1170", "--hud-test", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone", "--touch-controls"]
     }
   ]
 }

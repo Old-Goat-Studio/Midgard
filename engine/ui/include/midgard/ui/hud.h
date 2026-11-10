@@ -92,6 +92,9 @@ public:
 
     // This frame's data (only what changed is laid out again).
     void show(const HudData& data);
+    // The touch controls are shown (midgard/ui/touch.h): the minimap moves to the top right,
+    // the numbers under it, and (held upright) the prompt up above the controls.
+    void set_touch(bool touch);
     Rml::ElementDocument* document();
 
 private:

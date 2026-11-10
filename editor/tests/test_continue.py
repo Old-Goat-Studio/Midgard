@@ -41,6 +41,15 @@ def test_play_starts_afresh_and_continue_keeps_where_it_got_to(window, project, 
     window.play()  # from the start again: the old world goes
     assert not (folder / "world" / "marker").exists()
 
+    # Play with Touch Controls: the phone's controls, with the mouse as a finger; remembered.
+    window.touch_action.trigger()
+    assert window.settings.get("play_touch_controls") is True
+    window.play()
+    assert started[-1][-1] == "--touch-controls"
+    window.touch_action.trigger()
+    window.play()
+    assert "--touch-controls" not in started[-1]
+
 
 @needs_scripting
 def test_the_real_game_continues_where_it_was_left(project, qtbot, tmp_path):
