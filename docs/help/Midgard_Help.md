@@ -980,6 +980,30 @@ smoothing.
 
 Walking is relative to the camera, and the player turns to face the way it walks.
 
+### The player's stats, scores and counters
+
+Health, stamina, points, keys: the numbers your game keeps about the player. They're in the
+**Stats** panel (Window ▸ Stats; a tab beside the viewport). Every project starts with three:
+**Health**, **Stamina** and **Score**. Change them, delete them, or add your own with **New**.
+Each is one of three kinds:
+
+- **Stat**: a value between its **least** and **most**, like Health 0 to 100. It can **refill**
+  by itself, so much a second, once it has gone a while (**After**) without dropping: Health
+  might come back 1 a second after 5 seconds without being hurt. A negative refill drains it
+  instead (hunger going down).
+- **Score**: a whole number of points that never goes below its least.
+- **Counter**: a whole number up to a **target** if it has one (Keys, 3 of 5), or as many as
+  there are (Coins).
+
+**Move Up** and **Move Down** set their order (the HUD shows them in it). Under the settings,
+**In scripts** shows how a script reads the chosen one; your scripts change them with
+`midgard.stats` (section 19). When you edit them while the game plays, the game follows at
+once, keeping its values. Cook warns about a stat that starts outside its range, two stats
+with the same name, and a script that names a stat the project doesn't have.
+
+The game keeps the player's stats in its saved world, so they're as the player left them next
+time. Until the HUD arrives (the next step of Phase 6), **F3** in the game shows them.
+
 ---
 
 ## 16. Characters and animation
@@ -1502,6 +1526,36 @@ def on_start(entity):
 def changed(before, now):
     if now == "rain":
         print("It's starting to rain. Find shelter!")
+```
+
+### Stats: `midgard.stats`
+
+Each stat by its id or its name, as the Stats panel has them (`"health"` or `"Health"`).
+
+| What | Meaning |
+|---|---|
+| `midgard.stats.get("health")` or `midgard.stats["health"]` | Its value now. Scores and counters are whole numbers. |
+| `midgard.stats.set("health", 50)` or `midgard.stats["health"] = 50` | Sets it, kept within its least and most. |
+| `midgard.stats.add("score", 10)` | Adds to it (a negative number takes away) and gives the new value. |
+| `midgard.stats.max("health")`, `midgard.stats.min("health")` | Its most and least (a score has no most: `None`). |
+| `midgard.stats.set_max("health", 150)` | A new most: more health as the player grows stronger, or a counter's new target. |
+| `midgard.stats.reset("health")` | Back to where it starts. `midgard.stats.reset()` resets them all. |
+| `midgard.stats.on_change(changed)` | Calls your function `changed(stat, before, now)` whenever one changes, refilling included. |
+| `midgard.stats.ids` | The stats' ids, in the panel's order. `"mana" in midgard.stats` asks if there is one. |
+
+```python
+import midgard
+
+def on_start(entity):
+    midgard.stats.on_change(changed)
+
+def on_trigger_enter(entity, other):
+    midgard.stats.add("health", -25)   # the spikes hurt
+    midgard.stats.add("score", 5)      # but there's a coin
+
+def changed(stat, before, now):
+    if stat == "health" and now == 0:
+        print("You have fallen.")
 ```
 
 ### Other

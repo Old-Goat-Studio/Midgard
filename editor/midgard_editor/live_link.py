@@ -31,7 +31,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
-from . import environments, sound_events, surface_shaders, terrain_stamps, weather
+from . import environments, sound_events, stats, surface_shaders, terrain_stamps, weather
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .objects import ObjectError, object_content
 from .project import Project
@@ -130,6 +130,7 @@ class PlaySession(QObject):
         project.environments_changed.connect(self._environments_changed)
         project.sound_events_changed.connect(self._audio_changed)
         project.weather_changed.connect(self._weather_changed)
+        project.stats_changed.connect(self._stats_changed)
         project.terrain_changed.connect(self._terrain_changed)
         project.files_changed.connect(self._files_changed)
 
@@ -426,6 +427,13 @@ class PlaySession(QObject):
         if self.socket is None:
             return
         self.send({"type": "weather.put", "weather": weather.live_message(self.project)})
+
+    def _stats_changed(self, _stat_id: str) -> None:
+        """The Stats panel's edits: the running game's stats follow at once, keeping their
+        values (fitted to the new ranges)."""
+        if self.socket is None:
+            return
+        self.send({"type": "stats.put", "stats": stats.live_message(self.project)})
 
     def _objects_changed(self, _object_id: str) -> None:
         """An object edited, re-imported, added or removed: the running game follows."""

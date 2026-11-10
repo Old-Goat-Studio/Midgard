@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -32,6 +33,8 @@ struct Context {
     std::vector<std::pair<TimeSignal, pybind11::object>> time_callbacks;
     // midgard.weather.on_change(callback), likewise.
     std::vector<pybind11::object> weather_callbacks;
+    // midgard.stats.on_change(callback), likewise.
+    std::vector<pybind11::object> stat_callbacks;
 };
 Context* g_context = nullptr;
 
@@ -54,6 +57,21 @@ struct RoomsHandle {};     // midgard.rooms
 struct AudioHandle {};     // midgard.audio
 struct MusicHandle {};     // midgard.music
 struct AmbienceHandle {};  // midgard.ambience
+
+// midgard.stats (milestone 6.0): the player's stats, scores and counters.
+struct StatsHandle {};
+
+const stats::StatDef& stat_def(const std::string& stat) {
+    const stats::StatDef* d = current_game().stats().find(stat);
+    if (!d) throw py::key_error("there is no stat '" + stat + "'");
+    return *d;
+}
+
+// A stat's value as Python has it: an int for scores and counters.
+py::object stat_value(const stats::StatDef& d, double v) {
+    if (d.whole()) return py::int_(static_cast<long long>(v));
+    return py::float_(v);
+}
 
 // midgard.weather's view of the weather.
 struct WeatherHandle {};
@@ -1124,6 +1142,119 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             "The weather types' ids.")
         .def("__repr__", [](const WeatherHandle&) { return std::string("<midgard.weather>"); });
     m.attr("weather") = WeatherHandle{};
+    py::class_<StatsHandle>(m, "StatsApi",
+                            "The player's stats, scores and counters (midgard.stats; milestone "
+                            "6.0), as the Stats panel defines them: by id or name. A stat stays "
+                            "between its least and most and may refill by itself; scores and "
+                            "counters are whole numbers (a counter up to its target, if any).")
+        .def(
+            "get",
+            [](const StatsHandle&, const std::string& stat) {
+                const stats::StatDef& d = stat_def(stat);
+                return stat_value(d, *current_game().stats().get(d.id));
+            },
+            py::arg("stat"), "A stat's value. KeyError if there is no such stat.")
+        .def(
+            "set",
+            [](const StatsHandle&, const std::string& stat, double value) {
+                const stats::StatDef& d = stat_def(stat);
+                return stat_value(d, *current_game().stats().set(d.id, value));
+            },
+            py::arg("stat"), py::arg("value"),
+            "Sets a stat (kept within its range, whole for scores and counters) and gives its "
+            "new value.")
+        .def(
+            "add",
+            [](const StatsHandle&, const std::string& stat, double amount) {
+                const stats::StatDef& d = stat_def(stat);
+                return stat_value(d, *current_game().stats().add(d.id, amount));
+            },
+            py::arg("stat"), py::arg("amount") = 1.0,
+            "Adds to a stat (a negative amount takes away) and gives its new value.")
+        .def(
+            "max",
+            [](const StatsHandle&, const std::string& stat) -> py::object {
+                const stats::StatDef& d = stat_def(stat);
+                if (!d.capped()) return py::none();
+                return stat_value(d, d.max);
+            },
+            py::arg("stat"), "A stat's most, or a counter's target (None: it has none).")
+        .def(
+            "min",
+            [](const StatsHandle&, const std::string& stat) {
+                const stats::StatDef& d = stat_def(stat);
+                return stat_value(d, d.min);
+            },
+            py::arg("stat"), "A stat's least.")
+        .def(
+            "set_max",
+            [](const StatsHandle&, const std::string& stat, double max) {
+                const stats::StatDef& d = stat_def(stat);
+                if (!current_game().stats().set_max(d.id, max))
+                    throw py::value_error("'" + d.name + "' can't have a most of " +
+                                          std::to_string(max));
+            },
+            py::arg("stat"), py::arg("max"),
+            "Changes a stat's most (more health as the player grows) or a counter's target; the "
+            "value is kept within it. ValueError for a score, or a most not above the least.")
+        .def(
+            "reset",
+            [](const StatsHandle&, const std::optional<std::string>& stat) {
+                if (!stat) {
+                    current_game().stats().reset_all();
+                    return;
+                }
+                current_game().stats().reset(stat_def(*stat).id);
+            },
+            py::arg("stat") = py::none(),
+            "A stat back to its start and its most as designed (every stat with none given).")
+        .def(
+            "name", [](const StatsHandle&, const std::string& stat) { return stat_def(stat).name; },
+            py::arg("stat"), "A stat's name, as the player sees it.")
+        .def(
+            "kind",
+            [](const StatsHandle&, const std::string& stat) {
+                return std::string(stats::kind_name(stat_def(stat).kind));
+            },
+            py::arg("stat"), "\"stat\", \"score\" or \"counter\".")
+        .def(
+            "on_change",
+            [](const StatsHandle&, const py::object& callback) {
+                if (!PyCallable_Check(callback.ptr()))
+                    throw py::type_error("midgard.stats.on_change needs a function to call");
+                if (!g_context) throw std::runtime_error("midgard: no game is running");
+                g_context->stat_callbacks.push_back(callback);
+            },
+            py::arg("callback"),
+            "Calls callback(stat, before, now) after a frame in which a stat changed (by itself "
+            "or by a script): its id and its value before and after.")
+        .def_property_readonly(
+            "ids",
+            [](const StatsHandle&) {
+                std::vector<std::string> out;
+                for (const stats::StatDef& d : current_game().stats().defs()) out.push_back(d.id);
+                return out;
+            },
+            "The stats' ids, in the Stats panel's order.")
+        .def(
+            "__getitem__",
+            [](const StatsHandle&, const std::string& stat) {
+                const stats::StatDef& d = stat_def(stat);
+                return stat_value(d, *current_game().stats().get(d.id));
+            },
+            py::arg("stat"))
+        .def(
+            "__setitem__",
+            [](const StatsHandle&, const std::string& stat, double value) {
+                current_game().stats().set(stat_def(stat).id, value);
+            },
+            py::arg("stat"), py::arg("value"))
+        .def("__contains__",
+             [](const StatsHandle&, const std::string& stat) {
+                 return current_game().stats().find(stat) != nullptr;
+             })
+        .def("__repr__", [](const StatsHandle&) { return std::string("<midgard.stats>"); });
+    m.attr("stats") = StatsHandle{};
 
     py::class_<NavHandle>(m, "Nav",
                           "Where agents can walk (midgard.nav; milestone 5.12): paths over the "
@@ -1304,6 +1435,7 @@ ScriptSystem::ScriptSystem(Game& game, std::function<void(const Report&)> report
         s.started.clear();
         s.context.time_callbacks.clear();  // (made by the scene's scripts)
         s.context.weather_callbacks.clear();
+        s.context.stat_callbacks.clear();
     });
 }
 
@@ -1398,6 +1530,21 @@ void ScriptSystem::update(const Actions& actions, float dt) {
         }
     }
 
+    // The stats that changed (midgard.stats.on_change).
+    for (const stats::Change& change : s.context.game->stat_changes()) {
+        const stats::StatDef* d = s.context.game->stats().find(change.id);
+        if (!d) continue;  // (gone since)
+        for (const py::object& callback : std::vector(s.context.stat_callbacks)) {
+            const std::string module = py::str(py::getattr(callback, "__module__", py::str("")));
+            if (s.paused.contains(module)) continue;
+            try {
+                callback(change.id, stat_value(*d, change.before), stat_value(*d, change.after));
+            } catch (py::error_already_set& e) {
+                s.fail(module, e, "midgard.stats.on_change");
+            }
+        }
+    }
+
     for (const auto& [e, module] : std::vector(s.started.begin(), s.started.end()))
         if (reg.valid(e)) s.call(module, "on_update", handle(e), dt);
 }
@@ -1426,13 +1573,15 @@ void ScriptSystem::reload(const std::string& module) {
                 py::getattr(it->second, py::getattr(callback, "__name__", py::str("")), py::none());
             if (!renewed.is_none()) callback = renewed;  // the edited function from now on
         }
-        for (py::object& callback : s.context.weather_callbacks) {
-            if (py::str(py::getattr(callback, "__module__", py::str(""))).cast<std::string>() !=
-                module)
-                continue;
-            const py::object renewed =
-                py::getattr(it->second, py::getattr(callback, "__name__", py::str("")), py::none());
-            if (!renewed.is_none()) callback = renewed;
+        for (auto* callbacks : {&s.context.weather_callbacks, &s.context.stat_callbacks}) {
+            for (py::object& callback : *callbacks) {
+                if (py::str(py::getattr(callback, "__module__", py::str(""))).cast<std::string>() !=
+                    module)
+                    continue;
+                const py::object renewed = py::getattr(
+                    it->second, py::getattr(callback, "__name__", py::str("")), py::none());
+                if (!renewed.is_none()) callback = renewed;
+            }
         }
     }
     if (s.context.report)
@@ -1462,6 +1611,7 @@ result = json.dumps({
     "WeatherSpell": sorted(n for n in dir(midgard.WeatherSpell) if not n.startswith("_")),
     "WeatherApi": sorted(n for n in dir(midgard.WeatherApi) if not n.startswith("_")),
     "Exposure": sorted(n for n in dir(midgard.Exposure) if not n.startswith("_")),
+    "StatsApi": sorted(n for n in dir(midgard.StatsApi) if not n.startswith("_")),
 })
 )",
              scope);

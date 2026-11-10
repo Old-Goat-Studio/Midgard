@@ -42,12 +42,23 @@ def file_hash(path: Path) -> str:
     return _file_hashes[key]
 
 
+# The engine's version facts that have nothing to do with importing models and encoding
+# textures: a new database table or live link message mustn't make a project import every
+# model again. They stay at the values caches were first filed under (6.0's stats table took
+# the schema to 19 and made every model in the Demo import again on opening, minutes of it).
+NOT_IMPORTING = {"schema_min": 1, "schema_max": 18, "live_link_protocol": 0}
+
+
 def engine_stamp() -> Any:
-    """What the engine is, so a newer engine's results replace an older one's."""
+    """What the engine is, so a newer engine's results replace an older one's (only what
+    changes how it imports: its version, its ABI, the package format)."""
     try:
-        return engine.version()
+        version = engine.version()
     except Exception:  # noqa: BLE001 (a broken module: nothing cached is trusted)
         return None
+    if isinstance(version, dict):
+        version = {**version, **{k: v for k, v in NOT_IMPORTING.items() if k in version}}
+    return version
 
 
 def key_of(*parts: Any) -> str:

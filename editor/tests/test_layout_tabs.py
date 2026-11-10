@@ -43,12 +43,12 @@ def test_dragged_tabs_keep_their_order_after_a_restart(qtbot, settings):
     window = open_window(qtbot, settings)
     assert tab_order(window, "viewport") == ["Viewport", "Script Editor", "Project Page", "Objects",
                                              "World Types", "Animation", "Audio",
-                                             "Shader Editor"]
+                                             "Shader Editor", "Stats"]
     drag_first_tab_to_the_end(window, "viewport")
     drag_first_tab_to_the_end(window, "log")
     assert tab_order(window, "viewport") == ["Script Editor", "Project Page", "Objects",
                                              "World Types", "Animation", "Audio",
-                                             "Shader Editor", "Viewport"]
+                                             "Shader Editor", "Stats", "Viewport"]
     assert tab_order(window, "log") == ["History", "Log"]
     assert not window.dock_manager.floatingWidgets()  # moved along the strip, not undocked
     window.close()
@@ -56,7 +56,7 @@ def test_dragged_tabs_keep_their_order_after_a_restart(qtbot, settings):
     again = open_window(qtbot, settings)
     assert tab_order(again, "viewport") == ["Script Editor", "Project Page", "Objects",
                                              "World Types", "Animation", "Audio",
-                                             "Shader Editor", "Viewport"]
+                                             "Shader Editor", "Stats", "Viewport"]
     assert tab_order(again, "log") == ["History", "Log"]
 
 

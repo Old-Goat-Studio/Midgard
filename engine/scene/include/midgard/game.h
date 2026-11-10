@@ -205,6 +205,18 @@ public:
     // listener and the time of day.
     audio::MusicContext music_context() const;
 
+    // ---- stats, scores and counters (milestone 6.0) ----
+    // The player's (midgard/stats.h): defined by the package, kept in the world's save.
+    stats::Stats& stats() { return stats_; }
+    const stats::Stats& stats() const { return stats_; }
+    // The stats that changed in the last update (by themselves, and by scripts since the one
+    // before), each once: before and after.
+    const std::vector<stats::Change>& stat_changes() const { return stat_changes_; }
+    // The Stats panel's edits while the game plays (the live link's stats.put): every stat
+    // ({id, name, stat} rows, in order). Values are kept, fitted to the new ranges. Throws
+    // SceneError, changing nothing, if one isn't a stat.
+    void set_stat_data(const nlohmann::json& rows);
+
     // ---- weather (milestone 5.15) ----
     // The world's weather (midgard/weather_sim.h), from the scene's weather settings or its
     // world type's; none without any (only a script's forced weather, then).
@@ -483,6 +495,8 @@ private:
     std::unique_ptr<weather::WeatherSim> weather_;
     weather::Now weather_now_;
     std::vector<WeatherChange> weather_changes_, weather_pending_;
+    stats::Stats stats_;
+    std::vector<stats::Change> stat_changes_;
     struct Forced {
         std::string weather;
         std::optional<std::int64_t> until;  // none: until released

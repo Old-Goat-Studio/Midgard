@@ -26,6 +26,7 @@
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
 #include "midgard/sound_events.h"
+#include "midgard/stats.h"
 #include "midgard/sunlight.h"
 #include "midgard/terrain.h"
 #include "midgard/weather_sim.h"
@@ -417,6 +418,8 @@ public:
     std::map<std::string, float> bus_volumes;
     // Its weather types (migration 18; midgard/weather.h), by id.
     weather::WeatherTypes weather_types;
+    // The player's stats, scores and counters (migration 19; midgard/stats.h), in order.
+    std::vector<stats::StatDef> stats;
     // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
     std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.

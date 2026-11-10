@@ -104,6 +104,14 @@
       "required": ["type", "weather"]
     },
     {
+      "description": "Editor → runtime: the Stats panel's edits (milestone 6.0): every stat, score and counter ({id, name, stat} rows, in the panel's order, as the stat table has them); the game's values are kept, fitted to the new ranges.",
+      "properties": {
+        "type": { "const": "stats.put" },
+        "stats": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["type", "stats"]
+    },
+    {
       "description": "Editor → runtime: the scene's terrain stamps (sculpting and painting, every one in order, as the terrain_stamp table has them); the ground drawn and the solid ground follow at once.",
       "properties": {
         "type": { "const": "terrain.stamps" },

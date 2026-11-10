@@ -70,6 +70,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -562,6 +563,7 @@ public:
                               {"season", game_.scene().sun_clock.season},
                               {"audio", audio},
                               {"weather", weather},
+                              {"stats", game_.stats().save()},
                               // Rooms and space (milestone 5.16): how high, and where space is.
                               {"rooms",
                                {{"previous", game_.previous_scene()},
@@ -571,8 +573,25 @@ public:
             .dump();
     }
     std::vector<std::string> status() const override {
+        // The player's stats (until the HUD shows them): "Health 87/100  Score 40".
+        std::vector<std::string> lines;
+        std::string line;
+        for (const midgard::stats::StatDef& d : game_.stats().defs()) {
+            const double v = game_.stats().get(d.id).value_or(0.0);
+            char part[96];
+            if (d.capped())
+                std::snprintf(part, sizeof(part), "%s %.0f/%.0f", d.name.c_str(), v, d.max);
+            else
+                std::snprintf(part, sizeof(part), "%s %.0f", d.name.c_str(), v);
+            if (line.size() + std::strlen(part) > 70) {
+                lines.push_back(line);
+                line.clear();
+            }
+            line += (line.empty() ? "" : "  ") + std::string(part);
+        }
+        if (!line.empty()) lines.push_back(line);
         const auto* type = game_.weather_type();
-        if (!type && !game_.weather_cell()) return {};
+        if (!type && !game_.weather_cell()) return lines;
         const auto& now = game_.weather_now();
         const auto& e = game_.exposure();
         const auto& g = game_.ground_cover();
@@ -585,7 +604,8 @@ public:
                       "%s (roof %.0f%%, walls %.0f%%), wet %.0f%%; ground wet %.0f%%, snow %.0f%%",
                       e.sheltered ? "Sheltered" : "In the open", e.roof * 100.0, e.walls * 100.0,
                       e.wetness * 100.0, g.wetness * 100.0, g.snow * 100.0);
-        return {a, b, c};
+        lines.insert(lines.end(), {a, b, c});
+        return lines;
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
@@ -644,6 +664,16 @@ public:
                 return;
             }
             acknowledge("applied audio.put");
+            return;
+        }
+        if (type == "stats.put") {  // the Stats panel
+            try {
+                game_.set_stat_data(message.at("stats"));
+            } catch (const std::exception& ex) {
+                warn("live link: %s\n", ex.what());
+                return;
+            }
+            acknowledge("applied stats.put");
             return;
         }
         if (type == "weather.put") {  // the Calendar dock's Weather tab

@@ -38,6 +38,7 @@ from . import (
     scenes,
     sound_events,
     sounds,
+    stats,
     surface_shaders,
     textures,
     weather,
@@ -448,6 +449,8 @@ def cook(project: Project, out_dir: Path | None = None,
     content = _cook_assets(project, out, warnings, cooked)
     credits = _cook_credits(project, out, content, warnings)
     warnings += _script_warnings(project, _cook_scripts(project, out))
+    warnings += stats.problems(project)  # (6.0: their ranges, names given twice)
+    warnings += stats.script_problems(project, script_files(project.root / "scripts"))
     _cook_icon(project, out)
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
     (out / f"{project.name}.config").write_text(json.dumps(runtime_config, indent=2) + "\n",

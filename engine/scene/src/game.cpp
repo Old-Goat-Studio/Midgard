@@ -66,6 +66,7 @@ Game::Game(const std::filesystem::path& package_dir)
     time_.set_time(standard_calendar().start_time());
     time_.set_scale(standard_calendar().time_scale());
     update_sun();
+    stats_.define(scene_.stats);
     rebuild_weather();  // (on the clock's calendar)
     update_weather();
     weather_pending_.clear();         // (the weather the game starts with isn't a change)
@@ -151,6 +152,8 @@ void Game::use_world(const std::filesystem::path& folder) {
         }
         if (j.is_object()) exposure_.wetness = j.value("player_wetness", 0.0f);
     }
+    if (const auto s = world_->value("stats"))  // (the player's stats as they left them)
+        stats_.restore(nlohmann::json::parse(*s, nullptr, false));
     // The scene it starts in, as the player left it (before it is left for theirs, below:
     // what it remembers is then this), with their player.
     if (const auto room = rooms_.find(scene_.id);
@@ -204,6 +207,7 @@ void Game::save_world() {
         if (forced_->until) weather["until"] = *forced_->until;
     }
     state["weather"] = weather.dump();
+    state["stats"] = stats_.save().dump();
     world_->save_values(state);
     const entt::entity player = camera_->player();
     if (player != entt::null && scene_.registry.valid(player)) {
@@ -263,6 +267,8 @@ void Game::update(const Actions& actions, float dt) {
     cross_atmosphere();
     update_weather();
     weather_changes_ = std::exchange(weather_pending_, {});  // (scripts' since the last, too)
+    stats_.update(dt);
+    stat_changes_ = stats_.take_changes();  // (scripts' since the last update, too)
     update_weather_look(dt);
     update_falling(dt);
     update_ground_cover(dt);
@@ -503,6 +509,19 @@ void Game::rebuild_weather() {
     weather_ = scene_weather(
         scene_.settings, scene_.weather_types, local_calendar(),
         [this]() -> const Terrain* { return terrain_ ? &terrain_->terrain() : nullptr; });
+}
+
+void Game::set_stat_data(const nlohmann::json& rows) {
+    std::vector<stats::StatDef> defs;
+    try {
+        for (const nlohmann::json& r : rows)
+            defs.push_back(stats::stat_from_json(r.at("id"), r.value("name", ""),
+                                                 r.value("stat", nlohmann::json::object()).dump()));
+    } catch (const std::exception& e) {
+        throw SceneError(std::string("stats: ") + e.what());
+    }
+    scene_.stats = defs;
+    stats_.define(std::move(defs));
 }
 
 void Game::set_weather_data(const nlohmann::json& data) {

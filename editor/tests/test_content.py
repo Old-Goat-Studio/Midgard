@@ -184,3 +184,18 @@ def test_the_real_game_follows_a_model_saved_again(project, crate, qtbot, tmp_pa
         assert not [m for m in received if m.get("level") in ("warn", "error")], received
     finally:
         session.stop()
+
+
+def test_a_new_database_table_doesnt_make_every_model_import_again(monkeypatch):
+    """The cache's key follows what changes importing (the engine's version and ABI, the
+    package format), not the database's newest schema or the live link's protocol."""
+    from midgard_editor import content_cache, engine
+    facts = {"engine": "0.1.0", "engine_abi": 0, "format_major": 1, "schema_min": 1,
+             "schema_max": 18, "live_link_protocol": 0}
+    monkeypatch.setattr(engine, "version", lambda: dict(facts))
+    before = content_cache.key_of("model", "abc")
+    facts["schema_max"] = 19
+    facts["live_link_protocol"] = 1
+    assert content_cache.key_of("model", "abc") == before
+    facts["engine"] = "0.2.0"
+    assert content_cache.key_of("model", "abc") != before

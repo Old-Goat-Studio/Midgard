@@ -512,6 +512,55 @@ class WeatherApi:
         """How wet the player is now, 0 .. 1 (they dried off by the fire, or fell in a river)."""
 
 
+class StatsApi:
+    """The player's stats, scores and counters (midgard.stats), as the Stats panel defines
+    them, each by its id or its name: midgard.stats.get("health"), midgard.stats["Score"].
+
+    A stat (Health, Stamina) stays between its least and most and may refill by itself; a
+    score is a whole number of points; a counter a whole number up to its target, if it has
+    one. KeyError for a stat the project doesn't have."""
+
+    ids: list[str]
+    """The stats' ids, in the Stats panel's order (read-only)."""
+
+    def get(self, stat: str) -> float | int:
+        """A stat's value (an int for scores and counters)."""
+
+    def set(self, stat: str, value: float) -> float | int:
+        """Sets a stat, kept within its range (whole for scores and counters); its new value."""
+
+    def add(self, stat: str, amount: float = 1.0) -> float | int:
+        """Adds to a stat (a negative amount takes away); its new value."""
+
+    def min(self, stat: str) -> float | int:
+        """A stat's least."""
+
+    def max(self, stat: str) -> float | int | None:
+        """A stat's most, or a counter's target (None: it has none, as a score never does)."""
+
+    def set_max(self, stat: str, max: float) -> None:
+        """Changes a stat's most (more health as the player grows) or a counter's target; the
+        value is kept within it. ValueError for a score, or a most not above the least."""
+
+    def reset(self, stat: str | None = None) -> None:
+        """A stat back to its start and its designed most (every stat, with none given)."""
+
+    def name(self, stat: str) -> str:
+        """A stat's name, as the player sees it."""
+
+    def kind(self, stat: str) -> str:
+        """Its kind: "stat", "score" or "counter"."""
+
+    def on_change(self, callback: _Callable[[str, float, float], None]) -> None:
+        """Calls callback(stat, before, now) after a frame in which a stat changed (by itself,
+        refilling, or by a script): its id and its value before and after."""
+
+    def __getitem__(self, stat: str) -> float | int: ...
+    def __setitem__(self, stat: str, value: float) -> None: ...
+    def __contains__(self, stat: str) -> bool: ...
+
+
+stats: StatsApi
 weather: WeatherApi
 """The weather."""
 

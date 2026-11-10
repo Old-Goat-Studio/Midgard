@@ -204,7 +204,8 @@ def refresh(project) -> None:
         project.config.update(doc)
     for signal in (project.entities_changed, project.objects_changed,
                    project.environments_changed, project.sound_events_changed,
-                   project.weather_changed, project.world_types_changed,
+                   project.weather_changed, project.stats_changed,
+                   project.world_types_changed,
                    project.calendars_changed, project.scenes_changed):
         signal.emit("")
     project.scene_settings_changed.emit(project.scene)

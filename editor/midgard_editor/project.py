@@ -71,6 +71,7 @@ class Project(QObject):
     world_types_changed = Signal(str)  # world type id: its recipe or name
     sound_events_changed = Signal(str)  # sound event id, or "" when added or removed
     weather_changed = Signal(str)  # weather type id, or "" when added or removed
+    stats_changed = Signal(str)  # stat id, or "" (the Stats panel saves them all at once)
     scenes_changed = Signal(str)  # scene id: added, removed, renamed or made the starting one
     scene_opened = Signal(str)  # scene id: the editor now edits this scene
     files_changed = Signal(list)  # model and image files changed on disk (paths in the project)
