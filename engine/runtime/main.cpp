@@ -20,6 +20,11 @@
 //                                       --scene <name> draws a built-in test scene instead
 //                                       (runtime/test_scenes.h lists them); --frames N then
 //                                       draws it N more times and says the median frame time
+//   --ui-test                           the built-in UI test screen (milestone 6.0) over the
+//                                       game, in a window or a screenshot (whose screen checks,
+//                                       with --ui-touch also a finger's, fail the run);
+//                                       --ui-scale S scales it, --safe-area l,t,r,b (pixels)
+//                                       keeps it clear of a pretend notch
 //   --quality desktop|phone             the renderer's quality tier (by default phone on phones,
 //                                       desktop elsewhere), for a window, a screenshot or the
 //                                       self-test
@@ -96,6 +101,7 @@
 #include "midgard/manifest.h"
 #include "midgard/profile.h"
 #include "midgard/render/renderer.h"
+#include "midgard/ui/ui.h"
 #include "midgard/version.h"
 #include "selftest.h"
 #include "test_scenes.h"
@@ -137,6 +143,10 @@ struct Options {
     std::optional<render::Quality> quality;  // the renderer's tier (default: the device's)
     // Overlay lines shown for the whole run (the self-test's results); F3 is off then.
     std::vector<render::OverlayLine> fixed_overlay;
+    bool ui_test = false;   // the built-in UI test screen (6.0)
+    bool ui_touch = false;  // a screenshot's screen checks include a finger's (target sizes)
+    float ui_scale = 1.0f;  // the player's UI scale, on top of the display's density
+    std::optional<midgard::ui::Insets> safe_area;  // a pretend safe area, in pixels
 };
 
 int usage() {
@@ -145,7 +155,8 @@ int usage() {
         "                       [--screenshot out.png [--overlay-text \"a|b\"]]\n"
         "                       [--editor-link host:port] [--debug-overlay] [--debug-physics]\n"
         "                       [--profile out.json] [--player-profile <dir>] [--world <dir>]\n"
-        "                       [--quality desktop|phone]\n"
+        "                       [--quality desktop|phone] [--ui-test [--ui-touch]]\n"
+        "                       [--ui-scale S] [--safe-area l,t,r,b]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
 }
@@ -948,6 +959,165 @@ bool want_validation() {
     return std::getenv("MIDGARD_VULKAN_VALIDATION") != nullptr;
 }
 
+// ---- the in-game UI (milestone 6.0) --------------------------------------------------------
+// The UI's messages go to the game's log.
+midgard::ui::Platform ui_log_only() {
+    midgard::ui::Platform p;
+    p.log = [](int level, const std::string& message) {
+        if (level >= 1)
+            warn("UI: %s\n", message.c_str());
+        else
+            say("UI: %s\n", message.c_str());
+    };
+    return p;
+}
+
+bool parse_insets(std::string_view text, midgard::ui::Insets& out) {
+    float v[4] = {};
+    size_t at = 0;
+    for (int i = 0; i < 4; ++i) {
+        const size_t comma = text.find(',', at);
+        if ((i < 3) != (comma != std::string_view::npos)) return false;
+        const std::string part(
+            text.substr(at, comma == std::string_view::npos ? text.npos : comma - at));
+        char* end = nullptr;
+        v[i] = std::strtof(part.c_str(), &end);
+        if (part.empty() || *end != '\0' || v[i] < 0.0f) return false;
+        at = comma + 1;
+    }
+    out = {v[0], v[1], v[2], v[3]};
+    return true;
+}
+
+// What the UI needs from the window: SDL's cursors, clipboard and on-screen keyboard.
+midgard::ui::Platform ui_platform(SDL_Window* window) {
+    midgard::ui::Platform p = ui_log_only();
+    p.set_cursor = [](const std::string& name) {
+        static std::map<SDL_SystemCursor, SDL_Cursor*> cursors;
+        SDL_SystemCursor which = SDL_SYSTEM_CURSOR_DEFAULT;
+        if (name == "pointer" || name == "hand")
+            which = SDL_SYSTEM_CURSOR_POINTER;
+        else if (name == "text")
+            which = SDL_SYSTEM_CURSOR_TEXT;
+        else if (name == "move")
+            which = SDL_SYSTEM_CURSOR_MOVE;
+        else if (name == "resize")
+            which = SDL_SYSTEM_CURSOR_NWSE_RESIZE;
+        else if (name == "cross")
+            which = SDL_SYSTEM_CURSOR_CROSSHAIR;
+        SDL_Cursor*& c = cursors[which];
+        if (!c) c = SDL_CreateSystemCursor(which);
+        if (c) SDL_SetCursor(c);
+    };
+    p.set_clipboard = [](const std::string& text) { SDL_SetClipboardText(text.c_str()); };
+    p.get_clipboard = [] {
+        char* text = SDL_GetClipboardText();
+        std::string out = text ? text : "";
+        SDL_free(text);
+        return out;
+    };
+    p.keyboard = [window](bool on, float x, float y) {
+        if (on) {
+            const float to_points = 1.0f / std::max(SDL_GetWindowPixelDensity(window), 0.01f);
+            const SDL_Rect caret{int(x * to_points), int(y * to_points), 1, 24};
+            SDL_SetTextInputArea(window, &caret, 0);
+            SDL_StartTextInput(window);
+        } else {
+            SDL_StopTextInput(window);
+        }
+    };
+    return p;
+}
+
+// Where the window keeps clear of the notch and rounded corners, in pixels.
+midgard::ui::Insets window_safe_area(SDL_Window* window) {
+    SDL_Rect safe{};
+    int w = 0, h = 0;
+    if (!SDL_GetWindowSafeArea(window, &safe) || !SDL_GetWindowSize(window, &w, &h)) return {};
+    const float px = SDL_GetWindowPixelDensity(window);
+    return {float(safe.x) * px, float(safe.y) * px, float(w - safe.x - safe.w) * px,
+            float(h - safe.y - safe.h) * px};
+}
+
+// One SDL event as the UI's input (false: not one the UI takes).
+bool ui_input(SDL_Window* window, const SDL_Event& e, midgard::ui::Input& in) {
+    using T = midgard::ui::Input::Type;
+    const float px = SDL_GetWindowPixelDensity(window);
+    const SDL_Keymod mods = SDL_GetModState();
+    in.shift = mods & SDL_KMOD_SHIFT;
+    in.ctrl = mods & SDL_KMOD_CTRL;
+    in.alt = mods & SDL_KMOD_ALT;
+    in.meta = mods & SDL_KMOD_GUI;
+    switch (e.type) {
+        case SDL_EVENT_MOUSE_MOTION:
+            if (e.motion.which == SDL_TOUCH_MOUSEID) return false;  // (touch comes as touch)
+            in.type = T::PointerMove;
+            in.x = e.motion.x * px;
+            in.y = e.motion.y * px;
+            return true;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (e.button.which == SDL_TOUCH_MOUSEID) return false;
+            in.type = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? T::PointerDown : T::PointerUp;
+            in.x = e.button.x * px;
+            in.y = e.button.y * px;
+            in.button = e.button.button == SDL_BUTTON_LEFT    ? 0
+                        : e.button.button == SDL_BUTTON_RIGHT ? 1
+                                                              : 2;
+            return true;
+        case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+            in.type = T::PointerLeave;
+            return true;
+        case SDL_EVENT_MOUSE_WHEEL:
+            in.type = T::Wheel;
+            in.x = e.wheel.x;
+            in.y = e.wheel.y;
+            return true;
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            in.type = e.type == SDL_EVENT_KEY_DOWN ? T::KeyDown : T::KeyUp;
+            in.key = SDL_GetKeyName(e.key.key);
+            return true;
+        case SDL_EVENT_TEXT_INPUT:
+            in.type = T::Text;
+            in.text = e.text.text ? e.text.text : "";
+            return true;
+        case SDL_EVENT_FINGER_DOWN:
+        case SDL_EVENT_FINGER_MOTION:
+        case SDL_EVENT_FINGER_UP:
+        case SDL_EVENT_FINGER_CANCELED: {
+            int pw = 0, ph = 0;
+            SDL_GetWindowSizeInPixels(window, &pw, &ph);
+            in.type = e.type == SDL_EVENT_FINGER_DOWN     ? T::TouchDown
+                      : e.type == SDL_EVENT_FINGER_MOTION ? T::TouchMove
+                      : e.type == SDL_EVENT_FINGER_UP     ? T::TouchUp
+                                                          : T::TouchCancel;
+            in.touch = int64_t(e.tfinger.fingerID);
+            in.x = e.tfinger.x * float(pw);
+            in.y = e.tfinger.y * float(ph);
+            return true;
+        }
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        case SDL_EVENT_GAMEPAD_BUTTON_UP: {
+            const char* name = SDL_GetGamepadStringForButton(SDL_GamepadButton(e.gbutton.button));
+            if (!name) return false;
+            in.type = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ? T::PadDown : T::PadUp;
+            in.key = name;
+            return true;
+        }
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+            const char* name = SDL_GetGamepadStringForAxis(SDL_GamepadAxis(e.gaxis.axis));
+            if (!name) return false;
+            in.type = T::PadAxis;
+            in.key = name;
+            in.x = float(e.gaxis.value) / 32767.0f;
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
 int run_screenshot(const Options& opt, Source& source) {
     render::RendererDesc desc;
     desc.offscreen = true;
@@ -965,6 +1135,38 @@ int run_screenshot(const Options& opt, Source& source) {
     const auto draws = source.draws(0.6f, camera.origin);
     renderer.set_terrain_look(source.terrain_look());  // (after draws: the season is set)
     if (opt.debug_physics) renderer.set_debug_lines(source.debug_lines(camera.origin));
+    // The UI test screen (6.0), checked as screen tests check every screen: a gamepad reaches
+    // every control, text fits, and (--ui-touch) each control is big enough for a finger.
+    std::unique_ptr<midgard::ui::Ui> ui;
+    if (opt.ui_test) {
+        midgard::ui::Options uo;
+        uo.width = opt.width;
+        uo.height = opt.height;
+        uo.scale = opt.ui_scale;
+        uo.safe_area = opt.safe_area.value_or(midgard::ui::Insets{});
+        uo.platform = ui_log_only();
+        ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
+        Rml::ElementDocument* screen = midgard::ui::open_test_screen(*ui);
+        if (!screen) {
+            std::fprintf(stderr, "error: the UI test screen didn't open\n");
+            return 1;
+        }
+        ui->update(0.0);
+        const auto problems = ui->check(screen, opt.ui_touch);
+        for (const auto& p : problems)
+            std::fprintf(stderr, "UI %s: %s: %s\n", p.kind.c_str(), p.element.c_str(),
+                         p.message.c_str());
+        if (!problems.empty()) {
+            std::fprintf(stderr, "error: the UI test screen has %zu problem(s)\n", problems.size());
+            return 1;
+        }
+        // (the checks pressed its controls: the picture is of it as it opens)
+        ui->close(screen);
+        ui->update(0.0);
+        midgard::ui::open_test_screen(*ui);
+        ui->update(0.0);
+        ui->render();
+    }
     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
     // With MIDGARD_VULKAN_VALIDATION set, anything the validation layer reports fails the run
     // (CI's image tests run this way).
@@ -1141,6 +1343,23 @@ int run_window(const Options& opt, Source& source) {
             ~LetGo() { source.set_audio(nullptr); }
         } let_go{source};
         source.upload(renderer);
+        // The in-game UI (6.0): sized by the display's density and the player's scale, clear of
+        // the notch. Without its fonts the game still runs, with no screens.
+        std::unique_ptr<midgard::ui::Ui> ui;
+        try {
+            midgard::ui::Options uo;
+            uo.width = desc.width;
+            uo.height = desc.height;
+            uo.density = SDL_GetWindowDisplayScale(window);
+            uo.scale = opt.ui_scale;
+            uo.safe_area = opt.safe_area.value_or(window_safe_area(window));
+            uo.platform = ui_platform(window);
+            ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
+            if (opt.ui_test && !midgard::ui::open_test_screen(*ui))
+                warn("The UI test screen didn't open\n");
+        } catch (const std::exception& e) {
+            warn("No in-game UI: %s\n", e.what());
+        }
         midgard::Actions actions(source.input_map());
         // Mouse-look captures the mouse. Under the editor the game starts with the mouse free
         // (so the editor's panels stay reachable): a click in the game captures it, and Esc,
@@ -1158,7 +1377,8 @@ int run_window(const Options& opt, Source& source) {
         };
         if (link && source.wants_mouse_look())
             SDL_SetWindowTitle(window, (source.title() + " (click to look around)").c_str());
-        capture(!link);
+        capture(!link && !(ui && ui->modal()));
+        bool was_modal = ui && ui->modal();
 
         const auto start = std::chrono::steady_clock::now();
         auto last = start;
@@ -1193,6 +1413,29 @@ int run_window(const Options& opt, Source& source) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
                 bool consumed = false;  // handled here; the game's actions don't see it
+                // The UI first: a menu takes everything, the HUD what is aimed at it. (Android's
+                // Back button is a menu's Escape.)
+                if (ui) {
+                    midgard::ui::Input in;
+                    if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_AC_BACK &&
+                        ui->modal()) {
+                        in.type = midgard::ui::Input::Type::KeyDown;
+                        in.key = "Escape";
+                        ui->handle(in);
+                        in.type = midgard::ui::Input::Type::KeyUp;
+                        ui->handle(in);
+                        continue;
+                    }
+                    const bool editor_key =
+                        e.type == SDL_EVENT_KEY_DOWN &&
+                        (e.key.scancode == SDL_SCANCODE_F3 || e.key.scancode == SDL_SCANCODE_F4 ||
+                         e.key.scancode == SDL_SCANCODE_F5 || e.key.scancode == SDL_SCANCODE_F6);
+                    if (!editor_key && ui_input(window, e, in) && ui->handle(in)) {
+                        if (e.type == SDL_EVENT_KEY_UP || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP)
+                            feed(actions, e);  // (a key let go reaches the game: none stick)
+                        continue;
+                    }
+                }
                 switch (e.type) {
                     case SDL_EVENT_QUIT:
                     case SDL_EVENT_TERMINATING:
@@ -1258,6 +1501,16 @@ int run_window(const Options& opt, Source& source) {
                         break;
                     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                         renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
+                        if (ui) {
+                            ui->resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
+                            if (!opt.safe_area) ui->set_safe_area(window_safe_area(window));
+                        }
+                        break;
+                    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+                        if (ui) ui->set_density(SDL_GetWindowDisplayScale(window));
+                        break;
+                    case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+                        if (ui && !opt.safe_area) ui->set_safe_area(window_safe_area(window));
                         break;
                     default:
                         break;
@@ -1268,8 +1521,15 @@ int run_window(const Options& opt, Source& source) {
                 SDL_Delay(50);
                 continue;
             }
+            // A menu (the UI test screen) frees the mouse while it is up; closing it gives the
+            // mouse back to the game as it was.
+            const bool is_modal = ui && ui->modal();
+            if (is_modal != was_modal) {
+                capture(!is_modal && !link);
+                was_modal = is_modal;
+            }
             // The menu action quits until in-game menus exist (Phase 6).
-            if (actions.pressed("menu")) running = false;
+            if (actions.pressed("menu") && !is_modal) running = false;
             MIDGARD_PROFILE_SCOPE("frame");
             const auto now = std::chrono::steady_clock::now();
             const double real_dt = std::chrono::duration<double>(now - last).count();
@@ -1295,6 +1555,10 @@ int run_window(const Options& opt, Source& source) {
                 renderer.set_exposure(opt.exposure * (1.0f - source.fade()));
                 renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
                                                       : std::vector<render::DebugLine>{});
+                if (ui) {
+                    ui->update(t);
+                    ui->render();
+                }
                 drawn =
                     renderer.render_frame(camera, source.light(camera.origin), draws, source.sky());
             }
@@ -1582,6 +1846,17 @@ int main(int argc, char** argv) {
             double x = 0, y = 0, z = 0;
             if (std::sscanf(argv[++i], "%lf,%lf,%lf", &x, &y, &z) != 3) return usage();
             opt.origin_offset = {x, y, z};
+        } else if (arg == "--ui-test") {
+            opt.ui_test = true;
+        } else if (arg == "--ui-touch") {
+            opt.ui_touch = true;
+        } else if (arg == "--ui-scale" && has_value) {
+            opt.ui_scale = std::strtof(argv[++i], nullptr);
+            if (!(opt.ui_scale >= 0.25f && opt.ui_scale <= 4.0f)) return usage();
+        } else if (arg == "--safe-area" && has_value) {
+            midgard::ui::Insets insets;
+            if (!parse_insets(argv[++i], insets)) return usage();
+            opt.safe_area = insets;
         } else if (arg == "--selftest") {
             opt.selftest = true;
         } else if (arg == "--show") {

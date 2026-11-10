@@ -1531,6 +1531,17 @@ Scripts can use Python's standard library (`math`, `random` and so on).
 The first Play after adding a big model takes longer while its textures are converted; later
 Plays are quick.
 
+### Menus, screens and the HUD (coming in Phase 6)
+
+Midgard is gaining in-game menus, screens and a HUD (health bars, a score, a compass). The
+engine underneath is in place: screens work with the mouse, the keyboard, a game controller
+(the d-pad or stick moves between buttons, A presses, B goes back) and touch, grow with the
+player's screen and UI scale, and keep clear of a phone's notch. Every game carries two fonts
+for them, **Inconsolata** (the default) and **OpenDyslexic** (easier for some players to
+read), both under the SIL Open Font License; their licence goes in the game's
+`THIRD_PARTY_NOTICES.txt` for you. The editor's tools for making your own screens come in the
+next steps.
+
 ---
 
 ## 21. Saving, Git, backups and the error log

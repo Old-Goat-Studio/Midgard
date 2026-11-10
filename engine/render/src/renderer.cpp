@@ -4,7 +4,8 @@
 // A frame: the shadow pass draws the sun's cascaded shadow maps (one layer each), the scene pass
 // draws the opaque objects and then the sky (where none was drawn) into a floating-point HDR
 // image (with depth), then the post pass tone maps it onto the output (the swapchain image, or
-// the offscreen image) and draws the debug overlay on top.
+// the offscreen image), draws the in-game UI over it (milestone 6.0: menus, screens and the HUD)
+// and the debug overlay on top.
 #include "midgard/render/renderer.h"
 
 #include "midgard/render/ktx.h"
@@ -15,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <tuple>
 
 #include <volk.h>
 // volk must come first: it defines VK_NO_PROTOTYPES users and the function pointers VMA uses.
@@ -39,6 +41,8 @@
 #include "surface_error_frag.h"
 #include "terrain_frag.h"
 #include "tonemap_frag.h"
+#include "ui_frag.h"
+#include "ui_vert.h"
 #include "water_frag.h"
 
 namespace midgard::render {
@@ -166,6 +170,16 @@ struct GpuTexture {
     bool srgb = true;
 };
 
+// A UI texture (render/ui_draw.h): unorm (premultiplied sRGB, as RmlUi makes them) with its own
+// descriptor set, freed when the UI lets go of it.
+struct UiTexture {
+    Image image;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    VkDescriptorPool pool = VK_NULL_HANDLE;  // the pool its set came from
+    bool live = false;
+};
+constexpr uint32_t kUiSetsPerPool = 256;
+
 }  // namespace
 
 struct Renderer::Impl {
@@ -251,6 +265,17 @@ struct Renderer::Impl {
     VkPipelineLayout overlay_layout = VK_NULL_HANDLE;
     VkPipeline overlay_pipeline = VK_NULL_HANDLE;
     std::vector<OverlayLine> overlay_lines;
+    // The in-game UI (render/ui_draw.h): its pipeline, its textures by UiTextureId ([0] is
+    // white, for flat colour) and the frame to draw.
+    VkSampler ui_sampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout ui_set_layout = VK_NULL_HANDLE;
+    VkPipelineLayout ui_layout = VK_NULL_HANDLE;
+    VkPipeline ui_pipeline = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> ui_pools;
+    std::vector<UiTexture> ui_textures;
+    std::vector<UiTextureId> free_ui_textures;
+    std::vector<std::pair<UiTexture, uint64_t>> retired_ui;  // freed at frames_submitted
+    UiFrame ui_frame;
     VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
     VkCommandPool command_pool = VK_NULL_HANDLE;
 
@@ -263,7 +288,10 @@ struct Renderer::Impl {
         Buffer overlay;  // the overlay's triangles, rewritten each frame
         VkDeviceSize overlay_capacity = 0;
         uint32_t overlay_vertices = 0;
-        Buffer lines;  // the debug lines' ends, rewritten each frame
+        Buffer ui_vertices, ui_indices;  // the UI's triangles, rewritten each frame
+        VkDeviceSize ui_vertex_capacity = 0, ui_index_capacity = 0;
+        bool ui = false;  // this frame has UI to draw
+        Buffer lines;     // the debug lines' ends, rewritten each frame
         VkDeviceSize lines_capacity = 0;
         uint32_t line_vertices = 0;      // depth-tested lines first in the buffer,
         uint32_t top_line_vertices = 0;  // then those drawn over everything
@@ -293,6 +321,11 @@ struct Renderer::Impl {
             if (!all && r.second + kFramesInFlight > frames_submitted) return false;
             if (r.first.still) vkDestroyPipeline(device, r.first.still, nullptr);
             if (r.first.skinned) vkDestroyPipeline(device, r.first.skinned, nullptr);
+            return true;
+        });
+        std::erase_if(retired_ui, [&](std::pair<UiTexture, uint64_t>& r) {
+            if (!all && r.second + kFramesInFlight > frames_submitted) return false;
+            destroy_ui_texture(r.first);
             return true;
         });
         std::erase_if(retired, [&](Retired& r) {
@@ -1292,6 +1325,279 @@ struct Renderer::Impl {
         vkDestroyShaderModule(device, vert, nullptr);
         vkDestroyShaderModule(device, frag, nullptr);
         check(result, "Creating the overlay pipeline");
+    }
+
+    // The in-game UI: premultiplied-alpha 2D triangles over the tone-mapped scene, each run with
+    // its texture (set 0), transform (a push constant) and scissor rectangle.
+    void create_ui_pipeline() {
+        VkSamplerCreateInfo sinfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        sinfo.magFilter = sinfo.minFilter = VK_FILTER_LINEAR;
+        sinfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sinfo.addressModeU = sinfo.addressModeV = sinfo.addressModeW =
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        check(vkCreateSampler(device, &sinfo, nullptr, &ui_sampler), "Creating the UI sampler");
+        VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                             VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+        VkDescriptorSetLayoutCreateInfo linfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        linfo.bindingCount = 1;
+        linfo.pBindings = &binding;
+        check(vkCreateDescriptorSetLayout(device, &linfo, nullptr, &ui_set_layout),
+              "Creating the UI descriptor set layout");
+        VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4)};
+        VkPipelineLayoutCreateInfo plinfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        plinfo.setLayoutCount = 1;
+        plinfo.pSetLayouts = &ui_set_layout;
+        plinfo.pushConstantRangeCount = 1;
+        plinfo.pPushConstantRanges = &push;
+        check(vkCreatePipelineLayout(device, &plinfo, nullptr, &ui_layout),
+              "Creating the UI pipeline layout");
+
+        VkShaderModule vert = shader(ui_vert, sizeof(ui_vert));
+        VkShaderModule frag = shader(ui_frag, sizeof(ui_frag));
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
+        stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        stages[0].module = vert;
+        stages[0].pName = "main";
+        stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        stages[1].module = frag;
+        stages[1].pName = "main";
+        VkVertexInputBindingDescription vbind{0, sizeof(UiVertex), VK_VERTEX_INPUT_RATE_VERTEX};
+        std::array<VkVertexInputAttributeDescription, 3> attrs{{
+            {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UiVertex, position)},
+            {1, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(UiVertex, color)},
+            {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UiVertex, uv)},
+        }};
+        VkPipelineVertexInputStateCreateInfo vinput{
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        vinput.vertexBindingDescriptionCount = 1;
+        vinput.pVertexBindingDescriptions = &vbind;
+        vinput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrs.size());
+        vinput.pVertexAttributeDescriptions = attrs.data();
+        VkPipelineInputAssemblyStateCreateInfo assembly{
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkPipelineViewportStateCreateInfo viewport{
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        viewport.viewportCount = 1;
+        viewport.scissorCount = 1;
+        VkPipelineRasterizationStateCreateInfo raster{
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        raster.polygonMode = VK_POLYGON_MODE_FILL;
+        raster.cullMode = VK_CULL_MODE_NONE;
+        raster.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo multisample{
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineDepthStencilStateCreateInfo depth_state{
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        VkPipelineColorBlendAttachmentState blend_att{};
+        blend_att.blendEnable = VK_TRUE;  // premultiplied alpha
+        blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_att.colorBlendOp = VK_BLEND_OP_ADD;
+        blend_att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend_att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_att.alphaBlendOp = VK_BLEND_OP_ADD;
+        blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo blend{
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        blend.attachmentCount = 1;
+        blend.pAttachments = &blend_att;
+        std::array<VkDynamicState, 2> dyn{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo dynamic{
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+        dynamic.dynamicStateCount = static_cast<uint32_t>(dyn.size());
+        dynamic.pDynamicStates = dyn.data();
+
+        VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        info.stageCount = static_cast<uint32_t>(stages.size());
+        info.pStages = stages.data();
+        info.pVertexInputState = &vinput;
+        info.pInputAssemblyState = &assembly;
+        info.pViewportState = &viewport;
+        info.pRasterizationState = &raster;
+        info.pMultisampleState = &multisample;
+        info.pDepthStencilState = &depth_state;
+        info.pColorBlendState = &blend;
+        info.pDynamicState = &dynamic;
+        info.layout = ui_layout;
+        info.renderPass = post_pass;
+        const VkResult result =
+            vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &ui_pipeline);
+        vkDestroyShaderModule(device, vert, nullptr);
+        vkDestroyShaderModule(device, frag, nullptr);
+        check(result, "Creating the UI pipeline");
+    }
+
+    // A UI texture's descriptor set, from a pool with room (a new pool when all are full).
+    std::pair<VkDescriptorSet, VkDescriptorPool> allocate_ui_set() {
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            for (VkDescriptorPool pool : ui_pools) {
+                VkDescriptorSetAllocateInfo ainfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                ainfo.descriptorPool = pool;
+                ainfo.descriptorSetCount = 1;
+                ainfo.pSetLayouts = &ui_set_layout;
+                VkDescriptorSet set = VK_NULL_HANDLE;
+                if (vkAllocateDescriptorSets(device, &ainfo, &set) == VK_SUCCESS)
+                    return {set, pool};
+            }
+            VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kUiSetsPerPool};
+            VkDescriptorPoolCreateInfo pinfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+            pinfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+            pinfo.maxSets = kUiSetsPerPool;
+            pinfo.poolSizeCount = 1;
+            pinfo.pPoolSizes = &size;
+            VkDescriptorPool pool;
+            check(vkCreateDescriptorPool(device, &pinfo, nullptr, &pool),
+                  "Creating a UI descriptor pool");
+            ui_pools.push_back(pool);
+        }
+        throw RenderError("Allocating a UI texture's descriptor set failed");
+    }
+
+    // A UI texture from premultiplied RGBA8 (one level: the UI draws it at its own size).
+    UiTextureId upload_ui_texture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba) {
+        if (width == 0 || height == 0 || rgba.size() != size_t(width) * height * 4)
+            throw RenderError("upload_ui_texture: the pixels don't match the size");
+        const VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+        VkImageCreateInfo iinfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        iinfo.imageType = VK_IMAGE_TYPE_2D;
+        iinfo.format = format;
+        iinfo.extent = {width, height, 1};
+        iinfo.mipLevels = 1;
+        iinfo.arrayLayers = 1;
+        iinfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        iinfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        iinfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        VmaAllocationCreateInfo ainfo{};
+        ainfo.usage = VMA_MEMORY_USAGE_AUTO;
+        UiTexture tex;
+        check(vmaCreateImage(allocator, &iinfo, &ainfo, &tex.image.image, &tex.image.allocation,
+                             nullptr),
+              "Creating a UI texture");
+        tex.image.view = create_view(tex.image.image, format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        Buffer staging = create_buffer(rgba.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
+        std::memcpy(staging.mapped, rgba.data(), rgba.size());
+        vmaFlushAllocation(allocator, staging.allocation, 0, VK_WHOLE_SIZE);
+        immediate([&](VkCommandBuffer cmd) {
+            VkImageMemoryBarrier to_dst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            to_dst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            to_dst.srcQueueFamilyIndex = to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            to_dst.image = tex.image.image;
+            to_dst.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                                 &to_dst);
+            VkBufferImageCopy copy{};
+            copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            copy.imageExtent = {width, height, 1};
+            vkCmdCopyBufferToImage(cmd, staging.buffer, tex.image.image,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+            VkImageMemoryBarrier to_read = to_dst;
+            to_read.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            to_read.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            to_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            to_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
+                                 1, &to_read);
+        });
+        destroy_buffer(staging);
+        std::tie(tex.set, tex.pool) = allocate_ui_set();
+        VkDescriptorImageInfo image{ui_sampler, tex.image.view,
+                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = tex.set;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &image;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        tex.live = true;
+        if (!free_ui_textures.empty()) {
+            const UiTextureId id = free_ui_textures.back();
+            free_ui_textures.pop_back();
+            ui_textures[id] = tex;
+            return id;
+        }
+        ui_textures.push_back(tex);
+        return static_cast<UiTextureId>(ui_textures.size() - 1);
+    }
+
+    void destroy_ui_texture(UiTexture& t) {
+        if (t.set) vkFreeDescriptorSets(device, t.pool, 1, &t.set);
+        destroy_image(t.image);
+        t = {};
+    }
+
+    // The UI's triangles for this frame into the frame's own buffers.
+    void prepare_ui(Frame& f) {
+        f.ui = false;
+        if (ui_frame.empty() || ui_frame.vertices.empty() || ui_frame.indices.empty()) return;
+        const VkDeviceSize vbytes = ui_frame.vertices.size() * sizeof(UiVertex);
+        const VkDeviceSize ibytes = ui_frame.indices.size() * sizeof(uint32_t);
+        if (vbytes > f.ui_vertex_capacity) {  // the fence has passed, so the old one is unused
+            destroy_buffer(f.ui_vertices);
+            f.ui_vertex_capacity = std::max<VkDeviceSize>(vbytes * 2, 64 * 1024);
+            f.ui_vertices =
+                create_buffer(f.ui_vertex_capacity, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false);
+        }
+        if (ibytes > f.ui_index_capacity) {
+            destroy_buffer(f.ui_indices);
+            f.ui_index_capacity = std::max<VkDeviceSize>(ibytes * 2, 64 * 1024);
+            f.ui_indices =
+                create_buffer(f.ui_index_capacity, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);
+        }
+        std::memcpy(f.ui_vertices.mapped, ui_frame.vertices.data(), vbytes);
+        std::memcpy(f.ui_indices.mapped, ui_frame.indices.data(), ibytes);
+        vmaFlushAllocation(allocator, f.ui_vertices.allocation, 0, vbytes);
+        vmaFlushAllocation(allocator, f.ui_indices.allocation, 0, ibytes);
+        f.ui = true;
+    }
+
+    void record_ui(VkCommandBuffer cmd, const Frame& f) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &f.ui_vertices.buffer, &offset);
+        vkCmdBindIndexBuffer(cmd, f.ui_indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+        const glm::mat4 projection = ui_projection(extent.width, extent.height);
+        const VkRect2D whole{{0, 0}, extent};
+        const auto vertices = static_cast<uint64_t>(ui_frame.vertices.size());
+        const auto indices = static_cast<uint64_t>(ui_frame.indices.size());
+        VkDescriptorSet bound = VK_NULL_HANDLE;
+        for (const UiDraw& d : ui_frame.draws) {
+            if (d.index_count == 0 || uint64_t(d.first_index) + d.index_count > indices ||
+                d.first_vertex >= vertices)
+                continue;
+            VkRect2D scissor = whole;
+            if (d.clip) {  // (cut to the screen: Vulkan wants it inside the framebuffer)
+                const int x0 = std::clamp(d.clip_rect.x, 0, int(extent.width));
+                const int y0 = std::clamp(d.clip_rect.y, 0, int(extent.height));
+                const int x1 = std::clamp(d.clip_rect.x + d.clip_rect.z, 0, int(extent.width));
+                const int y1 = std::clamp(d.clip_rect.y + d.clip_rect.w, 0, int(extent.height));
+                if (x1 <= x0 || y1 <= y0) continue;  // nothing of it shows
+                scissor = {{x0, y0}, {uint32_t(x1 - x0), uint32_t(y1 - y0)}};
+            }
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
+            const glm::mat4 m = projection * d.transform;
+            vkCmdPushConstants(cmd, ui_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(m), &m);
+            // (a texture freed while still in the frame draws as flat colour)
+            const UiTextureId id = d.texture < ui_textures.size() && ui_textures[d.texture].live
+                                       ? d.texture
+                                       : kNoUiTexture;
+            if (ui_textures[id].set != bound) {
+                bound = ui_textures[id].set;
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ui_layout, 0, 1,
+                                        &bound, 0, nullptr);
+            }
+            vkCmdDrawIndexed(cmd, d.index_count, 1, d.first_index, int32_t(d.first_vertex), 0);
+        }
+        vkCmdSetScissor(cmd, 0, 1, &whole);  // (the overlay after it covers the screen)
     }
 
     // The post pass: a full-screen triangle that tone maps the HDR image onto the output.
@@ -2332,7 +2638,7 @@ struct Renderer::Impl {
         }
         vkCmdEndRenderPass(cmd);
 
-        // Post: tone map the HDR scene onto the output, then the overlay.
+        // Post: tone map the HDR scene onto the output, then the UI, then the overlay.
         VkRenderPassBeginInfo post{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         post.renderPass = post_pass;
         post.framebuffer = fb;
@@ -2344,6 +2650,7 @@ struct Renderer::Impl {
         vkCmdPushConstants(cmd, post_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float),
                            &exposure);
         vkCmdDraw(cmd, 3, 1, 0, 0);
+        if (frame.ui) record_ui(cmd, frame);
         if (frame.overlay_vertices > 0) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlay_pipeline);
             const glm::vec2 screen(float(extent.width), float(extent.height));
@@ -2382,6 +2689,12 @@ struct Renderer::Impl {
                 destroy_buffer(m.indices);
             }
             for (GpuTexture& t : textures) destroy_image(t.image);
+            for (UiTexture& t : ui_textures) destroy_ui_texture(t);
+            for (VkDescriptorPool p : ui_pools) vkDestroyDescriptorPool(device, p, nullptr);
+            if (ui_pipeline) vkDestroyPipeline(device, ui_pipeline, nullptr);
+            if (ui_layout) vkDestroyPipelineLayout(device, ui_layout, nullptr);
+            if (ui_set_layout) vkDestroyDescriptorSetLayout(device, ui_set_layout, nullptr);
+            if (ui_sampler) vkDestroySampler(device, ui_sampler, nullptr);
             for (VkDescriptorPool p : material_pools) vkDestroyDescriptorPool(device, p, nullptr);
             if (material_sampler) vkDestroySampler(device, material_sampler, nullptr);
             if (material_set_layout)
@@ -2389,6 +2702,8 @@ struct Renderer::Impl {
             for (Frame& f : frames) {
                 destroy_buffer(f.ubo);
                 destroy_buffer(f.overlay);
+                destroy_buffer(f.ui_vertices);
+                destroy_buffer(f.ui_indices);
                 destroy_buffer(f.lines);
                 destroy_buffer(f.palette);
                 if (f.fence) vkDestroyFence(device, f.fence, nullptr);
@@ -2465,11 +2780,14 @@ Renderer::Renderer(const RendererDesc& desc) : impl_(std::make_unique<Impl>()) {
     r.create_target();
     r.create_pipeline();
     r.create_overlay_pipeline();
+    r.create_ui_pipeline();
     r.create_post_pipeline();
     r.create_command_pool();
     r.create_shadows();  // before the frames: their descriptor sets point at the shadow map
     r.create_frames();
     r.create_material_system();
+    const uint8_t white[4] = {255, 255, 255, 255};
+    r.upload_ui_texture(1, 1, white);  // UiTextureId 0: flat colour
 }
 
 Renderer::~Renderer() = default;
@@ -2738,6 +3056,7 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
     vmaFlushAllocation(r.allocator, f.ubo.allocation, 0, VK_WHOLE_SIZE);
 
     r.prepare_overlay(f);
+    r.prepare_ui(f);
     r.prepare_lines(f);
     r.prepare_palette(f, draws);
     check(vkResetCommandBuffer(f.cmd, 0), "Resetting a command buffer");
@@ -2801,6 +3120,36 @@ void Renderer::set_debug_lines(std::vector<DebugLine> lines) {
 
 void Renderer::set_overlay(std::vector<OverlayLine> lines) {
     impl_->overlay_lines = std::move(lines);
+}
+
+UiTextureId Renderer::upload_ui_texture(uint32_t width, uint32_t height,
+                                        std::span<const uint8_t> rgba) {
+    return impl_->upload_ui_texture(width, height, rgba);
+}
+
+void Renderer::free_ui_texture(UiTextureId texture) {
+    Impl& r = *impl_;
+    if (texture == kNoUiTexture || texture >= r.ui_textures.size() || !r.ui_textures[texture].live)
+        return;
+    r.retired_ui.emplace_back(r.ui_textures[texture], r.frames_submitted);
+    r.ui_textures[texture] = {};
+    r.free_ui_textures.push_back(texture);
+}
+
+size_t Renderer::ui_texture_count() const {
+    size_t n = 0;
+    for (const UiTexture& t : impl_->ui_textures) n += t.live ? 1 : 0;
+    return n - 1;  // (not the white one)
+}
+
+void Renderer::set_ui(UiFrame frame) {
+    impl_->ui_frame = std::move(frame);
+}
+
+UiFrame Renderer::take_ui() {
+    UiFrame out = std::move(impl_->ui_frame);
+    impl_->ui_frame.clear();
+    return out;
 }
 
 void Renderer::resize(uint32_t width, uint32_t height) {

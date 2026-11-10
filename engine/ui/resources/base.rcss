@@ -1,0 +1,124 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Midgard's base style sheet ("midgard://base.rcss"): what every element looks like before a
+   game's own styles. Lengths are in dp, so they follow the display's density and the player's
+   UI scale. RmlUi starts with no styles at all, so even "div is a block" is said here. */
+
+body {
+    font-family: Inconsolata;
+    font-size: 18dp;
+    color: #e8ecf4;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+}
+
+div, p, h1, h2, h3, h4, form, ul, ol, li, header, footer, section { display: block; }
+h1 { font-size: 30dp; margin-bottom: 8dp; }
+h2 { font-size: 24dp; margin-bottom: 6dp; }
+h3 { font-size: 20dp; margin-bottom: 4dp; }
+p { margin-bottom: 6dp; }
+em { font-style: italic; }
+strong, b { font-weight: bold; }
+span { display: inline; }
+
+table { box-sizing: border-box; display: table; }
+tr { box-sizing: border-box; display: table-row; }
+td { box-sizing: border-box; display: table-cell; }
+col { box-sizing: border-box; display: table-column; }
+colgroup { display: table-column-group; }
+thead, tbody, tfoot { display: table-row-group; }
+
+/* ---- controls: big enough for a finger (44 dp), reachable with a gamepad's d-pad -------- */
+/* Midgard moves the focus itself (arrow keys, the d-pad, the stick): to the nearest control in
+   that direction anywhere on the screen, into and out of scrolling lists. A screen can still
+   steer it with RmlUi's nav properties ("nav-down: #save"), which come first. */
+button, input, select, textarea {
+    tab-index: auto;
+    focus: auto;
+}
+
+button {
+    display: inline-block;
+    box-sizing: border-box;
+    min-height: 44dp;
+    padding: 10dp 14dp;
+    text-align: center;
+    background-color: #2c3648;
+    border: 2dp #46546e;
+    border-radius: 6dp;
+    color: #e8ecf4;
+}
+button:hover { background-color: #39465e; }
+button:active { background-color: #222a38; }
+button:focus-visible { border-color: #ffd27a; }
+button:disabled { color: #707a8c; background-color: #242a36; }
+
+input.text, input[type=text], input[type=password], textarea {
+    box-sizing: border-box;
+    min-height: 44dp;
+    padding: 10dp 8dp;
+    background-color: #0e121a;
+    border: 2dp #46546e;
+    border-radius: 4dp;
+    color: #ffffff;
+    cursor: text;
+}
+input.text:focus-visible, input[type=text]:focus-visible, textarea:focus-visible {
+    border-color: #ffd27a;
+}
+input[type=text]:focus, textarea:focus { border-color: #8aa2c8; }
+
+input[type=checkbox] {
+    box-sizing: border-box;
+    width: 44dp;
+    height: 44dp;
+    background-color: #0e121a;
+    border: 2dp #46546e;
+    border-radius: 6dp;
+}
+input[type=checkbox]:checked { background-color: #4f8a5a; }
+input[type=checkbox]:focus-visible { border-color: #ffd27a; }
+
+input.range, input[type=range] {
+    box-sizing: border-box;
+    height: 44dp;
+    min-width: 120dp;
+}
+input[type=range] slidertrack {
+    margin-top: 18dp;
+    height: 8dp;
+    background-color: #0e121a;
+    border-radius: 4dp;
+}
+input[type=range] sliderbar {
+    width: 28dp;
+    height: 44dp;
+    background-color: #8aa2c8;
+    border: 2dp #46546e;
+    border-radius: 6dp;
+}
+input[type=range]:focus-visible sliderbar { border-color: #ffd27a; }
+input[type=range] sliderarrowdec, input[type=range] sliderarrowinc { width: 0; height: 0; }
+
+select {
+    display: inline-block;
+    box-sizing: border-box;
+    min-height: 44dp;
+    padding: 10dp 8dp;
+    background-color: #2c3648;
+    border: 2dp #46546e;
+    border-radius: 6dp;
+}
+select selectbox { background-color: #2c3648; border: 2dp #46546e; }
+select selectbox option { padding: 10dp 8dp; }
+select selectbox option:hover { background-color: #39465e; }
+
+/* Scroll bars: a thumb wide enough to drag (lists also scroll by touch and the wheel). */
+scrollbarvertical { width: 12dp; }
+scrollbarvertical slidertrack { background-color: #0e121a80; }
+scrollbarvertical sliderbar { min-height: 32dp; background-color: #46546e; border-radius: 6dp; }
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc { height: 0; }
+scrollbarhorizontal { height: 12dp; }
+scrollbarhorizontal slidertrack { background-color: #0e121a80; }
+scrollbarhorizontal sliderbar { min-width: 32dp; background-color: #46546e; border-radius: 6dp; }
+scrollbarhorizontal sliderarrowdec, scrollbarhorizontal sliderarrowinc { width: 0; }

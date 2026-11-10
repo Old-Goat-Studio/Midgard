@@ -24,6 +24,28 @@ def test_editor_notices_include_qt():
     assert "PySide6 (LGPL-3.0-only)" in licenses.notices("editor")
 
 
+def test_game_notices_carry_the_font_licences_in_full():
+    """The OFL fonts built into every game (milestone 6.0) go with their licence's whole text."""
+    text = licenses.notices("runtime")
+    assert "- Inconsolata (OFL-1.1)" in text and "- OpenDyslexic (OFL-1.1)" in text
+    assert text.count("SIL OPEN FONT LICENSE Version 1.1") == 2
+    assert "Copyright 2006 Raph Levien" in text
+    assert "freetype (FTL OR GPL-2.0-or-later)" in text
+
+
+def test_a_missing_licence_file_is_a_problem(monkeypatch):
+    real = licenses.load
+
+    def broken():
+        data = real()
+        data["components"].append({"name": "Some Font", "source": "bundled",
+                                   "license": "OFL-1.1", "ships_in": "runtime", "url": "x",
+                                   "copyright": "x", "license_file": "no/such/OFL.txt"})
+        return data
+    monkeypatch.setattr(licenses, "load", broken)
+    assert any("no/such/OFL.txt" in p for p in licenses.problems())
+
+
 def _assets(tmp_path: Path, register: str, files: dict[str, bytes]) -> Path:
     folder = tmp_path / "third_party"
     folder.mkdir()

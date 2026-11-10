@@ -3,6 +3,7 @@
 
     python tools/images.py run --runtime build/linux-release/engine/midgard_runtime [--out DIR]
     python tools/images.py update --runtime ...     write new reference images (review them!)
+    python tools/images.py update --runtime ... --only ui_desktop ui_phone   just these
     python tools/images.py compare actual.png reference.png [--diff diff.png]
 
 The scenes are listed in engine/tests/images/scenes.json, each with the runtime arguments that
@@ -115,8 +116,15 @@ def run_all(runtime: list[str], out_dir: Path) -> int:
     return 1 if failures else 0
 
 
-def update_all(runtime: list[str]) -> int:
+def update_all(runtime: list[str], only: list[str] | None = None) -> int:
+    known = {s["name"] for s in scenes()}
+    unknown = sorted(set(only or []) - known)
+    if unknown:
+        print(f"no such scene: {', '.join(unknown)}")
+        return 1
     for scene in scenes():
+        if only and scene["name"] not in only:
+            continue
         if "same_as" in scene:
             continue  # compared with another scene's image, so it has none of its own
         reference = IMAGES / f"{scene['name']}.png"
@@ -138,6 +146,9 @@ def main(argv: list[str] | None = None) -> int:
         if name == "run":
             p.add_argument("--out", type=Path, default=ROOT / "build" / "images",
                            help="where the rendered images and diffs go")
+        else:
+            p.add_argument("--only", nargs="+", metavar="SCENE",
+                           help="write only these scenes' references")
     p = sub.add_parser("compare")
     p.add_argument("actual", type=Path)
     p.add_argument("reference", type=Path)
@@ -151,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.ok else 1
     if args.command == "run":
         return run_all([str(Path(args.runtime).resolve())], args.out)
-    return update_all([str(Path(args.runtime).resolve())])
+    return update_all([str(Path(args.runtime).resolve())], args.only)
 
 
 if __name__ == "__main__":

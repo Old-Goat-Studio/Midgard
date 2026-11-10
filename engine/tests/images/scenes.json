@@ -360,6 +360,16 @@
       "args": ["--size", "480x270", "--scene", "terrain_hollow_far"],
       "_tolerance": "Its lakes 16 km away are a pixel or less across, where drivers round differently: 1.3% of pixels differed on lavapipe (CI run 41317155990), so 3% may.",
       "max_bad": 0.03
+    },
+    {
+      "name": "ui_desktop",
+      "_about": "The UI test screen (milestone 6.0) over the demo scene at a desktop size: RmlUi's text (Inconsolata), buttons, check box, slider, text field and a scrolling list, blended over the scene. Before the picture, the runtime's screen checks pass: a gamepad reaches every control and no text overflows.",
+      "args": ["--size", "1280x720", "--ui-test"]
+    },
+    {
+      "name": "ui_phone",
+      "_about": "The same screen at a phone's size and scale (1.5 pixels a dp) with a pretend notch (90 pixels) and gesture bar (60) kept clear; its checks include a finger's: every control at least 44 dp and inside the safe area.",
+      "args": ["--size", "540x1170", "--ui-test", "--ui-touch", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone"]
     }
   ]
 }

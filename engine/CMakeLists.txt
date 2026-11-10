@@ -62,7 +62,7 @@ set(SHADER_HEADERS)
 foreach(shader mesh.vert mesh_skinned.vert mesh.frag water.frag terrain.frag shadow.vert
         shadow_skinned.vert sky.vert sky.frag line.vert line.frag
         overlay.vert overlay.frag fullscreen.vert tonemap.frag falling.vert falling.frag
-        surface_error.frag)
+        surface_error.frag ui.vert ui.frag)
     string(REPLACE "." "_" name "${shader}")
     set(src "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/${shader}")
     set(out "${SHADER_OUT}/${name}.h")
@@ -97,6 +97,7 @@ add_custom_target(midgard_shaders DEPENDS ${SHADER_HEADERS} ${TEST_SHADER_HEADER
 add_library(midgard_render STATIC
     render/src/renderer.cpp
     render/src/overlay.cpp
+    render/src/ui_draw.cpp
     render/src/mesh_data.cpp
     render/src/ktx.cpp
     render/src/shadows.cpp
@@ -117,6 +118,56 @@ target_link_libraries(midgard_render
     PRIVATE volk::volk Vulkan::Headers GPUOpen::VulkanMemoryAllocator mikktspace::mikktspace
             KTX::ktx midgard_options
 )
+
+# ---- ui: the in-game UI engine (milestone 6.0): RmlUi over the renderer's UI layer ----------
+find_package(RmlUi CONFIG REQUIRED)
+set(UI_GEN "${CMAKE_CURRENT_BINARY_DIR}/generated/ui")
+file(MAKE_DIRECTORY "${UI_GEN}")
+# The base style sheet and the test screen, as text; the fonts, as bytes.
+set(UI_TEXT_SOURCES)
+foreach(pair "base.rcss:kUiBaseRcss:ui_base_rcss.h" "test_screen.rml:kUiTestScreen:ui_test_screen.h")
+    string(REPLACE ":" ";" parts "${pair}")
+    list(GET parts 0 file)
+    list(GET parts 1 name)
+    list(GET parts 2 header)
+    add_custom_command(
+        OUTPUT "${UI_GEN}/${header}"
+        COMMAND "${CMAKE_COMMAND}" -DOUTPUT=${UI_GEN}/${header} -DNAME=${name} -DPLAIN=ON
+                "-DINPUTS=${CMAKE_CURRENT_SOURCE_DIR}/ui/resources/${file}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_text.cmake"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/resources/${file}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_text.cmake"
+        COMMENT "Embedding ${file}"
+        VERBATIM)
+    list(APPEND UI_TEXT_SOURCES "${UI_GEN}/${header}")
+endforeach()
+set(UI_FONT_SOURCES)
+foreach(pair "Inconsolata.otf:font_inconsolata" "OpenDyslexic3-Regular.ttf:font_opendyslexic_regular"
+        "OpenDyslexic3-Bold.ttf:font_opendyslexic_bold")
+    string(REPLACE ":" ";" parts "${pair}")
+    list(GET parts 0 file)
+    list(GET parts 1 name)
+    add_custom_command(
+        OUTPUT "${UI_GEN}/${name}.cpp"
+        COMMAND "${CMAKE_COMMAND}" -DOUTPUT=${UI_GEN}/${name}.cpp -DNAME=${name}
+                "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/ui/fonts/${file}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_binary.cmake"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/fonts/${file}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_binary.cmake"
+        COMMENT "Embedding the font ${file}"
+        VERBATIM)
+    list(APPEND UI_FONT_SOURCES "${UI_GEN}/${name}.cpp")
+endforeach()
+add_library(midgard_ui STATIC
+    ui/src/ui.cpp
+    ui/src/checks.cpp
+    ui/src/test_screen.cpp
+    ui/src/fonts.cpp
+    ${UI_TEXT_SOURCES}
+    ${UI_FONT_SOURCES}
+)
+target_include_directories(midgard_ui PUBLIC ui/include PRIVATE "${UI_GEN}" ${Stb_INCLUDE_DIR})
+target_link_libraries(midgard_ui PUBLIC midgard_render RmlUi::RmlUi PRIVATE glm::glm midgard_options)
 
 # ---- shader: GLSL to SPIR-V inside Midgard (milestone 5.17), for the editor ------------------
 # Games carry compiled shaders, so only where the editor runs (not Android) is glslang linked.
@@ -366,7 +417,7 @@ if(MIDGARD_BUILD_PROGRAMS)
     endif()
     target_sources(midgard_runtime PRIVATE runtime/selftest.cpp runtime/test_scenes.cpp)
     target_link_libraries(midgard_runtime PRIVATE
-        midgard_core midgard_render midgard_scene midgard_link midgard_audio SDL3::SDL3
+        midgard_core midgard_render midgard_ui midgard_scene midgard_link midgard_audio SDL3::SDL3
         Vulkan::Headers midgard_options)
     target_include_directories(midgard_runtime PRIVATE ${Stb_INCLUDE_DIR})  # the window icon
     target_include_directories(midgard_runtime PRIVATE "${SHADER_OUT}")  # (test shaders)
@@ -466,10 +517,11 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_weather.cpp
         tests/test_weather_sim.cpp
         tests/test_texture_gen.cpp
+        tests/test_ui.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
-        midgard_core midgard_render midgard_scene midgard_physics midgard_link midgard_audio
-        midgard_audio_encode midgard_options doctest::doctest
+        midgard_core midgard_render midgard_ui midgard_scene midgard_physics midgard_link
+        midgard_audio midgard_audio_encode midgard_options doctest::doctest
         unofficial::sqlite3::sqlite3 miniz::miniz nlohmann_json::nlohmann_json)
     if(TARGET midgard_shader)
         target_sources(midgard_tests PRIVATE tests/test_shader_compiler.cpp)

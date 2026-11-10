@@ -1,0 +1,69 @@
+<rml>
+<head>
+    <title>Midgard UI test</title>
+    <link type="text/rcss" href="midgard://base.rcss"/>
+    <style>
+        body { background-color: #10141cd0; overflow-y: auto; }  /* (scrolls on a small window) */
+        #panel {
+            box-sizing: border-box;
+            width: 372dp;
+            max-width: 100%;
+            margin: 16dp auto;
+            padding: 16dp;
+            background-color: #1c2230f0;
+            border: 1dp #3a4660;
+            border-radius: 8dp;
+        }
+        h1 { font-size: 26dp; margin-bottom: 4dp; color: #ffd27a; }
+        #status { color: #b8c4d8; margin-bottom: 12dp; }
+        .row { display: flex; flex-direction: row; align-items: center; margin: 6dp 0dp; }
+        #subtitles_state { margin-left: 12dp; }
+        .row button { flex: 1 1 0; margin: 0dp 3dp; }
+        .label { width: 90dp; }
+        input.range, input.text { flex: 1 1 auto; }
+        #list { height: 150dp; overflow-y: auto; margin: 8dp 0dp; border: 1dp #3a4660; }
+        #list button { display: block; margin: 2dp; text-align: left; }
+        #info { color: #8090a8; font-size: 14dp; margin-top: 8dp; }
+    </style>
+</head>
+<body>
+    <div id="panel">
+        <h1>UI test</h1>
+        <p id="status">Try every control: mouse, keys, a gamepad or touch.</p>
+        <div class="row">
+            <button id="one">One</button>
+            <button id="two">Two</button>
+            <button id="font">Font</button>
+        </div>
+        <div class="row">
+            <span class="label">Subtitles</span>
+            <input type="checkbox" id="subtitles"/>
+            <span id="subtitles_state">off</span>
+        </div>
+        <div class="row">
+            <span class="label">Volume</span>
+            <input type="range" class="range" id="volume" min="0" max="100" step="5" value="80"/>
+        </div>
+        <div class="row">
+            <span class="label">Name</span>
+            <input type="text" class="text" id="name" value="Hero" maxlength="24"/>
+        </div>
+        <div id="list">
+            <button id="item1">Item 1</button>
+            <button id="item2">Item 2</button>
+            <button id="item3">Item 3</button>
+            <button id="item4">Item 4</button>
+            <button id="item5">Item 5</button>
+            <button id="item6">Item 6</button>
+            <button id="item7">Item 7</button>
+            <button id="item8">Item 8</button>
+            <button id="item9">Item 9</button>
+            <button id="item10">Item 10</button>
+        </div>
+        <div class="row">
+            <button id="close">Close</button>
+        </div>
+        <p id="info"></p>
+    </div>
+</body>
+</rml>

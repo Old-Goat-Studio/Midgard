@@ -106,6 +106,8 @@ def problems() -> list[str]:
             if (source, name.lower()) not in listed:
                 found.append(f"{name} ({source}) is not listed in tools/third_party.json")
     for c in data["components"]:
+        if "license_file" in c and not (ROOT / c["license_file"]).is_file():
+            found.append(f"{c['name']}: its licence file {c['license_file']} is missing")
         role, lic = c["ships_in"], c["license"]
         if role not in allowed:
             found.append(f"{c['name']}: unknown ships_in '{role}'")
@@ -132,9 +134,15 @@ def notices(role: str) -> str:
         "This software includes the following third-party components:",
         "",
     ]
-    for c in sorted(load()["components"], key=lambda c: c["name"].lower()):
-        if c["ships_in"] in roles:
-            parts += [f"- {c['name']} ({c['license']})", f"  {c['url']}", f"  {c['copyright']}", ""]
+    chosen = [c for c in sorted(load()["components"], key=lambda c: c["name"].lower())
+              if c["ships_in"] in roles]
+    for c in chosen:
+        parts += [f"- {c['name']} ({c['license']})", f"  {c['url']}", f"  {c['copyright']}", ""]
+    # Licences that must travel in full (the OFL fonts'), after the list.
+    for c in chosen:
+        if "license_file" in c:
+            text = (ROOT / c["license_file"]).read_text(encoding="utf-8").strip()
+            parts += ["", f"---- {c['name']}: {c['license']} ----", "", text, ""]
     return "\n".join(parts)
 
 

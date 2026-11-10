@@ -33,6 +33,8 @@
     "recastnavigation",
     "ozz-animation",
     "miniaudio",
+    { "name": "rmlui", "default-features": false, "features": ["freetype"] },
+    { "name": "freetype", "default-features": false },
     "libogg",
     "opus",
     "opusfile",

@@ -1,5 +1,5 @@
 {
-  "description": "Every third-party component Midgard uses. 'ships_in' says where it ends up: 'runtime' (inside every exported game and server), 'editor' (the editor only), or 'build' (build and test tools, never shipped). tools/licenses.py checks this list in CI and builds THIRD_PARTY_NOTICES.txt from it.",
+  "description": "Every third-party component Midgard uses. 'license_file' (optional) is a licence text that must travel with it in full (the OFL fonts'). 'ships_in' says where it ends up: 'runtime' (inside every exported game and server), 'editor' (the editor only), or 'build' (build and test tools, never shipped). tools/licenses.py checks this list in CI and builds THIRD_PARTY_NOTICES.txt from it.",
   "components": [
     { "name": "nlohmann-json", "source": "vcpkg", "license": "MIT", "ships_in": "runtime", "url": "https://github.com/nlohmann/json", "copyright": "Copyright (c) 2013-2025 Niels Lohmann" },
     { "name": "sqlite3", "source": "vcpkg", "license": "blessing", "ships_in": "runtime", "url": "https://sqlite.org", "copyright": "SQLite is in the public domain." },
@@ -23,6 +23,12 @@
     { "name": "joltphysics", "source": "vcpkg", "license": "MIT", "ships_in": "runtime", "url": "https://github.com/jrouwe/JoltPhysics", "copyright": "Copyright (c) 2021 Jorrit Rouwe. Physics and the character controller (double-precision build)." },
     { "name": "ozz-animation", "source": "vcpkg", "license": "MIT", "ships_in": "runtime", "url": "https://github.com/guillaumeblanc/ozz-animation", "copyright": "Copyright (c) 2020 Guillaume Blanc. Skeletal animation: sampling, blending and IK." },
     { "name": "recastnavigation", "source": "vcpkg", "license": "Zlib", "ships_in": "runtime", "url": "https://github.com/recastnavigation/recastnavigation", "copyright": "Copyright (c) 2009 Mikko Mononen memon@inside.org. Recast and Detour: navigation meshes and path finding." },
+    {"name": "rmlui", "source": "vcpkg", "license": "MIT", "ships_in": "runtime", "url": "https://github.com/mikke89/RmlUi", "copyright": "Copyright (c) 2008-2014 CodePoint Ltd, Shift Technology Ltd, and contributors; Copyright (c) 2019-2026 The RmlUi Team, and contributors. The in-game UI: menus, screens and the HUD (milestone 6.0)."},
+    {"name": "freetype", "source": "vcpkg", "license": "FTL OR GPL-2.0-or-later", "ships_in": "runtime", "url": "https://freetype.org", "copyright": "Portions of this software are copyright (c) 1996-2026 The FreeType Project (www.freetype.org). All rights reserved. Used under the FreeType License (FTL). Font rendering for the in-game UI."},
+    {"name": "itlib", "source": "vcpkg", "license": "MIT", "ships_in": "runtime", "url": "https://github.com/iboB/itlib", "copyright": "Copyright (c) 2016-2019 Chobolabs Inc.; Copyright (c) 2020-2026 Borislav Stanimirov. Used by RmlUi."},
+    {"name": "robin-hood-hashing", "source": "vcpkg", "license": "MIT", "ships_in": "runtime", "url": "https://github.com/martinus/robin-hood-hashing", "copyright": "Copyright (c) 2018-2021 Martin Ankerl. Used by RmlUi."},
+    {"name": "Inconsolata", "source": "bundled", "license": "OFL-1.1", "ships_in": "runtime", "url": "https://levien.com/type/myfonts/inconsolata.html", "copyright": "Copyright 2006 Raph Levien. The in-game UI's default font (engine/ui/fonts), unmodified.", "license_file": "engine/ui/fonts/OFL-Inconsolata.txt"},
+    {"name": "OpenDyslexic", "source": "bundled", "license": "OFL-1.1", "ships_in": "runtime", "url": "https://opendyslexic.org", "copyright": "Copyright (c) 2012 Abelardo Gonzalez. A font for players who read more easily with it (engine/ui/fonts), unmodified.", "license_file": "engine/ui/fonts/OFL-OpenDyslexic.txt"},
     { "name": "entt", "source": "vcpkg", "license": "MIT", "ships_in": "runtime", "url": "https://github.com/skypjack/entt", "copyright": "Copyright (c) 2017-2025 Michele Caini, author of EnTT" },
     { "name": "CPython", "source": "download", "license": "PSF-2.0", "ships_in": "runtime", "url": "https://www.python.org", "copyright": "Copyright (c) 2001 Python Software Foundation. All rights reserved. The game's embedded Python 3.14 (python-build-standalone on Windows and Linux, python.org's official build on Android; tools/setup_python.py)." },
     { "name": "libffi", "source": "download", "license": "MIT", "ships_in": "runtime", "url": "https://sourceware.org/libffi/", "copyright": "Copyright (c) 1996-2024 Anthony Green, Red Hat, Inc and others. Part of the game's embedded Python." },
@@ -74,7 +80,7 @@
     { "name": "ruff", "source": "python", "license": "MIT", "ships_in": "build", "url": "https://github.com/astral-sh/ruff", "copyright": "Copyright (c) 2022 Charles Marsh" }
   ],
   "allowed": {
-    "runtime": ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "Apache-2.0", "BSL-1.0", "blessing", "Unlicense", "PSF-2.0", "Unicode-3.0", "bzip2-1.0.6", "0BSD", "X11-distribute-modifications-variant"],
+    "runtime": ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "Apache-2.0", "BSL-1.0", "blessing", "Unlicense", "PSF-2.0", "Unicode-3.0", "bzip2-1.0.6", "0BSD", "X11-distribute-modifications-variant", "FTL", "OFL-1.1"],
     "editor": ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "Apache-2.0", "BSL-1.0", "blessing", "Unlicense", "PSF-2.0", "Unicode-3.0", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later", "GPL-2.0-or-later WITH Bootloader-exception", "bzip2-1.0.6", "0BSD", "X11-distribute-modifications-variant"],
     "build": ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSL-1.0", "blessing", "Unlicense", "PSF-2.0", "MIT-CMU", "bzip2-1.0.6", "0BSD", "X11-distribute-modifications-variant"]
   }

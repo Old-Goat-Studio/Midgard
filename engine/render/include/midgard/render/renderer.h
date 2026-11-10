@@ -21,6 +21,7 @@
 #include "midgard/render/overlay.h"
 #include "midgard/render/quality.h"
 #include "midgard/render/shadows.h"
+#include "midgard/render/ui_draw.h"
 
 struct VkInstance_T;
 struct VkSurfaceKHR_T;
@@ -231,6 +232,19 @@ public:
 
     // The debug text overlay drawn over every frame from now on (empty: none).
     void set_overlay(std::vector<OverlayLine> lines);
+
+    // The in-game UI (milestone 6.0, render/ui_draw.h), drawn over the scene and under the
+    // overlay in every frame from now on (an empty frame: none). The UI sets a new one each
+    // frame; take_ui gives the last one back (its buffers kept for the next).
+    void set_ui(UiFrame frame);
+    UiFrame take_ui();
+    // A UI texture from premultiplied-alpha RGBA8 pixels, top row first (a font's glyphs, a
+    // picture). Throws RenderError if the pixels don't match the size.
+    UiTextureId upload_ui_texture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba);
+    // Frees a UI texture: draws using it from now on show flat colour, and its id may be given
+    // to a later upload. Its memory goes once no frame in flight can still be using it.
+    void free_ui_texture(UiTextureId texture);
+    size_t ui_texture_count() const;  // UI textures on the GPU
 
     // Debug lines drawn into every frame from now on (empty: none). Their ends are relative to
     // the camera's origin, so a moving camera needs them again each frame.
