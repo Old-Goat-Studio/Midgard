@@ -493,3 +493,34 @@ TEST_CASE("the HUD's compass slides to the heading, and the minimap places its m
     CHECK_FALSE(doc->GetElementById("compass")->IsVisible(true));
     CHECK_FALSE(doc->GetElementById("minimap")->IsVisible(true));
 }
+
+TEST_CASE("the HUD's crosshair: Midgard's dot, or the game's own picture at its size") {
+    auto renderer = offscreen(800, 600);
+    if (!renderer) return;
+    ui::Ui u(*renderer, sized(800, 600));
+    ui::Hud hud(u);
+    ui::HudData d;
+    d.crosshair = true;
+    hud.show(d);
+    u.update(0.0);
+    Rml::ElementDocument* doc = hud.document();
+    CHECK(doc->GetElementById("crosshair")->IsVisible(true));
+    CHECK_FALSE(doc->GetElementById("crosshair_picture")->IsVisible(true));
+    // The game's picture, 48 dp across, in the middle.
+    d.crosshair_picture = true;
+    d.crosshair_size = 48.0f;
+    hud.show(d);
+    u.update(0.1);
+    Rml::Element* picture = doc->GetElementById("crosshair_picture");
+    CHECK_FALSE(doc->GetElementById("crosshair")->IsVisible(true));
+    REQUIRE(picture->IsVisible(true));
+    CHECK(picture->GetBox().GetSize(Rml::BoxArea::Border).x == doctest::Approx(48.0f));
+    const auto [x, y] = middle(picture);
+    CHECK(x == doctest::Approx(400.0f));
+    CHECK(y == doctest::Approx(300.0f));
+    // No crosshair: neither.
+    d.crosshair = false;
+    hud.show(d);
+    u.update(0.2);
+    CHECK_FALSE(picture->IsVisible(true));
+}

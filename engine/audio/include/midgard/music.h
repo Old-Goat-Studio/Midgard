@@ -74,6 +74,8 @@ public:
     // A script's choice (by id or name; empty: silence) over the context's, until release().
     // False for an unknown playlist.
     bool force(const std::string& playlist);
+    // A playlist only ever forced (the game's menu music): never chosen by the context.
+    void reserve(const std::string& playlist) { reserved_ = playlist; }
     void release();
     // A stinger: a sound event played over the music, which dips to `duck` of its level under
     // it and comes back after.
@@ -94,6 +96,7 @@ private:
     SoundPlayer& sounds_;
     det::Rng rng_;
     std::map<std::string, Playlist> playlists_;
+    std::string reserved_;  // (reserve)
     MusicContext context_;
     std::optional<std::string> forced_;
     std::string current_;    // the playlist playing

@@ -19,6 +19,7 @@
 #include "midgard/camera_rig.h"
 #include "midgard/characters.h"
 #include "midgard/compass.h"
+#include "midgard/game_settings.h"
 #include "midgard/hud.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
@@ -243,6 +244,15 @@ public:
     void ui_change(const std::string& screen, const std::string& element, double value);
     // The clicks and changes of the last update (and since), for scripts.
     const std::vector<hud::UiEvent>& ui_events() const { return ui_events_; }
+    // ---- the game's settings (the Project Page's: splash, crosshair, pointer, menu music) ----
+    const GameSettings& game_settings() const { return settings_; }
+    // The Project Page's edits while the game plays (the live link's settings.put).
+    void set_game_settings(const nlohmann::json& settings);
+    // A screen that pauses the game shows: the world stands still (updates take no time), but
+    // its sounds and music carry on (menu music fades in) and scripts hear its buttons.
+    void set_frozen(bool frozen) { frozen_ = frozen; }
+    bool frozen() const { return frozen_; }
+
     // ---- the game's own screens (6.0 step 7: midgard/screen.h's roles) ----
     // The screen used as the title, pause menu, settings or game over (nullptr: none).
     const ScreenDef* screen_for(const std::string& role) const;
@@ -590,7 +600,10 @@ private:
     std::vector<std::string> finished_timers_;
     std::vector<hud::UiEvent> ui_events_;
     std::string rebinding_;  // an action waiting for its new key
-    bool dead_ = false;      // the game over screen showed (until respawn)
+    GameSettings settings_;
+    bool frozen_ = false;
+    bool menu_music_on_ = false;  // the menu music forced over the scene's
+    bool dead_ = false;           // the game over screen showed (until respawn)
     struct Place {
         glm::dvec3 position;
         glm::vec3 rotation;

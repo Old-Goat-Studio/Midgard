@@ -137,6 +137,11 @@ editor can be undone with **Ctrl+Z**.
   - **Hollow World**: inside a sphere 2.5 km in radius, with the far side overhead through
     the haze. An **Exit Site** pad takes you outside.
 
+  It opens at its **title screen** (New game, Settings, Quit) and has a pause menu (Esc),
+  settings and a game over screen, all made in the Menu editor (section 15). Five gold
+  **coins** round the hub raise your Score with a note each; standing in the red **fire pit**
+  burns Health away until **You died**, and **Try again** puts you back where you arrived.
+
   The first time you arrive in a world, its sky is clear for an hour (a small script,
   `fair_welcome`, does it with `midgard.weather.force`); then its own weather comes back.
   Each world has its own day and night, seasons, weather and sounds (the sea on the
@@ -995,8 +1000,9 @@ On a phone the game shows **on-screen controls** by itself, so no game controlle
   its resting place, drawn faint. Pull past its rim and it follows your thumb.
 - **Looking**: drag a finger anywhere on the right half (not on a button) to turn the camera.
 - **Buttons**, bottom right: **Jump**, **Use** (doors, levers, pads), **Run** (a switch: tap it
-  to run, it lights up; tap again to walk), **View** (first person, third person, from above)
-  and, while flying, **Down**.
+  to run, it lights up; tap again to walk), **View** (first person, third person, from above),
+  while flying **Down**, and **Menu**, which opens the pause menu (when your game has one: see
+  Menus and screens).
 
 Each finger does one thing, so you can walk, look and jump at once. A phone held upright gets a
 narrower layout, the buttons closer to the edge. Everything stays clear of the notch and the
@@ -1192,6 +1198,26 @@ used by one screen; Cook says if two claim the same. Without a pause menu, Esc w
 voices, ambience or menu sounds), and a button's the key for an action (Jump, Use, Run, View,
 Descend, Menu): the slider shows and changes the player's volume, the button shows the key and,
 clicked, waits for a new one. **Respawn the player** is one more thing a button **Does**.
+
+**The game's own screen settings** are on the **Project Page** (Window ▸ Project Page), under
+**Game screens**, because they're the whole game's:
+
+- **Splash screen**: a picture shown while the game loads (a big game can take a while). It's
+  fitted to the screen, over black. Without one, the game's name shows.
+- **Crosshair**: the aiming mark's picture, in the middle of the screen (without one, a small
+  white dot), its **Crosshair size** in dp, and **Crosshair shows**: **In first person** (as
+  it starts), **In every view**, or **Never**. Scripts can still show or hide it
+  (`midgard.ui.crosshair`).
+- **Menu pointer**: the mouse pointer over menus, a picture of its own (its tip is the picture's
+  top left corner; 32 x 32 pixels is a good size). Without one, the system's arrow. The crosshair
+  and the menu pointer are separate pictures.
+- **Menu music**: a playlist (from the Audio panel) that plays while any menu shows, the same for
+  all of them, fading in over the scene's music and back out when the menu closes. A screen
+  whose **Plays the menu music** tick is off (in the Menu editor, with nothing chosen) keeps the
+  scene's music instead. The menu music's playlist only ever plays for menus: the world never
+  chooses it by itself.
+
+All their pictures come from the **GUI** section of the Asset Library, and the cook packs them.
 
 **Showing a screen.** A screen shows when a script asks: `midgard.ui.show("scr_pause")` (its
 id is under its name). While the game plays under the editor, **Show in Game** shows the chosen

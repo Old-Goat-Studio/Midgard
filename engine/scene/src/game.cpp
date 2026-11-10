@@ -34,6 +34,7 @@ Game::Game(const std::filesystem::path& package_dir)
     camera_ = std::make_unique<CameraRig>(scene_);
     camera_->follow(scene_, 0.0f, camera_sweep());
     note_exits_inside();
+    settings_ = load_game_settings(package_dir / package_.manifest.database);
     // The title screen, as the game starts.
     if (const ScreenDef* title = screen_for("title")) hud_.show_screen(title->id);
     // Characters' feet stand on what physics has (the ground, and anything solid).
@@ -240,6 +241,8 @@ CameraSweep Game::camera_sweep() const {
 }
 
 void Game::update(const Actions& actions, float dt) {
+    const float real_dt = dt;
+    if (frozen_) dt = 0.0f;  // (a pausing screen: the world stands still)
     update_scene_change(dt);
     time_events_ = std::move(skipped_);
     skipped_.clear();
@@ -280,7 +283,7 @@ void Game::update(const Actions& actions, float dt) {
     update_falling(dt);
     update_ground_cover(dt);
     update_exposure(dt);
-    update_sounds(dt);
+    update_sounds(real_dt);  // (sounds and music keep time when frozen)
     if (!profile_file_.empty() && camera_->active() && camera_->view() != saved_view_) {
         try {
             save_profile();
@@ -369,7 +372,8 @@ void Game::set_audio(audio::Mixer* mixer) {
     ambience_ = std::make_unique<audio::AmbienceDirector>(*sounds_);
     for (const auto& [id, a] : scene_.ambience) ambience_->add(a);
     mixer_ = mixer;
-    apply_volumes();  // (the designer's mix, times the player's settings)
+    music_->reserve(settings_.menu_music);  // (the menu music: only for menus)
+    apply_volumes();                        // (the designer's mix, times the player's settings)
     sounds_->set_blocked([this](audio::VoiceId voice, const glm::dvec3& from,
                                 const glm::dvec3& to) { return sound_blocked(voice, from, to); });
     listen();
@@ -600,6 +604,14 @@ std::vector<Game::MapMark> Game::map_marks(double radius) const {
     return out;
 }
 
+void Game::set_game_settings(const nlohmann::json& settings) {
+    const bool was = menu_music_on_;
+    if (was && music_) music_->release();  // (whatever plays next is chosen again)
+    menu_music_on_ = false;
+    settings_ = game_settings_from_json(settings.dump());
+    if (music_) music_->reserve(settings_.menu_music);
+}
+
 const ScreenDef* Game::screen_for(const std::string& role) const {
     for (const ScreenDef& s : scene_.screens)
         if (s.role == role) return &s;
@@ -700,6 +712,17 @@ void Game::update_screens() {
         if (v && *v <= d->min) {
             dead_ = true;
             hud_.show_screen(over->id);
+        }
+    }
+    // The menu music: while a menu shows (one that doesn't keep it off), over the scene's.
+    bool menu = false;
+    for (const std::string& id : hud_.screens())
+        if (const ScreenDef* s = screen(id); s && s->modal && s->music) menu = true;
+    if (music_ && !settings_.menu_music.empty()) {
+        if (menu && !menu_music_on_) menu_music_on_ = music_->force(settings_.menu_music);
+        if (!menu && menu_music_on_) {
+            music_->release();
+            menu_music_on_ = false;
         }
     }
     for (const std::string& id : hud_.screens()) {

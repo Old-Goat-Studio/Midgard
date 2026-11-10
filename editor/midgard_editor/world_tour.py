@@ -20,6 +20,12 @@ Sound's footsteps and ambiences, yd's Desert Theme), put in the project's Asset 
 Where you arrive in a world, the ground is flattened round you at its own height there (kept
 above the sea), with the pad home behind you.
 
+Milestone 6.0's exit: it opens at its title screen (New game, Settings, Quit) and has the
+ready-made pause menu, settings (volume, music, the Jump and Use keys) and game over screens,
+with the HUD's health and stamina bars, score and compass. Five coins in the hub raise the
+score with a note each; the hub's fire pit burns health away, and at none the game over screen
+offers Try again (back where you arrived, refilled).
+
     python -m midgard_editor.world_tour <folder>     makes <folder>/WorldTour
 """
 import json
@@ -31,6 +37,7 @@ from . import (
     asset_library,
     engine,
     environments,
+    menus,
     music,
     scenes,
     sound_events,
@@ -145,6 +152,13 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
 
 ## Playing (press F5)
 
+- [ ] It opens at its **title screen**: New game, Settings, Quit. **Settings**: volume, music, and
+      the Jump and Use keys (click one, press a key). **New game** starts.
+- [ ] **Coins:** five gold coins round the hub. Walk through one: **Score** goes up 10 and a note
+      says so.
+- [ ] **The fire pit** (the red glow beside the hub): stand in it and **Health** burns away; at
+      none, **You died**: **Try again** puts you back where you arrived, health full.
+- [ ] **Esc** (or a controller's Start) opens the **pause menu**; Esc again goes back.
 - [ ] **The hub:** a paved square, four coloured doorways, birdsong by day; another walker
       strolls round. Walk into a doorway to go to that world.
 - [ ] Wherever you arrive, the **glowing pad** behind you takes you back to the hub (stand on
@@ -173,10 +187,13 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
    from the build server's runtime-template-android-arm64 download).
 2. **Build ▸ Export…**, choose **Android**, **Install Template…** and pick it.
 3. Export the World Tour, copy the .apk to your phone and install it.
-- [ ] It opens in the hub, with its music, and the on-screen touch controls: the stick
-      bottom left, drag on the right half to look, Jump, Use, Run and View bottom right (or
-      connect a game controller: the controls go away until you touch the screen).
-- [ ] Visit each world; it runs smoothly, with sound. The phone's Back button ends it.
+- [ ] It opens at the title screen: tap **New game**. Then the on-screen touch controls: the
+      stick bottom left, drag on the right half to look, Jump, Use, Run, View and **Menu**
+      bottom right (or connect a game controller: the controls go away until you touch the
+      screen).
+- [ ] Pick up a coin, burn in the fire pit and **Try again**, all by touch. **Menu** (or the
+      phone's Back button) opens the pause menu; in **Settings** drag the volume.
+- [ ] Visit each world; it runs smoothly, with sound.
 '''
 
 WELCOME = '''"""A fair welcome: the first time you arrive in a world, its sky is clear for an hour
@@ -243,6 +260,38 @@ def on_update(entity, dt):
     entity.position = (x + dx / d * step, ty, z + dz / d * step)
     # Facing the way it walks (characters face -Z at no turn).
     entity.rotation = (0.0, math.degrees(math.atan2(-dx, -dz)), 0.0)
+'''
+
+COIN = '''"""A coin: walk through it for 10 points (the HUD's Score) and a note. It goes (far
+below the ground) once picked up."""
+import midgard
+
+
+def on_trigger_enter(entity, other):
+    midgard.stats.add("score", 10)
+    midgard.ui.notify("Picked up a coin (+10)")
+    x, y, z = entity.position
+    entity.position = (x, y - 1000.0, z)
+'''
+
+FIRE = '''"""The fire pit: standing in it burns Health away (the game over screen shows at none)."""
+import midgard
+
+burning = {"on": False}
+
+
+def on_trigger_enter(entity, other):
+    burning["on"] = True
+    midgard.ui.notify("Too hot!")
+
+
+def on_trigger_exit(entity, other):
+    burning["on"] = False
+
+
+def on_update(entity, dt):
+    if burning["on"]:
+        midgard.stats.add("health", -40.0 * dt)
 '''
 
 LAUNCH_PAD = '''"""The Planet's launch pad: a jetpack. Step on it and you fly.
@@ -527,8 +576,49 @@ class _Builder:
                          (0.95, 0.9, 0.5))
             if name == "Planet":  # a jetpack up through the atmosphere into space
                 self.pad_launch(scene, world, height)
+        self.coins_and_fire(hub)
+        self.screens()
         self.checklist()
         return p
+
+    def coins_and_fire(self, hub: str) -> None:
+        """Five coins round the hub (a score a script raises, a pick-up note) and a fire pit
+        (health that runs out: game over, and respawning)."""
+        scripts = self.p.root / "scripts"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "coin.py").write_text(COIN, encoding="utf-8")
+        (scripts / "fire_pit.py").write_text(FIRE, encoding="utf-8")
+        for i, (x, z) in enumerate(((-6.0, 2.0), (-3.0, 9.0), (3.0, 9.0), (6.0, 2.0),
+                                    (0.0, -4.0))):
+            coin = self.put(MAIN_SCENE, f"Coin {i + 1}", hub, {
+                "transform": {"position": [x, 1.0, z]},
+                "trigger": {"size": [1.2, 2.0, 1.2]}, "script": {"module": "coin"}})
+            self.put(MAIN_SCENE, f"Coin {i + 1} Disc", coin, {
+                "transform": {"rotation": [90.0, 0.0, 0.0], "scale": [0.6, 0.12, 0.6]},
+                "mesh": {"asset": "prim_cylinder"},
+                "material": {"color": [1.0, 0.8, 0.2, 1.0], "metallic": 1.0, "roughness": 0.3,
+                             "emissive": [1.0, 0.7, 0.1], "emissive_strength": 0.6}})
+        self.box(MAIN_SCENE, hub, "Fire Pit Glow", [12.0, 0.12, 6.0], [3.0, 0.1, 3.0],
+                 (1.0, 0.25, 0.05), solid=False, glow=4.0)
+        self.put(MAIN_SCENE, "Fire Pit", hub, {
+            "transform": {"position": [12.0, 1.0, 6.0]},
+            "trigger": {"size": [3.0, 2.0, 3.0]}, "script": {"module": "fire_pit"}})
+
+    def screens(self) -> None:
+        """The ready-made title, pause, settings and game over screens; the title says the
+        tour's name and starts with New game."""
+        for kind in ("title", "pause", "game_over"):
+            menus.save_all(self.p, menus.from_template(self.p, kind))
+        screens = menus.load_all(self.p)
+        for screen in screens:
+            if screen["screen"].get("role") != "title":
+                continue
+            for e in screen["screen"]["elements"]:
+                if e["id"] == "title":
+                    e["text"] = TITLE
+                if e["id"] == "play":
+                    e["text"] = "New game"
+        menus.save_all(self.p, screens)
 
     def checklist(self) -> None:
         """CHECKLIST.md in the project: what to try, in the editor, playing and on a phone."""

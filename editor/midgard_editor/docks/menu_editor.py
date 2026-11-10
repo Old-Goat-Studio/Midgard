@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
 
 from .. import engine, menus
 from ..project import Project
+from .fresh_combo import FreshComboBox
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 HANDLE = 8  # pixels: the resize handle at a chosen element's bottom right corner
@@ -346,6 +347,11 @@ class MenuEditor(QWidget):
         self.pauses = QCheckBox("Pauses the game")
         self.pauses.setToolTip("Everything stands still while it shows (a pause menu)")
         self.pauses.toggled.connect(lambda on: self._set_screen("pauses", on, "pauses"))
+        self.music = QCheckBox("Plays the menu music")
+        self.music.setToolTip("While it shows, the game's menu music plays (Project Page, Menu "
+                              "music). Untick for a menu that keeps the scene's music")
+        self.music.toggled.connect(
+            lambda on: self._set_screen("music", None if on else False, "menu music"))
         self.role = QComboBox()
         for key, label in menus.ROLES.items():
             self.role.addItem(label, key)
@@ -433,7 +439,7 @@ class MenuEditor(QWidget):
         self.pictures: dict[str, QComboBox] = {}
         for slot in ("image", "hover", "pressed", "disabled", "unchecked", "checked", "track",
                      "pointer", "screen_image"):
-            box = QComboBox()
+            box = FreshComboBox(lambda s=slot: self._refill_picture(s))
             box.setToolTip("A picture from the Asset Library's GUI section, stretched to fit "
                            "(add pictures there: Assets ▸ Asset Library, GUI). Left empty, a "
                            "state's picture is its normal one")
@@ -462,6 +468,7 @@ class MenuEditor(QWidget):
         for label, widget, key in (
                 ("Name", self.screen_name, "screen_name"), ("Id", self.screen_id, "screen_id"),
                 ("", self.modal, "modal"), ("", self.pauses, "pauses"),
+                ("", self.music, "music"),
                 ("Used as", self.role, "role"), ("When it runs out", self.stat, "stat"),
                 ("Background", self.background, "background"),
                 ("Background picture", self.pictures["screen_image"], "screen_image"),
@@ -595,8 +602,8 @@ class MenuEditor(QWidget):
         self._gui_images = menus.gui_images(self.project) if self.project is not None else {}
         self._filling = True
         try:
-            screen_rows = {"screen_name", "screen_id", "role", "modal", "pauses", "background",
-                           "screen_image"}
+            screen_rows = {"screen_name", "screen_id", "role", "modal", "pauses", "music",
+                           "background", "screen_image"}
             if s is not None and s["screen"].get("role") == "game_over":
                 screen_rows |= {"stat"}
             kind = e.get("kind", "text") if e else ""
@@ -633,6 +640,7 @@ class MenuEditor(QWidget):
                 self.screen_id.setText(f'<code>midgard.ui.show("{s["id"]}")</code>')
                 self.modal.setChecked(screen.get("modal", True) is not False)
                 self.pauses.setChecked(bool(screen.get("pauses", False)))
+                self.music.setChecked(screen.get("music", True) is not False)
                 self.background.set_value(screen.get("background"))
                 self.role.setCurrentIndex(max(0, self.role.findData(screen.get("role", ""))))
                 self.stat.clear()
@@ -1012,6 +1020,13 @@ class MenuEditor(QWidget):
         if chosen and box.findData(chosen) < 0:
             box.addItem(f"(missing) {chosen[3:]}", chosen)
         box.setCurrentIndex(max(0, box.findData(chosen)))
+
+    def _refill_picture(self, slot: str) -> None:
+        """A picture list about to open: the GUI section as it is now, the choice kept."""
+        if self.project is None:
+            return
+        self._gui_images = menus.gui_images(self.project)
+        self._fill_picture(slot, self.pictures[slot].currentData() or "")
 
     def _set_picture(self, slot: str) -> None:
         """A picture chosen: the element's (its normal one), a state's, or the screen's."""

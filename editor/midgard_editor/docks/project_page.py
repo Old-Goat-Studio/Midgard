@@ -9,6 +9,7 @@ from PySide6.QtCore import QRegularExpression, Qt, QTimer
 from PySide6.QtGui import QPixmap, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import branding
+from .. import branding, menus, music
 from ..project import (
     GAME_DESCRIPTION_KEY,
     GAME_TAGLINE_KEY,
@@ -32,6 +33,7 @@ from ..project import (
     Project,
 )
 from ..undo import SetConfigCommand, SetStringCommand
+from .fresh_combo import FreshComboBox
 
 PREVIEW = {"logo": 160, "icon": 96}
 
@@ -150,9 +152,46 @@ class ProjectPage(QScrollArea):
                                   "turn it off for every project.)")
         self.error_log.toggled.connect(self._error_log_toggled)
         form.addRow("Error log", self.error_log)
+        # The game's screens (6.0): the splash, the crosshair, the menu pointer, menu music.
+        self.splash = FreshComboBox(self.show_game_settings)
+        self.splash.setToolTip("A picture shown while the game loads (from the Asset Library's "
+                               "GUI section). Without one, the game's name shows")
+        self.crosshair = FreshComboBox(self.show_game_settings)
+        self.crosshair.setToolTip("The crosshair's picture, in the middle of the screen (from "
+                                  "the GUI section). Without one, a small white dot")
+        self.crosshair_views = QComboBox()
+        for key, label in menus.CROSSHAIR_VIEWS.items():
+            self.crosshair_views.addItem(label, key)
+        self.crosshair_views.setToolTip("When the crosshair shows (a script can still show or "
+                                        "hide it: midgard.ui.crosshair)")
+        self.crosshair_size = QSpinBox(minimum=4, maximum=256, suffix=" dp")
+        self.crosshair_size.setMaximumWidth(120)
+        self.crosshair_size.setToolTip("How big the crosshair picture is, across")
+        self.pointer = FreshComboBox(self.show_game_settings)
+        self.pointer.setToolTip("The mouse pointer over menus (from the GUI section; its tip is "
+                                "the picture's top left corner, best 32 x 32). Without one, the "
+                                "system's")
+        self.menu_music = FreshComboBox(self.show_game_settings)
+        self.menu_music.setToolTip("A playlist (the Audio panel's) that plays while a menu shows, "
+                                   "over the scene's music; a screen can keep it off")
+        for key, box in (("splash", self.splash), ("crosshair", self.crosshair),
+                         ("pointer", self.pointer), ("menu_music", self.menu_music),
+                         ("crosshair_views", self.crosshair_views)):
+            box.activated.connect(lambda _i, k=key, b=box: self._set_game(k, b.currentData()))
+        self.crosshair_size.editingFinished.connect(
+            lambda: self._set_game("crosshair_size", self.crosshair_size.value()))
+        screens = QFormLayout()
+        screens.addRow("Splash screen", self.splash)
+        screens.addRow("Crosshair", self.crosshair)
+        screens.addRow("Crosshair shows", self.crosshair_views)
+        screens.addRow("Crosshair size", self.crosshair_size)
+        screens.addRow("Menu pointer", self.pointer)
+        screens.addRow("Menu music", self.menu_music)
         layout = QVBoxLayout(body)
         layout.addWidget(self.heading)
         layout.addLayout(form)
+        layout.addWidget(QLabel("<h3>Game screens</h3>"))
+        layout.addLayout(screens)
         layout.addStretch()
 
         self.title.editingFinished.connect(lambda: self._text_edited(
@@ -172,10 +211,12 @@ class ProjectPage(QScrollArea):
         if self.project is not None:
             self.project.config_changed.disconnect(self.refresh)
             self.project.string_changed.disconnect(self.refresh)
+            self.project.game_settings_changed.disconnect(self.refresh)
         self.project = project
         if project is not None:
             project.config_changed.connect(self.refresh)
             project.string_changed.connect(self.refresh)
+            project.game_settings_changed.connect(self.refresh)
             self.refresh()
 
     def refresh(self, *_args) -> None:
@@ -203,6 +244,54 @@ class ProjectPage(QScrollArea):
         self.show_credits()
         self.logo.refresh()
         self.icon.refresh()
+        self.show_game_settings()
+
+    def show_game_settings(self) -> None:
+        """The game's screen settings, with the GUI pictures and playlists to choose from."""
+        p = self.project
+        if p is None:
+            return
+        settings = menus.game_settings(p)
+        pictures = sorted(menus.gui_images(p).items(), key=lambda kv: kv[1].lower())
+        for key, box in (("splash", self.splash), ("crosshair", self.crosshair),
+                         ("pointer", self.pointer)):
+            box.clear()
+            box.addItem("None", "")
+            for ref, label in pictures:
+                box.addItem(label, ref)
+            chosen = settings.get(key, "")
+            if chosen and box.findData(chosen) < 0:
+                box.addItem(f"(missing) {chosen[3:]}", chosen)
+            box.setCurrentIndex(max(0, box.findData(chosen)))
+        self.menu_music.clear()
+        self.menu_music.addItem("None", "")
+        for playlist in music.load_all(p):
+            self.menu_music.addItem(playlist.get("name", playlist["id"]), playlist["id"])
+        self.menu_music.setCurrentIndex(max(0, self.menu_music.findData(
+            settings.get("menu_music", ""))))
+        self.crosshair_views.setCurrentIndex(max(0, self.crosshair_views.findData(
+            settings.get("crosshair_views", "first"))))
+        self.crosshair_size.setValue(int(settings.get("crosshair_size", 32)))
+
+    def _set_game(self, key: str, value) -> None:
+        """One of the game's screen settings: one undo step."""
+        if self.project is None:
+            return
+        settings = menus.game_settings(self.project)
+        defaults = {"crosshair_views": "first", "crosshair_size": 32}
+        if value in ("", None) or defaults.get(key) == value:
+            if key not in settings:
+                return
+            settings.pop(key)
+        elif settings.get(key) == value:
+            return
+        else:
+            settings[key] = value
+        names = {"splash": "splash screen", "crosshair": "crosshair", "pointer": "menu pointer",
+                 "menu_music": "menu music", "crosshair_views": "when the crosshair shows",
+                 "crosshair_size": "crosshair size"}
+        self.project.undo_stack.push(menus.SetGameSettingsCommand(
+            self.project, settings, f"Set the {names[key]}"))
 
     def _error_log_toggled(self, on: bool) -> None:
         if self.project is not None and bool(self.project.config.get("error_log", True)) != on:
@@ -211,6 +300,7 @@ class ProjectPage(QScrollArea):
     def showEvent(self, e) -> None:  # noqa: N802 (Qt's name)
         if self.project is not None:  # (the scenes may use other assets by now)
             self.show_credits()
+            self.show_game_settings()  # (and the library hold other pictures)
         super().showEvent(e)
 
     def show_credits(self) -> None:

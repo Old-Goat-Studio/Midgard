@@ -117,6 +117,7 @@ const Playlist* MusicDirector::choose(const MusicContext& c) const {
     const Playlist* best = nullptr;
     std::tuple<int, int> best_rank{-1, 0};
     for (const auto& [id, p] : playlists_) {  // (by id: the same choice every time)
+        if (id == reserved_) continue;        // (the menu music: only forced)
         const auto named = fit(p.scenes, p.world_types, p.biomes, p.times, c);
         if (p.tracks.empty() || !named) continue;
         const std::tuple<int, int> rank{*named, p.priority};

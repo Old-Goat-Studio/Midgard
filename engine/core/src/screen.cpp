@@ -131,6 +131,7 @@ ScreenDef screen_from_json(const std::string& id, const std::string& name,
     s.stat = string(j, "stat", "health", who);
     s.modal = flag(j, "modal", true, who);
     s.pauses = flag(j, "pauses", false, who);
+    s.music = flag(j, "music", true, who);
     s.background = rgba(j, "background", who);
     s.image = string(j, "image", "", who);
     if (!s.image.empty() && !s.image.starts_with("ui:"))

@@ -194,9 +194,12 @@ TEST_CASE("touch: the screen shows the controls where they work, clear of the sa
         CHECK(c.x + c.r <= 540.0f);
         CHECK(std::hypot(c.x - st.x, c.y - st.y) > c.r + st.r);
     }
-    // The buttons don't overlap one another (Down too, while flying).
+    // The buttons don't overlap one another (Down too, while flying; Menu, with a pause menu).
+    CHECK(touch.button("menu").r == 0.0f);  // (no pause menu: no Menu button)
     touch.set_flying(true);
-    const char* ids[] = {"jump", "use", "run", "view", "descend"};
+    touch.set_menu(true);
+    CHECK(touch.button("menu").r > 0.0f);
+    const char* ids[] = {"jump", "use", "run", "view", "descend", "menu"};
     for (const char* a : ids)
         for (const char* b : ids) {
             if (std::string(a) >= b) continue;

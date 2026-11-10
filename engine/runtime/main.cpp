@@ -85,6 +85,8 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <future>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -108,6 +110,7 @@
 
 #include "midgard/audio.h"
 #include "midgard/game.h"
+#include "midgard/game_settings.h"
 #include "midgard/input.h"
 #include "midgard/link.h"
 #include "midgard/manifest.h"
@@ -310,6 +313,10 @@ public:
     // action waiting for a new key, that key ("" to give up; returns the action), and the
     // player's keys.
     virtual bool menu() { return false; }
+    virtual bool has_pause_menu() const { return false; }
+    // The game's settings (the Project Page's), and freezing the world under a pausing screen.
+    virtual const midgard::GameSettings* game_settings() const { return nullptr; }
+    virtual void set_frozen(bool frozen) { (void)frozen; }
     virtual std::string rebinding() const { return {}; }
     virtual std::string key_chosen(const std::string& key) {
         (void)key;
@@ -671,8 +678,15 @@ public:
         const midgard::hud::HudState& h = game_.hud();
         d.visible = h.visible;
         // The crosshair as a script says, else in first person only.
-        d.crosshair = h.crosshair.value_or(game_.camera_rig().active() &&
-                                           game_.camera_rig().view() == midgard::CameraView::First);
+        // (as the Project Page says: in first person, in every view, or never)
+        const midgard::GameSettings& gs = game_.game_settings();
+        const bool aiming = game_.camera_rig().active() &&
+                            (gs.crosshair_views == "all" ||
+                             (gs.crosshair_views == "first" &&
+                              game_.camera_rig().view() == midgard::CameraView::First));
+        d.crosshair = h.crosshair.value_or(aiming);
+        d.crosshair_picture = !gs.crosshair.empty();
+        d.crosshair_size = float(gs.crosshair_size);
         for (const midgard::stats::StatDef& s : game_.stats().defs()) {
             if (!s.hud) continue;
             std::string text = game_.stat_text(s);
@@ -717,6 +731,9 @@ public:
         game_.ui_change(screen, element, value);
     }
     bool menu() override { return game_.menu(); }
+    bool has_pause_menu() const override { return game_.screen_for("pause") != nullptr; }
+    const midgard::GameSettings* game_settings() const override { return &game_.game_settings(); }
+    void set_frozen(bool frozen) override { game_.set_frozen(frozen); }
     std::string rebinding() const override { return game_.rebinding(); }
     std::string key_chosen(const std::string& key) override { return game_.key_chosen(key); }
     std::map<std::string, std::string> player_keys() const override { return game_.player_keys(); }
@@ -805,6 +822,14 @@ public:
                 return;
             }
             acknowledge("applied stats.put");
+            return;
+        }
+        if (type == "settings.put") {  // the Project Page's game settings
+            for (const auto& [content, file] :
+                 message.value("images", nlohmann::json::object()).items())
+                if (file.is_string()) ui_image_files_[content] = file.get<std::string>();
+            game_.set_game_settings(message.value("settings", nlohmann::json::object()));
+            acknowledge("applied settings.put");
             return;
         }
         if (type == "screens.put") {  // the Menu editor
@@ -1212,6 +1237,29 @@ bool parse_insets(std::string_view text, midgard::ui::Insets& out) {
     return true;
 }
 
+// The game's menu pointer (the Project Page's picture): the mouse pointer over menus in place
+// of the system's arrow and hand. Its tip is the picture's top left.
+SDL_Cursor* g_menu_pointer = nullptr;
+
+void set_menu_pointer(const std::vector<uint8_t>& encoded) {
+    SDL_Cursor* old = g_menu_pointer;
+    g_menu_pointer = nullptr;
+    if (!encoded.empty()) {
+        int w = 0, h = 0, channels = 0;
+        if (stbi_uc* pixels =
+                stbi_load_from_memory(encoded.data(), int(encoded.size()), &w, &h, &channels, 4)) {
+            if (SDL_Surface* surface =
+                    SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_RGBA32, pixels, w * 4)) {
+                g_menu_pointer = SDL_CreateColorCursor(surface, 0, 0);
+                SDL_DestroySurface(surface);
+            }
+            stbi_image_free(pixels);
+        }
+    }
+    SDL_SetCursor(g_menu_pointer ? g_menu_pointer : SDL_GetDefaultCursor());
+    if (old) SDL_DestroyCursor(old);
+}
+
 // What the UI needs from the window: SDL's cursors, clipboard and on-screen keyboard.
 midgard::ui::Platform ui_platform(SDL_Window* window) {
     midgard::ui::Platform p = ui_log_only();
@@ -1228,6 +1276,11 @@ midgard::ui::Platform ui_platform(SDL_Window* window) {
             which = SDL_SYSTEM_CURSOR_NWSE_RESIZE;
         else if (name == "cross")
             which = SDL_SYSTEM_CURSOR_CROSSHAIR;
+        if (g_menu_pointer &&
+            (which == SDL_SYSTEM_CURSOR_DEFAULT || which == SDL_SYSTEM_CURSOR_POINTER)) {
+            SDL_SetCursor(g_menu_pointer);  // (the game's own pointer)
+            return;
+        }
         SDL_Cursor*& c = cursors[which];
         if (!c) c = SDL_CreateSystemCursor(which);
         if (c) SDL_SetCursor(c);
@@ -1592,19 +1645,94 @@ void set_window_icon(SDL_Window* window, const std::filesystem::path& file) {
     stbi_image_free(pixels);
 }
 
-int run_window(const Options& opt, Source& source) {
+// The splash (milestone 6.0): while the game loads, its splash picture (the Project Page's)
+// over black, or its name without one, drawn again and again (the window answering the system)
+// until `ready` says the game has loaded. Its UI goes before the game's is made.
+void show_splash(SDL_Window* window, render::Renderer& renderer, const Options& opt,
+                 const std::filesystem::path& package_dir, const std::string& title,
+                 const std::function<bool()>& ready) {
+    std::vector<uint8_t> picture;
+    try {
+        const midgard::Manifest m = midgard::load_manifest(package_dir / "manifest.json");
+        picture = midgard::read_package_content(
+            package_dir, midgard::load_game_settings(package_dir / m.database).splash);
+    } catch (const std::exception&) {
+    }
+    std::unique_ptr<midgard::ui::Ui> ui;
+    try {
+        midgard::ui::Options uo;
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(window, &pw, &ph);
+        uo.width = uint32_t(pw);
+        uo.height = uint32_t(ph);
+        uo.density = SDL_GetWindowDisplayScale(window);
+        uo.scale = opt.ui_scale;
+        uo.platform = ui_log_only();
+        ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
+        const bool has_picture = ui->set_image_file("splash", picture);
+        const std::string rml =
+            "<rml><head><link type=\"text/rcss\" href=\"midgard://base.rcss\"/><style>"
+            "body { background-color: #000000; }"
+            "#splash { position: absolute; left: 0; top: 0; right: 0; bottom: 0;"
+            " decorator: image(midgard://image/splash contain); }"
+            "#title { position: absolute; left: 0; right: 0; top: 45%; text-align: center;"
+            " font-size: 36dp; color: #e8ecf4; }"
+            "</style></head><body>" +
+            std::string(has_picture
+                            ? "<div id=\"splash\"></div>"
+                            : "<div id=\"title\">" + midgard::rml_escape(title) + "</div>") +
+            "</body></rml>";
+        ui->open_text(rml, "midgard://splash.rml", false);
+    } catch (const std::exception& e) {
+        warn("No splash: %s\n", e.what());
+        ui.reset();
+    }
+    double t = 0.0;
+    do {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+                renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
+                if (ui) ui->resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
+            }
+        }
+        if (ui) {
+            ui->update(t);
+            ui->render();
+        }
+        renderer.render_frame(render::Camera{}, render::Light{}, {},
+                              glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        t += 1.0 / 60.0;
+        if (!ready()) SDL_Delay(16);
+    } while (!ready());
+    ui.reset();
+    renderer.set_ui({});  // (the game's UI draws from now on)
+}
+
+int run_window(const Options& opt, std::unique_ptr<Source>& owned,
+               const std::function<std::unique_ptr<Source>()>& load) {
+    // (Without the game yet: its name from its manifest, for the window.)
+    std::string title = owned ? owned->title() : "Midgard";
+    if (!owned && opt.package_dir) {
+        try {
+            title =
+                midgard::load_manifest(std::filesystem::path(*opt.package_dir) / "manifest.json")
+                    .game_name;
+        } catch (const std::exception&) {
+        }
+    }
     SDL_WindowFlags flags =
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 #ifdef __ANDROID__
     flags |= SDL_WINDOW_FULLSCREEN;
 #endif
-    SDL_Window* window =
-        SDL_CreateWindow(source.title().c_str(), int(opt.width), int(opt.height), flags);
+    SDL_Window* window = SDL_CreateWindow(title.c_str(), int(opt.width), int(opt.height), flags);
     if (!window) {
         fail(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
         return 1;
     }
-    if (const auto icon = source.icon()) set_window_icon(window, *icon);
+    if (owned)
+        if (const auto icon = owned->icon()) set_window_icon(window, *icon);
     int result = 0;
     std::unique_ptr<midgard::link::Client> link;
     try {
@@ -1637,6 +1765,17 @@ int run_window(const Options& opt, Source& source) {
         desc.quality = render::quality_settings(opt.quality.value_or(render::default_quality()));
         render::Renderer renderer(desc);
         say("Rendering on %s\n", renderer.device_name().c_str());
+        // The game loads (in the background) while its splash shows.
+        if (!owned) {
+            auto loading = std::async(std::launch::async, load);
+            show_splash(
+                window, renderer, opt, opt.package_dir.value_or(std::string(".")), title, [&] {
+                    return loading.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+                });
+            owned = loading.get();  // (a game that can't load throws here, as before)
+            if (const auto icon = owned->icon()) set_window_icon(window, *icon);
+        }
+        Source& source = *owned;
         // Sound (milestone 5.14): the system's audio device, or silence without one.
         std::unique_ptr<midgard::audio::Mixer> sound;
         try {
@@ -1664,6 +1803,8 @@ int run_window(const Options& opt, Source& source) {
         // The touch controls: on a phone without a controller, or asked for (with the mouse as
         // a finger). A finger shows them; a key, a mouse click or a controller hides them.
         bool touch_wanted = opt.touch_controls;
+        bool touch_menu_held = false;  // (the Menu button opens the pause menu as it goes down)
+        std::string shown_crosshair, shown_pointer;  // (the game settings' pictures, as loaded)
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
         touch_wanted = touch_wanted || !SDL_HasGamepad();
 #endif
@@ -1933,18 +2074,42 @@ int run_window(const Options& opt, Source& source) {
                 capture(!is_modal && !link);
                 was_modal = is_modal;
             }
+            // The game's crosshair picture and menu pointer (the Project Page's), loaded
+            // when they change.
+            if (const midgard::GameSettings* gs = source.game_settings(); gs && ui) {
+                if (gs->crosshair != shown_crosshair) {
+                    shown_crosshair = gs->crosshair;
+                    if (!shown_crosshair.empty() &&
+                        !ui->set_image_file("hud_crosshair", source.ui_image(shown_crosshair)))
+                        warn("No crosshair picture %s\n", shown_crosshair.c_str());
+                }
+                if (gs->pointer != shown_pointer) {
+                    shown_pointer = gs->pointer;
+                    set_menu_pointer(shown_pointer.empty() ? std::vector<uint8_t>{}
+                                                           : source.ui_image(shown_pointer));
+                }
+            }
             // The touch controls: hidden under a menu; what they do reaches the game as the
             // "touch" device (schema/migrations/0020_touch.sql binds it).
             if (touch) {
                 touch->set_shown(touch_wanted && !is_modal);
                 touch->set_flying(source.flying());
+                touch->set_menu(source.has_pause_menu());
                 if (hud) hud->set_touch(touch->shown());
                 const midgard::ui::TouchControls::Output o = touch->take();
                 actions.set("touch", "stick_x", o.stick_x);
                 actions.set("touch", "stick_y", o.stick_y);
                 actions.add_delta("touch", "drag_x", o.drag_x);
                 actions.add_delta("touch", "drag_y", o.drag_y);
-                for (const auto& [name, value] : o.buttons) actions.set("touch", name, value);
+                for (const auto& [name, value] : o.buttons) {
+                    // (Menu: the pause menu, as Esc opens it)
+                    if (name == "menu") {
+                        if (value != 0.0f && !touch_menu_held) source.menu();
+                        touch_menu_held = value != 0.0f;
+                        continue;
+                    }
+                    actions.set("touch", name, value);
+                }
             }
             // The menu action quits until in-game menus exist (Phase 6).
             if (actions.pressed("menu") && !is_modal) running = false;
@@ -1955,9 +2120,10 @@ int run_window(const Options& opt, Source& source) {
             last = now;
             if (!paused) {
                 MIDGARD_PROFILE_SCOPE("update");
-                // (A screen that pauses the game: everything stands still, but scripts still
-                // hear its buttons.)
-                source.update(actions, screens && screens->pauses() ? 0.0f : dt);
+                // (A screen that pauses the game: everything stands still, but its music
+                // plays on and scripts still hear its buttons.)
+                source.set_frozen(screens && screens->pauses());
+                source.update(actions, dt);
             }
             const float t = std::chrono::duration<float>(now - start).count();
             const float aspect = float(renderer.width()) / float(renderer.height());
@@ -2187,8 +2353,9 @@ int run_selftest(Options& opt) {
 #else
     opt.fixed_overlay = midgard::selftest::overlay(checks, false);
 #endif
-    DemoSource demo;  // the results over a spinning cube, which shows rendering keeps going
-    const int shown = run_window(opt, demo);
+    // (the results over a spinning cube, which shows rendering keeps going)
+    std::unique_ptr<Source> demo = std::make_unique<DemoSource>();
+    const int shown = run_window(opt, demo, {});
     return result != 0 ? result : shown;
 }
 
@@ -2321,6 +2488,7 @@ int main(int argc, char** argv) {
         if (!opt.package_dir) opt.package_dir = package_beside_executable();
         if (opt.selftest) return finish(opt, windowed, run_selftest(opt));
         std::unique_ptr<Source> source;
+        std::function<std::unique_ptr<Source>()> load;
         if (opt.scene) {
             auto scene = midgard::test_scenes::make(*opt.scene);
             if (!scene) {
@@ -2331,11 +2499,17 @@ int main(int argc, char** argv) {
             }
             source = std::make_unique<TestSceneSource>(std::move(scene));
         } else if (opt.package_dir) {
-            source = std::make_unique<GameSource>(*opt.package_dir);
-            if (const auto folder = player_profile_dir(opt, windowed, source->title()))
-                source->use_profile(*folder / "profile.json");
-            if (const auto folder = world_dir(opt, windowed, source->title()))
-                source->use_world(*folder);
+            // (In a window the game loads behind its splash; otherwise now.)
+            load = [&opt, windowed]() -> std::unique_ptr<Source> {
+                auto game = std::make_unique<GameSource>(*opt.package_dir);
+                if (const auto folder = player_profile_dir(opt, windowed, game->title()))
+                    game->use_profile(*folder / "profile.json");
+                if (const auto folder = world_dir(opt, windowed, game->title()))
+                    game->use_world(*folder);
+                return game;
+            };
+            const bool splash = opt.simulate < 0 && !opt.headless && !opt.screenshot;
+            if (!splash) source = load();
         } else {
             source = std::make_unique<DemoSource>(opt.origin_offset);
         }
@@ -2344,7 +2518,7 @@ int main(int argc, char** argv) {
         else if (opt.headless)
             result = run_headless(opt, *source);
         else
-            result = opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, *source);
+            result = opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, source, load);
     } catch (const std::exception& e) {
         fail(e.what());
         result = 1;

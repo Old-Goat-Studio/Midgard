@@ -93,7 +93,8 @@ struct Hud::Impl {
     Ui& ui;
     Rml::DataModelHandle handle;
     Rml::ElementDocument* document = nullptr;
-    bool visible = true, crosshair = false, has_prompt = false;
+    bool visible = true, crosshair = false, has_prompt = false, crosshair_picture = false;
+    float crosshair_size = 32.0f, crosshair_offset = -16.0f;  // (half of it, back)
     Rml::String prompt;
     Rml::Vector<BarRow> bars;
     Rml::Vector<NumberRow> numbers;
@@ -170,6 +171,9 @@ Hud::Hud(Ui& ui) : impl_(std::make_unique<Impl>(ui)) {
     model.Bind("visible", &h.visible);
     model.Bind("touch", &h.touch);
     model.Bind("crosshair", &h.crosshair);
+    model.Bind("crosshair_picture", &h.crosshair_picture);
+    model.Bind("crosshair_size", &h.crosshair_size);
+    model.Bind("crosshair_offset", &h.crosshair_offset);
     model.Bind("has_prompt", &h.has_prompt);
     model.Bind("prompt", &h.prompt);
     model.Bind("bars", &h.bars);
@@ -226,6 +230,9 @@ void Hud::show(const HudData& data) {
         notes.push_back({n.text, std::round(n.opacity * 20.0f) / 20.0f});
     h.set(h.visible, data.visible, "visible");
     h.set(h.crosshair, data.crosshair, "crosshair");
+    h.set(h.crosshair_picture, data.crosshair_picture, "crosshair_picture");
+    h.set(h.crosshair_size, std::round(data.crosshair_size), "crosshair_size");
+    h.set(h.crosshair_offset, -std::round(data.crosshair_size) / 2.0f, "crosshair_offset");
     h.set(h.has_prompt, !data.prompt.empty(), "has_prompt");
     h.set(h.prompt, Rml::String(data.prompt), "prompt");
     h.set(h.bars, std::move(bars), "bars");

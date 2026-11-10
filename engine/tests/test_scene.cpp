@@ -4978,3 +4978,83 @@ TEST_CASE("screens: the title, pause, settings and game over do their jobs by th
     game.set_screen_data(nlohmann::json::array());
     CHECK_FALSE(game.menu());
 }
+
+TEST_CASE("game settings: the splash, crosshair, pointer and menu music; frozen under menus") {
+    // The settings' JSON: what it can't use left as the default.
+    const midgard::GameSettings s = midgard::game_settings_from_json(
+        R"({"splash": "ui:a.png", "crosshair": "tex:b", "crosshair_views": "all",
+            "crosshair_size": 1000, "pointer": "ui:p.png", "menu_music": "mus_menu"})");
+    CHECK(s.splash == "ui:a.png");
+    CHECK(s.crosshair.empty());  // (not a GUI picture)
+    CHECK(s.crosshair_views == "all");
+    CHECK(s.crosshair_size == 256.0);
+    CHECK(s.pointer == "ui:p.png");
+    CHECK(s.menu_music == "mus_menu");
+    CHECK(midgard::game_settings_from_json("[]").crosshair_views == "first");
+
+    std::vector<PackageFile> files = {
+        {"snd:menu", "audio/menu.wav", tone_wav(330.0, 2.0, 0.3f)},
+        {"ui:splash.png", "ui/splash.png", {0x89, 'P', 'N', 'G', 1, 2, 3, 4, 5}}};
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {}, "player": {}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]},
+                                         "camera": {}}')"}},
+                    R"({"sky": [0.1, 0.2, 0.3]})", {}, files);
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO sound_event VALUES ('sfx_menu', 'Menu',
+        '{"sounds": ["snd:menu"], "spatial": false, "bus": "music", "loop": true}'))");
+    // (it fits anywhere, but as the menu music the scene never chooses it)
+    exec(db, R"(INSERT INTO music_playlist VALUES ('mus_menu', 'Menu',
+        '{"tracks": ["sfx_menu"], "crossfade": 0.5}'))");
+    exec(db, R"(INSERT INTO meta (key, value) VALUES ('game.settings',
+        '{"splash": "ui:splash.png", "menu_music": "mus_menu", "crosshair_views": "all"}'))");
+    exec(db, R"(INSERT INTO screen (id, name, position, screen) VALUES
+        ('scr_menu', 'Menu', 0, '{"pauses": true, "elements": []}'),
+        ('scr_quiet', 'Quiet', 1, '{"music": false, "elements": []}'))");
+    sqlite3_close(db);
+    // The splash can be read before the game loads.
+    const std::vector<uint8_t> splash = midgard::read_package_content(pkg.dir, "ui:splash.png");
+    CHECK(splash.size() == 9);
+    CHECK(midgard::read_package_content(pkg.dir, "ui:none.png").empty());
+
+    midgard::Game game(pkg.dir);
+    CHECK(game.game_settings().splash == "ui:splash.png");
+    CHECK(game.game_settings().crosshair_views == "all");
+    CHECK(game.screen("scr_quiet")->music == false);
+    midgard::audio::MixerOptions offline;
+    offline.device = false;
+    midgard::audio::Mixer mixer(offline);
+    game.set_audio(&mixer);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto run = [&](int frames) {
+        for (int i = 0; i < frames; ++i) {
+            game.update(actions, 1.0f / 60.0f);
+            actions.begin_frame();
+        }
+    };
+    run(5);
+    CHECK(game.music()->playing().empty());
+    // A menu: its music, over the scene's.
+    game.hud().show_screen("scr_menu");
+    run(5);
+    CHECK(game.music()->playing() == "mus_menu");
+    // Frozen (a pausing screen): the clock stands still, the music plays on.
+    const std::int64_t now = game.time().now();
+    game.set_frozen(true);
+    run(240);
+    CHECK(game.time().now() == now);
+    CHECK(game.music()->playing() == "mus_menu");
+    game.set_frozen(false);
+    // Closed: the menu music goes. A screen that keeps it off doesn't start it.
+    // (the music director settles on a new choice over 2 seconds)
+    game.hud().hide_screen("scr_menu");
+    run(200);
+    CHECK(game.music()->playing().empty());
+    game.hud().show_screen("scr_quiet");
+    run(200);
+    CHECK(game.music()->playing().empty());
+    // The Project Page's edits, live.
+    game.set_game_settings(nlohmann::json{{"crosshair_views", "none"}});
+    CHECK(game.game_settings().crosshair_views == "none");
+    CHECK(game.game_settings().menu_music.empty());
+}

@@ -7,14 +7,15 @@
 //                 resting place, bottom left, drawn faint.
 //   looking       a finger dragged on the right half (not on a button) turns the camera.
 //   buttons       bottom right: Jump, Use, Run (a switch: tap to run, tap again to walk), View
-//                 (first person, third person, from above) and, while flying, Down.
+//                 (first person, third person, from above), while flying Down, and Menu
+//                 (the pause menu, when the game has one).
 //
 // Each finger does one thing, from where it went down, until it lifts: the stick, the camera
 // and the buttons work together (walk, look and jump at once). The controls give the game a
 // "touch" device's controls (schema/migrations/0020_touch.sql binds them to the actions):
 //   stick_x, stick_y   -1..1 (y up the screen: forward)
 //   drag_x, drag_y     this frame's dragging, in dp (y down the screen)
-//   jump, use, run, view, descend    0 or 1
+//   jump, use, run, view, descend, menu    0 or 1
 // Everything is placed in dp from the safe area's corners, so it sits clear of a phone's notch
 // and rounded corners and is the same size to a finger on every screen.
 #pragma once
@@ -49,6 +50,8 @@ public:
     bool shown() const;
     // The Down button shows while the player flies.
     void set_flying(bool flying);
+    // The Menu button shows when the game has a pause menu (it opens it).
+    void set_menu(bool menu);
 
     // A finger (TouchDown, TouchMove, TouchUp, TouchCancel; x and y in pixels). True if the
     // controls took it (always, while shown: no finger on the game reaches anything else).

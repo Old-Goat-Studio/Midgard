@@ -242,6 +242,73 @@ def image_files(project: Project, screens: list[dict[str, Any]]) -> dict[str, st
     return files
 
 
+# ---- the game's settings for its screens (the Project Page's) ---------------------------------
+# Kept in the meta table (engine/scene/include/midgard/game_settings.h):
+#   {"splash": "ui:...", "crosshair": "ui:...", "crosshair_views": "first" | "all" | "none",
+#    "crosshair_size": 32, "pointer": "ui:...", "menu_music": "<playlist id>"}
+SETTINGS_KEY = "game.settings"
+CROSSHAIR_VIEWS = {"first": "In first person", "all": "In every view", "none": "Never"}
+SETTING_PICTURES = ("splash", "crosshair", "pointer")
+
+
+def game_settings(project: Project) -> dict[str, Any]:
+    with project.connect() as con:
+        row = con.execute("SELECT value FROM meta WHERE key = ?", (SETTINGS_KEY,)).fetchone()
+    try:
+        settings = json.loads(row[0]) if row else {}
+    except ValueError:
+        settings = {}
+    return settings if isinstance(settings, dict) else {}
+
+
+def save_game_settings(project: Project, settings: dict[str, Any]) -> None:
+    with project.connect() as con:
+        con.execute("DELETE FROM meta WHERE key = ?", (SETTINGS_KEY,))
+        if settings:
+            con.execute("INSERT INTO meta (key, value) VALUES (?, ?)",
+                        (SETTINGS_KEY, json.dumps(settings)))
+    project.game_settings_changed.emit()
+
+
+def settings_images(settings: dict[str, Any]) -> list[str]:
+    """The pictures the game's settings use (the splash, crosshair and pointer)."""
+    return [settings[k] for k in SETTING_PICTURES
+            if isinstance(settings.get(k), str) and settings[k].startswith(IMAGE_PREFIX)]
+
+
+def settings_problems(project: Project) -> list[str]:
+    """The game settings' pictures that aren't there, and a menu music playlist that's gone."""
+    from . import music
+    settings = game_settings(project)
+    names = {"splash": "splash screen", "crosshair": "crosshair", "pointer": "menu pointer"}
+    found = []
+    for key in SETTING_PICTURES:
+        image = settings.get(key, "")
+        if image and image_file(project, image) is None:
+            found.append(f"The {names[key]} picture '{str(image)[3:]}' isn't in the project; "
+                         "the game goes without it.")
+    playlist = settings.get("menu_music", "")
+    if playlist and music.load(project, playlist) is None:
+        found.append(f"The menu music playlist '{playlist}' isn't in the project; menus are "
+                     "quiet.")
+    return found
+
+
+class SetGameSettingsCommand(QUndoCommand):
+    """The Project Page's game settings, before and after."""
+
+    def __init__(self, project: Project, new: dict, label: str):
+        super().__init__(label)
+        self.project = project
+        self.old, self.new = game_settings(project), copy.deepcopy(new)
+
+    def redo(self) -> None:
+        save_game_settings(self.project, self.new)
+
+    def undo(self) -> None:
+        save_game_settings(self.project, self.old)
+
+
 def has_table(project: Project) -> bool:
     with project.connect() as con:
         return con.execute(

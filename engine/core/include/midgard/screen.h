@@ -10,6 +10,8 @@
 //    "stat": "health",     a game_over screen's stat
 //    "modal": true,        takes the player's input and frees the mouse while shown
 //    "pauses": false,      the game stands still while it is shown
+//    "music": true,        a modal screen plays the game's menu music (midgard/game_settings.h)
+//                          while it shows; false keeps it off
 //    "background": [0, 0, 0, 0.6],     over the whole screen (r, g, b, a: 0 to 1)
 //    "image": "ui:...",    a picture over the whole screen (from the GUI section)
 //    "elements": [...]}    drawn in order, each after its parent
@@ -95,7 +97,7 @@ struct ScreenDef {
     std::string id, name;
     std::string role;             // "", title, pause, settings, game_over
     std::string stat = "health";  // game_over: the stat that, run out, shows it
-    bool modal = true, pauses = false;
+    bool modal = true, pauses = false, music = true;
     std::optional<Rgba> background;
     std::string image;  // over the whole screen
     std::vector<ScreenElement> elements;

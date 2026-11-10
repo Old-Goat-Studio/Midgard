@@ -112,6 +112,15 @@
       "required": ["type", "stats"]
     },
     {
+      "description": "Editor → runtime: the Project Page's game settings (milestone 6.0): the splash, crosshair, menu pointer and menu music (as the meta table's game.settings has them), and where the pictures' files are; the running game follows (its crosshair, pointer and menu music).",
+      "properties": {
+        "type": { "const": "settings.put" },
+        "settings": { "type": "object" },
+        "images": { "type": "object" }
+      },
+      "required": ["type", "settings"]
+    },
+    {
       "description": "Editor → runtime: the Menu editor's edits (milestone 6.0): every screen ({id, name, screen} rows, in order, as the screen table has them); shown screens are drawn again as they now are, and a deleted one goes.",
       "properties": {
         "type": { "const": "screens.put" },

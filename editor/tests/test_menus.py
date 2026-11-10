@@ -442,3 +442,94 @@ def test_ready_made_screens_work_as_they_are(editor, project):
             except RuntimeError as e:
                 pytest.skip(str(e))
             assert checks == [], (kind, label, checks)
+
+
+def test_the_project_page_sets_the_splash_crosshair_pointer_and_menu_music(qtbot, project,
+                                                                            tmp_path):
+    from PySide6.QtGui import QColor, QImage
+
+    from midgard_editor import asset_library, music
+    from midgard_editor.docks.project_page import ProjectPage
+
+    for name, colour in (("splash", "white"), ("aim", "red"), ("arrow", "blue")):
+        file = tmp_path / f"{name}.png"
+        image = QImage(32, 32, QImage.Format.Format_RGBA8888)
+        image.fill(QColor(colour))
+        assert image.save(str(file))
+        asset_library.import_asset(project, [file], "gui", name.title())
+    refs = {r.rsplit("/", 1)[-1][:-4]: r for r in menus.gui_images(project)}
+    music.put(project, {"id": "mus_menu", "name": "Menu Theme", "playlist": {"tracks": []}})
+    page = ProjectPage()
+    qtbot.addWidget(page)
+    page.set_project(project)
+
+    def pick(box, data) -> None:
+        box.setCurrentIndex(box.findData(data))
+        box.activated.emit(box.currentIndex())
+
+    pick(page.splash, refs["splash"])
+    pick(page.crosshair, refs["aim"])
+    pick(page.crosshair_views, "all")
+    page.crosshair_size.setValue(48)
+    page.crosshair_size.editingFinished.emit()
+    pick(page.pointer, refs["arrow"])
+    assert page.menu_music.findText("Menu Theme") >= 0
+    pick(page.menu_music, "mus_menu")
+    assert menus.game_settings(project) == {
+        "splash": refs["splash"], "crosshair": refs["aim"], "crosshair_views": "all",
+        "crosshair_size": 48, "pointer": refs["arrow"], "menu_music": "mus_menu"}
+    # One undo step each; back to the defaults, they're left out.
+    project.undo_stack.undo()
+    assert "menu_music" not in menus.game_settings(project)
+    pick(page.crosshair_views, "first")
+    assert "crosshair_views" not in menus.game_settings(project)
+    pick(page.menu_music, "mus_menu")
+    assert menus.settings_problems(project) == []
+    # The cook packs the pictures; one that's gone, or a playlist that's gone, is said.
+    result = cook(project, tmp_path / "pkg")
+    with zipfile.ZipFile(result.out_dir / "game.pak") as pak:
+        names = pak.namelist()
+    for name in ("splash", "aim", "arrow"):
+        assert "ui/" + refs[name][3:] in names
+    settings = menus.game_settings(project)
+    menus.save_game_settings(project, {**settings, "pointer": "ui:library/gone.png",
+                                       "menu_music": "mus_gone"})
+    found = menus.settings_problems(project)
+    assert any("menu pointer" in p and "gone.png" in p for p in found)
+    assert any("mus_gone" in p for p in found)
+    # A screen can keep the menu music off.
+    editor = MenuEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+    sid = editor.new_screen("Map")
+    assert editor.form.isRowVisible(editor.music) and editor.music.isChecked()
+    editor.music.setChecked(False)
+    assert menus.load(project, sid)["screen"]["music"] is False
+
+
+def test_pictures_imported_later_are_in_the_lists_when_they_open(qtbot, project, tmp_path):
+    """The Project Page (or the Menu editor) open first, a picture imported into the GUI
+    section afterwards: opening a list offers it."""
+    from PySide6.QtGui import QColor, QImage
+
+    from midgard_editor import asset_library
+    from midgard_editor.docks.project_page import ProjectPage
+
+    page = ProjectPage()
+    qtbot.addWidget(page)
+    page.set_project(project)
+    editor = MenuEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+    editor.new_screen("Menu")
+    editor.choose_element("close")
+    assert page.splash.count() == 1 and editor.image.count() == 1  # (None only)
+    file = tmp_path / "logo.png"
+    image = QImage(16, 16, QImage.Format.Format_RGBA8888)
+    image.fill(QColor("green"))
+    assert image.save(str(file))
+    asset_library.import_asset(project, [file], "gui", "Logo")
+    for box in (page.splash, page.crosshair, page.pointer, editor.image):
+        box.showPopup()
+        box.hidePopup()
+        assert box.findText("Logo (logo.png)") >= 0

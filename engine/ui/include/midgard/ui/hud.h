@@ -36,6 +36,10 @@ class Ui;
 struct HudData {
     bool visible = true;
     bool crosshair = false;
+    // The game's own crosshair picture (the UI's image "hud_crosshair", set by the runtime) in
+    // place of Midgard's dot, this many dp across.
+    bool crosshair_picture = false;
+    float crosshair_size = 32.0f;
     struct Stat {
         std::string id, name;
         bool bar = true;  // a stat: a bar; a score or counter: a number

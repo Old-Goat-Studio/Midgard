@@ -179,3 +179,70 @@ def test_the_tour_comes_with_its_checklist(tour):
     checklist = (tour.root / "CHECKLIST.md").read_text("utf-8")
     for world in ("Archipelago", "Habitat", "Planet", "Hollow World", "On your phone"):
         assert world in checklist
+
+
+EXIT_SCRIPT = """
+import midgard
+
+s = {"frame": 0}
+
+
+def on_update(entity, dt):
+    s["frame"] += 1
+    f = s["frame"]
+    if f == 2:
+        print("opens at", midgard.ui.screens)
+        midgard.ui.click("scr_title", "play")
+    elif f == 3:
+        print("new game", midgard.ui.screens)
+        midgard.player().position = midgard.find("Coin 1").position
+    elif f == 30:
+        print("score", midgard.stats.get("score"))
+        midgard.player().position = midgard.find("Fire Pit").position
+    elif f == 240:
+        print("died", midgard.ui.screens, midgard.stats.get("health"))
+        midgard.ui.click("scr_game_over", "again")
+    elif f == 250:
+        print("again", midgard.ui.screens, midgard.stats.get("health"))
+"""
+
+
+@needs_engine
+def test_the_exit_the_tour_opens_at_its_title_scores_dies_and_respawns(tmp_path):
+    """6.0's exit: the title screen, New game; a coin raises the score with a note; the fire
+    pit burns health away to the game over screen; Try again respawns, refilled."""
+    import subprocess
+
+    from midgard_editor import about, menus
+    from midgard_editor.scene_model import Entity
+    if not about.runtime_candidates():
+        pytest.skip("the runtime isn't built here")
+    tour = world_tour.make_world_tour(tmp_path / "exit")
+    roles = {s["screen"].get("role"): s["id"] for s in menus.load_all(tour)}
+    assert roles == {"title": "scr_title", "settings": "scr_settings", "pause": "scr_pause",
+                     "game_over": "scr_game_over"}
+    assert menus.problems(tour) == []
+    title = menus.load(tour, "scr_title")["screen"]
+    assert {e["id"]: e.get("text") for e in title["elements"]}["play"] == "New game"
+    hub = next(e.id for e in tour.entities(MAIN_SCENE) if e.is_folder)
+    tour.put_entity(Entity(tour.next_entity_id(), "Exit Tester", hub, {
+        "transform": {}, "script": {"module": "exit_tester"}}), MAIN_SCENE)
+    (tour.root / "scripts" / "exit_tester.py").write_text(EXIT_SCRIPT, encoding="utf-8")
+    out = cook(tour, tmp_path / "pkg").out_dir
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--simulate", "255", "--dump-scene"],
+                         capture_output=True, text=True, timeout=180)
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.splitlines()
+    assert "opens at ['scr_title']" in lines
+    assert "new game []" in lines
+    assert "score 10" in lines
+    died = next(line for line in lines if line.startswith("died"))
+    assert "['scr_game_over']" in died and died.endswith(" 0.0")
+    assert "again [] 100.0" in lines
+    # (the coin's note, just after it's picked up: notes fade after a few seconds)
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--simulate", "25", "--dump-scene"],
+                         capture_output=True, text=True, timeout=180)
+    dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
+    assert "Picked up a coin (+10)" in dump["hud"]["notes"]

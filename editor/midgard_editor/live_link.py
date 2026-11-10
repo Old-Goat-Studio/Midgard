@@ -132,6 +132,7 @@ class PlaySession(QObject):
         project.weather_changed.connect(self._weather_changed)
         project.stats_changed.connect(self._stats_changed)
         project.screens_changed.connect(self._screens_changed)
+        project.game_settings_changed.connect(self._game_settings_changed)
         project.terrain_changed.connect(self._terrain_changed)
         project.files_changed.connect(self._files_changed)
 
@@ -444,6 +445,15 @@ class PlaySession(QObject):
         screens = menus.live_message(self.project)
         self.send({"type": "screens.put", "screens": screens,
                    "images": menus.image_files(self.project, screens)})
+
+    def _game_settings_changed(self) -> None:
+        """The Project Page's crosshair, pointer and menu music: the running game follows."""
+        if self.socket is None:
+            return
+        settings = menus.game_settings(self.project)
+        files = {i: str(f) for i in menus.settings_images(settings)
+                 if (f := menus.image_file(self.project, i)) is not None}
+        self.send({"type": "settings.put", "settings": settings, "images": files})
 
     def show_screen(self, screen_id: str, shown: bool = True) -> None:
         """The Menu editor's Show in Game: the running game shows the screen (or hides it)."""

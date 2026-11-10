@@ -33,6 +33,9 @@
         #prompt span { padding: 8dp 16dp; background-color: #10141cc0; border-radius: 6dp;
                        font-size: 20dp; }
 
+        /* The game's own crosshair picture (the Project Page's), centred. */
+        #crosshair_picture { position: absolute; left: 50%; top: 50%;
+                             decorator: image(midgard://image/hud_crosshair contain); }
         #crosshair { position: absolute; left: 50%; top: 50%; width: 6dp; height: 6dp;
                      margin-left: -3dp; margin-top: -3dp; border-radius: 3dp;
                      background-color: #ffffffd0; border: 1dp #000000a0; }
@@ -105,7 +108,11 @@
             </div>
         </div>
         <p id="prompt" data-if="has_prompt"><span class="shadow">{{prompt}}</span></p>
-        <div id="crosshair" data-if="crosshair"></div>
+        <div id="crosshair" data-if="crosshair &amp;&amp; !crosshair_picture"></div>
+        <div id="crosshair_picture" data-if="crosshair &amp;&amp; crosshair_picture"
+             data-style-width="crosshair_size + 'dp'" data-style-height="crosshair_size + 'dp'"
+             data-style-margin-left="crosshair_offset + 'dp'"
+             data-style-margin-top="crosshair_offset + 'dp'"></div>
         <div id="compass" data-if="compass">
             <div id="strip" data-style-left="compass_left + 'dp'">
                 <div data-for="m : compass_marks" class="tick" data-class-major="m.major">{{m.text}}</div>

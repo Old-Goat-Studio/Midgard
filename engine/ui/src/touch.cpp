@@ -28,6 +28,7 @@ struct ButtonDef {
     float x, y, r;  // from the safe area's bottom right
     bool toggles;   // tap on, tap off (Run)
     bool flying_only;
+    bool menu_only = false;  // shown when the game has a pause menu
 };
 constexpr ButtonDef kButtons[] = {
     {"jump", "Jump", 84.0f, 96.0f, 40.0f, false, false},
@@ -35,6 +36,7 @@ constexpr ButtonDef kButtons[] = {
     {"run", "Run", 180.0f, 170.0f, 30.0f, true, false},
     {"view", "View", 78.0f, 206.0f, 26.0f, false, false},
     {"descend", "Down", 84.0f, 290.0f, 30.0f, false, true},
+    {"menu", "Menu", 186.0f, 252.0f, 26.0f, false, false, true},
 };
 // On a narrow screen (a phone held upright) the buttons draw in closer to the right edge, so
 // they keep clear of the stick: the same buttons, in the same order.
@@ -45,6 +47,7 @@ constexpr ButtonDef kButtonsNarrow[] = {
     {"run", "Run", 162.0f, 152.0f, 28.0f, true, false},
     {"view", "View", 70.0f, 196.0f, 26.0f, false, false},
     {"descend", "Down", 152.0f, 240.0f, 28.0f, false, true},
+    {"menu", "Menu", 70.0f, 290.0f, 26.0f, false, false, true},
 };
 static_assert(std::size(kButtons) == std::size(kButtonsNarrow));
 
@@ -70,7 +73,7 @@ struct TouchControls::Impl {
     Ui& ui;
     Rml::DataModelHandle handle;
     Rml::ElementDocument* document = nullptr;
-    bool shown = false, flying = false;
+    bool shown = false, flying = false, menu = false;
 
     // Each finger's job, from where it went down.
     enum class Job { Stick, Look, Button };
@@ -105,7 +108,9 @@ struct TouchControls::Impl {
         return {s.left + in * dp(), float(ui.height()) - s.bottom - kStickRestY * dp(),
                 kStickRadius * dp()};
     }
-    bool button_shown(size_t i) const { return !kButtons[i].flying_only || flying; }
+    bool button_shown(size_t i) const {
+        return (!kButtons[i].flying_only || flying) && (!kButtons[i].menu_only || menu);
+    }
     Circle button(size_t i) const {
         const Insets& s = ui.safe_area();
         const ButtonDef& b = narrow() ? kButtonsNarrow[i] : kButtons[i];
@@ -247,6 +252,10 @@ void TouchControls::set_flying(bool flying) {
             f.button = -1;
         }
     t.refresh_buttons();
+}
+
+void TouchControls::set_menu(bool menu) {
+    impl_->menu = menu;
 }
 
 bool TouchControls::handle(const Input& in) {

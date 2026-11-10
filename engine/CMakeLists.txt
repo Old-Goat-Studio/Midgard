@@ -271,6 +271,7 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_path(CGLTF_INCLUDE_DIR cgltf.h REQUIRED)
 add_library(midgard_scene STATIC
     scene/src/pak.cpp
+    scene/src/game_settings.cpp
     scene/src/gltf.cpp
     scene/src/gltf_skin.cpp
     scene/src/anim_graph.cpp
