@@ -18,8 +18,10 @@ public:
 
     void attach(Rml::ElementDocument* doc) {
         doc_ = doc;
-        for (const char* type : {"click", "change", "keydown", "resize"})
+        for (const char* type : {"click", "change", "keydown", "resize"}) {
             doc->AddEventListener(type, this);
+            ++attached_;
+        }
         show_info();
     }
 
@@ -62,8 +64,10 @@ public:
         }
     }
 
+    // RmlUi says so once for each kind of event it listened for: it goes with the last (the
+    // screen has gone). Going with the first left the others telling freed memory.
     void OnDetach(Rml::Element* element) override {
-        if (element == doc_) delete this;  // (the screen has gone)
+        if (element == doc_ && --attached_ == 0) delete this;
     }
 
 private:
@@ -83,6 +87,7 @@ private:
 
     Ui& ui_;
     Rml::ElementDocument* doc_ = nullptr;
+    int attached_ = 0;  // event kinds listened for
     int ones_ = 0, twos_ = 0;
     bool dyslexic_ = false;
 };

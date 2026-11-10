@@ -382,3 +382,63 @@ def test_buttons_checks_options_and_sliders_have_a_picture_for_each_state(editor
         result = cook(project, tmp_path / "pkg")
         with zipfile.ZipFile(result.out_dir / "game.pak") as pak:
             assert "ui/" + refs["track"][3:] in pak.namelist()
+
+
+def test_ready_made_screens_work_as_they_are(editor, project):
+    # A title screen brings the settings screen its Settings button opens.
+    title = editor.new_from_template("title")
+    screens = menus.load_all(project)
+    assert [s["screen"].get("role") for s in screens] == ["title", "settings"]
+    assert editor.chosen_screen_id() == title
+    settings = screens[1]["id"]
+    assert element(project, title, "settings")["action"] == {"do": "open", "screen": settings}
+    # A pause menu uses that settings screen; game over respawns.
+    pause = editor.new_from_template("pause")
+    assert element(project, pause, "settings")["action"]["screen"] == settings
+    over = editor.new_from_template("game_over")
+    assert element(project, over, "again")["action"] == {"do": "respawn"}
+    assert menus.load(project, over)["screen"]["stat"] == "health"
+    assert len(menus.load_all(project)) == 4
+    # A second pause menu is a spare: only one screen is the pause menu.
+    spare = editor.new_from_template("pause")
+    assert "role" not in menus.load(project, spare)["screen"]
+    assert menus.problems(project) == []
+    # The settings: sliders tied to volumes, buttons to keys.
+    assert element(project, settings, "music")["binds"] == "volume:music"
+    assert element(project, settings, "jump")["binds"] == "key:jump"
+    editor.choose_screen(settings)
+    editor.choose_element("music")
+    assert editor.form.isRowVisible(editor.binds)
+    assert editor.binds.currentData() == "volume:music"
+    editor.binds.setCurrentIndex(editor.binds.findData("volume:effects"))
+    editor.binds.activated.emit(editor.binds.currentIndex())
+    assert element(project, settings, "music")["binds"] == "volume:effects"
+    editor.choose_element("use")
+    assert editor.binds.findData("key:descend") >= 0
+    # The screen's role, and game over's stat, in its settings.
+    editor.choose_screen(over)
+    editor.choose_element("")
+    assert editor.role.currentData() == "game_over"
+    assert editor.form.isRowVisible(editor.stat)
+    assert editor.stat.currentData() == "health"
+    editor.choose_screen(title)
+    editor.choose_element("")
+    assert not editor.form.isRowVisible(editor.stat)
+    # Two screens with one role: said.
+    editor.role.setCurrentIndex(editor.role.findData("pause"))
+    editor.role.activated.emit(editor.role.currentIndex())
+    assert any("both the pause menu" in p for p in menus.problems(project))
+    project.undo_stack.undo()
+    # Drawn by the engine at every preview size: nothing too small, unreachable or cut off.
+    if engine.module() is None:
+        return
+    from midgard_editor.docks.menu_editor import screen_preview
+    for kind, (_name, screen) in menus.TEMPLATES.items():
+        made = json.loads(json.dumps(screen).replace("{settings}", "scr_settings"))
+        for label, w, h, scale, safe in menus.PREVIEWS:
+            try:
+                _pixels, _boxes, checks = screen_preview().render(
+                    json.dumps(made), w, h, scale, list(safe), scale > 1.0)
+            except RuntimeError as e:
+                pytest.skip(str(e))
+            assert checks == [], (kind, label, checks)

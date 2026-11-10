@@ -306,6 +306,16 @@ public:
         (void)element;
         (void)value;
     }
+    // The game's own screens (6.0 step 7): the menu action (true: a screen took it), the
+    // action waiting for a new key, that key ("" to give up; returns the action), and the
+    // player's keys.
+    virtual bool menu() { return false; }
+    virtual std::string rebinding() const { return {}; }
+    virtual std::string key_chosen(const std::string& key) {
+        (void)key;
+        return {};
+    }
+    virtual std::map<std::string, std::string> player_keys() const { return {}; }
     // A screen's picture: its file's bytes by "ui:" content id (empty: none).
     virtual std::vector<uint8_t> ui_image(const std::string& content) const {
         (void)content;
@@ -706,6 +716,10 @@ public:
     void ui_change(const std::string& screen, const std::string& element, double value) override {
         game_.ui_change(screen, element, value);
     }
+    bool menu() override { return game_.menu(); }
+    std::string rebinding() const override { return game_.rebinding(); }
+    std::string key_chosen(const std::string& key) override { return game_.key_chosen(key); }
+    std::map<std::string, std::string> player_keys() const override { return game_.player_keys(); }
     std::vector<uint8_t> ui_image(const std::string& content) const override {
         // From the package; under the editor, a picture chosen since the game was cooked comes
         // from the project's file (the live link's screens.put says where).
@@ -1680,6 +1694,9 @@ int run_window(const Options& opt, Source& source) {
             hud.reset();
         }
         midgard::Actions actions(source.input_map());
+        // The player's own keys (a settings screen's key buttons; kept in the profile).
+        for (const auto& [action, key] : source.player_keys())
+            actions.rebind(action, "keyboard", key);
         // Mouse-look captures the mouse. Under the editor the game starts with the mouse free
         // (so the editor's panels stay reachable): a click in the game captures it, and Esc,
         // Shift+F1 or switching away frees it. An exported game captures it from the start.
@@ -1735,6 +1752,27 @@ int run_window(const Options& opt, Source& source) {
                 bool consumed = false;  // handled here; the game's actions don't see it
                 // The UI first: a menu takes everything, the HUD what is aimed at it. (Android's
                 // Back button is a menu's Escape.)
+                // A settings screen's key button waits for a key: this one (Esc gives up).
+                if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && !source.rebinding().empty()) {
+                    const std::string key = e.key.scancode == SDL_SCANCODE_ESCAPE
+                                                ? std::string()
+                                                : SDL_GetScancodeName(e.key.scancode);
+                    const std::string action = source.key_chosen(key);
+                    if (!action.empty()) actions.rebind(action, "keyboard", key);
+                    continue;
+                }
+                // The menu action's keys and buttons (Esc, a phone's Back, Start): back from a
+                // menu, or the game's pause menu. (Without one, as before: under the editor Esc
+                // frees the mouse; an exported game quits.)
+                const bool menu_key = (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
+                                       (e.key.scancode == SDL_SCANCODE_ESCAPE ||
+                                        e.key.scancode == SDL_SCANCODE_AC_BACK)) ||
+                                      (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
+                                       e.gbutton.button == SDL_GAMEPAD_BUTTON_START);
+                if (menu_key && screens && source.menu()) {
+                    if (link) capture(false);
+                    continue;
+                }
                 if (ui) {
                     midgard::ui::Input in;
                     if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_AC_BACK &&

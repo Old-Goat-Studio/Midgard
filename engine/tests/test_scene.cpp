@@ -4888,3 +4888,93 @@ TEST_CASE("screens: from the database; buttons close, open and quit; scripts hea
     REQUIRE_FALSE(report.errors.empty());
     CHECK(report.errors.front().find("video") != std::string::npos);
 }
+
+TEST_CASE("screens: the title, pause, settings and game over do their jobs by themselves") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [3, 0.5, 4]},
+                                         "player": {}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]},
+                                         "camera": {}}')"},
+                     {"e3_ground", R"(NULL, '{"transform": {"position": [0, -0.5, 0]},
+                                         "collider": {"shape": "box", "size": [60, 1, 60]}}')"}});
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO screen (id, name, position, screen) VALUES
+        ('scr_title', 'Title', 0, '{"role": "title", "pauses": true, "elements": [
+            {"id": "play", "kind": "button", "action": {"do": "close"}}]}'),
+        ('scr_pause', 'Pause', 1, '{"role": "pause", "pauses": true, "elements": [
+            {"id": "settings", "kind": "button",
+             "action": {"do": "open", "screen": "scr_settings"}}]}'),
+        ('scr_settings', 'Settings', 2, '{"role": "settings", "elements": [
+            {"id": "music", "kind": "slider", "binds": "volume:music"},
+            {"id": "jump", "kind": "button", "text": "Jump", "binds": "key:jump"}]}'),
+        ('scr_over', 'Game over', 3, '{"role": "game_over", "elements": [
+            {"id": "again", "kind": "button", "action": {"do": "respawn"}}]}'))");
+    sqlite3_close(db);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+    midgard::Game game(pkg.dir);
+    const fs::path profile = pkg.dir / "profile" / "profile.json";
+    game.use_profile(profile);
+    midgard::hud::HudState& hud = game.hud();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto frame = [&] {
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+    };
+    // The title shows as the game starts; the menu action doesn't take it away.
+    CHECK(hud.screens() == std::vector<std::string>{"scr_title"});
+    CHECK(game.menu());
+    CHECK(hud.screen_shown("scr_title"));
+    game.ui_click("scr_title", "play");
+    CHECK(hud.screens().empty());
+    // The menu action: the pause menu; Settings on top; back to pause; back to the game.
+    CHECK(game.menu());
+    CHECK(hud.screens() == std::vector<std::string>{"scr_pause"});
+    game.ui_click("scr_pause", "settings");
+    frame();
+    // The music slider shows the player's volume; moving it sets it, and it's kept.
+    CHECK(hud.values.at("scr_settings/music") == doctest::Approx(1.0));
+    game.ui_change("scr_settings", "music", 0.25);
+    CHECK(game.player_volume("music") == doctest::Approx(0.25));
+    // The key button shows the key, waits for one when clicked, and keeps it.
+    CHECK(hud.texts.at("scr_settings/jump") == "Jump: Space");
+    game.ui_click("scr_settings", "jump");
+    CHECK(game.rebinding() == "jump");
+    frame();
+    CHECK(hud.texts.at("scr_settings/jump") == "Press a key");
+    CHECK(game.key_chosen("J") == "jump");
+    CHECK(game.rebinding().empty());
+    frame();
+    CHECK(hud.texts.at("scr_settings/jump") == "Jump: J");
+    CHECK(game.player_keys() == std::map<std::string, std::string>{{"jump", "J"}});
+    CHECK(game.menu());
+    CHECK(hud.screens() == std::vector<std::string>{"scr_pause"});
+    CHECK(game.menu());
+    CHECK(hud.screens().empty());
+    // The settings were kept in the profile.
+    const midgard::PlayerProfile kept = midgard::PlayerProfile::load(profile);
+    CHECK(kept.other.at("keys").at("jump") == "J");
+    CHECK(kept.other.at("volumes").at("music") == doctest::Approx(0.25));
+
+    // The player dies (health runs out): game over; respawn puts it back where it arrived,
+    // refilled.
+    for (int i = 0; i < 30; ++i) frame();  // (settled where it arrived)
+    midgard::Scene& scene = game.scene();
+    const entt::entity player = scene.find("e1_player");
+    scene.registry.get<midgard::Transform>(player).position = {20.0, 0.5, -15.0};
+    for (int i = 0; i < 5; ++i) frame();
+    game.stats().set("health", 0.0);
+    frame();
+    CHECK(hud.screen_shown("scr_over"));
+    CHECK(game.menu());  // (nothing: it leads on by its button)
+    CHECK(hud.screen_shown("scr_over"));
+    game.ui_click("scr_over", "again");
+    CHECK_FALSE(hud.screen_shown("scr_over"));
+    CHECK(game.stats().get("health") == doctest::Approx(100.0));
+    for (int i = 0; i < 5; ++i) frame();
+    const glm::dvec3 at = scene.world_position(player);
+    CHECK(std::abs(at.x - 3.0) < 0.3);
+    CHECK(std::abs(at.z - 4.0) < 0.3);
+    // A game without a pause menu: the menu action is the game's to quit.
+    game.set_screen_data(nlohmann::json::array());
+    CHECK_FALSE(game.menu());
+}

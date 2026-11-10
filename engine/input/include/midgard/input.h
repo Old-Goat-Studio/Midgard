@@ -27,6 +27,10 @@ public:
     static InputMap defaults();
 
     void add(const Binding& binding);
+    // The action's controls on a device become this one (the player's rebinding: a key).
+    void rebind(const std::string& action, const std::string& device, const std::string& control);
+    // The action's first control on a device ("" if none).
+    std::string control(const std::string& action, const std::string& device) const;
     const std::vector<Binding>& bindings() const { return bindings_; }
 
 private:
@@ -50,6 +54,11 @@ public:
     // per second, such as stick look in degrees) times dt, plus this frame's deltas (mouse
     // look in degrees, wheel steps).
     float axis(const std::string& action, float dt = 1.0f) const;
+    // The player's rebinding (InputMap::rebind) while playing.
+    void rebind(const std::string& action, const std::string& device, const std::string& control) {
+        map_.rebind(action, device, control);
+    }
+    const InputMap& map() const { return map_; }
     bool down(const std::string& action) const;     // held now
     bool pressed(const std::string& action) const;  // went down this frame
 

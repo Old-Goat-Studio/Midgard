@@ -97,6 +97,19 @@ void InputMap::add(const Binding& binding) {
     bindings_.push_back(binding);
 }
 
+void InputMap::rebind(const std::string& action, const std::string& device,
+                      const std::string& control) {
+    std::erase_if(bindings_,
+                  [&](const Binding& b) { return b.action == action && b.device == device; });
+    bindings_.push_back({action, device, control, 1.0f});
+}
+
+std::string InputMap::control(const std::string& action, const std::string& device) const {
+    for (const Binding& b : bindings_)
+        if (b.action == action && b.device == device) return b.control;
+    return {};
+}
+
 Actions::Actions(InputMap map) : map_(std::move(map)) {}
 
 void Actions::begin_frame() {

@@ -34,6 +34,8 @@ Game::Game(const std::filesystem::path& package_dir)
     camera_ = std::make_unique<CameraRig>(scene_);
     camera_->follow(scene_, 0.0f, camera_sweep());
     note_exits_inside();
+    // The title screen, as the game starts.
+    if (const ScreenDef* title = screen_for("title")) hud_.show_screen(title->id);
     // Characters' feet stand on what physics has (the ground, and anything solid).
     characters_.set_ground([this](entt::entity self, const glm::dvec3& from,
                                   const glm::vec3& direction,
@@ -272,6 +274,7 @@ void Game::update(const Actions& actions, float dt) {
     hud_.update(dt);
     finished_timers_ = hud_.take_finished();
     ui_events_ = hud_.take_events();
+    update_screens();
     update_minimap();
     update_weather_look(dt);
     update_falling(dt);
@@ -356,6 +359,7 @@ void Game::set_audio(audio::Mixer* mixer) {
     ambience_.reset();
     music_.reset();
     sounds_.reset();
+    mixer_ = nullptr;
     if (!mixer) return;
     sounds_ = std::make_unique<audio::SoundPlayer>(
         *mixer, [this](const std::string& id) { return read_texture(id); });
@@ -364,8 +368,8 @@ void Game::set_audio(audio::Mixer* mixer) {
     for (const auto& [id, p] : scene_.playlists) music_->add(p);
     ambience_ = std::make_unique<audio::AmbienceDirector>(*sounds_);
     for (const auto& [id, a] : scene_.ambience) ambience_->add(a);
-    for (const auto& [bus, volume] : scene_.bus_volumes)
-        if (const auto b = audio::bus_from_name(bus)) mixer->set_volume(*b, volume);
+    mixer_ = mixer;
+    apply_volumes();  // (the designer's mix, times the player's settings)
     sounds_->set_blocked([this](audio::VoiceId voice, const glm::dvec3& from,
                                 const glm::dvec3& to) { return sound_blocked(voice, from, to); });
     listen();
@@ -596,6 +600,132 @@ std::vector<Game::MapMark> Game::map_marks(double radius) const {
     return out;
 }
 
+const ScreenDef* Game::screen_for(const std::string& role) const {
+    for (const ScreenDef& s : scene_.screens)
+        if (s.role == role) return &s;
+    return nullptr;
+}
+
+bool Game::menu() {
+    // Back from the menu on top (not the title, nor game over: they lead on by their buttons).
+    for (auto it = hud_.screens().rbegin(); it != hud_.screens().rend(); ++it) {
+        const ScreenDef* s = screen(*it);
+        if (!s || !s->modal) continue;
+        if (s->role == "title" || s->role == "game_over") return true;  // (nothing: theirs)
+        rebinding_.clear();
+        hud_.hide_screen(*it);
+        return true;
+    }
+    if (const ScreenDef* pause = screen_for("pause")) {
+        hud_.show_screen(pause->id);
+        return true;
+    }
+    return false;
+}
+
+void Game::respawn() {
+    dead_ = false;
+    if (const ScreenDef* over = screen_for("game_over")) hud_.hide_screen(over->id);
+    stats_.reset_all();
+    const entt::entity player = camera_ ? camera_->player() : entt::null;
+    if (player == entt::null || !scene_.registry.valid(player) || !respawn_at_) return;
+    Transform& t = scene_.registry.get<Transform>(player);
+    t.position = respawn_at_->position;
+    t.rotation = respawn_at_->rotation;
+    if (physics::Character* c = physics_->character()) c->set_position(respawn_at_->position);
+}
+
+std::string Game::key_chosen(const std::string& key) {
+    const std::string action = std::exchange(rebinding_, {});
+    if (action.empty() || key.empty()) return {};
+    profile_.other["keys"][action] = key;
+    save_settings();
+    return action;
+}
+
+std::map<std::string, std::string> Game::player_keys() const {
+    std::map<std::string, std::string> out;
+    const auto keys = profile_.other.find("keys");
+    if (keys != profile_.other.end() && keys->is_object())
+        for (const auto& [action, key] : keys->items())
+            if (key.is_string()) out[action] = key.get<std::string>();
+    return out;
+}
+
+double Game::player_volume(const std::string& bus) const {
+    const auto volumes = profile_.other.find("volumes");
+    if (volumes == profile_.other.end() || !volumes->is_object()) return 1.0;
+    const auto v = volumes->find(bus);
+    return v != volumes->end() && v->is_number() ? std::clamp(v->get<double>(), 0.0, 1.0) : 1.0;
+}
+
+void Game::set_player_volume(const std::string& bus, double volume) {
+    profile_.other["volumes"][bus] = std::clamp(volume, 0.0, 1.0);
+    apply_volumes();
+    save_settings();
+}
+
+// The mixer's volumes: the designer's mix (the Audio panel's) times the player's settings.
+void Game::apply_volumes() {
+    if (!mixer_) return;
+    for (const std::string& name : screen_buses()) {
+        const auto bus = audio::bus_from_name(name);
+        if (!bus) continue;
+        double designed = 1.0;
+        if (const auto it = scene_.bus_volumes.find(name); it != scene_.bus_volumes.end())
+            designed = it->second;
+        mixer_->set_volume(*bus, float(designed * player_volume(name)));
+    }
+}
+
+void Game::save_settings() {
+    if (profile_file_.empty()) return;
+    try {
+        profile_.save(profile_file_);
+    } catch (const std::exception&) {  // (a setting that can't be kept still holds now)
+    }
+}
+
+// Each update: the player dying (its game over screen's stat run out), where it arrived, and
+// the settings the shown screens' sliders and key buttons show.
+void Game::update_screens() {
+    const entt::entity player = camera_ ? camera_->player() : entt::null;
+    if (!respawn_at_ && player != entt::null && scene_.registry.valid(player) && !arriving()) {
+        const Transform& t = scene_.registry.get<Transform>(player);
+        respawn_at_ = Place{t.position, t.rotation};
+    }
+    if (const ScreenDef* over = screen_for("game_over"); over && !dead_) {
+        const stats::StatDef* d = stats_.find(over->stat);
+        const auto v = d ? stats_.get(d->id) : std::nullopt;
+        if (v && *v <= d->min) {
+            dead_ = true;
+            hud_.show_screen(over->id);
+        }
+    }
+    for (const std::string& id : hud_.screens()) {
+        const ScreenDef* s = screen(id);
+        if (!s) continue;
+        for (const ScreenElement& e : s->elements) {
+            if (e.binds.starts_with("volume:")) {
+                hud_.values[id + "/" + e.id] = player_volume(e.binds.substr(7));
+            } else if (e.binds.starts_with("key:")) {
+                const std::string action = e.binds.substr(4);
+                std::string key;
+                if (rebinding_ == action) {  // (just that: it fits a narrow button)
+                    hud_.texts[id + "/" + e.id] = "Press a key";
+                    continue;
+                } else {
+                    const auto mine = player_keys();
+                    const auto it = mine.find(action);
+                    if (!input_cache_) input_cache_ = input_map();  // (read once)
+                    key = it != mine.end() ? it->second : input_cache_->control(action, "keyboard");
+                }
+                hud_.texts[id + "/" + e.id] = e.text + ": " + (key.empty() ? "(none)" : key);
+            }
+        }
+    }
+}
+
 const ScreenDef* Game::screen(const std::string& id) const {
     for (const ScreenDef& s : scene_.screens)
         if (s.id == id) return &s;
@@ -621,6 +751,8 @@ bool Game::ui_click(const std::string& screen_id, const std::string& element) {
     const ScreenElement* e = s ? s->find(element) : nullptr;
     hud_.post({screen_id, element, "click", 0.0});
     if (!e) return false;
+    if (e->binds.starts_with("key:")) rebinding_ = e->binds.substr(4);  // (the next key)
+    if (e->action == "respawn") respawn();
     if (e->action == "close") hud_.hide_screen(screen_id);
     // (Opening another puts it on top: closing that one comes back to this, as Settings goes
     // back to the pause menu.)
@@ -630,6 +762,9 @@ bool Game::ui_click(const std::string& screen_id, const std::string& element) {
 
 void Game::ui_change(const std::string& screen_id, const std::string& element, double value) {
     hud_.post({screen_id, element, "change", value});
+    if (const ScreenDef* bound = screen(screen_id))
+        if (const ScreenElement* b = bound->find(element); b && b->binds.starts_with("volume:"))
+            set_player_volume(b->binds.substr(7), value);
     // An option chosen: the others in its group aren't.
     const ScreenDef* s = screen(screen_id);
     const ScreenElement* e = s ? s->find(element) : nullptr;
@@ -1969,6 +2104,7 @@ std::string Game::room_state(const std::string& scene) const {
 }
 
 void Game::load_scene(const std::string& id, const std::string& arrival) {
+    respawn_at_.reset();  // (where the player arrives in the new one)
     // Everything that can fail first, so a failed change leaves the scene as it was.
     const bool to_space = id == kSystemSpace;
     Scene next =

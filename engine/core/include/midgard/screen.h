@@ -3,7 +3,12 @@
 //
 // A screen (the screen table, migration 21) is JSON:
 //
-//   {"modal": true,        takes the player's input and frees the mouse while shown
+//   {"role": "pause",      what the game uses it for itself: "title" (shown when the game
+//                          starts), "pause" (the menu action opens it, and goes back from
+//                          it), "settings", "game_over" (shown when "stat" runs out: the
+//                          player died), or "" (only as scripts and buttons show it)
+//    "stat": "health",     a game_over screen's stat
+//    "modal": true,        takes the player's input and frees the mouse while shown
 //    "pauses": false,      the game stands still while it is shown
 //    "background": [0, 0, 0, 0.6],     over the whole screen (r, g, b, a: 0 to 1)
 //    "image": "ui:...",    a picture over the whole screen (from the GUI section)
@@ -31,7 +36,12 @@
 //    "style": {"font_size": 20, "color": [r, g, b, a], "background": [..], "border": [..],
 //              "border_width": 2, "radius": 6, "align": "center", "bold": false},
 //    "action": {"do": "close"}     a button: none, close (this screen), open (another:
-//                                  "screen": id), quit (the game), or event (scripts only)
+//                                  "screen": id), quit (the game), respawn (the player back
+//                                  where it arrived, its stats refilled), or event (scripts)
+//    "binds": "volume:music",      a slider: a bus's volume (master, music, effects, voice,
+//                                  ambience, interface), the player's setting
+//    "binds": "key:jump",          a button: the key for an action; clicked, the next key
+//                                  pressed becomes it (the player's setting)
 //    "min": 0, "max": 1, "step": 0.1, "value": 0.5}    a slider; a check's "value" is true/false
 //
 // Kinds: panel (a box that holds others), text, button, slider, check (a box to tick with its
@@ -75,13 +85,16 @@ struct ScreenElement {
     bool enabled = true;
     std::string group;  // an option's
     ScreenStyle style;
-    std::string action = "none";  // buttons: none, close, open, quit, event
+    std::string action = "none";  // buttons: none, close, open, quit, respawn, event
+    std::string binds;            // "volume:<bus>" (a slider), "key:<action>" (a button)
     std::string target;           // open: the screen
     double min = 0.0, max = 1.0, step = 0.0, value = 0.0;  // sliders; checks: value 0 or 1
 };
 
 struct ScreenDef {
     std::string id, name;
+    std::string role;             // "", title, pause, settings, game_over
+    std::string stat = "health";  // game_over: the stat that, run out, shows it
     bool modal = true, pauses = false;
     std::optional<Rgba> background;
     std::string image;  // over the whole screen
@@ -97,7 +110,10 @@ const std::vector<std::string>& screen_kinds();  // panel, text, button, slider,
 // disabled; a check's and an option's unchecked and checked; a slider's track and pointer.
 const std::vector<std::string>& screen_image_states(const std::string& kind);
 const std::vector<std::string>& screen_anchors();  // top_left ... bottom_right, fill
-const std::vector<std::string>& screen_actions();  // none, close, open, quit, event
+const std::vector<std::string>& screen_actions();  // none, close, open, quit, respawn, event
+const std::vector<std::string>& screen_roles();    // "", title, pause, settings, game_over
+const std::vector<std::string>& screen_buses();    // master, music, effects, voice, ambience,
+                                                   // interface
 
 // A screen from its table row. Throws ScreenError naming the screen and what's wrong: an
 // unknown kind or anchor, an element without an id or with one used twice, a parent that isn't

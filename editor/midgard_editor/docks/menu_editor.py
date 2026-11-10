@@ -54,7 +54,10 @@ def screen_preview():
     """The engine's screen preview, made when first needed."""
     global _preview
     if _preview is None:
-        _preview = engine.module().ScreenPreview()
+        module = engine.module()
+        if module is None:  # (an editor without the engine: no canvas)
+            raise ImportError("the engine isn't here to draw it")
+        _preview = module.ScreenPreview()
     return _preview
 
 
@@ -221,9 +224,18 @@ class MenuEditor(QWidget):
         # ---- left: screens and elements ----
         self.screen_list = QListWidget()
         self.screen_list.currentItemChanged.connect(lambda *_: self._screen_chosen())
-        self.new_button = QPushButton("New")
-        self.new_button.setToolTip("A new screen: a menu with a title and a Close button")
-        self.new_button.clicked.connect(lambda: self.new_screen())
+        self.new_button = QToolButton()
+        self.new_button.setText("New")
+        self.new_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        new_menu = QMenu(self.new_button)
+        new_menu.addAction("Blank menu", lambda: self.new_screen())
+        new_menu.addSeparator()
+        for kind, label in (("title", "Title screen"), ("pause", "Pause menu"),
+                            ("settings", "Settings"), ("game_over", "Game over")):
+            new_menu.addAction(label, lambda k=kind: self.new_from_template(k))
+        self.new_button.setMenu(new_menu)
+        self.new_button.setToolTip("A blank menu, or a ready-made title screen, pause menu, "
+                                   "settings or game over screen that works as it is")
         self.duplicate_button = QPushButton("Duplicate")
         self.duplicate_button.clicked.connect(self.duplicate_screen)
         self.delete_button = QPushButton("Delete")
@@ -334,6 +346,19 @@ class MenuEditor(QWidget):
         self.pauses = QCheckBox("Pauses the game")
         self.pauses.setToolTip("Everything stands still while it shows (a pause menu)")
         self.pauses.toggled.connect(lambda on: self._set_screen("pauses", on, "pauses"))
+        self.role = QComboBox()
+        for key, label in menus.ROLES.items():
+            self.role.addItem(label, key)
+        self.role.setToolTip("What the game uses it for by itself: the title screen shows when "
+                             "the game starts, the pause menu opens with Esc (or Start, or a "
+                             "phone's Back) and Esc goes back, game over shows when a stat "
+                             "runs out")
+        self.role.activated.connect(
+            lambda _i: self._set_screen("role", self.role.currentData() or None, "role"))
+        self.stat = QComboBox()
+        self.stat.setToolTip("Game over shows when this stat reaches its least (the player died)")
+        self.stat.activated.connect(lambda _i: self._set_screen("stat", self.stat.currentData(),
+                                                                "stat"))
         self.background = ColourButton("Background")
         self.background.changed.connect(
             lambda c: self._set_screen("background", c, "background"))
@@ -420,6 +445,12 @@ class MenuEditor(QWidget):
                                 "enables it (midgard.ui.set_enabled): it shows its disabled "
                                 "picture, or greyed")
         self.enabled.toggled.connect(lambda on: self._set("enabled", None if on else False))
+        self.binds = QComboBox()
+        self.binds.setToolTip("A player's setting it shows and changes by itself: a slider, a "
+                              "volume; a button, the key for an action (clicked, the next key "
+                              "pressed becomes it). Kept in the player's profile")
+        self.binds.activated.connect(lambda _i: self._set("binds",
+                                                          self.binds.currentData() or None))
         self.group = QLineEdit()
         self.group.setToolTip("Options with the same group are one choice: choosing one "
                               "unchooses the others")
@@ -431,6 +462,7 @@ class MenuEditor(QWidget):
         for label, widget, key in (
                 ("Name", self.screen_name, "screen_name"), ("Id", self.screen_id, "screen_id"),
                 ("", self.modal, "modal"), ("", self.pauses, "pauses"),
+                ("Used as", self.role, "role"), ("When it runs out", self.stat, "stat"),
                 ("Background", self.background, "background"),
                 ("Background picture", self.pictures["screen_image"], "screen_image"),
                 ("Name", self.element_id, "id"), ("Kind", self.kind_label, "kind"),
@@ -443,6 +475,7 @@ class MenuEditor(QWidget):
                 ("Background picture", self.pictures["track"], "track"),
                 ("Pointer picture", self.pictures["pointer"], "pointer"),
                 ("", self.enabled, "enabled"), ("Group", self.group, "group"),
+                ("Setting", self.binds, "binds"),
                 ("Inside", self.parent_box, "parent"), ("Anchor", self.anchor, "anchor"),
                 ("X", self.x, "x"), ("Y", self.y, "y"), ("Width", self.w, "w"),
                 ("Height", self.h, "h"), ("Text", self.text, "text"),
@@ -562,13 +595,17 @@ class MenuEditor(QWidget):
         self._gui_images = menus.gui_images(self.project) if self.project is not None else {}
         self._filling = True
         try:
-            screen_rows = {"screen_name", "screen_id", "modal", "pauses", "background",
+            screen_rows = {"screen_name", "screen_id", "role", "modal", "pauses", "background",
                            "screen_image"}
+            if s is not None and s["screen"].get("role") == "game_over":
+                screen_rows |= {"stat"}
             kind = e.get("kind", "text") if e else ""
             slots = [slot for slot, _label in menus.PICTURES.get(kind, [("image", "Image")])]
             element_rows = {"id", "kind", "parent", "anchor", "x", "y", "w", "h", *slots}
             if kind in ("button", "slider", "check", "option"):
                 element_rows |= {"enabled"}
+            if kind in ("button", "slider"):
+                element_rows |= {"binds"}
             if kind == "option":
                 element_rows |= {"group", "ticked"}
             if kind in ("text", "button", "check", "option"):
@@ -597,6 +634,13 @@ class MenuEditor(QWidget):
                 self.modal.setChecked(screen.get("modal", True) is not False)
                 self.pauses.setChecked(bool(screen.get("pauses", False)))
                 self.background.set_value(screen.get("background"))
+                self.role.setCurrentIndex(max(0, self.role.findData(screen.get("role", ""))))
+                self.stat.clear()
+                from .. import stats as stat_data
+                for st in stat_data.load_all(self.project):
+                    self.stat.addItem(st["name"], st["id"])
+                self.stat.setCurrentIndex(max(0, self.stat.findData(screen.get("stat",
+                                                                               "health"))))
                 self._fill_picture("screen_image", screen.get("image", ""))
             if e is not None:
                 self.element_id.setText(e.get("id", ""))
@@ -627,6 +671,17 @@ class MenuEditor(QWidget):
                     self._fill_picture(slot, e.get("image", "") if slot == "image"
                                        else e.get("images", {}).get(slot, ""))
                 self.enabled.setChecked(e.get("enabled", True) is not False)
+                self.binds.clear()
+                self.binds.addItem("None", "")
+                if kind == "slider":
+                    for bus, label in menus.BUSES.items():
+                        self.binds.addItem(label, f"volume:{bus}")
+                elif kind == "button":
+                    for action in menus.input_actions(self.project):
+                        self.binds.addItem(f"Key for {action}", f"key:{action}")
+                if e.get("binds") and self.binds.findData(e["binds"]) < 0:
+                    self.binds.addItem(e["binds"], e["binds"])
+                self.binds.setCurrentIndex(max(0, self.binds.findData(e.get("binds", ""))))
                 self.group.setText(e.get("group", ""))
                 self.text.setText(e.get("text", ""))
                 self.font_size.setValue(float(style.get("font_size") or 0))
@@ -782,6 +837,19 @@ class MenuEditor(QWidget):
                     f"New screen '{name}'")
         self.choose_screen(sid)
         return sid
+
+    def new_from_template(self, kind: str) -> str | None:
+        """A ready-made screen (and the settings it opens, if the project hasn't one)."""
+        if self.project is None:
+            return None
+        before = {s["id"] for s in self.all()}
+        screens = menus.from_template(self.project, kind)
+        made = [s for s in screens if s["id"] not in before]
+        self._apply(screens, f"New {menus.TEMPLATES[kind][0].lower()} screen")
+        chosen = next((s["id"] for s in made if s["screen"].get("role", kind) == kind or
+                       s["name"].startswith(menus.TEMPLATES[kind][0])), made[0]["id"])
+        self.choose_screen(chosen)
+        return chosen
 
     def duplicate_screen(self) -> None:
         s = self.chosen_screen()

@@ -63,8 +63,20 @@ const std::vector<std::string>& screen_anchors() {
 }
 
 const std::vector<std::string>& screen_actions() {
-    static const std::vector<std::string> actions = {"none", "close", "open", "quit", "event"};
+    static const std::vector<std::string> actions = {"none", "close",   "open",
+                                                     "quit", "respawn", "event"};
     return actions;
+}
+
+const std::vector<std::string>& screen_roles() {
+    static const std::vector<std::string> roles = {"", "title", "pause", "settings", "game_over"};
+    return roles;
+}
+
+const std::vector<std::string>& screen_buses() {
+    static const std::vector<std::string> buses = {"master", "music",    "effects",
+                                                   "voice",  "ambience", "interface"};
+    return buses;
 }
 
 const ScreenElement* ScreenDef::find(const std::string& element) const {
@@ -113,6 +125,10 @@ ScreenDef screen_from_json(const std::string& id, const std::string& name,
         if (!o.at(key).is_string()) throw ScreenError(in + ": '" + key + "' isn't text");
         return o.at(key).get<std::string>();
     };
+    s.role = string(j, "role", "", who);
+    if (!known(screen_roles(), s.role))
+        throw ScreenError(who + ": no role '" + s.role + "' (title, pause, settings or game_over)");
+    s.stat = string(j, "stat", "health", who);
     s.modal = flag(j, "modal", true, who);
     s.pauses = flag(j, "pauses", false, who);
     s.background = rgba(j, "background", who);
@@ -162,6 +178,16 @@ ScreenDef screen_from_json(const std::string& id, const std::string& name,
             }
         }
         el.enabled = flag(e, "enabled", true, in);
+        el.binds = string(e, "binds", "", in);
+        if (!el.binds.empty()) {
+            const bool volume = el.binds.starts_with("volume:") && el.kind == "slider" &&
+                                known(screen_buses(), el.binds.substr(7));
+            const bool key =
+                el.binds.starts_with("key:") && el.kind == "button" && el.binds.size() > 4;
+            if (!volume && !key)
+                throw ScreenError(in + ": it can't be bound to '" + el.binds +
+                                  "' (a slider to volume:<bus>, a button to key:<action>)");
+        }
         el.group = string(e, "group", "", in);
         if (e.contains("style")) {
             const json& st = e.at("style");
@@ -185,7 +211,7 @@ ScreenDef screen_from_json(const std::string& id, const std::string& name,
             el.action = string(a, "do", "none", in);
             if (!known(screen_actions(), el.action))
                 throw ScreenError(in + ": no action '" + el.action +
-                                  "' (none, close, open, quit or event)");
+                                  "' (none, close, open, quit, respawn or event)");
             el.target = string(a, "screen", "", in);
             if (el.action == "open" && el.target.empty())
                 throw ScreenError(in + ": it opens a screen but doesn't say which");

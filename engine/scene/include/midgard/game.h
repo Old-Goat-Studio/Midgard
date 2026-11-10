@@ -243,6 +243,26 @@ public:
     void ui_change(const std::string& screen, const std::string& element, double value);
     // The clicks and changes of the last update (and since), for scripts.
     const std::vector<hud::UiEvent>& ui_events() const { return ui_events_; }
+    // ---- the game's own screens (6.0 step 7: midgard/screen.h's roles) ----
+    // The screen used as the title, pause menu, settings or game over (nullptr: none).
+    const ScreenDef* screen_for(const std::string& role) const;
+    // The menu action (Esc, Start, a phone's Back): goes back from the menu on top (the pause
+    // menu, settings; not the title or game over), or opens the pause menu. False if there is
+    // no pause menu and nothing to go back from (the game then quits, as before menus).
+    bool menu();
+    // The player back where it arrived in this scene, its stats refilled, standing still; a
+    // game over screen goes.
+    void respawn();
+    // A key button was clicked (binds "key:<action>"): the action waiting for its new key.
+    const std::string& rebinding() const { return rebinding_; }
+    // The key pressed (SDL's scancode name; "" to give up): the action's keyboard control from
+    // now on, kept in the player's profile. Returns the action ("" if none was waiting).
+    std::string key_chosen(const std::string& key);
+    // The player's keys (profile), by action: the runtime rebinds its input with them.
+    std::map<std::string, std::string> player_keys() const;
+    // The player's volume for a bus (0 to 1; the profile's, else 1), and setting it.
+    double player_volume(const std::string& bus) const;
+    void set_player_volume(const std::string& bus, double volume);
     // A packaged file's bytes by content id (a screen's picture). Throws AssetError if the
     // package hasn't it.
     std::vector<uint8_t> read_content(const std::string& id) const { return read_texture(id); }
@@ -569,6 +589,18 @@ private:
     hud::HudState hud_;
     std::vector<std::string> finished_timers_;
     std::vector<hud::UiEvent> ui_events_;
+    std::string rebinding_;  // an action waiting for its new key
+    bool dead_ = false;      // the game over screen showed (until respawn)
+    struct Place {
+        glm::dvec3 position;
+        glm::vec3 rotation;
+    };
+    std::optional<Place> respawn_at_;      // where the player arrived in this scene
+    std::optional<InputMap> input_cache_;  // the package's controls, for key buttons
+    audio::Mixer* mixer_ = nullptr;
+    void apply_volumes();
+    void save_settings();
+    void update_screens();  // death; the bound sliders' and keys' values and texts
     bool minimap_wanted_ = false;
     MinimapGround minimap_;
     std::string minimap_scene_;  // (made again in another scene)

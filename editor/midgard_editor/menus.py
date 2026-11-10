@@ -45,7 +45,118 @@ ANCHORS = {"top_left": "Top left", "top": "Top", "top_right": "Top right", "left
            "center": "Middle", "right": "Right", "bottom_left": "Bottom left",
            "bottom": "Bottom", "bottom_right": "Bottom right", "fill": "Fill (stretch)"}
 ACTIONS = {"none": "Nothing", "close": "Close this screen", "open": "Open a screen…",
-           "quit": "Quit the game", "event": "Tell scripts only"}
+           "quit": "Quit the game", "respawn": "Respawn the player", "event": "Tell scripts only"}
+# What the game uses a screen for by itself (engine/core/include/midgard/screen.h).
+ROLES = {"": "Only when shown", "title": "Title screen (when the game starts)",
+         "pause": "Pause menu (Esc, Start, a phone's Back)", "settings": "Settings",
+         "game_over": "Game over (when a stat runs out)"}
+BUSES = {"master": "Volume (everything)", "music": "Music volume", "effects": "Effects volume",
+         "voice": "Voices volume", "ambience": "Ambience volume", "interface": "Menu sounds volume"}
+
+
+def _button(eid: str, text: str, y: float, action: dict, **more) -> dict:
+    return {"id": eid, "kind": "button", "parent": "panel", "anchor": "top", "x": 0, "y": y,
+            "w": 260, "h": 56, "text": text, "action": action, **more}
+
+
+def _title(text: str, colour: list[float] | None = None) -> dict:
+    style = {"font_size": 34, "align": "center", "bold": True}
+    if colour:
+        style["color"] = colour
+    return {"id": "title", "kind": "text", "parent": "panel", "anchor": "top", "x": 0, "y": 24,
+            "w": 300, "h": 50, "text": text, "style": style}
+
+
+def _panel(h: float) -> dict:
+    return {"id": "panel", "kind": "panel", "anchor": "center", "x": 0, "y": 0, "w": 340, "h": h}
+
+
+# The ready-made screens (step 7): what each is called, and the screen (its Settings button
+# opens "{settings}", the settings screen's id).
+TEMPLATES: dict[str, tuple[str, dict]] = {
+    "title": ("Title", {
+        "role": "title", "modal": True, "pauses": True, "background": [0.03, 0.04, 0.08, 0.85],
+        "elements": [_panel(320), _title("My Game", [1.0, 0.82, 0.48, 1.0]),
+                     _button("play", "Play", 96, {"do": "close"}),
+                     _button("settings", "Settings", 164, {"do": "open", "screen": "{settings}"}),
+                     _button("quit", "Quit", 232, {"do": "quit"})]}),
+    "pause": ("Pause", {
+        "role": "pause", "modal": True, "pauses": True, "background": [0.0, 0.0, 0.0, 0.55],
+        "elements": [_panel(320), _title("Paused"),
+                     _button("resume", "Resume", 96, {"do": "close"}),
+                     _button("settings", "Settings", 164, {"do": "open", "screen": "{settings}"}),
+                     _button("quit", "Quit", 232, {"do": "quit"})]}),
+    "settings": ("Settings", {
+        "role": "settings", "modal": True, "pauses": True, "background": [0.0, 0.0, 0.0, 0.55],
+        "elements": [
+            # (it fits a phone held sideways: about 330 dp tall)
+            _panel(324), {**_title("Settings"), "y": 12, "h": 44},
+            {"id": "volume_label", "kind": "text", "parent": "panel", "anchor": "top", "x": 0,
+             "y": 62, "w": 280, "h": 22, "text": "Volume", "style": {"font_size": 16}},
+            {"id": "volume", "kind": "slider", "parent": "panel", "anchor": "top", "x": 0,
+             "y": 84, "w": 280, "h": 44, "binds": "volume:master"},
+            {"id": "music_label", "kind": "text", "parent": "panel", "anchor": "top", "x": 0,
+             "y": 134, "w": 280, "h": 22, "text": "Music", "style": {"font_size": 16}},
+            {"id": "music", "kind": "slider", "parent": "panel", "anchor": "top", "x": 0,
+             "y": 156, "w": 280, "h": 44, "binds": "volume:music"},
+            {**_button("jump", "Jump", 210, {"do": "none"}, binds="key:jump"), "x": -72,
+             "w": 136, "h": 48},
+            {**_button("use", "Use", 210, {"do": "none"}, binds="key:use"), "x": 72,
+             "w": 136, "h": 48},
+            {**_button("back", "Back", -12, {"do": "close"}), "anchor": "bottom", "h": 48}]}),
+    "game_over": ("Game over", {
+        "role": "game_over", "stat": "health", "modal": True, "pauses": True,
+        "background": [0.25, 0.0, 0.0, 0.6],
+        "elements": [_panel(260), _title("You died", [1.0, 0.45, 0.4, 1.0]),
+                     _button("again", "Try again", 100, {"do": "respawn"}),
+                     _button("quit", "Quit", 168, {"do": "quit"})]}),
+}
+
+
+def from_template(project: Project, kind: str) -> list[dict[str, Any]]:
+    """The project's screens with a ready-made one added (and the settings screen its Settings
+    button opens, if the project hasn't one). Its id is the last one's (or the one before, with
+    settings made too)."""
+    screens = copy.deepcopy(load_all(project))
+    taken = {s["id"] for s in screens}
+
+    def add(which: str) -> dict:
+        name, screen = TEMPLATES[which]
+        names = {s["name"].lower() for s in screens}
+        unique, n = name, 2
+        while unique.lower() in names:
+            unique, n = f"{name} {n}", n + 1
+        made = {"id": new_id(taken, unique), "name": unique, "screen": copy.deepcopy(screen)}
+        if any(s["screen"].get("role") == screen.get("role") for s in screens):
+            made["screen"].pop("role", None)  # (one screen per role: this is a spare)
+        taken.add(made["id"])
+        screens.append(made)
+        return made
+
+    settings = next((s for s in screens if s["screen"].get("role") == "settings"), None)
+    needs_settings = kind in ("title", "pause") and settings is None
+    made = add(kind)
+    if needs_settings:
+        settings = add("settings")
+    for e in made["screen"]["elements"]:
+        if e.get("action", {}).get("screen") == "{settings}":
+            e["action"]["screen"] = settings["id"] if settings else ""
+            if not settings:
+                e["action"] = {"do": "none"}
+    if needs_settings:  # (the made screen chosen, not its settings)
+        screens.remove(made)
+        screens.insert(len(screens) - 1, made)
+    return screens
+
+
+def input_actions(project: Project) -> list[str]:
+    """The project's button actions (jump, use...): what a key button can rebind."""
+    with project.connect() as con:
+        try:
+            return [a for (a,) in con.execute(
+                "SELECT id FROM input_action WHERE kind = 'button' ORDER BY id")]
+        except Exception:
+            return []
 # What each kind starts as when it is added.
 NEW_ELEMENT = {
     "panel": {"kind": "panel", "anchor": "center", "x": 0, "y": 0, "w": 400, "h": 300},
@@ -206,6 +317,8 @@ def problems_of(screen: Any, screen_ids: set[str] | None = None) -> list[str]:
     if not isinstance(screen, dict):
         return ["isn't a set of settings"]
     found = []
+    if screen.get("role", "") not in ROLES:
+        found.append(f"it has an unknown role '{screen.get('role')}'")
     for key in ("modal", "pauses"):
         if key in screen and not isinstance(screen[key], bool):
             found.append(f"'{key}' isn't true or false")
@@ -268,6 +381,13 @@ def problems_of(screen: Any, screen_ids: set[str] | None = None) -> list[str]:
                                  "Library's GUI section")
         if "enabled" in e and not isinstance(e["enabled"], bool):
             found.append(f"{name}'s 'enabled' isn't true or false")
+        binds = e.get("binds", "")
+        if binds and not ((kind == "slider" and isinstance(binds, str) and
+                           binds.startswith("volume:") and binds[7:] in BUSES) or
+                          (kind == "button" and isinstance(binds, str) and
+                           binds.startswith("key:") and len(binds) > 4)):
+            found.append(f"{name} can't be tied to '{binds}' (a slider to a volume, a button "
+                         "to a key)")
         if kind == "panel":
             panels.add(e["id"])
     return found
@@ -289,10 +409,17 @@ def problems(project: Project) -> list[str]:
                 found.append(f"Screen '{s['name']}' shows '{image[len(IMAGE_PREFIX):]}': "
                              "screens show PNG and JPEG pictures only.")
     seen: set[str] = set()
+    roles: dict[str, str] = {}
     for s in screens:
         if s["name"].strip().lower() in seen:
             found.append(f"Two screens are called '{s['name']}'.")
         seen.add(s["name"].strip().lower())
+        role = s["screen"].get("role", "")
+        if role and role in roles:
+            found.append(f"Screens '{roles[role]}' and '{s['name']}' are both the "
+                         f"{ROLES.get(role, role).split(' (')[0].lower()}: only the first is "
+                         "used.")
+        roles.setdefault(role, s["name"])
     return found
 
 

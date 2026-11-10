@@ -1164,6 +1164,35 @@ game**, or **Tell scripts only**. Your scripts hear every click whatever it does
 It also has a **Background** colour over the whole game behind it (a see-through dark one dims
 the game).
 
+**Ready-made screens.** **New** offers a **Blank menu**, or four screens that work as they
+are, with no scripting:
+
+- **Title screen**: shows when the game starts, the game paused behind it. **Play** closes it,
+  **Settings** opens the settings, **Quit** ends the game.
+- **Pause menu**: **Esc** (or a controller's **Start**, or a phone's **Back**) opens it while
+  playing, the game paused. **Resume** (or Esc again) goes back to the game.
+- **Settings**: a **Volume** slider (everything) and a **Music** slider, and buttons for the
+  **Jump** and **Use** keys. Click a key button, then press the key you want: it shows
+  `Press a key` until you do (Esc gives up). The player's volumes and keys are kept in their
+  profile, so they're as they left them next time. **Back** (or Esc) goes back to the menu it
+  came from.
+- **Game over**: shows when the player's **Health** runs out. **Try again** respawns the player
+  where they arrived in the scene, health and the other stats refilled. **Quit** ends the game.
+
+A title screen or pause menu made when the project has no settings screen brings one with it.
+Change any of them as you like: colours, pictures, words, more buttons.
+
+**What the game uses a screen for** (**Used as**, with no element chosen): only when shown (by a
+script or a button), the **title screen**, the **pause menu**, **settings**, or **game over**
+(and **When it runs out**: the stat that, reaching its least, means the player died). Each is
+used by one screen; Cook says if two claim the same. Without a pause menu, Esc works as before
+(it quits a finished game; under the editor it frees the mouse).
+
+**Settings the game keeps.** A slider's **Setting** can be a volume (everything, music, effects,
+voices, ambience or menu sounds), and a button's the key for an action (Jump, Use, Run, View,
+Descend, Menu): the slider shows and changes the player's volume, the button shows the key and,
+clicked, waits for a new one. **Respawn the player** is one more thing a button **Does**.
+
 **Showing a screen.** A screen shows when a script asks: `midgard.ui.show("scr_pause")` (its
 id is under its name). While the game plays under the editor, **Show in Game** shows the chosen
 screen there, and every change you make reaches it at once. Problems (an element too small for a
