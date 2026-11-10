@@ -390,6 +390,26 @@
       "name": "touch_phone",
       "_about": "The touch controls on a phone held upright (1.5 pixels a dp, a pretend notch and gesture bar): the narrow layout, the buttons drawn in towards the right edge clear of the stick, the prompt above them.",
       "args": ["--size", "540x1170", "--hud-test", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone", "--touch-controls"]
+    },
+    {
+      "name": "screen_desktop",
+      "_about": "A screen made as the Menu editor makes it (screens/pause.json, milestone 6.0) over the demo scene: a dimmed background, a panel in the middle with a title, Resume, a volume slider, a Subtitles check and a red Quit button. Before the picture the runtime's screen checks pass: a gamepad reaches every control and the text fits.",
+      "args": ["--size", "1280x720", "--screen-test", "{images}/screens/pause.json"]
+    },
+    {
+      "name": "screen_phone",
+      "_about": "The same screen on a phone held upright (1.5 pixels a dp, a pretend notch and gesture bar): the same size to the eye, in the middle of the safe area; its checks include a finger's (every control at least 44 dp).",
+      "args": ["--size", "540x1170", "--screen-test", "{images}/screens/pause.json", "--ui-touch", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone"]
+    },
+    {
+      "name": "screen_pictures",
+      "_about": "A screen whose elements show pictures (as from the Asset Library's GUI section): a logo alone (an image element), and two buttons drawn as a gold-edged green frame stretched to their size, the second keeping a white border its style gives it.",
+      "args": ["--size", "1280x720", "--screen-test", "{images}/screens/pictures.json"]
+    },
+    {
+      "name": "screen_states",
+      "_about": "Pictures for every state (milestone 6.0): a backdrop picture over the whole screen; Play with its normal picture; Load disabled, showing its grey disabled picture; a Subtitles check with gold tick pictures (ticked); two options in one group with blue dot pictures (Hard chosen, Easy not); a slider with a gold track picture and a blue diamond pointer.",
+      "args": ["--size", "1280x720", "--screen-test", "{images}/screens/states.json"]
     }
   ]
 }

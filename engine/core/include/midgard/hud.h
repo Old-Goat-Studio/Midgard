@@ -32,6 +32,13 @@ struct Timer {
 
 inline constexpr size_t kMaxNotes = 5;  // the oldest goes when a sixth comes
 
+// The player did something on a screen (midgard/screen.h): clicked a button ("click"), or moved
+// a slider or ticked a check ("change", its value: a check's 0 or 1).
+struct UiEvent {
+    std::string screen, element, kind;
+    double value = 0.0;
+};
+
 class HudState {
 public:
     // The whole HUD (false: hidden, as in a cut scene).
@@ -65,9 +72,28 @@ public:
     void update(double dt);
     std::vector<std::string> take_finished();
 
+    // Screens (the Menu editor's): those shown, bottom to top. Showing one already shown brings
+    // it to the top.
+    void show_screen(const std::string& id);
+    bool hide_screen(const std::string& id);
+    bool screen_shown(const std::string& id) const;
+    const std::vector<std::string>& screens() const { return screens_; }
+    // Their elements' text and values as scripts set them, or the player changed them, by
+    // "screen/element" (none: as the screen was made).
+    std::map<std::string, std::string> texts;
+    std::map<std::string, double> values;
+    // Elements scripts enabled or disabled (midgard.ui.set_enabled), by "screen/element".
+    std::map<std::string, bool> enabled;
+    // The player's clicks and changes (the runtime posts them; the game's next update hands
+    // them to scripts, through take_events).
+    void post(UiEvent event);
+    std::vector<UiEvent> take_events();
+
     nlohmann::json dump() const;
 
 private:
+    std::vector<std::string> screens_;
+    std::vector<UiEvent> events_;
     std::deque<Note> notes_;
     std::string prompt_;
     std::vector<Timer> timers_;

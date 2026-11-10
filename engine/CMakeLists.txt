@@ -41,6 +41,7 @@ add_library(midgard_core STATIC
     core/src/survival.cpp
     core/src/stats.cpp
     core/src/hud.cpp
+    core/src/screen.cpp
     core/src/compass.cpp
     core/src/texture_gen.cpp
 )
@@ -168,12 +169,13 @@ add_library(midgard_ui STATIC
     ui/src/test_screen.cpp
     ui/src/hud.cpp
     ui/src/touch.cpp
+    ui/src/screens.cpp
     ui/src/fonts.cpp
     ${UI_TEXT_SOURCES}
     ${UI_FONT_SOURCES}
 )
 target_include_directories(midgard_ui PUBLIC ui/include PRIVATE "${UI_GEN}" ${Stb_INCLUDE_DIR})
-target_link_libraries(midgard_ui PUBLIC midgard_render RmlUi::RmlUi PRIVATE glm::glm midgard_options)
+target_link_libraries(midgard_ui PUBLIC midgard_core midgard_render RmlUi::RmlUi PRIVATE glm::glm midgard_options)
 
 # ---- shader: GLSL to SPIR-V inside Midgard (milestone 5.17), for the editor ------------------
 # Games carry compiled shaders, so only where the editor runs (not Android) is glslang linked.
@@ -465,8 +467,10 @@ endif()
 if(MIDGARD_BUILD_PYTHON AND NOT CMAKE_CROSSCOMPILING)
     if(MIDGARD_PYBIND11_DIR)
         pybind11_add_module(_midgard bindings/module.cpp bindings/viewport.cpp
-                            bindings/audio_preview.cpp bindings/weather_preview.cpp)
+                            bindings/audio_preview.cpp bindings/weather_preview.cpp
+                            bindings/screen_preview.cpp)
         target_link_libraries(_midgard PRIVATE midgard_scene midgard_link midgard_audio_encode
+                              midgard_ui
                               midgard_shader volk::volk
                               Vulkan::Headers midgard_options)
         if(UNIX)
@@ -527,6 +531,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_stats.cpp
         tests/test_hud.cpp
         tests/test_touch.cpp
+        tests/test_screens.cpp
         tests/test_compass.cpp
     )
     target_link_libraries(midgard_tests PRIVATE

@@ -1,0 +1,76 @@
+{
+  "modal": true,
+  "background": [
+    0.02,
+    0.03,
+    0.06,
+    0.5
+  ],
+  "elements": [
+    {
+      "id": "panel",
+      "kind": "panel",
+      "anchor": "center",
+      "w": 360,
+      "h": 380
+    },
+    {
+      "id": "logo",
+      "kind": "image",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 20,
+      "w": 96,
+      "h": 96,
+      "image": "ui:logo.png"
+    },
+    {
+      "id": "title",
+      "kind": "text",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 124,
+      "w": 320,
+      "h": 40,
+      "text": "Pictures",
+      "style": {
+        "font_size": 28,
+        "align": "center"
+      }
+    },
+    {
+      "id": "play",
+      "kind": "button",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 180,
+      "w": 260,
+      "h": 64,
+      "text": "Play",
+      "image": "ui:button.png",
+      "style": {
+        "font_size": 22
+      }
+    },
+    {
+      "id": "back",
+      "kind": "button",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 260,
+      "w": 260,
+      "h": 64,
+      "text": "Back",
+      "image": "ui:button.png",
+      "style": {
+        "border": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "border_width": 2
+      }
+    }
+  ]
+}

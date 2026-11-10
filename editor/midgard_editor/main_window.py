@@ -47,6 +47,7 @@ from .docks.environment_panel import EnvironmentPanel
 from .docks.inspector import Inspector
 from .docks.log import LOGGER_NAME, LogPanel
 from .docks.material_editor import MaterialDialog
+from .docks.menu_editor import MenuEditor
 from .docks.objects_panel import ObjectsPanel
 from .docks.project_browser import ProjectBrowser
 from .docks.project_page import ProjectPage
@@ -77,7 +78,8 @@ PANELS = {"project": "Project", "scene": "Scene", "inspector": "Inspector", "log
           "assistant": "Assistant", "project_page": "Project Page", "objects": "Objects",
           "calendar": "Calendar", "environment": "Environment", "terrain": "Terrain",
           "world_types": "World Types", "scenes": "Scenes", "animation": "Animation",
-          "audio": "Audio", "shaders": "Shader Editor", "stats": "Stats"}
+          "audio": "Audio", "shaders": "Shader Editor", "stats": "Stats",
+          "menus": "Menu Editor"}
 BUILT_IN_LAYOUTS = ("Default", "Two Monitors")
 
 
@@ -182,6 +184,8 @@ class MainWindow(QMainWindow):
         self.animation_panel = AnimationPanel()
         self.audio_panel = AudioPanel()  # sounds, music, ambience, the mixer (5.14)
         self.stats_panel = StatsPanel()  # the player's stats, scores and counters (6.0)
+        self.menu_editor = MenuEditor()  # the game's screens: menus, title, pause (6.0)
+        self.menu_editor.show_in_game = self._show_screen_in_game
         self.asset_window: AssetWindow | None = None  # (Assets ▸ Asset Library, when opened)
         self.error_log = ErrorLog(settings.dir, self)  # error.log (on unless turned off)
         self.scenes_panel = ScenesPanel()
@@ -214,7 +218,7 @@ class MainWindow(QMainWindow):
                    "terrain": self.terrain_panel, "world_types": self.world_type_panel,
                    "scenes": self.scenes_panel, "animation": self.animation_panel,
                    "audio": self.audio_panel, "shaders": self.shader_editor,
-                   "stats": self.stats_panel}
+                   "stats": self.stats_panel, "menus": self.menu_editor}
         self.panels: dict[str, QtAds.CDockWidget] = {}
         for key, title in PANELS.items():
             dock = QtAds.CDockWidget(self.dock_manager, title)
@@ -259,6 +263,7 @@ class MainWindow(QMainWindow):
         self._tab_behind_viewport("audio")
         self._tab_behind_viewport("shaders")
         self._tab_behind_viewport("stats")
+        self._tab_behind_viewport("menus")
         self._place_assistant()
         self._tab_behind_inspector("calendar")
         self._tab_behind_inspector("environment")
@@ -379,6 +384,8 @@ class MainWindow(QMainWindow):
                 self._tab_behind_viewport("shaders")
             if "stats" not in saved:
                 self._tab_behind_viewport("stats")
+            if "menus" not in saved:
+                self._tab_behind_viewport("menus")
             if "calendar" not in saved:
                 self._tab_behind_inspector("calendar")
             if "environment" not in saved:
@@ -881,6 +888,7 @@ class MainWindow(QMainWindow):
         self.animation_panel.set_project(project)
         self.audio_panel.set_project(project)
         self.stats_panel.set_project(project)
+        self.menu_editor.set_project(project)
         self.scenes_panel.set_project(project)
         MaterialDialog.close_all()
         CameraDialog.close_all()
@@ -994,6 +1002,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Play", str(e))
             return
         log.info("%s %s", "Playing" if fresh else "Continuing", package)
+
+    def _show_screen_in_game(self, screen_id: str) -> None:
+        """The Menu editor's Show in Game: the running game shows the screen."""
+        if self.session is None or not self.session.running:
+            self.statusBar().showMessage("Press Play first: Show in Game shows the screen in "
+                                         "the game playing now.", 6000)
+            return
+        self.session.show_screen(screen_id)
 
     def _set_touch_controls(self, on: bool | None = None) -> None:
         self.settings.set("play_touch_controls", bool(self.touch_action.isChecked()))

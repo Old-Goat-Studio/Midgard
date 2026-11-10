@@ -73,6 +73,11 @@ std::vector<Problem> Ui::check(Rml::ElementDocument* document, bool touch) {
         if (was) was->Focus();
         c.Update();
     }
+    // Working the controls may have changed the screen (a status line rewritten, a part shown
+    // or hidden): what was collected before may be gone. Collect it again.
+    controls.clear();
+    all.clear();
+    collect(document, controls, all);
 
     // Text that doesn't fit: an element whose content is wider than its box and isn't scrolled.
     for (Rml::Element* e : all) {

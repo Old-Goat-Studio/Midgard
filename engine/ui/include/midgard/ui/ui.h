@@ -155,6 +155,9 @@ public:
     // one. False if the pixels don't match the size.
     bool set_image(const std::string& name, uint32_t width, uint32_t height,
                    const std::vector<uint8_t>& rgba);
+    // The same from a PNG or JPEG file's bytes. False (and nothing set) if they can't be read.
+    bool set_image_file(const std::string& name, const std::vector<uint8_t>& encoded);
+    bool has_image(const std::string& name) const;
     // A direction key ("Up", "Down", "Left", "Right" as RmlUi's key) to the focused screen, as
     // the d-pad and arrow keys move: into and out of scrolling lists too.
     void navigate(int rml_key);

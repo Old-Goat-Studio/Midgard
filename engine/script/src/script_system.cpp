@@ -37,6 +37,8 @@ struct Context {
     std::vector<pybind11::object> stat_callbacks;
     // midgard.ui.timer(..., on_done=callback): a timer's id -> its callback.
     std::map<std::string, pybind11::object> timer_callbacks;
+    // midgard.ui.on_click(screen, element, callback) and on_change: by "screen/element".
+    std::map<std::string, std::vector<pybind11::object>> click_callbacks, change_callbacks;
 };
 Context* g_context = nullptr;
 
@@ -72,6 +74,20 @@ const stats::StatDef& stat_def(const std::string& stat) {
         throw py::key_error("'" + d->name + "' only shows on the HUD (the " +
                             stats::kind_name(d->kind) + "): it has no value to read or change");
     return *d;
+}
+
+// A screen's element, for midgard.ui (KeyError if there's no such screen or element, or
+// ValueError if it isn't of the kind needed: "" for any).
+const ScreenElement& check_element(const std::string& screen, const std::string& element,
+                                   const std::string& kind) {
+    const ScreenDef* s = current_game().screen(screen);
+    if (!s) throw py::key_error("there is no screen '" + screen + "'");
+    const ScreenElement* e = s->find(element);
+    if (!e) throw py::key_error("screen '" + screen + "' has no element '" + element + "'");
+    if (!kind.empty() && e->kind != kind)
+        throw py::value_error("'" + element + "' on screen '" + screen + "' is a " + e->kind +
+                              ", not a " + kind);
+    return *e;
 }
 
 // A stat's value as Python has it: an int for scores and counters.
@@ -1342,6 +1358,120 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             },
             "The crosshair: True shows it, False hides it, None (as it starts) shows it in "
             "first person only.")
+        .def(
+            "show",
+            [](const UiHandle&, const std::string& screen) {
+                if (!current_game().screen(screen))
+                    throw py::key_error("there is no screen '" + screen + "'");
+                current_game().hud().show_screen(screen);
+            },
+            py::arg("screen"),
+            "Shows a screen made in the Menu editor (by its id), on top of any others.")
+        .def(
+            "hide",
+            [](const UiHandle&, const std::string& screen) {
+                return current_game().hud().hide_screen(screen);
+            },
+            py::arg("screen"), "Takes a screen away. False if it wasn't shown.")
+        .def(
+            "shown",
+            [](const UiHandle&, const std::string& screen) {
+                return current_game().hud().screen_shown(screen);
+            },
+            py::arg("screen"), "Whether a screen is shown.")
+        .def_property_readonly(
+            "screens", [](const UiHandle&) { return current_game().hud().screens(); },
+            "The screens shown now, bottom to top.")
+        .def(
+            "on_click",
+            [](const UiHandle&, const std::string& screen, const std::string& element,
+               py::object callback) {
+                check_element(screen, element, "button");
+                if (!PyCallable_Check(callback.ptr()))
+                    throw py::type_error("midgard.ui.on_click needs a function to call");
+                if (g_context)
+                    g_context->click_callbacks[screen + "/" + element].push_back(callback);
+            },
+            py::arg("screen"), py::arg("element"), py::arg("callback"),
+            "Calls callback() when the player clicks a button on a screen.")
+        .def(
+            "on_change",
+            [](const UiHandle&, const std::string& screen, const std::string& element,
+               py::object callback) {
+                check_element(screen, element, "");
+                if (!PyCallable_Check(callback.ptr()))
+                    throw py::type_error("midgard.ui.on_change needs a function to call");
+                if (g_context)
+                    g_context->change_callbacks[screen + "/" + element].push_back(callback);
+            },
+            py::arg("screen"), py::arg("element"), py::arg("callback"),
+            "Calls callback(value) when the player moves a slider (its value) or ticks a check "
+            "(True or False) on a screen.")
+        .def(
+            "click",
+            [](const UiHandle&, const std::string& screen, const std::string& element) {
+                check_element(screen, element, "button");
+                current_game().ui_click(screen, element);
+            },
+            py::arg("screen"), py::arg("element"),
+            "Presses a button as the player would: it does what it says (but doesn't quit the "
+            "game), and on_click hears it at the next update.")
+        .def(
+            "set_text",
+            [](const UiHandle&, const std::string& screen, const std::string& element,
+               const std::string& text) {
+                check_element(screen, element, "");
+                current_game().hud().texts[screen + "/" + element] = text;
+            },
+            py::arg("screen"), py::arg("element"), py::arg("text"),
+            "Changes the text of an element (text, a button, a check) on a screen.")
+        .def(
+            "value",
+            [](const UiHandle&, const std::string& screen,
+               const std::string& element) -> py::object {
+                const ScreenElement& e = check_element(screen, element, "");
+                const auto& values = current_game().hud().values;
+                const auto it = values.find(screen + "/" + element);
+                const double v = it != values.end() ? it->second : e.value;
+                if (e.kind == "check" || e.kind == "option") return py::bool_(v != 0.0);
+                return py::float_(v);
+            },
+            py::arg("screen"), py::arg("element"),
+            "A slider's value, or whether a check is ticked or an option chosen, on a screen.")
+        .def(
+            "set_value",
+            [](const UiHandle&, const std::string& screen, const std::string& element,
+               double value) {
+                const ScreenElement& e = check_element(screen, element, "");
+                if (e.kind == "slider") value = std::clamp(value, e.min, e.max);
+                if (e.kind == "check" || e.kind == "option") value = value != 0.0 ? 1.0 : 0.0;
+                current_game().hud().values[screen + "/" + element] = value;
+                if (e.kind == "option" && value != 0.0)  // (the others in its group: not)
+                    for (const ScreenElement& other : current_game().screen(screen)->elements)
+                        if (other.kind == "option" && other.group == e.group && other.id != e.id)
+                            current_game().hud().values[screen + "/" + other.id] = 0.0;
+            },
+            py::arg("screen"), py::arg("element"), py::arg("value"),
+            "Sets a slider's value (or ticks a check, or chooses an option: True or False) on a "
+            "screen.")
+        .def(
+            "set_enabled",
+            [](const UiHandle&, const std::string& screen, const std::string& element, bool on) {
+                check_element(screen, element, "");
+                current_game().hud().enabled[screen + "/" + element] = on;
+            },
+            py::arg("screen"), py::arg("element"), py::arg("enabled"),
+            "Lets the player use an element (a button, slider, check or option), or not: "
+            "disabled, it shows its disabled picture (or greyed) and can't be used.")
+        .def(
+            "enabled",
+            [](const UiHandle&, const std::string& screen, const std::string& element) {
+                const ScreenElement& e = check_element(screen, element, "");
+                const auto& on = current_game().hud().enabled;
+                const auto it = on.find(screen + "/" + element);
+                return it != on.end() ? it->second : e.enabled;
+            },
+            py::arg("screen"), py::arg("element"), "Whether the player can use an element.")
         .def_property(
             "compass", [](const UiHandle&) { return current_game().hud().compass; },
             [](const UiHandle&, bool on) { current_game().hud().compass = on; },
@@ -1553,6 +1683,8 @@ ScriptSystem::ScriptSystem(Game& game, std::function<void(const Report&)> report
         s.context.weather_callbacks.clear();
         s.context.stat_callbacks.clear();
         s.context.timer_callbacks.clear();  // (the timers carry on, telling no one)
+        s.context.click_callbacks.clear();
+        s.context.change_callbacks.clear();
     });
 }
 
@@ -1658,6 +1790,27 @@ void ScriptSystem::update(const Actions& actions, float dt) {
                 callback(change.id, stat_value(*d, change.before), stat_value(*d, change.after));
             } catch (py::error_already_set& e) {
                 s.fail(module, e, "midgard.stats.on_change");
+            }
+        }
+    }
+
+    // The player's clicks and changes on screens (midgard.ui.on_click, on_change).
+    for (const hud::UiEvent& ev : s.context.game->ui_events()) {
+        const auto& table =
+            ev.kind == "click" ? s.context.click_callbacks : s.context.change_callbacks;
+        const auto it = table.find(ev.screen + "/" + ev.element);
+        if (it == table.end()) continue;
+        for (const py::object& callback : std::vector(it->second)) {
+            const std::string module = py::str(py::getattr(callback, "__module__", py::str("")));
+            if (s.paused.contains(module)) continue;
+            try {
+                if (ev.kind == "click")
+                    callback();
+                else
+                    callback(ev.value);
+            } catch (py::error_already_set& e) {
+                s.fail(module, e,
+                       "midgard.ui.on_" + ev.kind + " '" + ev.screen + "/" + ev.element + "'");
             }
         }
     }

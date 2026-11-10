@@ -575,6 +575,18 @@ Scene Scene::load(const std::filesystem::path& database, const std::string& scen
             }
         }
     }
+    // Screens (migration 21), in the designer's order.
+    if (has_column(db.get(), "screen", "screen")) {
+        Stmt v = prepare(db.get(), "SELECT id, name, screen FROM screen ORDER BY position, name");
+        while (sqlite3_step(v.get()) == SQLITE_ROW) {
+            try {
+                scene.screens.push_back(screen_from_json(
+                    column_text(v.get(), 0), column_text(v.get(), 1), column_text(v.get(), 2)));
+            } catch (const std::exception& ex) {
+                throw SceneError(ex.what());
+            }
+        }
+    }
     // Ambience sets (migration 16).
     if (has_column(db.get(), "ambience", "ambience")) {
         Stmt v = prepare(db.get(), "SELECT id, name, ambience FROM ambience");

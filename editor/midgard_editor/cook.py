@@ -31,6 +31,7 @@ from . import (
     contract,
     engine,
     gltf_pack,
+    menus,
     meshes,
     model_materials,
     music,
@@ -319,6 +320,13 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
                                 "in the project (or can't be read); it will be silent.")
             else:
                 files[sound] = (sounds.pak_path(sound), data)
+    # Pictures the Menu editor's screens show (6.0): PNG or JPEG as they are (the game's UI
+    # reads them), at ui/<their path in the project>.
+    for screen in menus.load_all(project):
+        for image in menus.images_of(screen["screen"]):
+            file = menus.image_file(project, image)
+            if file is not None and file.suffix.lower() in menus.IMAGE_SUFFIXES:
+                files[image] = ("ui/" + image[len(menus.IMAGE_PREFIX):], file.read_bytes())
     content: list[dict[str, str]] = []
     tmp = out / "game.pak.tmp"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as pak:
@@ -450,6 +458,7 @@ def cook(project: Project, out_dir: Path | None = None,
     credits = _cook_credits(project, out, content, warnings)
     warnings += _script_warnings(project, _cook_scripts(project, out))
     warnings += stats.problems(project)  # (6.0: their ranges, names given twice)
+    warnings += menus.problems(project)  # (6.0: the Menu editor's screens)
     warnings += stats.script_problems(project, script_files(project.root / "scripts"))
     _cook_icon(project, out)
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}

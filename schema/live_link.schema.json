@@ -112,6 +112,22 @@
       "required": ["type", "stats"]
     },
     {
+      "description": "Editor → runtime: the Menu editor's edits (milestone 6.0): every screen ({id, name, screen} rows, in order, as the screen table has them); shown screens are drawn again as they now are, and a deleted one goes.",
+      "properties": {
+        "type": { "const": "screens.put" },
+        "screens": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["type", "screens"]
+    },
+    {
+      "description": "Editor → runtime: the Menu editor's Show in Game: the game shows a screen on top of any others (screen.show), or takes it away (screen.hide).",
+      "properties": {
+        "type": { "enum": ["screen.show", "screen.hide"] },
+        "screen": { "type": "string" }
+      },
+      "required": ["type", "screen"]
+    },
+    {
       "description": "Editor → runtime: the scene's terrain stamps (sculpting and painting, every one in order, as the terrain_stamp table has them); the ground drawn and the solid ground follow at once.",
       "properties": {
         "type": { "const": "terrain.stamps" },

@@ -226,6 +226,26 @@ public:
     const hud::HudState& hud() const { return hud_; }
     // The timers that ended in the last update.
     const std::vector<std::string>& finished_timers() const { return finished_timers_; }
+
+    // ---- screens (milestone 6.0: the Menu editor's; midgard/screen.h) ----
+    const std::vector<ScreenDef>& screens() const { return scene_.screens; }
+    const ScreenDef* screen(const std::string& id) const;
+    // The Menu editor's edits while the game plays (the live link's screens.put): every screen
+    // ({id, name, screen} rows, in order). Shown screens stay shown (and go if deleted).
+    // Throws SceneError for one that can't be read.
+    void set_screen_data(const nlohmann::json& rows);
+    // The player clicked a button on a shown screen: it does what it says (closes its screen,
+    // opens another), and scripts hear it (midgard.ui.on_click). True if the button quits the
+    // game.
+    bool ui_click(const std::string& screen, const std::string& element);
+    // The player moved a slider or ticked a check: its value, for scripts (midgard.ui.value,
+    // on_change).
+    void ui_change(const std::string& screen, const std::string& element, double value);
+    // The clicks and changes of the last update (and since), for scripts.
+    const std::vector<hud::UiEvent>& ui_events() const { return ui_events_; }
+    // A packaged file's bytes by content id (a screen's picture). Throws AssetError if the
+    // package hasn't it.
+    std::vector<uint8_t> read_content(const std::string& id) const { return read_texture(id); }
     // The way the camera faces, in degrees from north (0 north, 90 east; midgard/compass.h), on
     // the world's shape where the player is.
     double heading() const;
@@ -548,6 +568,7 @@ private:
     std::vector<stats::Change> stat_changes_;
     hud::HudState hud_;
     std::vector<std::string> finished_timers_;
+    std::vector<hud::UiEvent> ui_events_;
     bool minimap_wanted_ = false;
     MinimapGround minimap_;
     std::string minimap_scene_;  // (made again in another scene)

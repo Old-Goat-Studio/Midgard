@@ -25,6 +25,7 @@
 #include "midgard/music.h"
 #include "midgard/physics.h"
 #include "midgard/render/renderer.h"
+#include "midgard/screen.h"
 #include "midgard/sound_events.h"
 #include "midgard/stats.h"
 #include "midgard/sunlight.h"
@@ -422,6 +423,8 @@ public:
     weather::WeatherTypes weather_types;
     // The player's stats, scores and counters (migration 19; midgard/stats.h), in order.
     std::vector<stats::StatDef> stats;
+    // The Menu editor's screens (migration 21; midgard/screen.h), in the designer's order.
+    std::vector<ScreenDef> screens;
     // The terrain's sculpting and painting (midgard/terrain.h), in order (migration 11).
     std::vector<TerrainStamp> terrain_stamps;
     // The environment the scene's Sky links to, if it's there.

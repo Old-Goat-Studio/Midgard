@@ -271,6 +271,7 @@ void Game::update(const Actions& actions, float dt) {
     stat_changes_ = stats_.take_changes();  // (scripts' since the last update, too)
     hud_.update(dt);
     finished_timers_ = hud_.take_finished();
+    ui_events_ = hud_.take_events();
     update_minimap();
     update_weather_look(dt);
     update_falling(dt);
@@ -593,6 +594,49 @@ std::vector<Game::MapMark> Game::map_marks(double radius) const {
         }
     }
     return out;
+}
+
+const ScreenDef* Game::screen(const std::string& id) const {
+    for (const ScreenDef& s : scene_.screens)
+        if (s.id == id) return &s;
+    return nullptr;
+}
+
+void Game::set_screen_data(const nlohmann::json& rows) {
+    std::vector<ScreenDef> screens;
+    try {
+        for (const nlohmann::json& r : rows)
+            screens.push_back(screen_from_json(r.at("id"), r.value("name", ""),
+                                               r.value("screen", nlohmann::json::object()).dump()));
+    } catch (const std::exception& e) {
+        throw SceneError(std::string("screens: ") + e.what());
+    }
+    scene_.screens = std::move(screens);
+    for (const std::string& id : std::vector(hud_.screens()))
+        if (!screen(id)) hud_.hide_screen(id);
+}
+
+bool Game::ui_click(const std::string& screen_id, const std::string& element) {
+    const ScreenDef* s = screen(screen_id);
+    const ScreenElement* e = s ? s->find(element) : nullptr;
+    hud_.post({screen_id, element, "click", 0.0});
+    if (!e) return false;
+    if (e->action == "close") hud_.hide_screen(screen_id);
+    // (Opening another puts it on top: closing that one comes back to this, as Settings goes
+    // back to the pause menu.)
+    if (e->action == "open" && screen(e->target)) hud_.show_screen(e->target);
+    return e->action == "quit";
+}
+
+void Game::ui_change(const std::string& screen_id, const std::string& element, double value) {
+    hud_.post({screen_id, element, "change", value});
+    // An option chosen: the others in its group aren't.
+    const ScreenDef* s = screen(screen_id);
+    const ScreenElement* e = s ? s->find(element) : nullptr;
+    if (e && e->kind == "option" && value != 0.0)
+        for (const ScreenElement& other : s->elements)
+            if (other.kind == "option" && other.group == e->group && other.id != e->id)
+                hud_.values[screen_id + "/" + other.id] = 0.0;
 }
 
 void Game::set_stat_data(const nlohmann::json& rows) {

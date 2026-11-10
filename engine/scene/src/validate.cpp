@@ -278,6 +278,13 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                     if (bytes.size() < 20 || bytes.size() % 4 != 0 ||
                         std::memcmp(bytes.data(), magic, 4) != 0)
                         throw AssetError("not a compiled shader (SPIR-V)");
+                } else if (c.path.starts_with("ui/")) {
+                    // A screen's picture (milestone 6.0): PNG or JPEG, as the UI reads it.
+                    static const uint8_t png[4] = {0x89, 'P', 'N', 'G'};
+                    static const uint8_t jpeg[3] = {0xFF, 0xD8, 0xFF};
+                    if (!(bytes.size() > 8 && std::memcmp(bytes.data(), png, 4) == 0) &&
+                        !(bytes.size() > 4 && std::memcmp(bytes.data(), jpeg, 3) == 0))
+                        throw AssetError("not a PNG or JPEG picture");
                 } else if (c.path.starts_with("audio/")) {
                     // A sound (milestone 5.14): read through by the game's own decoders.
                     try {

@@ -4816,3 +4816,75 @@ TEST_CASE("system space, the exit: up out of the planet's atmosphere into space,
     CHECK(on_ground());
     CHECK_FALSE(shown_unmade);
 }
+
+TEST_CASE("screens: from the database; buttons close, open and quit; scripts hear them") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {}, "player": {}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]},
+                                         "camera": {}}')"}});
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO screen (id, name, position, screen) VALUES
+        ('scr_pause', 'Pause', 0, '{"pauses": true, "elements": [
+            {"id": "resume", "kind": "button", "action": {"do": "close"}},
+            {"id": "settings", "kind": "button", "action": {"do": "open", "screen": "scr_settings"}},
+            {"id": "leave", "kind": "button", "action": {"do": "quit"}},
+            {"id": "shout", "kind": "button", "action": {"do": "event"}}]}'),
+        ('scr_settings', 'Settings', 1, '{"elements": [
+            {"id": "back", "kind": "button", "action": {"do": "close"}},
+            {"id": "volume", "kind": "slider", "value": 0.5}]}'))");
+    sqlite3_close(db);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+    midgard::Game game(pkg.dir);
+    REQUIRE(game.screens().size() == 2);
+    CHECK(game.screens()[0].id == "scr_pause");
+    CHECK(game.screen("scr_settings")->find("volume")->value == 0.5);
+    midgard::hud::HudState& hud = game.hud();
+    midgard::Actions actions(midgard::InputMap::defaults());
+
+    hud.show_screen("scr_pause");
+    // Settings opens on top; its Back comes back to the pause menu.
+    CHECK_FALSE(game.ui_click("scr_pause", "settings"));
+    CHECK(hud.screens() == std::vector<std::string>{"scr_pause", "scr_settings"});
+    game.ui_change("scr_settings", "volume", 0.25);
+    CHECK(hud.values.at("scr_settings/volume") == 0.25);
+    game.ui_click("scr_settings", "back");
+    CHECK(hud.screens() == std::vector<std::string>{"scr_pause"});
+    // An event button does nothing itself; resume closes; quit says so.
+    game.ui_click("scr_pause", "shout");
+    CHECK(hud.screen_shown("scr_pause"));
+    CHECK(game.ui_click("scr_pause", "leave"));
+    game.ui_click("scr_pause", "resume");
+    CHECK(hud.screens().empty());
+    // The next update hands every click and change to scripts, in order.
+    game.update(actions, 1.0f / 60.0f);
+    const auto& events = game.ui_events();
+    REQUIRE(events.size() == 6);
+    CHECK(events[0].element == "settings");
+    CHECK(events[1].kind == "change");
+    CHECK(events[1].value == 0.25);
+    CHECK(events[5].element == "resume");
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(game.ui_events().empty());
+
+    // The Menu editor's edits arrive live; a deleted screen that was shown goes.
+    hud.show_screen("scr_settings");
+    game.set_screen_data(
+        nlohmann::json::array({{{"id", "scr_pause"},
+                                {"name", "Pause"},
+                                {"screen", {{"elements", nlohmann::json::array()}}}}}));
+    CHECK(game.screens().size() == 1);
+    CHECK(hud.screens().empty());
+    CHECK_THROWS_AS(game.set_screen_data(nlohmann::json::array(
+                        {{{"id", "bad"}, {"screen", {{"elements", {{{"kind", "text"}}}}}}}})),
+                    midgard::SceneError);
+    CHECK(hud.dump().at("screens").is_array());
+
+    // The cook refuses a screen it can't read.
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO screen (id, name, screen) VALUES ('scr_bad', 'Bad',
+        '{"elements": [{"id": "a", "kind": "video"}]}'))");
+    sqlite3_close(db);
+    const midgard::ValidationReport report = midgard::validate_package(pkg.dir);
+    REQUIRE_FALSE(report.errors.empty());
+    CHECK(report.errors.front().find("video") != std::string::npos);
+}

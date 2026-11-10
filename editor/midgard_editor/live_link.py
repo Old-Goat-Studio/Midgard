@@ -31,7 +31,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject, QProcess, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket
 
-from . import environments, sound_events, stats, surface_shaders, terrain_stamps, weather
+from . import environments, menus, sound_events, stats, surface_shaders, terrain_stamps, weather
 from .cook import SCRIPT_PREFIX, CookError, recook, used_mesh_assets
 from .objects import ObjectError, object_content
 from .project import Project
@@ -131,6 +131,7 @@ class PlaySession(QObject):
         project.sound_events_changed.connect(self._audio_changed)
         project.weather_changed.connect(self._weather_changed)
         project.stats_changed.connect(self._stats_changed)
+        project.screens_changed.connect(self._screens_changed)
         project.terrain_changed.connect(self._terrain_changed)
         project.files_changed.connect(self._files_changed)
 
@@ -434,6 +435,21 @@ class PlaySession(QObject):
         if self.socket is None:
             return
         self.send({"type": "stats.put", "stats": stats.live_message(self.project)})
+
+    def _screens_changed(self, _screen_id: str) -> None:
+        """The Menu editor's edits: the running game's screens follow at once (a shown one is
+        drawn again as it now is)."""
+        if self.socket is None:
+            return
+        screens = menus.live_message(self.project)
+        self.send({"type": "screens.put", "screens": screens,
+                   "images": menus.image_files(self.project, screens)})
+
+    def show_screen(self, screen_id: str, shown: bool = True) -> None:
+        """The Menu editor's Show in Game: the running game shows the screen (or hides it)."""
+        if self.socket is None:
+            return
+        self.send({"type": "screen.show" if shown else "screen.hide", "screen": screen_id})
 
     def _objects_changed(self, _object_id: str) -> None:
         """An object edited, re-imported, added or removed: the running game follows."""

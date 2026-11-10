@@ -1083,8 +1083,103 @@ round a planet the compass never jumps. On a cylinder, north runs along its leng
 Nothing on the HUD takes the mouse, so clicks always reach the game. On a phone it keeps clear of
 the notch and rounded corners, and held upright the compass goes on top, the bars and numbers
 share the width under it, and the minimap is smaller. Scripts
-use it through `midgard.ui` (section 19). Making your own HUD and menus in the editor comes
-later in Phase 6.
+use it through `midgard.ui` (section 19). Your own menus and screens come from the Menu editor
+(below).
+
+### Menus and screens: the Menu editor
+
+The **Menu Editor** (Window ▸ Menu Editor; a tab beside the viewport) makes your game's own
+screens: a title screen, a pause menu, settings, game over. On the left are your **Screens**
+(**New**, **Duplicate**, **Delete**) and the chosen screen's **Elements**. In the middle is the
+**canvas**: the screen drawn by the game's own engine, exactly as players will see it. On the
+right are the settings of whatever you've chosen.
+
+**Elements.** Click **Add** for a:
+
+- **Panel**: a box that holds other elements. Move it and everything inside goes with it.
+- **Text**: words, such as a title.
+- **Button**: something to click (or press with a controller, or tap).
+- **Slider**: a value to drag, such as the volume.
+- **Check box**: something to tick on or off, such as subtitles.
+- **Option button**: one choice among several, such as Easy, Normal and Hard. Options with the
+  same **Group** are one choice: choosing one unchooses the others.
+- **Picture**: an image on its own, such as your game's logo.
+
+With a panel chosen, Add puts the new element inside it. Elements later in the list are drawn
+on top: **Up** and **Down** change the order (a panel takes its parts with it).
+
+**Placing things.** Each element hangs from an **anchor** on its panel, or on the screen: a
+corner, the middle of a side, or the very middle. **X** and **Y** say how far from the anchor
+it sits (right and down are more), and **Width** and **Height** its size, all in **dp**. A dp is
+the same size to the eye on every screen, so a button 56 dp tall is easy to press on a phone and
+on a big monitor alike. Because elements hang from anchors, a button anchored bottom right stays
+in the bottom right corner on every screen shape. **Fill** stretches an element over its panel
+(X and Y become its margins).
+
+On the canvas, **click** an element to choose it, **drag** it to move it, and drag the yellow
+square at its **corner** to resize it. Each drag is one step to undo. **Preview** shows the
+screen at a desktop size, or on a phone held sideways or upright (clear of its notch).
+
+**The look.** Text, buttons and check boxes have a **Text size**, **Align** (left, middle or
+right), **Bold** and a **Text colour**. Panels, text and buttons have a **Fill** colour, a
+**Border** colour and width, and **Corners** (how round). Every colour can be see-through (its
+opacity), and **Default** goes back to Midgard's usual look.
+
+**Pictures.** Screens and their elements can be drawn with pictures. Every list of pictures
+holds the PNG and JPEG pictures in the **GUI** section of your Asset Library (**Assets ▸ Asset
+Library**: import button frames, panels, ticks and logos there, with their licence). Each picture
+is stretched to fill its place, so a frame keeps its look at any size. **None** takes a picture
+away. What each has:
+
+| | Pictures |
+|---|---|
+| The screen (nothing chosen) | **Background picture**, over the whole screen |
+| Panel, text, picture | **Image** |
+| Button | **Normal**, **Hover** (the mouse over it), **Pressed** (held down) and **Disabled** (it can't be used) |
+| Check box | **Unchecked** and **Checked**: the box's picture, ticked or not |
+| Option button | **Unselected** and **Selected** |
+| Slider | **Background** (the bar along it) and **Pointer** (the handle you drag) |
+
+A state left empty uses the button's normal picture (Pressed uses Hover first), and a check box
+or option with only one picture uses it for both. A button with pictures drops its usual fill
+and border, unless you give it a Fill or Border of its own.
+
+**Can be used.** Buttons, sliders, check boxes and options have a **Can be used** tick. Untick it
+for one the player can't use yet, such as Load when nothing is saved: it shows its disabled
+picture (or greyed) and doesn't respond. A script enables it when it should be
+(`midgard.ui.set_enabled`). The pictures your screens use go into the finished game, and
+their makers are credited in its `CREDITS.txt` like any other asset.
+
+**What a button does** (**Does**): nothing, **Close this screen**, **Open a screen…** (another
+one, on top: closing that one comes back to this, as Settings goes back to Pause), **Quit the
+game**, or **Tell scripts only**. Your scripts hear every click whatever it does.
+
+**The screen itself** (with no element chosen) has a **Name**, and two switches:
+
+- **Takes the player's input**: a menu. While it shows, the game's controls wait and the mouse
+  is free. Untick it for something to play under, like a score panel.
+- **Pauses the game**: everything stands still while it shows (a pause menu). Scripts still hear
+  its buttons.
+
+It also has a **Background** colour over the whole game behind it (a see-through dark one dims
+the game).
+
+**Showing a screen.** A screen shows when a script asks: `midgard.ui.show("scr_pause")` (its
+id is under its name). While the game plays under the editor, **Show in Game** shows the chosen
+screen there, and every change you make reaches it at once. Problems (an element too small for a
+finger, a button a controller can't reach, text too long for its box, a button opening a screen
+that's gone) are listed under the canvas, and Cook warns about them too.
+
+A recipe: a title screen when the game starts, its Play button closing it (set Play's **Does**
+to **Close this screen**), and a note when it does.
+
+```python
+import midgard
+
+def on_start(entity):
+    midgard.ui.show("scr_title")
+    midgard.ui.on_click("scr_title", "play", lambda: midgard.ui.notify("Off you go!"))
+```
 
 ---
 
@@ -1657,6 +1752,13 @@ The stats show on the HUD by themselves; these are the rest.
 | `midgard.ui.compass = False`, `midgard.ui.minimap = False` | Hide the compass or the minimap (`True` shows them again). |
 | `midgard.ui.mark(entity, "Shrine")` | Marks an entity on the minimap with a gold dot (and a label, if given). `midgard.ui.unmark(entity)` takes it off. |
 | `midgard.ui.heading` | The way the camera faces, in degrees: 0 north, 90 east, 180 south, 270 west. |
+| `midgard.ui.show("scr_pause")`, `midgard.ui.hide("scr_pause")` | Shows a screen made in the Menu editor (on top of any others), or takes it away. `midgard.ui.shown("scr_pause")` says whether it shows; `midgard.ui.screens` lists those showing, bottom to top. |
+| `midgard.ui.on_click("scr_pause", "resume", resumed)` | Calls `resumed()` when the player clicks that button. `midgard.ui.click("scr_pause", "resume")` presses it as the player would. |
+| `midgard.ui.on_change("scr_settings", "volume", set_volume)` | Calls `set_volume(value)` when the player moves that slider (or `(True or False)` when they tick a check box). |
+| `midgard.ui.value("scr_settings", "volume")`, `midgard.ui.set_value(...)` | A slider's value or whether a check box is ticked; or sets it. |
+| `midgard.ui.set_text("scr_over", "score", "Score: 1250")` | Changes an element's words. |
+| `midgard.ui.set_enabled("scr_title", "load", True)` | Lets the player use a button, slider, check box or option (False: not; it shows its disabled picture). `midgard.ui.enabled(...)` says which. |
+| `midgard.ui.value("scr_settings", "hard")` | For an option button: whether it's the one chosen. `set_value(..., True)` chooses it (and unchooses the rest of its group). |
 
 ```python
 import midgard
@@ -1705,14 +1807,13 @@ Plays are quick.
 
 ### Menus, screens and the HUD
 
-Every game shows a HUD (section 15). Menus and your own screens are coming in Phase 6. The
-engine underneath is in place: screens work with the mouse, the keyboard, a game controller
-(the d-pad or stick moves between buttons, A presses, B goes back) and touch, grow with the
-player's screen and UI scale, and keep clear of a phone's notch. Every game carries two fonts
-for them, **Inconsolata** (the default) and **OpenDyslexic** (easier for some players to
-read), both under the SIL Open Font License; their licence goes in the game's
-`THIRD_PARTY_NOTICES.txt` for you. The editor's tools for making your own screens come in the
-next steps.
+Every game shows a HUD (section 15), and the screens you make in the Menu editor (section 15,
+"Menus and screens"). Screens work with the mouse, the keyboard, a game controller (the d-pad
+or stick moves between buttons, A presses) and touch, grow with the player's screen and UI scale,
+and keep clear of a phone's notch. Every game carries two fonts for them, **Inconsolata** (the
+default) and **OpenDyslexic** (easier for some players to read), both under the SIL Open Font
+License; their licence goes in the game's `THIRD_PARTY_NOTICES.txt` for you. Ready-made screens
+(a title screen, pause, settings, game over) come in the next step.
 
 ---
 

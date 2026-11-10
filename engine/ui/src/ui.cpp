@@ -713,6 +713,21 @@ bool Ui::set_image(const std::string& name, uint32_t width, uint32_t height,
     return true;
 }
 
+bool Ui::set_image_file(const std::string& name, const std::vector<uint8_t>& encoded) {
+    if (encoded.empty()) return false;
+    int w = 0, h = 0, channels = 0;
+    stbi_uc* pixels =
+        stbi_load_from_memory(encoded.data(), int(encoded.size()), &w, &h, &channels, 4);
+    if (!pixels) return false;
+    std::vector<uint8_t> rgba(pixels, pixels + size_t(w) * size_t(h) * 4);
+    stbi_image_free(pixels);
+    return set_image(name, uint32_t(w), uint32_t(h), rgba);
+}
+
+bool Ui::has_image(const std::string& name) const {
+    return impl_->bridge.pictures.contains(name);
+}
+
 void Ui::navigate(int rml_key) {
     impl_->press(Rml::Input::KeyIdentifier(rml_key), 0);
 }

@@ -1,0 +1,108 @@
+{
+  "modal": true,
+  "pauses": true,
+  "background": [
+    0.02,
+    0.03,
+    0.06,
+    0.55
+  ],
+  "elements": [
+    {
+      "id": "panel",
+      "kind": "panel",
+      "anchor": "center",
+      "w": 340,
+      "h": 420
+    },
+    {
+      "id": "title",
+      "kind": "text",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 22,
+      "w": 300,
+      "h": 44,
+      "text": "Paused",
+      "style": {
+        "font_size": 32,
+        "align": "center",
+        "color": [
+          1.0,
+          0.82,
+          0.48,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "resume",
+      "kind": "button",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 90,
+      "w": 260,
+      "h": 56,
+      "text": "Resume",
+      "action": {
+        "do": "close"
+      }
+    },
+    {
+      "id": "volume_label",
+      "kind": "text",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 166,
+      "w": 260,
+      "h": 28,
+      "text": "Volume",
+      "style": {
+        "font_size": 16
+      }
+    },
+    {
+      "id": "volume",
+      "kind": "slider",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 196,
+      "w": 260,
+      "h": 44,
+      "value": 0.7
+    },
+    {
+      "id": "subtitles",
+      "kind": "check",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 256,
+      "w": 260,
+      "h": 44,
+      "text": "Subtitles",
+      "value": true
+    },
+    {
+      "id": "quit",
+      "kind": "button",
+      "parent": "panel",
+      "anchor": "bottom",
+      "y": -22,
+      "w": 260,
+      "h": 56,
+      "text": "Quit",
+      "action": {
+        "do": "quit"
+      },
+      "style": {
+        "background": [
+          0.45,
+          0.16,
+          0.16,
+          1.0
+        ],
+        "radius": 10
+      }
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "modal": true,
+  "image": "ui:backdrop.png",
+  "elements": [
+    {
+      "id": "panel",
+      "kind": "panel",
+      "anchor": "center",
+      "w": 380,
+      "h": 560
+    },
+    {
+      "id": "logo",
+      "kind": "image",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 16,
+      "w": 80,
+      "h": 80,
+      "image": "ui:logo.png"
+    },
+    {
+      "id": "play",
+      "kind": "button",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 108,
+      "w": 260,
+      "h": 56,
+      "text": "Play",
+      "image": "ui:button.png",
+      "images": {
+        "hover": "ui:button.png",
+        "pressed": "ui:button.png",
+        "disabled": "ui:button_disabled.png"
+      }
+    },
+    {
+      "id": "load",
+      "kind": "button",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 176,
+      "w": 260,
+      "h": 56,
+      "text": "Load (none saved)",
+      "image": "ui:button.png",
+      "enabled": false,
+      "images": {
+        "disabled": "ui:button_disabled.png"
+      }
+    },
+    {
+      "id": "subs",
+      "kind": "check",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 248,
+      "w": 260,
+      "h": 48,
+      "text": "Subtitles",
+      "value": true,
+      "images": {
+        "unchecked": "ui:tick_off.png",
+        "checked": "ui:tick_on.png"
+      }
+    },
+    {
+      "id": "easy",
+      "kind": "option",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 308,
+      "w": 260,
+      "h": 48,
+      "text": "Easy",
+      "group": "difficulty",
+      "images": {
+        "unchecked": "ui:dot_off.png",
+        "checked": "ui:dot_on.png"
+      }
+    },
+    {
+      "id": "hard",
+      "kind": "option",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 364,
+      "w": 260,
+      "h": 48,
+      "text": "Hard",
+      "group": "difficulty",
+      "value": true,
+      "images": {
+        "unchecked": "ui:dot_off.png",
+        "checked": "ui:dot_on.png"
+      }
+    },
+    {
+      "id": "volume",
+      "kind": "slider",
+      "parent": "panel",
+      "anchor": "top",
+      "y": 432,
+      "w": 260,
+      "h": 48,
+      "value": 0.3,
+      "images": {
+        "track": "ui:slider_track.png",
+        "pointer": "ui:slider_pointer.png"
+      }
+    }
+  ]
+}

@@ -73,7 +73,9 @@ def scenes() -> list[dict]:
 
 def render(runtime: list[str], scene: dict, out: Path) -> tuple[bool, str]:
     """Draws one scene to `out`. Returns (ok, the runtime's output)."""
-    run = subprocess.run([*runtime, *scene["args"], "--screenshot", str(out)],
+    # ("{images}" in an argument: this folder, for files the scenes use)
+    args = [a.replace("{images}", str(IMAGES)) for a in scene["args"]]
+    run = subprocess.run([*runtime, *args, "--screenshot", str(out)],
                          capture_output=True, text=True, timeout=120)
     text = (run.stdout + run.stderr).strip()
     return run.returncode == 0 and out.is_file(), text

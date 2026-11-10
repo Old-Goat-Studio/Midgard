@@ -25,6 +25,9 @@
 //                                       with --ui-touch also a finger's, fail the run);
 //                                       --ui-scale S scales it, --safe-area l,t,r,b (pixels)
 //                                       keeps it clear of a pretend notch
+//   --screen-test file.json             a screen as the Menu editor makes it (6.0), drawn
+//                                       over the game in a screenshot and checked as --ui-test
+//                                       checks (with --ui-touch, a finger's checks too)
 //   --touch-controls                    the on-screen touch controls (6.0) from the start,
 //                                       with the mouse as a finger (to try them without a
 //                                       touch screen; a phone shows them by itself)
@@ -111,6 +114,7 @@
 #include "midgard/profile.h"
 #include "midgard/render/renderer.h"
 #include "midgard/ui/hud.h"
+#include "midgard/ui/screens.h"
 #include "midgard/ui/touch.h"
 #include "midgard/ui/ui.h"
 #include "midgard/version.h"
@@ -161,6 +165,7 @@ struct Options {
     bool hud_test = false;        // the HUD with made-up stats, notes, a timer and a prompt
     bool show_hud = false;        // a screenshot of a game with its HUD (a window always has it)
     bool touch_controls = false;  // the touch controls from the start, the mouse a finger
+    std::string screen_test;      // a screen (Menu editor JSON) to draw and check, in a screenshot
 };
 
 int usage() {
@@ -171,7 +176,7 @@ int usage() {
         "                       [--profile out.json] [--player-profile <dir>] [--world <dir>]\n"
         "                       [--quality desktop|phone] [--ui-test [--ui-touch]]\n"
         "                       [--ui-scale S] [--safe-area l,t,r,b] [--hud-test]\n"
-        "                       [--show-hud] [--touch-controls]\n"
+        "                       [--show-hud] [--touch-controls] [--screen-test file.json]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
 }
@@ -286,6 +291,26 @@ public:
     virtual std::optional<midgard::ui::HudData> hud() const { return std::nullopt; }
     // The player is flying (the touch controls show their Down button).
     virtual bool flying() const { return false; }
+    // The Menu editor's screens (6.0), and the game's state of them: which are shown, and the
+    // text and values scripts set. None without a game.
+    virtual const std::vector<midgard::ScreenDef>* screen_defs() const { return nullptr; }
+    virtual const midgard::hud::HudState* hud_state() const { return nullptr; }
+    // The player clicked a button (true: it quits the game), or changed a slider or check.
+    virtual bool ui_click(const std::string& screen, const std::string& element) {
+        (void)screen;
+        (void)element;
+        return false;
+    }
+    virtual void ui_change(const std::string& screen, const std::string& element, double value) {
+        (void)screen;
+        (void)element;
+        (void)value;
+    }
+    // A screen's picture: its file's bytes by "ui:" content id (empty: none).
+    virtual std::vector<uint8_t> ui_image(const std::string& content) const {
+        (void)content;
+        return {};
+    }
     // A HUD is shown from now on (the game makes what only it needs: the minimap's ground).
     virtual void hud_shown() {}
     // How dark the picture is (a scene change fading out and in): 0 clear, 1 black.
@@ -673,6 +698,27 @@ public:
     }
     void hud_shown() override { game_.want_minimap(); }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
+    const std::vector<midgard::ScreenDef>* screen_defs() const override { return &game_.screens(); }
+    const midgard::hud::HudState* hud_state() const override { return &game_.hud(); }
+    bool ui_click(const std::string& screen, const std::string& element) override {
+        return game_.ui_click(screen, element);
+    }
+    void ui_change(const std::string& screen, const std::string& element, double value) override {
+        game_.ui_change(screen, element, value);
+    }
+    std::vector<uint8_t> ui_image(const std::string& content) const override {
+        // From the package; under the editor, a picture chosen since the game was cooked comes
+        // from the project's file (the live link's screens.put says where).
+        try {
+            return game_.read_content(content);
+        } catch (const std::exception&) {
+        }
+        const auto it = ui_image_files_.find(content);
+        if (it == ui_image_files_.end()) return {};
+        std::ifstream in(std::filesystem::u8path(it->second), std::ios::binary);
+        return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)),
+                                    std::istreambuf_iterator<char>());
+    }
     bool flying() const override {
         const entt::entity p = game_.camera_rig().player();
         const auto* player =
@@ -745,6 +791,28 @@ public:
                 return;
             }
             acknowledge("applied stats.put");
+            return;
+        }
+        if (type == "screens.put") {  // the Menu editor
+            try {
+                for (const auto& [content, file] :
+                     message.value("images", nlohmann::json::object()).items())
+                    if (file.is_string()) ui_image_files_[content] = file.get<std::string>();
+                game_.set_screen_data(message.at("screens"));
+            } catch (const std::exception& ex) {
+                warn("live link: %s\n", ex.what());
+                return;
+            }
+            acknowledge("applied screens.put");
+            return;
+        }
+        if (type == "screen.show" || type == "screen.hide") {  // the Menu editor's Show in Game
+            const std::string id = message.value("screen", "");
+            if (type == "screen.show" && game_.screen(id))
+                game_.hud().show_screen(id);
+            else
+                game_.hud().hide_screen(id);
+            acknowledge("applied " + type);
             return;
         }
         if (type == "weather.put") {  // the Calendar dock's Weather tab
@@ -880,6 +948,8 @@ private:
 public:
 private:
     midgard::Game game_;
+    // Pictures chosen in the Menu editor since the game was cooked: their files.
+    std::map<std::string, std::string> ui_image_files_;
     bool scripts_tried_ = false;
 #ifdef MIDGARD_HAS_SCRIPTING
     std::unique_ptr<midgard::script::Interpreter> python_;  // before scripts_: outlives it
@@ -1308,7 +1378,7 @@ int run_screenshot(const Options& opt, Source& source) {
     const auto hud_data = opt.hud_test   ? std::optional(sample_hud())
                           : opt.show_hud ? source.hud()
                                          : std::nullopt;
-    if (opt.ui_test || hud_data) {
+    if (opt.ui_test || hud_data || !opt.screen_test.empty()) {
         midgard::ui::Options uo;
         uo.width = opt.width;
         uo.height = opt.height;
@@ -1348,6 +1418,48 @@ int run_screenshot(const Options& opt, Source& source) {
         ui->close(screen);
         ui->update(0.0);
         midgard::ui::open_test_screen(*ui);
+    }
+    if (!opt.screen_test.empty()) {
+        midgard::ScreenDef def;
+        try {
+            std::ifstream in(opt.screen_test, std::ios::binary);
+            const std::string json((std::istreambuf_iterator<char>(in)),
+                                   std::istreambuf_iterator<char>());
+            def = midgard::screen_from_json("screen", "Screen test", json);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "error: %s: %s\n", opt.screen_test.c_str(), e.what());
+            return 1;
+        }
+        // (its pictures: "ui:NAME" is the file NAME beside the screen's)
+        for (const std::string& image : midgard::screen_images(def)) {
+            const std::filesystem::path file =
+                std::filesystem::path(opt.screen_test).parent_path() / image.substr(3);
+            std::ifstream in(file, std::ios::binary);
+            const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                             std::istreambuf_iterator<char>());
+            if (!ui->set_image_file(midgard::screen_image_name(image), bytes)) {
+                std::fprintf(stderr, "error: can't read the picture %s\n", file.string().c_str());
+                return 1;
+            }
+        }
+        const std::string rml = midgard::screen_rml(def);
+        Rml::ElementDocument* screen = ui->open_text(rml, "midgard://screen/test", def.modal);
+        if (!screen) {
+            std::fprintf(stderr, "error: the screen didn't open\n");
+            return 1;
+        }
+        ui->update(0.0);
+        const auto problems = ui->check(screen, opt.ui_touch);
+        for (const auto& p : problems)
+            std::fprintf(stderr, "UI %s: %s: %s\n", p.kind.c_str(), p.element.c_str(),
+                         p.message.c_str());
+        if (!problems.empty()) {
+            std::fprintf(stderr, "error: the screen has %zu problem(s)\n", problems.size());
+            return 1;
+        }
+        ui->close(screen);  // (the checks pressed its controls: draw it as it opens)
+        ui->update(0.0);
+        ui->open_text(rml, "midgard://screen/test", def.modal);
     }
     if (ui) {
         ui->update(0.0);
@@ -1534,6 +1646,7 @@ int run_window(const Options& opt, Source& source) {
         std::unique_ptr<midgard::ui::Ui> ui;
         std::unique_ptr<midgard::ui::Hud> hud;  // (after the UI: it goes first)
         std::unique_ptr<midgard::ui::TouchControls> touch;
+        std::unique_ptr<midgard::ui::Screens> screens;  // the Menu editor's, as the game shows
         // The touch controls: on a phone without a controller, or asked for (with the mouse as
         // a finger). A finger shows them; a key, a mouse click or a controller hides them.
         bool touch_wanted = opt.touch_controls;
@@ -1555,10 +1668,14 @@ int run_window(const Options& opt, Source& source) {
                 if (!opt.hud_test) source.hud_shown();
                 touch = std::make_unique<midgard::ui::TouchControls>(*ui);
             }
+            if (source.screen_defs())
+                screens = std::make_unique<midgard::ui::Screens>(
+                    *ui, [&source](const std::string& c) { return source.ui_image(c); });
             if (opt.ui_test && !midgard::ui::open_test_screen(*ui))
                 warn("The UI test screen didn't open\n");
         } catch (const std::exception& e) {
             warn("No in-game UI: %s\n", e.what());
+            screens.reset();
             touch.reset();
             hud.reset();
         }
@@ -1759,6 +1876,18 @@ int run_window(const Options& opt, Source& source) {
                 SDL_Delay(50);
                 continue;
             }
+            // The screens: what the player did on them reaches the game (a button that quits,
+            // quits); then they show as the game has them now.
+            if (screens) {
+                for (const midgard::ui::Screens::Event& ev : screens->take_events()) {
+                    if (ev.kind == "click" && source.ui_click(ev.screen, ev.element))
+                        running = false;
+                    if (ev.kind == "change") source.ui_change(ev.screen, ev.element, ev.value);
+                }
+                if (const midgard::hud::HudState* h = source.hud_state())
+                    screens->sync(*source.screen_defs(), h->screens(), h->texts, h->values,
+                                  h->enabled);
+            }
             // A menu (the UI test screen) frees the mouse while it is up; closing it gives the
             // mouse back to the game as it was.
             const bool is_modal = ui && ui->modal();
@@ -1788,7 +1917,9 @@ int run_window(const Options& opt, Source& source) {
             last = now;
             if (!paused) {
                 MIDGARD_PROFILE_SCOPE("update");
-                source.update(actions, dt);
+                // (A screen that pauses the game: everything stands still, but scripts still
+                // hear its buttons.)
+                source.update(actions, screens && screens->pauses() ? 0.0f : dt);
             }
             const float t = std::chrono::duration<float>(now - start).count();
             const float aspect = float(renderer.width()) / float(renderer.height());
@@ -2111,6 +2242,8 @@ int main(int argc, char** argv) {
             opt.show_hud = true;
         } else if (arg == "--touch-controls") {
             opt.touch_controls = true;
+        } else if (arg == "--screen-test" && has_value) {
+            opt.screen_test = argv[++i];
         } else if (arg == "--ui-touch") {
             opt.ui_touch = true;
         } else if (arg == "--ui-scale" && has_value) {

@@ -589,6 +589,46 @@ class UiApi:
     def unmark(self, entity: Entity) -> bool:
         """Takes an entity's mark off the minimap. False if it had none."""
 
+    screens: list[str]
+    """The screens (made in the Menu editor) shown now, bottom to top (read-only)."""
+
+    def show(self, screen: str) -> None:
+        """Shows a screen made in the Menu editor (by its id), on top of any others."""
+
+    def hide(self, screen: str) -> bool:
+        """Takes a screen away. False if it wasn't shown."""
+
+    def shown(self, screen: str) -> bool:
+        """Whether a screen is shown."""
+
+    def on_click(self, screen: str, element: str, callback: _Callable[[], None]) -> None:
+        """Calls callback() when the player clicks a button on a screen."""
+
+    def on_change(self, screen: str, element: str,
+                  callback: _Callable[[float | bool], None]) -> None:
+        """Calls callback(value) when the player moves a slider (its value) or ticks a check
+        (True or False) on a screen."""
+
+    def set_enabled(self, screen: str, element: str, enabled: bool) -> None:
+        """Lets the player use an element (a button, slider, check or option), or not:
+        disabled, it shows its disabled picture (or greyed) and can't be used."""
+
+    def enabled(self, screen: str, element: str) -> bool:
+        """Whether the player can use an element."""
+
+    def click(self, screen: str, element: str) -> None:
+        """Presses a button as the player would: it does what it says (but doesn't quit the
+        game), and on_click hears it at the next update."""
+
+    def set_text(self, screen: str, element: str, text: str) -> None:
+        """Changes the text of an element (text, a button, a check) on a screen."""
+
+    def value(self, screen: str, element: str) -> float | bool:
+        """A slider's value, or whether a check is ticked, on a screen."""
+
+    def set_value(self, screen: str, element: str, value: float | bool) -> None:
+        """Sets a slider's value (or ticks a check: True or False) on a screen."""
+
     def notify(self, text: str, seconds: float = 4.0) -> None:
         """A short note on the HUD ("Picked up a key") for so many seconds; it fades as it
         goes. Five show at most: the oldest goes first."""

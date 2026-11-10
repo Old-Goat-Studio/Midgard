@@ -786,6 +786,8 @@ def used_by(project, content_ids) -> list[Asset]:
             file = Path(project.root) / parsed[0]
         if file is None and (sound := sounds.parse(content)) is not None:
             file = Path(project.root) / sound
+        if file is None and content.startswith("ui:"):  # a screen's picture (6.0)
+            file = Path(project.root) / content[3:]
         if file is not None and (asset := asset_of(project, file, assets)) is not None:
             found[asset.id] = asset
     return sorted(found.values(), key=lambda a: a.name.lower())

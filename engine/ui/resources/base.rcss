@@ -77,6 +77,17 @@ input[type=checkbox] {
     border-radius: 6dp;
 }
 input[type=checkbox]:checked { background-color: #4f8a5a; }
+input[type=radio] {
+    box-sizing: border-box;
+    width: 44dp;
+    height: 44dp;
+    background-color: #0e121a;
+    border: 2dp #46546e;
+    border-radius: 22dp;
+}
+input[type=radio]:checked { background-color: #4f8a5a; }
+input[type=radio]:focus-visible { border-color: #ffd27a; }
+input:disabled { opacity: 0.5; }
 input[type=checkbox]:focus-visible { border-color: #ffd27a; }
 
 input.range, input[type=range] {

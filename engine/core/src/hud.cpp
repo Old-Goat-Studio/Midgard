@@ -67,6 +67,31 @@ std::vector<std::string> HudState::take_finished() {
     return std::exchange(finished_, {});
 }
 
+void HudState::show_screen(const std::string& id) {
+    hide_screen(id);
+    screens_.push_back(id);
+}
+
+bool HudState::hide_screen(const std::string& id) {
+    const auto it = std::find(screens_.begin(), screens_.end(), id);
+    if (it == screens_.end()) return false;
+    screens_.erase(it);
+    return true;
+}
+
+bool HudState::screen_shown(const std::string& id) const {
+    return std::find(screens_.begin(), screens_.end(), id) != screens_.end();
+}
+
+void HudState::post(UiEvent event) {
+    if (event.kind == "change") values[event.screen + "/" + event.element] = event.value;
+    events_.push_back(std::move(event));
+}
+
+std::vector<UiEvent> HudState::take_events() {
+    return std::exchange(events_, {});
+}
+
 nlohmann::json HudState::dump() const {
     nlohmann::json notes = nlohmann::json::array();
     for (const Note& n : notes_) notes.push_back(n.text);
@@ -79,7 +104,8 @@ nlohmann::json HudState::dump() const {
             {"crosshair", crosshair ? nlohmann::json(*crosshair) : nlohmann::json()},
             {"prompt", prompt_},
             {"notes", notes},
-            {"timers", timers}};
+            {"timers", timers},
+            {"screens", screens_}};
 }
 
 }  // namespace midgard::hud
