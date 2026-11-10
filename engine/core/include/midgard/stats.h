@@ -39,6 +39,7 @@ struct StatDef {
     double start = 100.0;
     double regen = 0.0;  // a stat's change a second by itself (negative: it drains)
     double delay = 0.0;  // seconds after it last dropped before it refills
+    bool hud = true;     // shown on the HUD (a bar for a stat, a number for the others)
     // Whole numbers: scores and counters.
     bool whole() const { return kind != Kind::stat; }
     // Bounded above: stats, and counters with a target.
@@ -46,7 +47,8 @@ struct StatDef {
 };
 
 // A stat from its table row ("stat" is the JSON its column holds:
-// {"kind": "stat", "min": 0, "max": 100, "start": 100, "regen": 0, "delay": 0}). Throws
+// {"kind": "stat", "min": 0, "max": 100, "start": 100, "regen": 0, "delay": 0,
+// "hud": true}). Throws
 // StatError, naming it, if it isn't one: an unknown kind, a most below the least.
 StatDef stat_from_json(const std::string& id, const std::string& name, const std::string& json);
 

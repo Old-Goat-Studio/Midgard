@@ -40,6 +40,7 @@ add_library(midgard_core STATIC
     core/src/weather_sim.cpp
     core/src/survival.cpp
     core/src/stats.cpp
+    core/src/hud.cpp
     core/src/texture_gen.cpp
 )
 target_include_directories(midgard_core PUBLIC
@@ -126,7 +127,8 @@ set(UI_GEN "${CMAKE_CURRENT_BINARY_DIR}/generated/ui")
 file(MAKE_DIRECTORY "${UI_GEN}")
 # The base style sheet and the test screen, as text; the fonts, as bytes.
 set(UI_TEXT_SOURCES)
-foreach(pair "base.rcss:kUiBaseRcss:ui_base_rcss.h" "test_screen.rml:kUiTestScreen:ui_test_screen.h")
+foreach(pair "base.rcss:kUiBaseRcss:ui_base_rcss.h" "test_screen.rml:kUiTestScreen:ui_test_screen.h"
+        "hud.rml:kUiHudRml:ui_hud_rml.h")
     string(REPLACE ":" ";" parts "${pair}")
     list(GET parts 0 file)
     list(GET parts 1 name)
@@ -163,6 +165,7 @@ add_library(midgard_ui STATIC
     ui/src/ui.cpp
     ui/src/checks.cpp
     ui/src/test_screen.cpp
+    ui/src/hud.cpp
     ui/src/fonts.cpp
     ${UI_TEXT_SOURCES}
     ${UI_FONT_SOURCES}
@@ -520,6 +523,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_texture_gen.cpp
         tests/test_ui.cpp
         tests/test_stats.cpp
+        tests/test_hud.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_ui midgard_scene midgard_physics midgard_link

@@ -35,6 +35,8 @@ struct Context {
     std::vector<pybind11::object> weather_callbacks;
     // midgard.stats.on_change(callback), likewise.
     std::vector<pybind11::object> stat_callbacks;
+    // midgard.ui.timer(..., on_done=callback): a timer's id -> its callback.
+    std::map<std::string, pybind11::object> timer_callbacks;
 };
 Context* g_context = nullptr;
 
@@ -60,6 +62,8 @@ struct AmbienceHandle {};  // midgard.ambience
 
 // midgard.stats (milestone 6.0): the player's stats, scores and counters.
 struct StatsHandle {};
+// midgard.ui (milestone 6.0): the HUD's notes, prompt, timers and switches.
+struct UiHandle {};
 
 const stats::StatDef& stat_def(const std::string& stat) {
     const stats::StatDef* d = current_game().stats().find(stat);
@@ -1255,6 +1259,77 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
              })
         .def("__repr__", [](const StatsHandle&) { return std::string("<midgard.stats>"); });
     m.attr("stats") = StatsHandle{};
+    py::class_<UiHandle>(m, "UiApi",
+                         "The HUD (midgard.ui; milestone 6.0): short notes that fade, a prompt, "
+                         "timers, and whether the HUD and its crosshair show. The stats show "
+                         "on it by themselves (midgard.stats).")
+        .def(
+            "notify",
+            [](const UiHandle&, const std::string& text, double seconds) {
+                current_game().hud().notify(text, seconds);
+            },
+            py::arg("text"), py::arg("seconds") = 4.0,
+            "A short note on the HUD (\"Picked up a key\") for so many seconds; it fades as it "
+            "goes. Five show at most: the oldest goes first.")
+        .def(
+            "prompt",
+            [](const UiHandle&, const std::optional<std::string>& text) {
+                current_game().hud().set_prompt(text.value_or(""));
+            },
+            py::arg("text") = py::none(),
+            "The prompt at the bottom of the screen (\"Press E to open\") until another, or "
+            "none with no text.")
+        .def(
+            "timer",
+            [](const UiHandle&, const std::string& id, double seconds, const std::string& label,
+               const std::string& count, const py::object& on_done) {
+                if (count != "down" && count != "up")
+                    throw py::value_error("a timer counts \"down\" or \"up\", not \"" + count +
+                                          "\"");
+                if (!on_done.is_none() && !PyCallable_Check(on_done.ptr()))
+                    throw py::type_error("midgard.ui.timer's on_done needs a function to call");
+                current_game().hud().start_timer(id, seconds, count == "down", label);
+                if (g_context) {
+                    g_context->timer_callbacks.erase(id);
+                    if (!on_done.is_none()) g_context->timer_callbacks[id] = on_done;
+                }
+            },
+            py::arg("id"), py::arg("seconds"), py::arg("label") = "", py::arg("count") = "down",
+            py::arg("on_done") = py::none(),
+            "A timer on the HUD, by id (one with the same id starts over): counting \"down\" "
+            "from seconds to 0, or \"up\" from 0 (to seconds, or for ever with 0). "
+            "on_done() is called when it ends.")
+        .def(
+            "stop_timer",
+            [](const UiHandle&, const std::string& id) {
+                if (g_context) g_context->timer_callbacks.erase(id);
+                return current_game().hud().stop_timer(id);
+            },
+            py::arg("id"),
+            "Takes a timer away (its on_done isn't called). False if there wasn't one.")
+        .def(
+            "timer_value",
+            [](const UiHandle&, const std::string& id) { return current_game().hud().timer(id); },
+            py::arg("id"),
+            "A timer's seconds: left (counting down) or passed (counting up); None if there is no "
+            "such timer.")
+        .def_property(
+            "hud", [](const UiHandle&) { return current_game().hud().visible; },
+            [](const UiHandle&, bool on) { current_game().hud().visible = on; },
+            "Whether the HUD shows (False hides it all, as for a cut scene).")
+        .def_property(
+            "crosshair",
+            [](const UiHandle&) -> py::object {
+                const auto& c = current_game().hud().crosshair;
+                return c ? py::cast(*c) : py::none();
+            },
+            [](const UiHandle&, const std::optional<bool>& on) {
+                current_game().hud().crosshair = on;
+            },
+            "The crosshair: True shows it, False hides it, None (as it starts) shows it in "
+            "first person only.")
+        .def("__repr__", [](const UiHandle&) { return std::string("<midgard.ui>"); });
+    m.attr("ui") = UiHandle{};
 
     py::class_<NavHandle>(m, "Nav",
                           "Where agents can walk (midgard.nav; milestone 5.12): paths over the "
@@ -1436,6 +1511,7 @@ ScriptSystem::ScriptSystem(Game& game, std::function<void(const Report&)> report
         s.context.time_callbacks.clear();  // (made by the scene's scripts)
         s.context.weather_callbacks.clear();
         s.context.stat_callbacks.clear();
+        s.context.timer_callbacks.clear();  // (the timers carry on, telling no one)
     });
 }
 
@@ -1545,6 +1621,21 @@ void ScriptSystem::update(const Actions& actions, float dt) {
         }
     }
 
+    // Timers that ended (midgard.ui.timer's on_done).
+    for (const std::string& id : s.context.game->finished_timers()) {
+        const auto it = s.context.timer_callbacks.find(id);
+        if (it == s.context.timer_callbacks.end()) continue;
+        const py::object callback = it->second;
+        s.context.timer_callbacks.erase(it);
+        const std::string module = py::str(py::getattr(callback, "__module__", py::str("")));
+        if (s.paused.contains(module)) continue;
+        try {
+            callback();
+        } catch (py::error_already_set& e) {
+            s.fail(module, e, "midgard.ui.timer '" + id + "'");
+        }
+    }
+
     for (const auto& [e, module] : std::vector(s.started.begin(), s.started.end()))
         if (reg.valid(e)) s.call(module, "on_update", handle(e), dt);
 }
@@ -1583,6 +1674,14 @@ void ScriptSystem::reload(const std::string& module) {
                 if (!renewed.is_none()) callback = renewed;
             }
         }
+        for (auto& [id, callback] : s.context.timer_callbacks) {
+            if (py::str(py::getattr(callback, "__module__", py::str(""))).cast<std::string>() !=
+                module)
+                continue;
+            const py::object renewed =
+                py::getattr(it->second, py::getattr(callback, "__name__", py::str("")), py::none());
+            if (!renewed.is_none()) callback = renewed;
+        }
     }
     if (s.context.report)
         s.context.report({"info", "Reloaded script '" + module + "'", module, "", 0});
@@ -1612,6 +1711,7 @@ result = json.dumps({
     "WeatherApi": sorted(n for n in dir(midgard.WeatherApi) if not n.startswith("_")),
     "Exposure": sorted(n for n in dir(midgard.Exposure) if not n.startswith("_")),
     "StatsApi": sorted(n for n in dir(midgard.StatsApi) if not n.startswith("_")),
+    "UiApi": sorted(n for n in dir(midgard.UiApi) if not n.startswith("_")),
 })
 )",
              scope);

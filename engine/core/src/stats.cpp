@@ -62,6 +62,10 @@ StatDef stat_from_json(const std::string& id, const std::string& name, const std
     d.start = number("start", stat ? d.max : d.min);
     d.regen = stat ? number("regen", 0.0) : 0.0;
     d.delay = stat ? std::max(0.0, number("delay", 0.0)) : 0.0;
+    if (j.contains("hud")) {
+        if (!j.at("hud").is_boolean()) throw StatError(who + ": 'hud' isn't true or false");
+        d.hud = j.at("hud").get<bool>();
+    }
     if (stat && d.max <= d.min)
         throw StatError(who + ": its most (" + std::to_string(d.max) + ") isn't above its least (" +
                         std::to_string(d.min) + ")");

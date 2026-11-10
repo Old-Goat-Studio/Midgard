@@ -560,7 +560,41 @@ class StatsApi:
     def __contains__(self, stat: str) -> bool: ...
 
 
+class UiApi:
+    """The HUD (midgard.ui): short notes that fade, a prompt, timers, and whether the HUD and
+    its crosshair show. The stats show on it by themselves (midgard.stats; the Stats panel says
+    which)."""
+
+    hud: bool
+    """Whether the HUD shows (False hides it all, as for a cut scene)."""
+    crosshair: bool | None
+    """True shows the crosshair, False hides it, None (as it starts) shows it in first person
+    only."""
+
+    def notify(self, text: str, seconds: float = 4.0) -> None:
+        """A short note on the HUD ("Picked up a key") for so many seconds; it fades as it
+        goes. Five show at most: the oldest goes first."""
+
+    def prompt(self, text: str | None = None) -> None:
+        """The prompt at the bottom of the screen ("Press E to open") until another, or none
+        with no text."""
+
+    def timer(self, id: str, seconds: float, label: str = "", count: str = "down",
+              on_done: _Callable[[], None] | None = None) -> None:
+        """A timer on the HUD, by id (one with the same id starts over): counting "down" from
+        seconds to 0, or "up" from 0 (to seconds, or for ever with 0). on_done() is called when
+        it ends."""
+
+    def stop_timer(self, id: str) -> bool:
+        """Takes a timer away (its on_done isn't called). False if there wasn't one."""
+
+    def timer_value(self, id: str) -> float | None:
+        """A timer's seconds: left (counting down) or passed (counting up); None if there is no
+        such timer."""
+
+
 stats: StatsApi
+ui: UiApi
 weather: WeatherApi
 """The weather."""
 

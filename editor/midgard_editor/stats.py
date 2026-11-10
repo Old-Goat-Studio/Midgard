@@ -4,7 +4,8 @@
 A stat is a dict with "id", "name" and "stat" (as the stat table holds it, in its "position"
 order; schema/migrations/0019_stat.sql):
 
-    {"kind": "stat", "min": 0, "max": 100, "start": 100, "regen": 0, "delay": 0}
+    {"kind": "stat", "min": 0, "max": 100, "start": 100, "regen": 0, "delay": 0,
+     "hud": true}                      (false: kept off the HUD)
 
     stat     between its least and most (health, stamina); refills by itself, "regen" a
              second, once it has gone "delay" seconds without dropping (negative: drains)
@@ -95,6 +96,8 @@ def problems_of(stat: Any) -> list[str]:
         if isinstance(value, bool) or not isinstance(value, int | float) or \
                 not math.isfinite(value):
             found.append(f"'{key}' isn't a number")
+    if "hud" in stat and not isinstance(stat["hud"], bool):
+        found.append("'hud' isn't true or false")
     if found:
         return found
     low, high, start = number(stat, "min"), number(stat, "max"), number(stat, "start")

@@ -17,6 +17,7 @@
 #include "midgard/calendar.h"
 #include "midgard/camera_rig.h"
 #include "midgard/characters.h"
+#include "midgard/hud.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
 #include "midgard/nav_world.h"
@@ -216,6 +217,13 @@ public:
     // ({id, name, stat} rows, in order). Values are kept, fitted to the new ranges. Throws
     // SceneError, changing nothing, if one isn't a stat.
     void set_stat_data(const nlohmann::json& rows);
+
+    // ---- the HUD (milestone 6.0) ----
+    // Its notes, prompt, timers and switches (midgard/hud.h): scripts' (midgard.ui).
+    hud::HudState& hud() { return hud_; }
+    const hud::HudState& hud() const { return hud_; }
+    // The timers that ended in the last update.
+    const std::vector<std::string>& finished_timers() const { return finished_timers_; }
 
     // ---- weather (milestone 5.15) ----
     // The world's weather (midgard/weather_sim.h), from the scene's weather settings or its
@@ -497,6 +505,8 @@ private:
     std::vector<WeatherChange> weather_changes_, weather_pending_;
     stats::Stats stats_;
     std::vector<stats::Change> stat_changes_;
+    hud::HudState hud_;
+    std::vector<std::string> finished_timers_;
     struct Forced {
         std::string weather;
         std::optional<std::int64_t> until;  // none: until released

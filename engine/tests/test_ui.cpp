@@ -10,6 +10,7 @@
 
 #include "midgard/render/renderer.h"
 #include "midgard/ui/fonts.h"
+#include "midgard/ui/hud.h"
 #include "midgard/ui/ui.h"
 
 namespace render = midgard::render;
@@ -339,4 +340,72 @@ TEST_CASE("the UI is drawn over the scene, scaled, and gives its textures back")
     // And another can start afterwards.
     ui::Ui again(*renderer, sized(320, 240));
     CHECK(again.open_text("<rml><body/></rml>", "empty.rml", false));
+}
+
+TEST_CASE("a timer's seconds read as a clock") {
+    CHECK(ui::clock_text(0.0) == "0:00");
+    CHECK(ui::clock_text(6.2) == "0:07");  // (whole seconds left, rounded up)
+    CHECK(ui::clock_text(65.0) == "1:05");
+    CHECK(ui::clock_text(3723.0) == "1:02:03");
+    CHECK(ui::clock_text(-5.0) == "0:00");
+}
+
+TEST_CASE("the HUD shows the game's stats, timers, notes and prompt, and follows them") {
+    auto renderer = offscreen(1280, 720);
+    if (!renderer) return;
+    ui::Ui u(*renderer, sized(1280, 720));
+    ui::Hud hud(u);
+    ui::HudData d;
+    d.stats = {{"health", "Health", true, 72.0, 100.0},
+               {"score", "Score", false, 40.0, 0.0},
+               {"keys", "Keys", false, 3.0, 5.0}};
+    d.timers = {{"bomb", "Bomb", 65.0}};
+    d.notes = {{"Picked up a key", 1.0f}};
+    hud.show(d);
+    u.update(0.0);
+    Rml::ElementDocument* doc = hud.document();
+    REQUIRE(doc);
+    CHECK_FALSE(u.modal());  // (it never takes the game's input)
+    Rml::Element* bar = doc->GetElementById("bar-health");
+    REQUIRE(bar);
+    const std::string text = bar->GetInnerRML();
+    CHECK(text.find("72/100") != std::string::npos);
+    Rml::ElementList fills;
+    doc->GetElementsByClassName(fills, "fill");
+    REQUIRE(fills.size() == 1);
+    const float track = fills[0]->GetParentNode()->GetBox().GetSize().x;
+    CHECK(fills[0]->GetBox().GetSize(Rml::BoxArea::Border).x ==
+          doctest::Approx(track * 0.72f).epsilon(0.02));
+    const std::string right = doc->GetElementById("right")->GetInnerRML();
+    CHECK(right.find("40") != std::string::npos);
+    CHECK(right.find("3/5") != std::string::npos);
+    CHECK(right.find("Bomb 1:05") != std::string::npos);
+    CHECK(right.find("Picked up a key") != std::string::npos);
+    const auto shown = [&](const char* id) {
+        Rml::Element* e = doc->GetElementById(id);
+        return e && e->IsVisible(true);
+    };
+    CHECK_FALSE(shown("prompt"));  // (none: hidden)
+    CHECK_FALSE(shown("crosshair"));
+
+    // Health drops, a prompt and the crosshair come; the HUD follows.
+    d.stats[0].value = 30.0;
+    d.prompt = "Press E to open";
+    d.crosshair = true;
+    hud.show(d);
+    u.update(0.1);
+    CHECK(doc->GetElementById("bar-health")->GetInnerRML().find("30/100") != std::string::npos);
+    REQUIRE(shown("prompt"));
+    CHECK(doc->GetElementById("prompt")->GetInnerRML().find("Press E to open") !=
+          std::string::npos);
+    CHECK(shown("crosshair"));
+    // Clicks and moves over it reach the game.
+    const auto [x, y] = middle(doc->GetElementById("bar-health"));
+    CHECK_FALSE(u.handle(at(T::PointerMove, x, y)));
+    CHECK_FALSE(u.handle(at(T::PointerDown, x, y)));
+    // Hidden, nothing of it is there.
+    d.visible = false;
+    hud.show(d);
+    u.update(0.2);
+    CHECK_FALSE(shown("bar-health"));
 }

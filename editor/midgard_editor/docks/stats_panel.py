@@ -14,6 +14,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -90,6 +91,10 @@ class StatsPanel(QWidget):
         self.delay.setToolTip("How long after it last went down before it starts to refill")
         for key, box in self._numbers().items():
             box.valueChanged.connect(lambda v, k=key: self._set_number(k, v))
+        self.on_hud = QCheckBox("Show on the HUD")
+        self.on_hud.setToolTip("A stat shows as a bar, a score or counter as a number, at the "
+                               "top of the screen while the game plays")
+        self.on_hud.toggled.connect(self._set_hud)
         self.id_label = QLabel()
         self.id_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.problems = QLabel()
@@ -103,6 +108,7 @@ class StatsPanel(QWidget):
         self.form.addRow("Starts at", self.start)
         self.form.addRow("Refills", self.regen)
         self.form.addRow("After", self.delay)
+        self.form.addRow("", self.on_hud)
         self.form.addRow("In scripts", self.id_label)
         right = QWidget()
         right_layout = QVBoxLayout(right)
@@ -208,6 +214,7 @@ class StatsPanel(QWidget):
             self.form.setRowVisible(self.delay, kind == "stat")
             self.form.labelForField(self.max).setText("Most" if kind == "stat" else
                                                       "Target (0: none)")
+            self.on_hud.setChecked(stat.get("hud", True) is not False)
             self.id_label.setText(f'<code>midgard.stats.get("{s["id"]}")</code>')
             found = stats.problems_of(stat)
             self.problems.setText("\n".join(f"This {stats.KINDS.get(kind, 'stat').lower()} "
@@ -285,8 +292,23 @@ class StatsPanel(QWidget):
             return
 
         def change(stat: dict) -> None:
+            hud = stat["stat"].get("hud")
             stat["stat"] = copy.deepcopy(stats.NEW[kind])
+            if hud is False:
+                stat["stat"]["hud"] = False
         self._edit_chosen(change, f"Make '{s['name']}' a {stats.KINDS[kind].lower()}")
+
+    def _set_hud(self, on: bool) -> None:
+        s = self.chosen()
+        if self._filling or s is None or (s["stat"].get("hud", True) is not False) == on:
+            return
+
+        def change(stat: dict) -> None:
+            if on:
+                stat["stat"].pop("hud", None)
+            else:
+                stat["stat"]["hud"] = False
+        self._edit_chosen(change, f"{'Show' if on else 'Hide'} '{s['name']}' on the HUD")
 
     def _set_number(self, key: str, value: float) -> None:
         s = self.chosen()

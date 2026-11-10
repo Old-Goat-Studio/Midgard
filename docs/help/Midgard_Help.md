@@ -995,14 +995,33 @@ Each is one of three kinds:
 - **Counter**: a whole number up to a **target** if it has one (Keys, 3 of 5), or as many as
   there are (Coins).
 
-**Move Up** and **Move Down** set their order (the HUD shows them in it). Under the settings,
+**Move Up** and **Move Down** set their order (the HUD shows them in it). **Show on the HUD**
+keeps one on the screen while the game plays, or off it (a hidden stat for your scripts). Under the settings,
 **In scripts** shows how a script reads the chosen one; your scripts change them with
 `midgard.stats` (section 19). When you edit them while the game plays, the game follows at
 once, keeping its values. Cook warns about a stat that starts outside its range, two stats
 with the same name, and a script that names a stat the project doesn't have.
 
 The game keeps the player's stats in its saved world, so they're as the player left them next
-time. Until the HUD arrives (the next step of Phase 6), **F3** in the game shows them.
+time. **F3** in the game lists them all, hidden ones too.
+
+### The HUD: what the player sees on top of the game
+
+Every game shows a **HUD** over the game by itself:
+
+- **Bars** at the top left: each stat (Health red, Stamina gold, Mana blue, others green), with
+  its value, such as `72/100`.
+- **Numbers** at the top right: scores (`Score 1250`) and counters (`Keys 3/5`).
+- **Timers** under them, from your scripts (`Escape 1:05`).
+- **Notes** under those: short messages from your scripts ("Picked up a key") that fade after a
+  few seconds. Five show at most.
+- **A prompt** at the bottom ("Press E to open"), from your scripts.
+- **A crosshair** in the middle, in first-person view.
+
+Nothing on the HUD takes the mouse, so clicks always reach the game. On a phone it keeps clear of
+the notch and rounded corners, and held upright the bars and numbers share the width. Scripts
+use it through `midgard.ui` (section 19). Making your own HUD and menus in the editor comes
+later in Phase 6.
 
 ---
 
@@ -1558,6 +1577,36 @@ def changed(stat, before, now):
         print("You have fallen.")
 ```
 
+### The HUD: `midgard.ui`
+
+The stats show on the HUD by themselves; these are the rest.
+
+| What | Meaning |
+|---|---|
+| `midgard.ui.notify("Picked up a key")` | A note on the HUD for 4 seconds (or `seconds=10`), fading as it goes. |
+| `midgard.ui.prompt("Press E to open")` | A prompt at the bottom of the screen, until another. `midgard.ui.prompt()` takes it away. |
+| `midgard.ui.timer("bomb", 30, label="Bomb", on_done=boom)` | A timer counting down from 30 seconds; your function `boom()` is called at 0. With `count="up"` it counts up instead (to the seconds given, or for ever with 0). The same id again starts it over. |
+| `midgard.ui.stop_timer("bomb")` | Takes a timer away (its `on_done` isn't called). |
+| `midgard.ui.timer_value("bomb")` | Its seconds left (or passed, counting up); `None` if there's none. |
+| `midgard.ui.hud = False` | Hides the whole HUD (a cut scene); `True` shows it again. |
+| `midgard.ui.crosshair = True` | Always shows the crosshair; `False` never; `None` in first person only (as it starts). |
+
+```python
+import midgard
+
+def on_trigger_enter(entity, other):
+    midgard.ui.prompt("Press E to open")
+
+def on_trigger_exit(entity, other):
+    midgard.ui.prompt()
+
+def on_start(entity):
+    midgard.ui.timer("escape", 120, label="Escape", on_done=too_late)
+
+def too_late():
+    midgard.ui.notify("The doors have closed!")
+```
+
 ### Other
 
 | What | Meaning |
@@ -1585,9 +1634,9 @@ Scripts can use Python's standard library (`math`, `random` and so on).
 The first Play after adding a big model takes longer while its textures are converted; later
 Plays are quick.
 
-### Menus, screens and the HUD (coming in Phase 6)
+### Menus, screens and the HUD
 
-Midgard is gaining in-game menus, screens and a HUD (health bars, a score, a compass). The
+Every game shows a HUD (section 15). Menus and your own screens are coming in Phase 6. The
 engine underneath is in place: screens work with the mouse, the keyboard, a game controller
 (the d-pad or stick moves between buttons, A presses, B goes back) and touch, grow with the
 player's screen and UI scale, and keep clear of a phone's notch. Every game carries two fonts

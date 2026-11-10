@@ -269,6 +269,8 @@ void Game::update(const Actions& actions, float dt) {
     weather_changes_ = std::exchange(weather_pending_, {});  // (scripts' since the last, too)
     stats_.update(dt);
     stat_changes_ = stats_.take_changes();  // (scripts' since the last update, too)
+    hud_.update(dt);
+    finished_timers_ = hud_.take_finished();
     update_weather_look(dt);
     update_falling(dt);
     update_ground_cover(dt);

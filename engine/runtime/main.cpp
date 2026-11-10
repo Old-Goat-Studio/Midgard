@@ -25,6 +25,10 @@
 //                                       with --ui-touch also a finger's, fail the run);
 //                                       --ui-scale S scales it, --safe-area l,t,r,b (pixels)
 //                                       keeps it clear of a pretend notch
+//   --hud-test                          the HUD (6.0) with made-up stats, notes, a timer, a
+//                                       prompt and the crosshair, in a window or a screenshot;
+//                                       --show-hud puts a game's own HUD in a screenshot (which
+//                                       otherwise shows the world alone, for picture tests)
 //   --quality desktop|phone             the renderer's quality tier (by default phone on phones,
 //                                       desktop elsewhere), for a window, a screenshot or the
 //                                       self-test
@@ -102,6 +106,7 @@
 #include "midgard/manifest.h"
 #include "midgard/profile.h"
 #include "midgard/render/renderer.h"
+#include "midgard/ui/hud.h"
 #include "midgard/ui/ui.h"
 #include "midgard/version.h"
 #include "selftest.h"
@@ -148,6 +153,8 @@ struct Options {
     bool ui_touch = false;  // a screenshot's screen checks include a finger's (target sizes)
     float ui_scale = 1.0f;  // the player's UI scale, on top of the display's density
     std::optional<midgard::ui::Insets> safe_area;  // a pretend safe area, in pixels
+    bool hud_test = false;  // the HUD with made-up stats, notes, a timer and a prompt
+    bool show_hud = false;  // a screenshot of a game with its HUD (a window always has it)
 };
 
 int usage() {
@@ -157,7 +164,8 @@ int usage() {
         "                       [--editor-link host:port] [--debug-overlay] [--debug-physics]\n"
         "                       [--profile out.json] [--player-profile <dir>] [--world <dir>]\n"
         "                       [--quality desktop|phone] [--ui-test [--ui-touch]]\n"
-        "                       [--ui-scale S] [--safe-area l,t,r,b]\n"
+        "                       [--ui-scale S] [--safe-area l,t,r,b] [--hud-test]\n"
+        "                       [--show-hud]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
 }
@@ -268,6 +276,8 @@ public:
     virtual std::string dump() const { return "{}"; }
     // Lines about the game for the debug overlay (F3): the weather and how it treats the player.
     virtual std::vector<std::string> status() const { return {}; }
+    // What the HUD shows (6.0); none: no HUD (the demo and test scenes).
+    virtual std::optional<midgard::ui::HudData> hud() const { return std::nullopt; }
     // How dark the picture is (a scene change fading out and in): 0 clear, 1 black.
     virtual float fade() const { return 0.0f; }
     // The player's profile file: used from now on, and saved when the game ends.
@@ -564,6 +574,7 @@ public:
                               {"audio", audio},
                               {"weather", weather},
                               {"stats", game_.stats().save()},
+                              {"hud", game_.hud().dump()},
                               // Rooms and space (milestone 5.16): how high, and where space is.
                               {"rooms",
                                {{"previous", game_.previous_scene()},
@@ -606,6 +617,24 @@ public:
                       e.wetness * 100.0, g.wetness * 100.0, g.snow * 100.0);
         lines.insert(lines.end(), {a, b, c});
         return lines;
+    }
+    std::optional<midgard::ui::HudData> hud() const override {
+        midgard::ui::HudData d;
+        const midgard::hud::HudState& h = game_.hud();
+        d.visible = h.visible;
+        // The crosshair as a script says, else in first person only.
+        d.crosshair = h.crosshair.value_or(game_.camera_rig().active() &&
+                                           game_.camera_rig().view() == midgard::CameraView::First);
+        for (const midgard::stats::StatDef& s : game_.stats().defs()) {
+            if (!s.hud) continue;
+            d.stats.push_back({s.id, s.name, s.kind == midgard::stats::Kind::stat,
+                               game_.stats().get(s.id).value_or(0.0), s.capped() ? s.max : 0.0});
+        }
+        for (const midgard::hud::Timer& t : h.timers())
+            d.timers.push_back({t.id, t.label, t.value});
+        for (const midgard::hud::Note& n : h.notes()) d.notes.push_back({n.text, n.opacity()});
+        d.prompt = h.prompt();
+        return d;
     }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
@@ -990,6 +1019,21 @@ bool want_validation() {
 }
 
 // ---- the in-game UI (milestone 6.0) --------------------------------------------------------
+// The HUD with made-up data (--hud-test): every part of it at once, for pictures and a look.
+midgard::ui::HudData sample_hud() {
+    midgard::ui::HudData d;
+    d.crosshair = true;
+    d.stats = {{"health", "Health", true, 72.0, 100.0},
+               {"stamina", "Stamina", true, 35.0, 100.0},
+               {"mana", "Mana", true, 50.0, 80.0},
+               {"score", "Score", false, 1250.0, 0.0},
+               {"keys", "Keys", false, 3.0, 5.0}};
+    d.timers = {{"escape", "Escape", 65.0}};
+    d.notes = {{"Picked up a key", 1.0f}, {"Found a secret", 1.0f}, {"Saved", 0.5f}};
+    d.prompt = "Press E to open";
+    return d;
+}
+
 // The UI's messages go to the game's log.
 midgard::ui::Platform ui_log_only() {
     midgard::ui::Platform p;
@@ -1168,7 +1212,11 @@ int run_screenshot(const Options& opt, Source& source) {
     // The UI test screen (6.0), checked as screen tests check every screen: a gamepad reaches
     // every control, text fits, and (--ui-touch) each control is big enough for a finger.
     std::unique_ptr<midgard::ui::Ui> ui;
-    if (opt.ui_test) {
+    std::unique_ptr<midgard::ui::Hud> hud;  // (after the UI: it goes first)
+    const auto hud_data = opt.hud_test   ? std::optional(sample_hud())
+                          : opt.show_hud ? source.hud()
+                                         : std::nullopt;
+    if (opt.ui_test || hud_data) {
         midgard::ui::Options uo;
         uo.width = opt.width;
         uo.height = opt.height;
@@ -1176,6 +1224,12 @@ int run_screenshot(const Options& opt, Source& source) {
         uo.safe_area = opt.safe_area.value_or(midgard::ui::Insets{});
         uo.platform = ui_log_only();
         ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
+    }
+    if (hud_data) {
+        hud = std::make_unique<midgard::ui::Hud>(*ui);
+        hud->show(*hud_data);
+    }
+    if (opt.ui_test) {
         Rml::ElementDocument* screen = midgard::ui::open_test_screen(*ui);
         if (!screen) {
             std::fprintf(stderr, "error: the UI test screen didn't open\n");
@@ -1194,6 +1248,8 @@ int run_screenshot(const Options& opt, Source& source) {
         ui->close(screen);
         ui->update(0.0);
         midgard::ui::open_test_screen(*ui);
+    }
+    if (ui) {
         ui->update(0.0);
         ui->render();
     }
@@ -1376,6 +1432,7 @@ int run_window(const Options& opt, Source& source) {
         // The in-game UI (6.0): sized by the display's density and the player's scale, clear of
         // the notch. Without its fonts the game still runs, with no screens.
         std::unique_ptr<midgard::ui::Ui> ui;
+        std::unique_ptr<midgard::ui::Hud> hud;  // (after the UI: it goes first)
         try {
             midgard::ui::Options uo;
             uo.width = desc.width;
@@ -1385,10 +1442,13 @@ int run_window(const Options& opt, Source& source) {
             uo.safe_area = opt.safe_area.value_or(window_safe_area(window));
             uo.platform = ui_platform(window);
             ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
+            // The HUD, for a game (or --hud-test), under any menu.
+            if (opt.hud_test || source.hud()) hud = std::make_unique<midgard::ui::Hud>(*ui);
             if (opt.ui_test && !midgard::ui::open_test_screen(*ui))
                 warn("The UI test screen didn't open\n");
         } catch (const std::exception& e) {
             warn("No in-game UI: %s\n", e.what());
+            hud.reset();
         }
         midgard::Actions actions(source.input_map());
         // Mouse-look captures the mouse. Under the editor the game starts with the mouse free
@@ -1586,6 +1646,11 @@ int run_window(const Options& opt, Source& source) {
                 renderer.set_debug_lines(show_physics ? source.debug_lines(camera.origin)
                                                       : std::vector<render::DebugLine>{});
                 if (ui) {
+                    if (hud) {
+                        if (const auto data =
+                                opt.hud_test ? std::optional(sample_hud()) : source.hud())
+                            hud->show(*data);
+                    }
                     ui->update(t);
                     ui->render();
                 }
@@ -1878,6 +1943,10 @@ int main(int argc, char** argv) {
             opt.origin_offset = {x, y, z};
         } else if (arg == "--ui-test") {
             opt.ui_test = true;
+        } else if (arg == "--hud-test") {
+            opt.hud_test = true;
+        } else if (arg == "--show-hud") {
+            opt.show_hud = true;
         } else if (arg == "--ui-touch") {
             opt.ui_touch = true;
         } else if (arg == "--ui-scale" && has_value) {

@@ -370,6 +370,16 @@
       "name": "ui_phone",
       "_about": "The same screen at a phone's size and scale (1.5 pixels a dp) with a pretend notch (90 pixels) and gesture bar (60) kept clear; its checks include a finger's: every control at least 44 dp and inside the safe area.",
       "args": ["--size", "540x1170", "--ui-test", "--ui-touch", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone"]
+    },
+    {
+      "name": "hud_desktop",
+      "_about": "The HUD (milestone 6.0) with made-up data over the demo scene: stat bars, a score and a counter, a timer, three notes (the last fading), a prompt and the crosshair.",
+      "args": ["--size", "1280x720", "--hud-test"]
+    },
+    {
+      "name": "hud_phone",
+      "_about": "The same HUD on a phone held upright (1.5 pixels a dp), clear of a pretend notch and gesture bar: the bars and the right-hand column share the width.",
+      "args": ["--size", "540x1170", "--hud-test", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone"]
     }
   ]
 }
