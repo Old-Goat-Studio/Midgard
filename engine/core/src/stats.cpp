@@ -27,6 +27,10 @@ const char* kind_name(Kind k) {
             return "score";
         case Kind::counter:
             return "counter";
+        case Kind::position:
+            return "position";
+        case Kind::clock:
+            return "clock";
     }
     return "stat";
 }
@@ -35,7 +39,20 @@ std::optional<Kind> kind_from_name(std::string_view name) {
     if (name == "stat") return Kind::stat;
     if (name == "score") return Kind::score;
     if (name == "counter") return Kind::counter;
+    if (name == "position") return Kind::position;
+    if (name == "clock") return Kind::clock;
     return std::nullopt;
+}
+
+const std::vector<std::string>& clock_parts() {
+    static const std::vector<std::string> parts = {"season", "weekday", "day",
+                                                   "month",  "year",    "time"};
+    return parts;
+}
+
+const std::vector<std::string>& clock_default_parts() {
+    static const std::vector<std::string> parts = {"season", "day", "month", "year", "time"};
+    return parts;
 }
 
 StatDef stat_from_json(const std::string& id, const std::string& name, const std::string& text) {
@@ -49,6 +66,35 @@ StatDef stat_from_json(const std::string& id, const std::string& name, const std
     const auto k = kind_from_name(kind);
     if (!k) throw StatError(who + " has an unknown kind '" + kind + "'");
     d.kind = *k;
+    if (j.contains("hud")) {
+        if (!j.at("hud").is_boolean()) throw StatError(who + ": 'hud' isn't true or false");
+        d.hud = j.at("hud").get<bool>();
+    }
+    if (d.display()) {  // (no numbers: only what a clock shows)
+        d.min = d.max = d.start = 0.0;
+        if (d.kind == Kind::clock) {
+            if (!j.contains("show")) {
+                d.show = clock_default_parts();
+            } else {
+                const auto& show = j.at("show");
+                if (!show.is_array()) throw StatError(who + ": 'show' isn't a list of parts");
+                for (const std::string& part : clock_parts())  // (in their own order)
+                    for (const auto& v : show)
+                        if (v.is_string() && v.get<std::string>() == part) {
+                            d.show.push_back(part);
+                            break;
+                        }
+                for (const auto& v : show)
+                    if (!v.is_string() || std::find(clock_parts().begin(), clock_parts().end(),
+                                                    v.get<std::string>()) == clock_parts().end())
+                        throw StatError(who + ": '" +
+                                        (v.is_string() ? v.get<std::string>() : v.dump()) +
+                                        "' isn't a part a clock shows (season, weekday, day, "
+                                        "month, year or time)");
+            }
+        }
+        return d;
+    }
     const auto number = [&](const char* key, double fallback) {
         if (!j.contains(key)) return fallback;
         const auto& v = j.at(key);
@@ -62,10 +108,6 @@ StatDef stat_from_json(const std::string& id, const std::string& name, const std
     d.start = number("start", stat ? d.max : d.min);
     d.regen = stat ? number("regen", 0.0) : 0.0;
     d.delay = stat ? std::max(0.0, number("delay", 0.0)) : 0.0;
-    if (j.contains("hud")) {
-        if (!j.at("hud").is_boolean()) throw StatError(who + ": 'hud' isn't true or false");
-        d.hud = j.at("hud").get<bool>();
-    }
     if (stat && d.max <= d.min)
         throw StatError(who + ": its most (" + std::to_string(d.max) + ") isn't above its least (" +
                         std::to_string(d.min) + ")");
@@ -127,7 +169,7 @@ StatDef* Stats::find_mutable(std::string_view id_or_name) {
 
 std::optional<double> Stats::get(std::string_view stat) const {
     const StatDef* d = find(stat);
-    if (!d) return std::nullopt;
+    if (!d || d->display()) return std::nullopt;
     return values_.at(d->id).value;
 }
 
@@ -143,7 +185,7 @@ void Stats::changed(const std::string& id, double before, double after) {
 
 std::optional<double> Stats::set(std::string_view stat, double value) {
     const StatDef* d = find(stat);
-    if (!d) return std::nullopt;
+    if (!d || d->display()) return std::nullopt;
     Value& v = values_.at(d->id);
     const double before = v.value;
     v.value = fit(*d, value);
@@ -160,7 +202,7 @@ std::optional<double> Stats::add(std::string_view stat, double amount) {
 
 bool Stats::set_max(std::string_view stat, double max) {
     StatDef* d = find_mutable(stat);
-    if (!d || d->kind == Kind::score || !std::isfinite(max)) return false;
+    if (!d || d->kind == Kind::score || d->display() || !std::isfinite(max)) return false;
     if (d->whole()) max = std::round(max);
     if (d->kind == Kind::stat && max <= d->min) return false;
     d->max = max;
@@ -173,7 +215,7 @@ bool Stats::set_max(std::string_view stat, double max) {
 
 bool Stats::reset(std::string_view stat) {
     StatDef* d = find_mutable(stat);
-    if (!d) return false;
+    if (!d || d->display()) return false;
     const auto designed = std::find_if(defined_.begin(), defined_.end(),
                                        [&](const StatDef& o) { return o.id == d->id; });
     if (designed != defined_.end()) d->max = designed->max;
@@ -211,13 +253,15 @@ std::vector<Change> Stats::take_changes() {
 
 nlohmann::json Stats::save() const {
     nlohmann::json out = nlohmann::json::object();
-    for (const StatDef& d : defs_) out[d.id] = {{"value", values_.at(d.id).value}, {"max", d.max}};
+    for (const StatDef& d : defs_)
+        if (!d.display()) out[d.id] = {{"value", values_.at(d.id).value}, {"max", d.max}};
     return out;
 }
 
 void Stats::restore(const nlohmann::json& saved) {
     if (!saved.is_object()) return;
     for (StatDef& d : defs_) {
+        if (d.display()) continue;
         const auto it = saved.find(d.id);
         if (it == saved.end() || !it->is_object()) continue;
         if (it->contains("max") && it->at("max").is_number() && d.kind != Kind::score) {

@@ -291,6 +291,8 @@ struct RigidBody {
     physics::Motion motion = physics::Motion::Dynamic;
     float mass = 0.0f;  // kilograms; 0: from the collider's volume at the density of water
     int layer = 0;      // the project's collision layer (0 to 15)
+    // How the water lifts it (physics::BodyDesc::buoyancy): below 1 it sinks, above 1 floats.
+    float buoyancy = 0.5f;
 };
 
 // The entity's shape for physics, in its local units (its scale applies). Convex and mesh

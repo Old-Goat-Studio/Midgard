@@ -61,6 +61,10 @@ def test_adding_physics_components_in_the_inspector(qtbot, project):
     components = project.entity("e000050").components
     assert components["collider"]["radius"] == 0.75
     assert components["rigidbody"] == {"motion": "kinematic", "mass": 12.5, "layer": 2}
+    # Buoyancy: 0.5 (sinks slowly) until set; 2 floats half out of the water.
+    assert form.buoyancy.value() == 0.5
+    form.buoyancy.setValue(2.0)
+    assert project.entity("e000050").components["rigidbody"]["buoyancy"] == 2.0
 
     form.collider_shape.setCurrentIndex(form.collider_shape.findData("box"))
     assert form.form.isRowVisible(form.collider_size)

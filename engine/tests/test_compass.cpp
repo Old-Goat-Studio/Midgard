@@ -126,3 +126,27 @@ TEST_CASE("the minimap's ground is quick enough to make as the player walks") {
     CHECK(map.size() == 128 * 128 * 4);
     CHECK(map[3] == 255);  // (on a planet there is ground everywhere)
 }
+
+TEST_CASE("the HUD's position: latitude and longitude on spheres, metres elsewhere") {
+    using midgard::place_text;
+    // Flat ground without a body: x east, -z north.
+    CHECK(place_text(std::nullopt, {100.0, 0.0, -50.0}) == "100 m E, 50 m N");
+    CHECK(place_text(std::nullopt, {-12345.0, 0.0, 20.0}) == "12.3 km W, 20 m S");
+    // A planet: the +Y pole is 90 N; +Z is longitude 0 and +X 90 E (as the world map has them).
+    const midgard::Body planet =
+        body(R"({"id": "p", "shape": "sphere_outside", "radius": 1000, "gravity": 9.81})");
+    CHECK(place_text(planet, {0.0, 1010.0, 0.0}).rfind("90.00\xC2\xB0 N", 0) == 0);
+    CHECK(place_text(planet, {1000.0, 0.0, 0.0}) == "0.00\xC2\xB0 N, 90.00\xC2\xB0 E");
+    CHECK(place_text(planet, {0.0, -707.1, -707.1}) == "45.00\xC2\xB0 S, 180.00\xC2\xB0 E");
+    // Inside a hollow world the same.
+    const midgard::Body hollow =
+        body(R"({"id": "h", "shape": "sphere_inside", "radius": 1000, "gravity": 9.81})");
+    CHECK(place_text(hollow, {-990.0, 0.0, 0.0}) == "0.00\xC2\xB0 N, 90.00\xC2\xB0 W");
+    // A bounded area: metres from its middle, east and north as the compass has them.
+    const midgard::Body area =
+        body(R"({"id": "a", "shape": "bounded_area", "width": 2000, "length": 2000,
+                  "gravity": 9.81})");
+    const midgard::Bearing b = bearing_at(area, {0.0, 0.0, 0.0});
+    const glm::dvec3 p = b.east * 300.0 - b.north * 120.0;
+    CHECK(place_text(area, p) == "300 m E, 120 m S");
+}

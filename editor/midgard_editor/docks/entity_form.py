@@ -411,7 +411,7 @@ class EntityForm(QWidget):
             form.addRow("Radius", self.collider_radius)
             form.addRow("Height", self.collider_height)
             form.addRow("Offset", self.collider_offset)
-        self.motion = self.mass = self.layer = None
+        self.motion = self.mass = self.buoyancy = self.layer = None
         if "rigidbody" in entity.components:
             self.motion = QComboBox()
             for key, label in self.MOTIONS.items():
@@ -427,6 +427,13 @@ class EntityForm(QWidget):
             self.mass.valueChanged.connect(lambda _v: self._set_value(
                 "rigidbody", "mass", round(self.mass.value(), 4), "mass"))
             form.addRow("Mass", self.mass)
+            self.buoyancy = _spin(0.0, 10.0, 0.1, 2)
+            self.buoyancy.setToolTip(
+                "How the water lifts it: below 1 it sinks (0 like a stone, 0.5 slowly), 1 it "
+                "hovers, above 1 it floats (2 floats half out of the water, like wood)")
+            self.buoyancy.valueChanged.connect(lambda _v: self._set_value(
+                "rigidbody", "buoyancy", round(self.buoyancy.value(), 4), "buoyancy"))
+            form.addRow("Buoyancy", self.buoyancy)
             self.layer = QComboBox()
             for i, name in enumerate(self.project.physics_layers()):
                 if name or i == 0:
@@ -568,6 +575,7 @@ class EntityForm(QWidget):
             b = entity.components["rigidbody"]
             show(self.motion, b.get("motion", "dynamic"))
             number(self.mass, b.get("mass", 0.0))
+            number(self.buoyancy, b.get("buoyancy", 0.5))
             show(self.layer, b.get("layer", 0))
         if self.friction is not None:
             m = entity.components["physics_material"]

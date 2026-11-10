@@ -12,6 +12,13 @@ order; schema/migrations/0019_stat.sql):
     score    a whole number, never below its least (points)
     counter  a whole number up to a target ("max"; 0: none) (keys, coins)
 
+and two that only show on the HUD, with no value (scripts can't read or change them):
+
+    position where the player is: latitude and longitude on a planet or in a hollow world,
+             else metres east and north of the world's middle      {"kind": "position"}
+    clock    the date and time on the game's calendar, the parts "show" names
+             {"kind": "clock", "show": ["season", "day", "month", "year", "time"]}
+
 A project starts with Health, Stamina and Score. Scripts use them as midgard.stats (by id or
 name), the HUD shows them, and the engine reads them in midgard/stats.h.
 """
@@ -26,13 +33,27 @@ from PySide6.QtGui import QUndoCommand
 
 from .project import Project
 
-KINDS = {"stat": "Stat", "score": "Score", "counter": "Counter"}
+KINDS = {"stat": "Stat", "score": "Score", "counter": "Counter", "position": "Position",
+         "clock": "Date and time"}
+# Kinds that only show on the HUD, with no value.
+DISPLAY = {"position", "clock"}
+# What a clock can show, in the order it shows them (midgard/stats.h's clock_parts).
+CLOCK_PARTS = {"season": "Season", "weekday": "Weekday", "day": "Day", "month": "Month",
+               "year": "Year", "time": "Time (hour and minute)"}
 # What each kind starts as when it is made in the Stats panel.
 NEW = {
     "stat": {"kind": "stat", "min": 0, "max": 100, "start": 100, "regen": 0, "delay": 0},
     "score": {"kind": "score", "min": 0, "start": 0},
     "counter": {"kind": "counter", "min": 0, "max": 0, "start": 0},
+    "position": {"kind": "position"},
+    "clock": {"kind": "clock", "show": ["season", "day", "month", "year", "time"]},
 }
+
+
+def clock_shows(stat: dict[str, Any]) -> list[str]:
+    """The parts a clock shows, in their order (as the engine reads them)."""
+    show = stat.get("show", NEW["clock"]["show"])
+    return [p for p in CLOCK_PARTS if isinstance(show, list) and p in show]
 
 
 def has_table(project: Project) -> bool:
@@ -91,13 +112,23 @@ def problems_of(stat: Any) -> list[str]:
     kind = stat.get("kind", "stat")
     if kind not in KINDS:
         return [f"has an unknown kind '{kind}'"]
+    if "hud" in stat and not isinstance(stat["hud"], bool):
+        found.append("'hud' isn't true or false")
+    if kind in DISPLAY:
+        show = stat.get("show", [])
+        if kind == "clock" and not isinstance(show, list):
+            found.append("'show' isn't a list of parts")
+        elif kind == "clock":
+            found += [f"shows '{p}', which a clock can't (season, weekday, day, month, year "
+                      "or time)" for p in show if not isinstance(p, str) or p not in CLOCK_PARTS]
+            if not show and "show" in stat:
+                found.append("shows nothing (tick at least one part)")
+        return found
     for key in ("min", "max", "start", "regen", "delay"):
         value = stat.get(key, 0)
         if isinstance(value, bool) or not isinstance(value, int | float) or \
                 not math.isfinite(value):
             found.append(f"'{key}' isn't a number")
-    if "hud" in stat and not isinstance(stat["hud"], bool):
-        found.append("'hud' isn't true or false")
     if found:
         return found
     low, high, start = number(stat, "min"), number(stat, "max"), number(stat, "start")

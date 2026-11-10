@@ -235,6 +235,7 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
             throw SceneError("rigidbody: motion '" + motion +
                              "' is not static, dynamic or kinematic");
         b.mass = std::max(c.value("mass", 0.0f), 0.0f);
+        b.buoyancy = std::clamp(c.value("buoyancy", 0.5f), 0.0f, 10.0f);
         b.layer = c.value("layer", 0);
         if (b.layer < 0 || b.layer >= physics::kLayers)
             throw SceneError("rigidbody: layer " + std::to_string(b.layer) + " is not 0 to 15");

@@ -592,8 +592,11 @@ public:
         std::string line;
         for (const midgard::stats::StatDef& d : game_.stats().defs()) {
             const double v = game_.stats().get(d.id).value_or(0.0);
-            char part[96];
-            if (d.capped())
+            char part[160];
+            if (d.display())
+                std::snprintf(part, sizeof(part), "%s %s", d.name.c_str(),
+                              game_.stat_text(d).c_str());
+            else if (d.capped())
                 std::snprintf(part, sizeof(part), "%s %.0f/%.0f", d.name.c_str(), v, d.max);
             else
                 std::snprintf(part, sizeof(part), "%s %.0f", d.name.c_str(), v);
@@ -630,8 +633,11 @@ public:
                                            game_.camera_rig().view() == midgard::CameraView::First);
         for (const midgard::stats::StatDef& s : game_.stats().defs()) {
             if (!s.hud) continue;
+            std::string text = game_.stat_text(s);
+            if (s.display() && text.empty()) continue;  // (a clock that shows nothing)
             d.stats.push_back({s.id, s.name, s.kind == midgard::stats::Kind::stat,
-                               game_.stats().get(s.id).value_or(0.0), s.capped() ? s.max : 0.0});
+                               game_.stats().get(s.id).value_or(0.0), s.capped() ? s.max : 0.0,
+                               std::move(text)});
         }
         for (const midgard::hud::Timer& t : h.timers())
             d.timers.push_back({t.id, t.label, t.value});

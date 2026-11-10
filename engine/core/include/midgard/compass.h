@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -39,6 +40,13 @@ double heading_of(const Bearing& b, const glm::dvec3& direction, double fallback
 // Where `target` is from `from`, in metres east and north along the ground (the tangent plane
 // at `from`: right for anything a minimap shows).
 glm::dvec2 east_north(const Bearing& b, const glm::dvec3& from, const glm::dvec3& target);
+
+// Where a point is, as the HUD's position shows it (none: flat ground, x east and -z north):
+//   a sphere (outside or inside)  latitude and longitude, "12.35 deg N, 45.60 deg E" (as the
+//                                 world map lays them out: longitude 0 towards +Z, east +X)
+//   other shapes                  metres east and north of the world's middle, "1240 m E,
+//                                 380 m S" (kilometres from 10 km: "12.4 km E")
+std::string place_text(const std::optional<Body>& body, const glm::dvec3& p);
 
 // The ground around `centre` as a north-up map (as the world map colours it: midgard/
 // world_map.h): size x size pixels, RGBA8, top row first, `radius` metres from its middle to

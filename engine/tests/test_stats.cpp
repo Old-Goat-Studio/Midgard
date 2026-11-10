@@ -128,3 +128,37 @@ TEST_CASE("defining again keeps values, fitted; a saved world brings them back")
     fresh.restore(nlohmann::json("nonsense"));  // (a damaged save changes nothing)
     CHECK(fresh.get("score") == 25.0);
 }
+
+TEST_CASE("a position and a clock only show on the HUD: they have no value") {
+    Stats s;
+    s.define({stat_from_json("health", "Health", R"({"max": 100})"),
+              stat_from_json("where", "Position", R"({"kind": "position"})"),
+              stat_from_json("when", "Date", R"({"kind": "clock", "show": ["time", "season"]})"),
+              stat_from_json("all", "Clock", R"({"kind": "clock"})")});
+    const StatDef* where = s.find("Position");
+    REQUIRE(where);
+    CHECK(where->display());
+    CHECK(std::string(kind_name(where->kind)) == "position");
+    CHECK_FALSE(s.find("health")->display());
+    // The parts in their own order, whatever order they were listed in; all but the weekday
+    // by default.
+    CHECK(s.find("when")->show == std::vector<std::string>{"season", "time"});
+    CHECK(s.find("all")->show == clock_default_parts());
+    // No value to read or change, and none saved.
+    CHECK_FALSE(s.get("where"));
+    CHECK_FALSE(s.set("where", 5.0));
+    CHECK_FALSE(s.add("when", 1.0));
+    CHECK_FALSE(s.set_max("when", 10.0));
+    CHECK_FALSE(s.reset("where"));
+    s.reset_all();
+    s.update(1.0);
+    const nlohmann::json saved = s.save();
+    CHECK(saved.contains("health"));
+    CHECK_FALSE(saved.contains("where"));
+    s.restore(R"({"where": {"value": 3}})"_json);
+    CHECK_FALSE(s.get("where"));
+    // A part a clock can't show, or a show that isn't a list, is an error.
+    CHECK_THROWS_AS(stat_from_json("x", "X", R"({"kind": "clock", "show": ["fortnight"]})"),
+                    StatError);
+    CHECK_THROWS_AS(stat_from_json("x", "X", R"({"kind": "clock", "show": "time"})"), StatError);
+}

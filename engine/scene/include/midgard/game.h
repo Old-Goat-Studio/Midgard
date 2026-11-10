@@ -256,6 +256,10 @@ public:
         double east = 0.0, north = 0.0;
     };
     std::vector<MapMark> map_marks(double radius) const;
+    // What a stat that only shows (a position or a clock: stats::StatDef::display) says now:
+    // where the player is (midgard/compass.h's place_text), or the date and time on the local
+    // calendar (midgard/calendar.h's date_text). Empty for other stats.
+    std::string stat_text(const stats::StatDef& stat) const;
     static constexpr double kMinimapRadius = 120.0;  // metres shown each side of the player
     // Its ground is made twice as wide as what shows, and made again when the player is a
     // quarter of the way to its edge, so running never shows past it while the next is made.

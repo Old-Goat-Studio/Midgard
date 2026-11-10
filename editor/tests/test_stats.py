@@ -78,6 +78,46 @@ def test_the_panel_edits_stats_with_undo(panel, project):
     assert "isn't above its least" in panel.problems.text()
 
 
+def test_a_position_and_a_date_and_time_only_show_on_the_hud(panel, project):
+    # A position: no numbers to set, an example of what the HUD shows.
+    sid = panel.new_stat("Where")
+    panel.kind.setCurrentIndex(panel.kind.findData("position"))
+    panel.kind.activated.emit(panel.kind.currentIndex())
+    assert stats.load(project, sid)["stat"] == {"kind": "position"}
+    for box in (panel.min, panel.max, panel.start, panel.regen, panel.delay):
+        assert not panel.form.isRowVisible(box)
+    assert not panel.form.isRowVisible(panel.parts_box)
+    assert "N, " in panel.example.text() and " m E" in panel.example.text()
+    assert "no value" in panel.id_label.text()
+    assert stats.problems_of({"kind": "position"}) == []
+
+    # A date and time: the parts ticked, in their order, undone a step at a time.
+    sid = panel.new_stat("When")
+    panel.kind.setCurrentIndex(panel.kind.findData("clock"))
+    panel.kind.activated.emit(panel.kind.currentIndex())
+    assert stats.load(project, sid)["stat"] == {
+        "kind": "clock", "show": ["season", "day", "month", "year", "time"]}
+    assert panel.form.isRowVisible(panel.parts_box)
+    assert panel.example.text() == "When Spring, 14 March 1204, 14:05"
+    panel.parts["year"].setChecked(False)
+    panel.parts["weekday"].setChecked(True)
+    assert stats.load(project, sid)["stat"]["show"] == ["season", "weekday", "day", "month",
+                                                       "time"]
+    assert panel.example.text() == "When Spring, Monday, 14 March, 14:05"
+    project.undo_stack.undo()
+    assert stats.load(project, sid)["stat"]["show"] == ["season", "day", "month", "time"]
+    for part in ("season", "day", "month"):
+        panel.parts[part].setChecked(False)
+    assert panel.example.text() == "When 14:05"
+    assert stats.problems(project) == []
+    # What the cook says of a clock that can't work.
+    assert stats.problems_of({"kind": "clock", "show": ["fortnight"]}) == [
+        "shows 'fortnight', which a clock can't (season, weekday, day, month, year or time)"]
+    assert stats.problems_of({"kind": "clock", "show": []}) == [
+        "shows nothing (tick at least one part)"]
+    assert stats.problems_of({"kind": "clock", "show": "time"}) == ["'show' isn't a list of parts"]
+
+
 def test_the_cook_warns_about_stats_and_scripts_that_name_ones_not_there(project, tmp_path):
     rows = stats.load_all(project)
     rows.append({"id": "mana", "name": "Health", "stat": {"max": 50, "start": 80}})

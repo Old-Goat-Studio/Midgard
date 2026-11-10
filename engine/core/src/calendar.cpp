@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 
 #include <sqlite3.h>
@@ -117,6 +118,38 @@ std::vector<std::string> Calendar::problems() const {
             bad("its start date isn't a date it has");
         }
     }
+    return out;
+}
+
+std::string date_text(const Calendar& c, std::int64_t time, const std::vector<std::string>& parts,
+                      const std::function<std::string(const std::string&)>& name) {
+    const Date d = date_at(c, time);
+    const auto has = [&](const char* part) {
+        return std::find(parts.begin(), parts.end(), part) != parts.end();
+    };
+    std::vector<std::string> pieces;
+    if (has("season") && d.season >= 0 && size_t(d.season) < c.seasons.size())
+        pieces.push_back(name(c.seasons[size_t(d.season)].name_key));
+    if (has("weekday") && size_t(d.weekday) < c.weekdays.size())
+        pieces.push_back(name(c.weekdays[size_t(d.weekday)]));
+    const bool month = has("month") && d.month >= 1 && size_t(d.month) <= c.months.size();
+    if (month) {  // "14 Thawmonth 1204"
+        std::string date;
+        if (has("day")) date = std::to_string(d.day) + " ";
+        date += name(c.months[size_t(d.month - 1)].name_key);
+        if (has("year")) date += " " + std::to_string(d.year);
+        pieces.push_back(date);
+    } else {
+        if (has("day")) pieces.push_back("Day " + std::to_string(d.day));
+        if (has("year")) pieces.push_back("Year " + std::to_string(d.year));
+    }
+    if (has("time")) {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%02d:%02d", d.hour, d.minute);
+        pieces.push_back(text);
+    }
+    std::string out;
+    for (const std::string& p : pieces) out += (out.empty() ? "" : ", ") + p;
     return out;
 }
 

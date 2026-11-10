@@ -62,6 +62,9 @@ class Entity:
     ValueError."""
     on_ground: bool
     """True while the player stands on something (False for every other entity; read-only)."""
+    swimming: bool
+    """True while the player swims: in the sea deeper than its shoulders, floating at the
+    surface (False for every other entity; read-only)."""
 
     def move(self, x: float, y: float, z: float) -> None:
         """Moves the entity by (x, y, z) metres. A physics body jumps there with it."""

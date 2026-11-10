@@ -862,7 +862,8 @@ out before the snow comes. Phones draw a quarter as many drops and flakes as a c
 heavy weather stays smooth (the phone's self-test has a **Weather** check for this).
 
 Inside a building (a roof and walls all round the player) no rain or snow is drawn. Under a
-porch or an open shelter it still falls all round, and also under the roof itself.
+porch or an open shelter it still falls all round, and also under the roof itself. Under the sea (the
+camera below its surface) none falls either.
 
 **What it leaves behind.** Rain wets the ground (up to the weather type's **wetness**, in
 about a quarter of an hour of game time), and it dries over a couple of hours after. Wet things
@@ -939,6 +940,11 @@ Add these with **Add Component**:
   - **kinematic**: a script moves it, and it pushes other things (a lift, a moving platform).
   - **static**: it never moves.
   - **Mass** in kilograms (0 means "work it out from its size").
+  - **Buoyancy**: whether it floats or sinks in the sea. Below 1 it sinks (0 like a stone; 0.5,
+    the default, sinks slowly), 1 hovers where it is, and above 1 it floats: 2 floats half out of
+    the water, like wood, and 1.1 floats almost under, like ice. The water slows everything in
+    it, and a floating thing bobs and soon settles. It works on every world shape: on a planet
+    the sea is all the way round.
 - **Physics material**: **Friction** (0 is ice), **Bounciness** (0 stops dead, 1 bounces
   back fully), and its **Surface** (wood, stone, metal) for footsteps on it.
 - **Trigger**: an invisible box that notices when the player walks in or out. Use it for
@@ -980,6 +986,12 @@ smoothing.
 
 Walking is relative to the camera, and the player turns to face the way it walks.
 
+**Swimming.** Where the sea is deeper than the player's shoulders, the player swims: it floats
+with the water at its shoulders instead of sinking to the sea floor, and swims along the surface
+a little slower than it walks. Where the ground comes up under it (a beach, a gentle bank) it
+stands up and walks out. At a steep bank, **Jump** lifts it out. Jumping or falling in from a
+height, it goes under for a moment and bobs back up.
+
 ### The player's stats, scores and counters
 
 Health, stamina, points, keys: the numbers your game keeps about the player. They're in the
@@ -994,6 +1006,19 @@ Each is one of three kinds:
 - **Score**: a whole number of points that never goes below its least.
 - **Counter**: a whole number up to a **target** if it has one (Keys, 3 of 5), or as many as
   there are (Coins).
+
+Two more kinds only show on the HUD. They have no value, so scripts can't read or change them:
+
+- **Position**: where the player is. On a planet or inside a hollow world it shows latitude and
+  longitude (`12.35° N, 45.60° E`, as on the World Type editor's map). Elsewhere it shows metres
+  east and north of the world's middle (`1240 m E, 380 m S`, or kilometres from 10 km).
+- **Date and time**: the game's calendar and clock. Tick the parts to show under **Shows**:
+  **Season**, **Weekday**, **Day**, **Month**, **Year** and **Time** (the hour and minute).
+  **Looks like** gives an example, such as `Spring, 14 March 1204, 14:05`. The names of the
+  months, seasons and weekdays are your calendar's (section 13).
+
+To add one, click **New**, choose **Position** or **Date and time** as its **Kind**, and give
+it a name (`Location`, `Today`).
 
 **Move Up** and **Move Down** set their order (the HUD shows them in it). **Show on the HUD**
 keeps one on the screen while the game plays, or off it (a hidden stat for your scripts). Under the settings,
@@ -1011,7 +1036,8 @@ Every game shows a **HUD** over the game by itself:
 
 - **Bars** at the top left: each stat (Health red, Stamina gold, Mana blue, others green), with
   its value, such as `72/100`.
-- **Numbers** at the top right: scores (`Score 1250`) and counters (`Keys 3/5`).
+- **Numbers** at the top right: scores (`Score 1250`), counters (`Keys 3/5`), the player's
+  position (`Location 12.35° N, 45.60° E`) and the date and time (`Today Spring, 14:05`).
 - **Timers** under them, from your scripts (`Escape 1:05`).
 - **Notes** under those: short messages from your scripts ("Picked up a key") that fade after a
   few seconds. Five show at most.
@@ -1391,6 +1417,7 @@ The player's own script also gets `on_trigger_enter(player, trigger)` and `on_tr
 | `entity.color` | Its material colour. |
 | `entity.velocity` | Its speed and direction (physics bodies). Assign to launch a dynamic body. |
 | `entity.on_ground` | True while the player stands on something. |
+| `entity.swimming` | True while the player swims in the sea (floating at its surface). |
 | `entity.flying` | The player flies (where the camera looks; up with jump, down with Left Ctrl). `False` walks again. Only the player. |
 | `entity.speed` | The player's walking speed in metres a second (running multiplies it). Only the player. |
 | `entity.follow(points)` | The player walks through these points at its speed, as if steered (a guided tour, a cutscene, click-to-move); `[]` stops it. Only the player. |

@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -95,6 +96,12 @@ Date date_at(const Calendar& c, std::int64_t time);
 // calendar doesn't have.
 std::int64_t time_of(const Calendar& c, std::int64_t year, int month, int day,
                      std::int64_t seconds_into_day = 0);
+
+// A moment as the HUD's clock shows it: the parts named (season, weekday, day, month, year,
+// time), with `name` giving a name key's text: "Spring, 14 Thawmonth 1204, 14:05". Without the
+// month, the day and year stand alone ("Day 14", "Year 1204"); the time is hours and minutes.
+std::string date_text(const Calendar& c, std::int64_t time, const std::vector<std::string>& parts,
+                      const std::function<std::string(const std::string&)>& name);
 
 // The season of a day of the year (by its middle), or -1 without seasons.
 int season_on(const Calendar& c, std::int64_t year, int day_of_year);

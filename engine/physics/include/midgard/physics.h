@@ -81,6 +81,10 @@ struct BodyDesc {
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 scale{1.0f};
     float mass = 0.0f;  // kilograms; 0: from its volume at the density of water
+    // How the water (World::set_water) lifts it, against its weight when it is all under: below
+    // 1 it sinks (0: like a stone; 0.5, the default, slowly), 1 it hovers, above 1 it floats
+    // (2: half out of the water, like wood). Water slows everything in it.
+    float buoyancy = 0.5f;
     Surface surface;
     int layer = 0;           // 0 to kLayers - 1
     bool sensor = false;     // reports overlaps but doesn't collide (triggers)
@@ -166,6 +170,15 @@ public:
     glm::dvec3 gravity(const glm::dvec3& position) const;
     const std::optional<Body>& body() const;
 
+    // Water (the terrain's sea): its surface `sea_level` metres up from the world's shape (on
+    // flat ground without a body, at that y), everywhere; none by default. Dynamic bodies in it
+    // are lifted by their buoyancy and slowed; characters swim on its surface.
+    void set_water(std::optional<double> sea_level);
+    std::optional<double> water() const;
+    // How deep a point is under the water: metres below its surface (negative above it, and
+    // without water a very large negative number).
+    double water_depth(const glm::dvec3& position) const;
+
 private:
     friend class Character;
     struct Impl;
@@ -204,7 +217,11 @@ public:
     glm::vec3 velocity() const;
     glm::vec3 up() const;
     bool on_ground() const;  // standing on something it can stand on
-    BodyId body() const;     // the capsule other bodies and queries see
+    // In water deep enough to swim (World::set_water): it floats with the surface at its
+    // shoulders, swims along it slower than it walks, and can climb out where the ground rises
+    // (or jump out at the edge).
+    bool swimming() const;
+    BodyId body() const;  // the capsule other bodies and queries see
     const CharacterDesc& desc() const;
 
 private:

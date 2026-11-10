@@ -2090,13 +2090,14 @@ TEST_CASE("terrain stamps: from the database, followed live, solid, and checked 
 
 TEST_CASE("terrain, the exit: across a bounded area, never through the ground") {
     // 1.4 km over hills from one side of the land to the other (the player walks -Z, W held).
+    // (No sea in the way: it would swim across it.)
     TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [-200, 0.5, 700]},
                                          "player": {"speed": 25}}')"},
                      {"e2_camera", R"(NULL, '{"transform": {"position": [-200, 40, 706]},
                                          "camera": {}}')"}},
                     R"({"body": {"shape": "bounded_area", "width": 3000, "length": 3000,
                                  "seed": 7},
-                        "terrain": {"height_scale": 25}})");
+                        "terrain": {"height_scale": 25, "sea_level": -1000}})");
     midgard::Game game(pkg.dir);
     midgard::Scene& scene = game.scene();
     const entt::entity player = scene.find("e1_player");
@@ -2373,7 +2374,8 @@ TEST_CASE("characters, the exit: the Superhero walks and runs round the planet, 
     TestPackage pkg(
         {{"e1_player", "NULL, '" + player.dump() + "'"},
          {"e2_camera", "NULL, '" + cam.dump() + "'"}},
-        R"({"body": )" + body_json + R"(, "terrain": {"height_scale": 20}})", {},
+        R"({"body": )" + body_json + R"(, "terrain": {"height_scale": 20, "sea_level": -1000}})",
+        {},  // (no sea: it walks, feet planted, all the way round)
         {{"asset:hero.glb", "characters/hero.glb", sample_file("superhero_male.glb")},
          {"asset:moves.glb", "characters/moves.glb", sample_file("animation_library.glb")}});
     midgard::Game game(pkg.dir);

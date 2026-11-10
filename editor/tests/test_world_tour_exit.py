@@ -71,8 +71,9 @@ def on_update(entity, dt):
     p = player.position
     r = math.hypot(p[0] - CENTRE[0], p[1] - CENTRE[1])
     s["samples"] += 1
-    s["grounded"] += 1 if player.on_ground else 0
-    s["air"] = 0.0 if player.on_ground else s["air"] + dt  # (off the ground: over a crest)
+    held = player.on_ground or player.swimming  # (across a sea it swims)
+    s["grounded"] += 1 if held else 0
+    s["air"] = 0.0 if held else s["air"] + dt  # (off the ground: over a crest)
     s["longest_air"] = max(s["longest_air"], s["air"])
     s["low"], s["high"] = min(s["low"], r), max(s["high"], r)
     quarter = int(midgard.time.solar_phase() * 4) % 4

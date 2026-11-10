@@ -68,6 +68,9 @@ struct UiHandle {};
 const stats::StatDef& stat_def(const std::string& stat) {
     const stats::StatDef* d = current_game().stats().find(stat);
     if (!d) throw py::key_error("there is no stat '" + stat + "'");
+    if (d->display())
+        throw py::key_error("'" + d->name + "' only shows on the HUD (the " +
+                            stats::kind_name(d->kind) + "): it has no value to read or change");
     return *d;
 }
 
@@ -403,6 +406,14 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
                                    return h.resolve() == p.player() && p.character() &&
                                           p.character()->on_ground();
                                })
+        .def_property_readonly(
+            "swimming",
+            [](const EntityHandle& h) {
+                ScenePhysics& p = scene_physics();
+                return h.resolve() == p.player() && p.character() && p.character()->swimming();
+            },
+            "Whether the player is swimming: in the sea deeper than its shoulders, floating at "
+            "the surface.")
         .def(
             "add_force",
             [](const EntityHandle& h, float x, float y, float z) {
@@ -1236,10 +1247,12 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             "ids",
             [](const StatsHandle&) {
                 std::vector<std::string> out;
-                for (const stats::StatDef& d : current_game().stats().defs()) out.push_back(d.id);
+                for (const stats::StatDef& d : current_game().stats().defs())
+                    if (!d.display()) out.push_back(d.id);
                 return out;
             },
-            "The stats' ids, in the Stats panel's order.")
+            "The stats' ids, in the Stats panel's order (not positions or clocks, which only "
+            "show on the HUD).")
         .def(
             "__getitem__",
             [](const StatsHandle&, const std::string& stat) {
@@ -1255,7 +1268,8 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             py::arg("stat"), py::arg("value"))
         .def("__contains__",
              [](const StatsHandle&, const std::string& stat) {
-                 return current_game().stats().find(stat) != nullptr;
+                 const stats::StatDef* d = current_game().stats().find(stat);
+                 return d != nullptr && !d->display();
              })
         .def("__repr__", [](const StatsHandle&) { return std::string("<midgard.stats>"); });
     m.attr("stats") = StatsHandle{};

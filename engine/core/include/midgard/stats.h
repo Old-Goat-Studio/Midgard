@@ -6,6 +6,11 @@
 //            drain) by itself, so many a second, once it has gone that long without dropping
 //   score    a whole number that never goes below its least (points)
 //   counter  a whole number from its least up to a target if it has one (keys 3 of 5; coins)
+// and two that only show on the HUD, with no value of their own:
+//   position where the player is: latitude and longitude on a planet or inside a hollow world,
+//            else metres east and north of the world's middle
+//   clock    the date and time, its parts as "show" lists them: season, year, month, day,
+//            weekday, time (the hour and minute)
 // A project starts with Health, Stamina and Score. Scripts read and change them
 // (midgard.stats), the HUD shows them, and the world's save keeps them.
 #pragma once
@@ -26,7 +31,7 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-enum class Kind { stat, score, counter };
+enum class Kind { stat, score, counter, position, clock };
 const char* kind_name(Kind k);
 std::optional<Kind> kind_from_name(std::string_view name);
 
@@ -40,15 +45,23 @@ struct StatDef {
     double regen = 0.0;  // a stat's change a second by itself (negative: it drains)
     double delay = 0.0;  // seconds after it last dropped before it refills
     bool hud = true;     // shown on the HUD (a bar for a stat, a number for the others)
+    // A clock's parts, in clock_parts()'s order.
+    std::vector<std::string> show;
+    // Shown on the HUD only, with no value (scripts can't read or change it).
+    bool display() const { return kind == Kind::position || kind == Kind::clock; }
     // Whole numbers: scores and counters.
     bool whole() const { return kind != Kind::stat; }
     // Bounded above: stats, and counters with a target.
     bool capped() const { return kind == Kind::stat || (kind == Kind::counter && max > min); }
 };
 
+// The parts a clock can show, in the order it shows them; and those a new one shows.
+const std::vector<std::string>& clock_parts();
+const std::vector<std::string>& clock_default_parts();
+
 // A stat from its table row ("stat" is the JSON its column holds:
 // {"kind": "stat", "min": 0, "max": 100, "start": 100, "regen": 0, "delay": 0,
-// "hud": true}). Throws
+// "hud": true}; {"kind": "position"}; {"kind": "clock", "show": ["season", "time"]}). Throws
 // StatError, naming it, if it isn't one: an unknown kind, a most below the least.
 StatDef stat_from_json(const std::string& id, const std::string& name, const std::string& json);
 

@@ -84,6 +84,9 @@ PhysicsLayers PhysicsLayers::load(const std::filesystem::path& database) {
 ScenePhysics::ScenePhysics(const Scene& scene, const PhysicsLayers& layers, MeshLoader load_mesh)
     : world_(std::make_unique<physics::World>(scene.settings.body)),
       load_mesh_(std::move(load_mesh)) {
+    // The terrain's sea: things float or sink in it, and the player swims.
+    if (scene.settings.body && scene.settings.terrain)
+        world_->set_water(scene.settings.terrain->sea_level);
     for (const auto& [a, b] : layers.ignored)
         if (a >= 0 && b >= 0 && a < physics::kLayers && b < physics::kLayers)
             world_->set_collides(a, b, false);
@@ -248,6 +251,7 @@ void ScenePhysics::add(const Scene& scene, entt::entity e) {
         if (const auto* rb = scene.registry.try_get<RigidBody>(e)) {
             d.motion = rb->motion;
             d.mass = rb->mass;
+            d.buoyancy = rb->buoyancy;
             d.layer = rb->layer;
         }
         t.motion = d.motion;

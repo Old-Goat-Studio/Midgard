@@ -235,3 +235,27 @@ TEST_CASE("the cook checks find calendars that can't work") {
     midgard::Calendar empty;
     CHECK_THROWS_AS(midgard::date_at(empty, 0), midgard::CalendarError);
 }
+
+TEST_CASE("the HUD's clock shows the parts asked for") {
+    midgard::Calendar c;
+    c.months = {{"m_one", 30}, {"m_two", 30}};
+    c.weekdays = {"d_a", "d_b", "d_c"};
+    c.seasons = {{"s_warm", 0.5, 0.6, 10.0, 25.0}, {"s_cold", 0.5, 0.4, -5.0, 10.0}};
+    const std::map<std::string, std::string> names = {
+        {"m_one", "Thaw"},  {"m_two", "Bloom"},   {"d_a", "Moonday"},  {"d_b", "Fireday"},
+        {"d_c", "Restday"}, {"s_warm", "Summer"}, {"s_cold", "Winter"}};
+    const auto name = [&](const std::string& key) { return names.at(key); };
+    // Year 3, month 2, day 14, 14:05 (two 30-day months a year, 24 hours a day).
+    const std::int64_t day = 86400;
+    const std::int64_t t = (2 * 60 + 30 + 13) * day + 14 * 3600 + 5 * 60;
+    using P = std::vector<std::string>;
+    CHECK(midgard::date_text(c, t, P{"day", "month", "year", "time"}, name) == "14 Bloom 3, 14:05");
+    CHECK(midgard::date_text(c, t, P{"day", "year"}, name) == "Day 14, Year 3");
+    CHECK(midgard::date_text(c, t, P{"time"}, name) == "14:05");
+    CHECK(midgard::date_text(c, t, P{"month"}, name) == "Bloom");
+    // Day 163 since the clock's 0: weekday 163 % 3 = 1.
+    CHECK(midgard::date_text(c, t, P{"weekday"}, name) == "Fireday");
+    const std::string season = midgard::date_text(c, t, P{"season"}, name);
+    CHECK((season == "Summer" || season == "Winter"));
+    CHECK(midgard::date_text(c, t, P{}, name).empty());
+}

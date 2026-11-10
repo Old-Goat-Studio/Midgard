@@ -4,7 +4,8 @@
 A list on the left (New, Delete, Move Up, Move Down), and the chosen one's settings on the
 right: its name, its kind, and its numbers. A stat (Health, Stamina) has a least, a most, a
 start, and how fast it refills by itself after how long without dropping; a score only a least
-and a start; a counter a least, a start and a target. What's wrong with one is said under it.
+and a start; a counter a least, a start and a target. A position (where the player is) and a
+date and time (the parts ticked) only show on the HUD. What's wrong with one is said under it.
 
 Every change is a step on the project's undo stack (typing in one field is one step), and
 reaches a game playing under the editor at once (stats.put), its values kept.
@@ -56,7 +57,9 @@ class StatsPanel(QWidget):
         self.list = QListWidget()
         self.list.currentItemChanged.connect(lambda *_: self._show())
         self.new_button = QPushButton("New")
-        self.new_button.setToolTip("A new stat (mana, hunger), score or counter (coins, keys)")
+        self.new_button.setToolTip("A new stat (mana, hunger), score or counter (coins, keys); "
+                                   "choose its kind on the right (a position or a date and time "
+                                   "shows on the HUD)")
         self.new_button.clicked.connect(lambda: self.new_stat())
         self.delete_button = QPushButton("Delete")
         self.delete_button.clicked.connect(self.delete_stat)
@@ -79,7 +82,9 @@ class StatsPanel(QWidget):
         for key, label in stats.KINDS.items():
             self.kind.addItem(label, key)
         self.kind.setToolTip("A stat stays between its least and most and can refill; a score "
-                             "is a whole number of points; a counter counts up to a target")
+                             "is a whole number of points; a counter counts up to a target; a "
+                             "position shows where the player is (latitude and longitude on a "
+                             "planet); a date and time shows the game's calendar and clock")
         self.kind.activated.connect(lambda _i: self._set_kind())
         self.min = _spin()
         self.max = _spin()
@@ -95,6 +100,20 @@ class StatsPanel(QWidget):
         self.on_hud.setToolTip("A stat shows as a bar, a score or counter as a number, at the "
                                "top of the screen while the game plays")
         self.on_hud.toggled.connect(self._set_hud)
+        # A clock's parts.
+        self.parts: dict[str, QCheckBox] = {}
+        parts_box = QWidget()
+        parts_layout = QVBoxLayout(parts_box)
+        parts_layout.setContentsMargins(0, 0, 0, 0)
+        parts_layout.setSpacing(2)
+        for key, label in stats.CLOCK_PARTS.items():
+            box = QCheckBox(label)
+            box.toggled.connect(lambda _on, k=key: self._set_part(k))
+            self.parts[key] = box
+            parts_layout.addWidget(box)
+        self.parts_box = parts_box
+        self.example = QLabel()
+        self.example.setWordWrap(True)
         self.id_label = QLabel()
         self.id_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.problems = QLabel()
@@ -108,6 +127,8 @@ class StatsPanel(QWidget):
         self.form.addRow("Starts at", self.start)
         self.form.addRow("Refills", self.regen)
         self.form.addRow("After", self.delay)
+        self.form.addRow("Shows", self.parts_box)
+        self.form.addRow("Looks like", self.example)
         self.form.addRow("", self.on_hud)
         self.form.addRow("In scripts", self.id_label)
         right = QWidget()
@@ -204,18 +225,29 @@ class StatsPanel(QWidget):
             self.name.setText(s["name"])
             self.kind.setCurrentIndex(max(0, self.kind.findData(kind)))
             whole = kind != "stat"
-            for key, box in self._numbers().items():
-                box.setDecimals(0 if whole and key in ("min", "max", "start") else
-                                (2 if key == "regen" else 1))
-                box.setValue(stats.number(stat, key))
+            display = kind in stats.DISPLAY
+            if not display:
+                for key, box in self._numbers().items():
+                    box.setDecimals(0 if whole and key in ("min", "max", "start") else
+                                    (2 if key == "regen" else 1))
+                    box.setValue(stats.number(stat, key))
             # What each kind has.
-            self.form.setRowVisible(self.max, kind != "score")
+            self.form.setRowVisible(self.min, not display)
+            self.form.setRowVisible(self.start, not display)
+            self.form.setRowVisible(self.max, not display and kind != "score")
             self.form.setRowVisible(self.regen, kind == "stat")
             self.form.setRowVisible(self.delay, kind == "stat")
+            self.form.setRowVisible(self.parts_box, kind == "clock")
+            self.form.setRowVisible(self.example, display)
             self.form.labelForField(self.max).setText("Most" if kind == "stat" else
                                                       "Target (0: none)")
+            shows = stats.clock_shows(stat) if kind == "clock" else []
+            for key, box in self.parts.items():
+                box.setChecked(key in shows)
+            self.example.setText(self._example(s["name"], kind, shows))
             self.on_hud.setChecked(stat.get("hud", True) is not False)
-            self.id_label.setText(f'<code>midgard.stats.get("{s["id"]}")</code>')
+            self.id_label.setText("Only on the HUD (it has no value)" if display else
+                                  f'<code>midgard.stats.get("{s["id"]}")</code>')
             found = stats.problems_of(stat)
             self.problems.setText("\n".join(f"This {stats.KINDS.get(kind, 'stat').lower()} "
                                             f"{p}." for p in found))
@@ -309,6 +341,45 @@ class StatsPanel(QWidget):
             else:
                 stat["stat"]["hud"] = False
         self._edit_chosen(change, f"{'Show' if on else 'Hide'} '{s['name']}' on the HUD")
+
+    @staticmethod
+    def _example(name: str, kind: str, shows: list[str]) -> str:
+        """What the HUD shows for a position or a clock (a made-up moment)."""
+        if kind == "position":
+            return (f"{name} 12.35° N, 45.60° E (on a planet or in a hollow world)<br>"
+                    f"{name} 1240 m E, 380 m S (elsewhere)")
+        if kind != "clock":
+            return ""
+        pieces = []
+        if "season" in shows:
+            pieces.append("Spring")
+        if "weekday" in shows:
+            pieces.append("Monday")
+        if "month" in shows:
+            date = ("14 " if "day" in shows else "") + "March" + \
+                (" 1204" if "year" in shows else "")
+            pieces.append(date)
+        else:
+            if "day" in shows:
+                pieces.append("Day 14")
+            if "year" in shows:
+                pieces.append("Year 1204")
+        if "time" in shows:
+            pieces.append("14:05")
+        return f"{name} {', '.join(pieces)}" if pieces else "(nothing: tick a part)"
+
+    def _set_part(self, key: str) -> None:
+        s = self.chosen()
+        if self._filling or s is None or s["stat"].get("kind") != "clock":
+            return
+        on = self.parts[key].isChecked()
+        shows = [p for p in stats.CLOCK_PARTS
+                 if (p == key and on) or (p != key and p in stats.clock_shows(s["stat"]))]
+
+        def change(stat: dict) -> None:
+            stat["stat"]["show"] = shows
+        self._edit_chosen(change, f"{'Show' if on else 'Hide'} the "
+                          f"{stats.CLOCK_PARTS[key].split(' (')[0].lower()} in '{s['name']}'")
 
     def _set_number(self, key: str, value: float) -> None:
         s = self.chosen()

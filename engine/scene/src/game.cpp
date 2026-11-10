@@ -555,9 +555,19 @@ void Game::update_minimap(bool now) {
     }
     // (the terrain is read from background jobs already: its heights and colours are const)
     const Terrain* terrain = &terrain_->terrain();
-    minimap_job_ = MinimapJob{here, scene_.id, std::async(std::launch::async, [terrain, here] {
-                                  return local_map(*terrain, here, kMinimapGroundRadius, kMinimapSize);
-                              })};
+    minimap_job_ =
+        MinimapJob{here, scene_.id, std::async(std::launch::async, [terrain, here] {
+                       return local_map(*terrain, here, kMinimapGroundRadius, kMinimapSize);
+                   })};
+}
+
+std::string Game::stat_text(const stats::StatDef& stat) const {
+    if (stat.kind == stats::Kind::position)
+        return place_text(scene_.settings.body, player_position());
+    if (stat.kind == stats::Kind::clock)
+        return date_text(local_calendar(), time_.now(), stat.show,
+                         [this](const std::string& key) { return text(key); });
+    return {};
 }
 
 glm::dvec2 Game::minimap_offset() const {
@@ -908,6 +918,8 @@ render::Environment Game::environment(const glm::dvec3& origin) const {
     env.falling = falling_;
     // (Indoors, a roof and walls all round: none falls where the player can see.)
     env.falling.amount *= 1.0f - exposure_.roof * exposure_.walls;
+    // (Under the water, none: the camera is below its surface.)
+    if (physics_ && physics_->world().water_depth(origin) > 0.0) env.falling.amount = 0.0f;
     env.ground = ground_cover_;
     if (in_space()) {  // (the stars, from the world's seed: milestone 5.16)
         env.stars.brightness = 1.0f;
@@ -1221,6 +1233,11 @@ void Game::rebuild_terrain() {
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
     place_again();  // (none without terrain)
+    // The terrain's sea (its level may have changed): things float or sink, the player swims.
+    if (physics_)
+        physics_->world().set_water(scene_.settings.body && scene_.settings.terrain
+                                        ? std::optional<double>(scene_.settings.terrain->sea_level)
+                                        : std::nullopt);
     if (!scene_.settings.body || !scene_.settings.terrain) return;
     if (!jobs_) jobs_ = std::make_unique<JobSystem>();
     terrain_ = std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain,

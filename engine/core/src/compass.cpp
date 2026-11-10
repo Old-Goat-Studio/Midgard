@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "midgard/compass.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "midgard/world_map.h"
 
@@ -12,6 +14,18 @@ constexpr double kDegrees = 180.0 / 3.14159265358979323846;
 
 glm::dvec3 flat(const glm::dvec3& v, const glm::dvec3& up) {
     return v - up * glm::dot(v, up);
+}
+
+// "1240 m E", "12.4 km W" (the way by its sign).
+std::string metres(double m, const char* plus, const char* minus) {
+    const char* way = m < 0.0 ? minus : plus;
+    m = std::abs(m);
+    char text[48];
+    if (m < 10000.0)
+        std::snprintf(text, sizeof(text), "%.0f m %s", m, way);
+    else
+        std::snprintf(text, sizeof(text), "%.1f km %s", m / 1000.0, way);
+    return text;
 }
 
 }  // namespace
@@ -44,6 +58,33 @@ double heading_of(const Bearing& b, const glm::dvec3& direction, double fallback
 glm::dvec2 east_north(const Bearing& b, const glm::dvec3& from, const glm::dvec3& target) {
     const glm::dvec3 d = target - from;
     return {glm::dot(d, b.east), glm::dot(d, b.north)};
+}
+
+std::string place_text(const std::optional<Body>& body, const glm::dvec3& p) {
+    if (!body) return metres(p.x, "E", "W") + ", " + metres(-p.z, "N", "S");
+    const Shape::Kind kind = body->shape.kind();
+    if (kind == Shape::Kind::SphereOutside || kind == Shape::Kind::SphereInside) {
+        const glm::dvec3 offset = p - body->origin;
+        const double length = glm::length(offset);
+        const glm::dvec3 d = length > 1e-9 ? offset / length : glm::dvec3(0.0, 0.0, 1.0);
+        const double latitude = std::asin(std::clamp(d.y, -1.0, 1.0)) * kDegrees;
+        const double longitude = std::atan2(d.x, d.z) * kDegrees;
+        char text[64];
+        std::snprintf(text, sizeof(text), "%.2f\xC2\xB0 %s, %.2f\xC2\xB0 %s", std::abs(latitude),
+                      latitude < 0.0 ? "S" : "N", std::abs(longitude), longitude < 0.0 ? "W" : "E");
+        return text;
+    }
+    // One face: metres from its middle, along the ways the compass calls east and north.
+    const SurfacePoint s = body->surface(p);
+    const glm::dvec2 size = body->shape.face_size();
+    const SurfacePoint at{s.face, s.u, s.v, 0.0};
+    const glm::dvec3 here = body->position(at);
+    const glm::dvec3 along_u = body->position({s.face, s.u + 1e-4, s.v, 0.0}) - here;
+    const glm::dvec3 along_v = body->position({s.face, s.u, s.v + 1e-4, 0.0}) - here;
+    const Bearing b = bearing_at(body, here);
+    const double east = (s.u - 0.5) * size.x * (glm::dot(along_u, b.east) < 0.0 ? -1.0 : 1.0);
+    const double north = (s.v - 0.5) * size.y * (glm::dot(along_v, b.north) < 0.0 ? -1.0 : 1.0);
+    return metres(east, "E", "W") + ", " + metres(north, "N", "S");
 }
 
 std::vector<std::uint8_t> local_map(const Terrain& terrain, const glm::dvec3& centre, double radius,

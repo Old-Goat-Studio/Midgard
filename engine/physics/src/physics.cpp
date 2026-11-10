@@ -32,6 +32,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 namespace midgard::physics {
 
@@ -218,15 +219,29 @@ struct World::Impl : JPH::PhysicsStepListener {
         glm::quat rotation;
     };
     std::vector<Target> targets;
+    // Water: the sea's level, and each dynamic body's buoyancy (by its id) when it isn't 1.
+    // The water's slowing, a second (all under): moving along it and turning, and bobbing up
+    // and down (more, so a floating thing soon settles).
+    static constexpr float kWaterDrag = 1.5f, kWaterBobDrag = 4.0f;
+    std::optional<double> sea_level;
+    std::unordered_map<std::uint32_t, float> buoyancy;
 
     glm::dvec3 gravity(const glm::dvec3& p) const { return body ? body->gravity(p) : kFlatGravity; }
+    glm::dvec3 up(const glm::dvec3& p) const {
+        const glm::dvec3 g = gravity(p);
+        const double length = glm::length(g);
+        return length > 1e-9 ? -g / length : glm::dvec3(0.0, 1.0, 0.0);
+    }
+    double water_depth(const glm::dvec3& p) const {
+        if (!sea_level) return -1.0e30;
+        return *sea_level - (body ? body->surface(p).height : p.y);
+    }
 
     // Before every step: each moving body gets the gravity where it is, as a force.
     void OnStep(const JPH::PhysicsStepListenerContext& context) override {
         const JPH::BodyLockInterfaceNoLock& locks = system.GetBodyLockInterfaceNoLock();
         const JPH::uint count = system.GetNumActiveBodies(JPH::EBodyType::RigidBody);
         const JPH::BodyID* ids = system.GetActiveBodiesUnsafe(JPH::EBodyType::RigidBody);
-        (void)context;
         for (JPH::uint i = 0; i < count; ++i) {
             JPH::BodyLockWrite lock(locks, ids[i]);
             if (!lock.Succeeded()) continue;
@@ -234,8 +249,38 @@ struct World::Impl : JPH::PhysicsStepListener {
             if (!b.IsDynamic()) continue;
             const float inverse_mass = b.GetMotionProperties()->GetInverseMass();
             if (inverse_mass <= 0.0f) continue;
-            const glm::dvec3 g = gravity(from_jolt(b.GetCenterOfMassPosition()));
-            b.AddForce(JPH::Vec3(float(g.x), float(g.y), float(g.z)) / inverse_mass);
+            const glm::dvec3 at = from_jolt(b.GetCenterOfMassPosition());
+            const glm::dvec3 g = gravity(at);
+            const JPH::Vec3 down(float(g.x), float(g.y), float(g.z));
+            b.AddForce(down / inverse_mass);
+            // In the water: lifted by what of it is under the surface (a plane through the
+            // surface above or below its middle, level there), and slowed.
+            if (!sea_level || b.IsSensor()) continue;
+            const double depth = water_depth(at);
+            const JPH::AABox box = b.GetWorldSpaceBounds();
+            const float reach = box.GetExtent().Length();
+            if (depth < -double(reach)) continue;  // (nowhere near it)
+            const glm::dvec3 up_here = up(at);
+            const glm::dvec3 surface = at + up_here * depth;
+            const auto found = buoyancy.find(ids[i].GetIndexAndSequenceNumber());
+            const float lift = found != buoyancy.end() ? found->second : 1.0f;
+            const JPH::Vec3 normal(float(up_here.x), float(up_here.y), float(up_here.z));
+            float total = 0.0f, under = 0.0f;
+            JPH::Vec3 centre;  // of the part under, from the centre of mass
+            b.GetSubmergedVolume(to_jolt(surface), normal, total, under, centre);
+            if (total <= 0.0f || under <= 0.0f) continue;
+            const float share = std::clamp(under / total, 0.0f, 1.0f);
+            // Lifted by its buoyancy times its weight, for the share of it under, at the middle
+            // of that part (so it rights itself), and slowed.
+            const float weight = float(glm::length(g)) / inverse_mass;
+            b.AddForce(normal * (lift * weight * share), b.GetCenterOfMassPosition() + centre);
+            const float slowed = std::exp(-kWaterDrag * share * context.mDeltaTime);
+            const float bob = std::exp(-kWaterBobDrag * share * context.mDeltaTime);
+            JPH::MotionProperties& motion = *b.GetMotionProperties();
+            const JPH::Vec3 v = motion.GetLinearVelocity();
+            const JPH::Vec3 rising = normal * v.Dot(normal);
+            motion.SetLinearVelocity((v - rising) * slowed + rising * bob);
+            motion.SetAngularVelocity(motion.GetAngularVelocity() * slowed);
         }
     }
 
@@ -317,6 +362,8 @@ BodyId World::add(const BodyDesc& d) {
         bodies.CreateAndAddBody(s, d.motion == Motion::Static ? JPH::EActivation::DontActivate
                                                               : JPH::EActivation::Activate);
     if (id.IsInvalid()) throw PhysicsError("the physics world is full");
+    if (d.motion == Motion::Dynamic && !d.sensor && d.buoyancy != 1.0f)
+        impl_->buoyancy[id.GetIndexAndSequenceNumber()] = std::max(d.buoyancy, 0.0f);
     return id.GetIndexAndSequenceNumber();
 }
 
@@ -326,6 +373,7 @@ void World::remove(BodyId id) {
     if (!bodies.IsAdded(b)) return;
     bodies.RemoveBody(b);
     bodies.DestroyBody(b);
+    impl_->buoyancy.erase(id);
 }
 
 std::size_t World::body_count() const {
@@ -521,6 +569,18 @@ const std::optional<Body>& World::body() const {
     return impl_->body;
 }
 
+void World::set_water(std::optional<double> sea_level) {
+    impl_->sea_level = sea_level;
+}
+
+std::optional<double> World::water() const {
+    return impl_->sea_level;
+}
+
+double World::water_depth(const glm::dvec3& position) const {
+    return impl_->water_depth(position);
+}
+
 // ---- characters -----------------------------------------------------------------------------
 
 namespace {
@@ -538,6 +598,9 @@ struct Character::Impl {
     CharacterDesc desc;
     JPH::Ref<JPH::CharacterVirtual> character;
     float half_cylinder = 0.0f;
+    bool swimming = false;
+    // How deep its middle floats: the water at its shoulders.
+    float float_depth() const { return 0.3f * desc.height; }
 
     JPH::Vec3 up_at(const JPH::RVec3& p) const {
         const glm::dvec3 g = world->gravity(from_jolt(p));
@@ -598,8 +661,21 @@ void Character::step(const glm::vec3& walk, float jump_speed) {
                           (velocity - ground).Dot(up) < 0.1f;
     const glm::dvec3 g = c.world->gravity(from_jolt(ch.GetPosition()));
     const JPH::Vec3 gravity(float(g.x), float(g.y), float(g.z));
+    // Swimming: its middle deeper than it floats. The water holds it at the surface (a damped
+    // spring in place of gravity) and it swims along it, slower than it walks. Where the
+    // ground comes up under it, it stands and walks out; at a bank it can jump.
+    const float depth = float(c.world->water_depth(from_jolt(ch.GetPosition())));
+    c.swimming = depth > c.float_depth();
     JPH::Vec3 next;
-    if (standing) {
+    if (c.swimming) {
+        constexpr float kSpring = 20.0f, kDamping = 9.0f, kSwim = 0.6f;
+        const float rising = velocity.Dot(up);
+        float speed =
+            rising + (kSpring * (depth - c.float_depth()) - kDamping * rising) * float(kStep);
+        speed = std::clamp(speed, -20.0f, 3.0f);
+        if (jump_speed > 0.0f && depth < c.float_depth() + 0.3f) speed = jump_speed;
+        next = up * speed + along * kSwim;
+    } else if (standing) {
         const JPH::Vec3 normal = ch.GetGroundNormal();
         const float speed = along.Length();
         JPH::Vec3 on_slope = along - normal * along.Dot(normal);
@@ -612,7 +688,7 @@ void Character::step(const glm::vec3& walk, float jump_speed) {
     ch.SetLinearVelocity(next);
 
     JPH::CharacterVirtual::ExtendedUpdateSettings settings;
-    settings.mStickToFloorStepDown = -up * 0.5f;
+    settings.mStickToFloorStepDown = c.swimming ? JPH::Vec3::sZero() : -up * 0.5f;
     settings.mWalkStairsStepUp = up * c.desc.step_height;
     const JPH::ObjectLayer layer = object_layer(c.desc.layer, true);
     const SolidOnly solid;
@@ -629,7 +705,7 @@ void Character::step(const glm::vec3& walk, float jump_speed) {
     // curved terrain). A step that should have gone somewhere but went almost nowhere is taken
     // again from a centimetre higher, clear of those contacts (sticking to the floor brings it
     // back down). A wall really in the way stops the step either way.
-    if (standing && jump_speed <= 0.0f) {
+    if (standing && !c.swimming && jump_speed <= 0.0f) {
         const float wanted = (next - up * next.Dot(up)).Length() * float(kStep);
         const float moved = JPH::Vec3(ch.GetPosition() - before).Length();
         if (wanted > 0.01f && moved < 0.001f * wanted) {
@@ -659,6 +735,10 @@ glm::vec3 Character::up() const {
 
 bool Character::on_ground() const {
     return impl_->character->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+}
+
+bool Character::swimming() const {
+    return impl_->swimming;
 }
 
 BodyId Character::body() const {

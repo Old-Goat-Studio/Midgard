@@ -41,6 +41,7 @@ struct HudData {
         bool bar = true;  // a stat: a bar; a score or counter: a number
         double value = 0.0;
         double max = 0.0;  // a bar's most; a counter's target (0: none)
+        std::string text;  // a number's own text in place of its value (a position, a clock)
     };
     std::vector<Stat> stats;
     struct Timer {

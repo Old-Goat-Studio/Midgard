@@ -421,3 +421,81 @@ TEST_CASE("raycasts find the first solid thing, its point, normal and distance")
     CHECK_FALSE(world.raycast({0, 10, 0}, {0, -1, 0}, 5.0));   // too short
     CHECK_FALSE(world.raycast({0, 10, 0}, {0, 0, 0}, 5.0));    // no direction
 }
+
+TEST_CASE("in water, things float or sink by their buoyancy, and slow down") {
+    World world;
+    world.set_water(0.0);  // (flat: the surface at y = 0)
+    CHECK(world.water() == 0.0);
+    CHECK(world.water_depth({0, -2, 0}) == doctest::Approx(2.0));
+    CHECK(world.water_depth({0, 3, 0}) == doctest::Approx(-3.0));
+    add_box(world, {0, -10.5, 0}, {80, 1, 80});  // the sea floor, its top at -10
+    const auto drop = [&](double x, float buoyancy) {
+        BodyDesc d;
+        d.motion = Motion::Dynamic;
+        d.position = {x, 3, 0};
+        d.buoyancy = buoyancy;
+        return world.add(d);
+    };
+    const BodyId wood = drop(0, 2.0f), slow = drop(5, 0.5f), stone = drop(10, 0.0f);
+    // A second and a half in: the stone has gone deeper than the slow sinker.
+    run(world, 1.5);
+    CHECK(world.state(stone).position.y < world.state(slow).position.y - 0.5);
+    // Twenty seconds in: the wood floats half out (its middle at the surface); the others
+    // rest on the floor.
+    run(world, 18.5);
+    CHECK(std::abs(world.state(wood).position.y) < 0.15);
+    CHECK(world.state(slow).position.y == doctest::Approx(-9.5).epsilon(0.02));
+    CHECK(world.state(stone).position.y == doctest::Approx(-9.5).epsilon(0.02));
+    // Without water, nothing lifts it: the wood falls to the floor too.
+    world.set_water(std::nullopt);
+    CHECK(world.water_depth({0, -2, 0}) < -1.0e20);
+    world.set_velocity(wood, {0, -0.1f, 0});  // (awake again)
+    run(world, 4.0);
+    CHECK(world.state(wood).position.y == doctest::Approx(-9.5).epsilon(0.02));
+}
+
+TEST_CASE("on a planet, the sea is a sea level above its surface, and wood floats there") {
+    const Body planet = make_body("planet", Shape::sphere_outside(1000, 9.81));
+    World world(planet);
+    world.set_water(2.0);  // two metres above the surface
+    const glm::dvec3 at = planet.position({4, 0.3, 0.6, 6.0});
+    BodyDesc d;
+    d.motion = Motion::Dynamic;
+    d.position = at;
+    d.buoyancy = 2.0f;
+    const BodyId wood = world.add(d);
+    run(world, 20.0);
+    const SurfacePoint s = planet.surface(world.state(wood).position);
+    CHECK(std::abs(s.height - 2.0) < 0.15);  // its middle at the surface
+}
+
+TEST_CASE("the character swims on the water and walks out up a beach") {
+    World world;
+    world.set_water(0.0);
+    add_box(world, {0, -10.5, 0}, {200, 1, 60});  // the sea floor, its top at -10
+    // A beach rising 10 degrees towards +x, its top through y = -3 at x = 0.
+    const float a = glm::radians(10.0f);
+    const glm::dvec3 top(10.0, 10.0 * std::tan(double(a)) - 3.0, 0.0);
+    add_box(world, top - 0.5 * glm::dvec3(-std::sin(a), std::cos(a), 0.0), {80, 1, 60},
+            glm::angleAxis(a, glm::vec3(0, 0, 1)));
+    CharacterDesc desc;  // radius 0.3, 1 m tall
+    desc.position = {-20, 3, 0};
+    Character c(world, desc);
+
+    // Dropped in: it bobs up and floats with its middle 0.3 m down (the water at its
+    // shoulders), not sinking to the floor.
+    walk_for(world, c, 8.0, {0, 0, 0});
+    CHECK(c.swimming());
+    CHECK(c.position().y == doctest::Approx(-0.3).epsilon(0.1));
+    CHECK(std::abs(c.velocity().y) < 0.1f);
+    // Swimming at 0.6 times its walk: 4 m/s for a second goes about 2.4 m.
+    const double x = c.position().x;
+    walk_for(world, c, 1.0, {4, 0, 0});
+    CHECK(c.position().x - x == doctest::Approx(2.4).epsilon(0.1));
+    CHECK(c.position().y == doctest::Approx(-0.3).epsilon(0.15));
+    // On towards the beach: up it and out of the water, walking again.
+    walk_for(world, c, 15.0, {4, 0, 0});
+    CHECK_FALSE(c.swimming());
+    CHECK(c.on_ground());
+    CHECK(c.position().y > 0.5);
+}

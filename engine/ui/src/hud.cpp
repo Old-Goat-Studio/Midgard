@@ -206,6 +206,8 @@ void Hud::show(const HudData& data) {
             const float percent = float(std::clamp(s.value / max * 100.0, 0.0, 100.0));
             bars.push_back({s.id, s.name, whole(s.value) + "/" + whole(s.max),
                             std::round(percent * 10.0f) / 10.0f});
+        } else if (!s.text.empty()) {
+            numbers.push_back({s.id, s.name, s.text});
         } else {
             numbers.push_back(
                 {s.id, s.name, s.max > 0.0 ? whole(s.value) + "/" + whole(s.max) : whole(s.value)});
