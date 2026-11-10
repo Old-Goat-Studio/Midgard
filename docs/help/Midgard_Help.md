@@ -1017,9 +1017,20 @@ Every game shows a **HUD** over the game by itself:
   few seconds. Five show at most.
 - **A prompt** at the bottom ("Press E to open"), from your scripts.
 - **A crosshair** in the middle, in first-person view.
+- **A compass** at the top: N, E, S and W slide past the gold mark as the camera turns.
+- **A minimap** at the bottom right: the ground around the player from above, north at the top,
+  coloured like the World Type editor's map (sea, grass, sand, rock, snow). The player is the
+  arrow in the middle, pointing the way the camera faces. Blue squares are scene exits (doors to
+  other scenes); gold dots are things your scripts mark (a quest's goal), with their labels.
+  Scenes without terrain show the marks on a plain background.
+
+**North on every world shape.** On flat ground north is -Z, the way everything faces (section 6). On a planet or inside a hollow world, north points
+towards the world's north pole (the +Y pole, the one its latitude counts from), so walking
+round a planet the compass never jumps. On a cylinder, north runs along its length.
 
 Nothing on the HUD takes the mouse, so clicks always reach the game. On a phone it keeps clear of
-the notch and rounded corners, and held upright the bars and numbers share the width. Scripts
+the notch and rounded corners, and held upright the compass goes on top, the bars and numbers
+share the width under it, and the minimap is smaller. Scripts
 use it through `midgard.ui` (section 19). Making your own HUD and menus in the editor comes
 later in Phase 6.
 
@@ -1590,6 +1601,9 @@ The stats show on the HUD by themselves; these are the rest.
 | `midgard.ui.timer_value("bomb")` | Its seconds left (or passed, counting up); `None` if there's none. |
 | `midgard.ui.hud = False` | Hides the whole HUD (a cut scene); `True` shows it again. |
 | `midgard.ui.crosshair = True` | Always shows the crosshair; `False` never; `None` in first person only (as it starts). |
+| `midgard.ui.compass = False`, `midgard.ui.minimap = False` | Hide the compass or the minimap (`True` shows them again). |
+| `midgard.ui.mark(entity, "Shrine")` | Marks an entity on the minimap with a gold dot (and a label, if given). `midgard.ui.unmark(entity)` takes it off. |
+| `midgard.ui.heading` | The way the camera faces, in degrees: 0 north, 90 east, 180 south, 270 west. |
 
 ```python
 import midgard

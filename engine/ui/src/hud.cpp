@@ -32,6 +32,35 @@ struct NoteRow {
     float opacity = 1.0f;
     bool operator==(const NoteRow&) const = default;
 };
+struct CompassMark {
+    Rml::String text;
+    float left = 0.0f;  // dp along the strip
+    bool major = false;
+};
+struct MapMarkRow {
+    Rml::String kind, label;
+    float left = 0.0f, top = 0.0f;  // % of the minimap
+    bool operator==(const MapMarkRow&) const = default;
+};
+
+// The compass strip: 2.5 dp a degree, from -180 to 540 degrees, so any heading's 120 degrees
+// (300 dp shown) are on it without wrapping.
+constexpr float kDpPerDegree = 2.5f;
+constexpr float kStripShown = 300.0f;
+
+Rml::Vector<CompassMark> compass_marks() {
+    Rml::Vector<CompassMark> out;
+    static const char* const names[] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+    for (int d = -180; d <= 540; d += 15) {
+        const int a = ((d % 360) + 360) % 360;
+        CompassMark m;
+        m.left = float(d + 180) * kDpPerDegree;
+        m.major = a % 45 == 0;
+        m.text = m.major ? names[a / 45] : (a % 15 == 0 ? Rml::String("|") : Rml::String());
+        out.push_back(std::move(m));
+    }
+    return out;
+}
 
 std::string whole(double v) {
     char text[32];
@@ -70,6 +99,12 @@ struct Hud::Impl {
     Rml::Vector<NumberRow> numbers;
     Rml::Vector<TimerRow> timers;
     Rml::Vector<NoteRow> notes;
+    bool compass = false, minimap = false, has_ground = false;
+    float compass_left = 0.0f, arrow = 0.0f, ground_left = 0.0f, ground_top = 0.0f,
+          ground_width = 100.0f;
+    Rml::Vector<CompassMark> marks = compass_marks();
+    Rml::Vector<MapMarkRow> map_marks;
+    std::uint64_t ground_version = ~std::uint64_t(0);
 
     explicit Impl(Ui& u) : ui(u) {}
 
@@ -109,6 +144,29 @@ Hud::Hud(Ui& ui) : impl_(std::make_unique<Impl>(ui)) {
     model.RegisterArray<Rml::Vector<NumberRow>>();
     model.RegisterArray<Rml::Vector<TimerRow>>();
     model.RegisterArray<Rml::Vector<NoteRow>>();
+    if (auto s = model.RegisterStruct<CompassMark>()) {
+        s.RegisterMember("text", &CompassMark::text);
+        s.RegisterMember("left", &CompassMark::left);
+        s.RegisterMember("major", &CompassMark::major);
+    }
+    if (auto s = model.RegisterStruct<MapMarkRow>()) {
+        s.RegisterMember("kind", &MapMarkRow::kind);
+        s.RegisterMember("label", &MapMarkRow::label);
+        s.RegisterMember("left", &MapMarkRow::left);
+        s.RegisterMember("top", &MapMarkRow::top);
+    }
+    model.RegisterArray<Rml::Vector<CompassMark>>();
+    model.RegisterArray<Rml::Vector<MapMarkRow>>();
+    model.Bind("compass", &h.compass);
+    model.Bind("compass_left", &h.compass_left);
+    model.Bind("compass_marks", &h.marks);
+    model.Bind("minimap", &h.minimap);
+    model.Bind("has_ground", &h.has_ground);
+    model.Bind("arrow", &h.arrow);
+    model.Bind("ground_left", &h.ground_left);
+    model.Bind("ground_top", &h.ground_top);
+    model.Bind("ground_width", &h.ground_width);
+    model.Bind("map_marks", &h.map_marks);
     model.Bind("visible", &h.visible);
     model.Bind("crosshair", &h.crosshair);
     model.Bind("has_prompt", &h.has_prompt);
@@ -167,6 +225,37 @@ void Hud::show(const HudData& data) {
     h.set(h.numbers, std::move(numbers), "numbers");
     h.set(h.timers, std::move(timers), "timers");
     h.set(h.notes, std::move(notes), "notes");
+
+    // The compass: the strip slides so the heading is in its middle.
+    h.set(h.compass, data.heading.has_value(), "compass");
+    if (data.heading) {
+        const float left = kStripShown / 2.0f - (float(*data.heading) + 180.0f) * kDpPerDegree;
+        h.set(h.compass_left, std::round(left * 4.0f) / 4.0f, "compass_left");
+    }
+    // The minimap: its ground (made again only when the game made it again), the player's
+    // arrow, and the marks, as shares of its width from the middle.
+    const HudData::Map& m = data.map;
+    h.set(h.minimap, m.shown, "minimap");
+    const bool ground = m.shown && m.ground && m.size > 0 && !m.ground->empty();
+    if (ground && m.version != h.ground_version) {
+        h.ui.set_image("minimap", uint32_t(m.size), uint32_t(m.size), *m.ground);
+        h.ground_version = m.version;
+    }
+    h.set(h.has_ground, ground, "has_ground");
+    if (m.shown) {
+        const double r = m.radius > 0.0 ? m.radius : 1.0;
+        h.set(h.arrow, std::round(float(data.heading.value_or(0.0)) * 2.0f) / 2.0f, "arrow");
+        // (the ground may be wider than what shows: centred on its own middle)
+        const double width = (m.ground_radius > 0.0 ? m.ground_radius : r) / r * 100.0;
+        h.set(h.ground_width, float(width), "ground_width");
+        h.set(h.ground_left, float(50.0 - width / 2.0 - m.east / r * 50.0), "ground_left");
+        h.set(h.ground_top, float(50.0 - width / 2.0 + m.north / r * 50.0), "ground_top");
+        Rml::Vector<MapMarkRow> rows;
+        for (const HudData::Map::Mark& k : m.marks)
+            rows.push_back({k.kind, k.label, float(50.0 + k.east / r * 50.0),
+                            float(50.0 - k.north / r * 50.0)});
+        h.set(h.map_marks, std::move(rows), "map_marks");
+    }
 }
 
 }  // namespace midgard::ui

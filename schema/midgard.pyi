@@ -571,6 +571,21 @@ class UiApi:
     """True shows the crosshair, False hides it, None (as it starts) shows it in first person
     only."""
 
+    compass: bool
+    """Whether the compass shows at the top of the screen."""
+    minimap: bool
+    """Whether the minimap shows at the bottom right."""
+    heading: float
+    """The way the camera faces, in degrees from north (0 north, 90 east, 180 south, 270
+    west), as the compass shows it on the world's shape (read-only)."""
+
+    def mark(self, entity: Entity, label: str = "") -> None:
+        """Marks an entity on the minimap (a quest's goal, a lost friend), with a label if
+        given, until unmark()."""
+
+    def unmark(self, entity: Entity) -> bool:
+        """Takes an entity's mark off the minimap. False if it had none."""
+
     def notify(self, text: str, seconds: float = 4.0) -> None:
         """A short note on the HUD ("Picked up a key") for so many seconds; it fades as it
         goes. Five show at most: the oldest goes first."""

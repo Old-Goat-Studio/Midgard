@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -17,6 +18,7 @@
 #include "midgard/calendar.h"
 #include "midgard/camera_rig.h"
 #include "midgard/characters.h"
+#include "midgard/compass.h"
 #include "midgard/hud.h"
 #include "midgard/input.h"
 #include "midgard/materials.h"
@@ -224,6 +226,41 @@ public:
     const hud::HudState& hud() const { return hud_; }
     // The timers that ended in the last update.
     const std::vector<std::string>& finished_timers() const { return finished_timers_; }
+    // The way the camera faces, in degrees from north (0 north, 90 east; midgard/compass.h), on
+    // the world's shape where the player is.
+    double heading() const;
+    // The minimap's ground around the player (north up): made only once something wants it
+    // (a game with a HUD), and again as the player walks away from its middle. None without
+    // terrain (flat scenes: the minimap shows its marks alone).
+    struct MinimapGround {
+        glm::dvec3 centre{0.0};
+        double radius = 0.0;  // metres from the middle to each edge
+        int size = 0;         // pixels across
+        std::vector<std::uint8_t> pixels;
+        std::uint64_t version = 0;  // goes up each time it is made again
+    };
+    // Something wants the minimap's ground from now on: it is made now, and kept up to date
+    // (in the background as the player walks: it takes a phone tens of milliseconds).
+    void want_minimap() {
+        minimap_wanted_ = true;
+        update_minimap(true);
+    }
+    const MinimapGround& minimap() const { return minimap_; }
+    // Where the player is from the minimap ground's middle: metres east and north.
+    glm::dvec2 minimap_offset() const;
+    // What the minimap marks within `radius` metres: scene exits, and entities scripts marked
+    // (midgard.ui.mark), each at metres east and north of the player.
+    struct MapMark {
+        std::string kind;  // "exit" or "mark"
+        std::string label;
+        double east = 0.0, north = 0.0;
+    };
+    std::vector<MapMark> map_marks(double radius) const;
+    static constexpr double kMinimapRadius = 120.0;  // metres shown each side of the player
+    // Its ground is made twice as wide as what shows, and made again when the player is a
+    // quarter of the way to its edge, so running never shows past it while the next is made.
+    static constexpr double kMinimapGroundRadius = 2.0 * kMinimapRadius;
+    static constexpr int kMinimapSize = 256;  // its ground's pixels across
 
     // ---- weather (milestone 5.15) ----
     // The world's weather (midgard/weather_sim.h), from the scene's weather settings or its
@@ -507,6 +544,18 @@ private:
     std::vector<stats::Change> stat_changes_;
     hud::HudState hud_;
     std::vector<std::string> finished_timers_;
+    bool minimap_wanted_ = false;
+    MinimapGround minimap_;
+    std::string minimap_scene_;  // (made again in another scene)
+    struct MinimapJob {
+        glm::dvec3 centre{0.0};
+        std::string scene;
+        std::future<std::vector<std::uint8_t>> pixels;
+    };
+    // (resetting it waits for its job: std::async's future does, so do it before the terrain
+    // it reads goes; as a member after terrain_, it goes first when the game does)
+    std::optional<MinimapJob> minimap_job_;
+    void update_minimap(bool now = false);
     struct Forced {
         std::string weather;
         std::optional<std::int64_t> until;  // none: until released

@@ -41,6 +41,7 @@ add_library(midgard_core STATIC
     core/src/survival.cpp
     core/src/stats.cpp
     core/src/hud.cpp
+    core/src/compass.cpp
     core/src/texture_gen.cpp
 )
 target_include_directories(midgard_core PUBLIC
@@ -524,6 +525,7 @@ if(MIDGARD_BUILD_TESTS)
         tests/test_ui.cpp
         tests/test_stats.cpp
         tests/test_hud.cpp
+        tests/test_compass.cpp
     )
     target_link_libraries(midgard_tests PRIVATE
         midgard_core midgard_render midgard_ui midgard_scene midgard_physics midgard_link

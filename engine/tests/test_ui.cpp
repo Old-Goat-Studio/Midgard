@@ -3,6 +3,7 @@
 // input (mouse, keys, gamepad, touch), scale and safe area, and the screen checks.
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -408,4 +409,87 @@ TEST_CASE("the HUD shows the game's stats, timers, notes and prompt, and follows
     hud.show(d);
     u.update(0.2);
     CHECK_FALSE(shown("bar-health"));
+}
+
+TEST_CASE("the HUD's compass slides to the heading, and the minimap places its marks") {
+    auto renderer = offscreen(1280, 720);
+    if (!renderer) return;
+    ui::Ui u(*renderer, sized(1280, 720));
+    ui::Hud hud(u);
+    const std::vector<uint8_t> ground(16 * 16 * 4, 200);
+    ui::HudData d;
+    d.heading = 90.0;  // facing east
+    d.map.shown = true;
+    d.map.radius = 100.0;
+    d.map.ground = &ground;
+    d.map.size = 16;
+    d.map.version = 1;
+    d.map.marks = {{"exit", "", 50.0, 0.0}, {"mark", "Shrine", 0.0, 100.0}};
+    hud.show(d);
+    u.update(0.0);
+    Rml::ElementDocument* doc = hud.document();
+    // East is under the needle: the strip's E (at 270 degrees from its start) is in the middle.
+    Rml::Element* compass = doc->GetElementById("compass");
+    REQUIRE(compass);
+    CHECK(compass->IsVisible(true));
+    Rml::ElementList ticks;
+    doc->GetElementsByClassName(ticks, "major");
+    Rml::Element* east = nullptr;
+    const float middle_x = compass->GetAbsoluteOffset(Rml::BoxArea::Border).x +
+                           compass->GetBox().GetSize(Rml::BoxArea::Border).x / 2.0f;
+    for (Rml::Element* t : ticks) {
+        if (t->GetInnerRML() != "E") continue;
+        const float x = t->GetAbsoluteOffset(Rml::BoxArea::Border).x +
+                        t->GetBox().GetSize(Rml::BoxArea::Border).x / 2.0f;
+        if (std::abs(x - middle_x) < 2.0f) east = t;
+    }
+    CHECK(east);
+    // The marks: the exit half way to the right edge, the shrine at the top edge.
+    Rml::Element* map = doc->GetElementById("minimap");
+    Rml::ElementList all_marks, marks;
+    doc->GetElementsByClassName(all_marks, "mark");
+    for (Rml::Element* e : all_marks)  // (data-for keeps its template, hidden)
+        if (e->IsVisible(true)) marks.push_back(e);
+    REQUIRE(marks.size() == 2);
+    const Rml::Vector2f at = map->GetAbsoluteOffset(Rml::BoxArea::Padding);
+    const Rml::Vector2f size = map->GetBox().GetSize(Rml::BoxArea::Padding);
+    const auto centre = [&](Rml::Element* e) {
+        return e->GetAbsoluteOffset(Rml::BoxArea::Border) +
+               e->GetBox().GetSize(Rml::BoxArea::Border) * 0.5f;
+    };
+    CHECK(centre(marks[0]).x == doctest::Approx(at.x + size.x * 0.75f).epsilon(0.02));
+    CHECK(centre(marks[0]).y == doctest::Approx(at.y + size.y * 0.5f).epsilon(0.02));
+    CHECK(centre(marks[1]).y == doctest::Approx(at.y).epsilon(0.05));
+    CHECK(marks[1]->GetInnerRML().find("Shrine") != std::string::npos);
+    // The ground is drawn: the minimap's picture made a texture.
+    u.render();
+    const size_t textures = renderer->ui_texture_count();
+    CHECK(textures >= 2);  // (the font's glyphs, and the ground)
+    // A ground twice as wide as what shows, the player 60 m east and 30 m north of its middle:
+    // the picture is twice the minimap's size, shifted so it still covers all of it.
+    d.map.ground_radius = 200.0;
+    d.map.east = 60.0;
+    d.map.north = 30.0;
+    hud.show(d);
+    u.update(0.05);
+    Rml::Element* picture = doc->GetElementById("ground");
+    REQUIRE(picture);
+    const Rml::Vector2f p_at = picture->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Vector2f p_size = picture->GetBox().GetSize(Rml::BoxArea::Border);
+    CHECK(p_size.x == doctest::Approx(size.x * 2.0f).epsilon(0.02));
+    CHECK(p_size.y == doctest::Approx(size.y * 2.0f).epsilon(0.02));
+    // Its middle is 60 m west and 30 m south of the minimap's (0.3 and 0.15 of its width).
+    CHECK(p_at.x + p_size.x / 2.0f == doctest::Approx(at.x + size.x * 0.2f).epsilon(0.02));
+    CHECK(p_at.y + p_size.y / 2.0f == doctest::Approx(at.y + size.y * 0.65f).epsilon(0.02));
+    CHECK(p_at.x <= at.x + 0.5f);
+    CHECK(p_at.y <= at.y + 0.5f);
+    CHECK(p_at.x + p_size.x >= at.x + size.x - 0.5f);
+    CHECK(p_at.y + p_size.y >= at.y + size.y - 0.5f);
+    // Without a compass or minimap, neither shows.
+    d.heading.reset();
+    d.map.shown = false;
+    hud.show(d);
+    u.update(0.1);
+    CHECK_FALSE(doc->GetElementById("compass")->IsVisible(true));
+    CHECK_FALSE(doc->GetElementById("minimap")->IsVisible(true));
 }

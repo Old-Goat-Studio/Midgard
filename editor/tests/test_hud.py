@@ -108,3 +108,34 @@ def test_a_games_screenshot_shows_its_hud_only_when_asked(project, tmp_path):
         pictures[name] = Image.open(out).convert("RGB")
     box = ImageChops.difference(pictures["world"], pictures["hud"]).getbbox()
     assert box is not None and box[0] < 160 and box[1] < 40  # (the bars, top left)
+
+
+COMPASS_SCRIPT = """
+import midgard
+
+def on_start(entity):
+    print("compass", midgard.ui.compass, midgard.ui.minimap)
+    h = midgard.ui.heading
+    print("heading", 0 <= h < 360)
+    midgard.ui.mark(entity, "Shrine")
+    midgard.ui.minimap = False
+    print("unmark", midgard.ui.unmark(entity), midgard.ui.unmark(entity))
+    midgard.ui.mark(entity)
+"""
+
+
+@needs_scripting
+def test_scripts_mark_the_minimap_and_switch_the_compass(project, tmp_path):
+    project.put_entity(Entity("e000094", "Shrine", None, {
+        "transform": {}, "script": {"module": "shrine"}}))
+    write_script(project, "shrine", COMPASS_SCRIPT)
+    package = cook(project, tmp_path / "pkg").out_dir
+    dumped, run = simulate(package, 5)
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.splitlines()
+    assert "compass True True" in lines
+    assert "heading True" in lines
+    assert "unmark True False" in lines
+    hud = dumped["hud"]
+    assert hud["marks"] == {"e000094": ""}
+    assert hud["compass"] is True and hud["minimap"] is False

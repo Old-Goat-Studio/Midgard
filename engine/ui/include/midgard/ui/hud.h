@@ -10,9 +10,17 @@
 //   timers                      {id, label, text ("1:05")}
 //   notes                       {text, opacity}
 //   prompt, has_prompt          the prompt's text, and whether there is one
+//   compass, compass_left       the compass shows; its strip's place (dp) for the heading
+//   compass_marks               the strip's marks: {text, left (dp), major}
+//   minimap, has_ground, arrow  the minimap shows; it has ground; the player's arrow (degrees)
+//   ground_left, ground_top     where its ground picture (midgard://image/minimap) sits (%)
+//   ground_width                its width (and height), % of the minimap's
+//   map_marks                   {kind ("exit", "mark"), label, left, top (%)}
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -46,6 +54,27 @@ struct HudData {
     };
     std::vector<Note> notes;
     std::string prompt;
+    // The compass: the way the camera faces, degrees from north (none: no compass).
+    std::optional<double> heading;
+    // The minimap (north up, the player in the middle).
+    struct Map {
+        bool shown = false;
+        double radius = 120.0;  // metres from the middle to each edge
+        // Its ground (none: flat, no terrain): size x size RGBA8 pixels, `ground_radius`
+        // metres from its middle to each edge (0: `radius`), made around a place `east` and
+        // `north` metres from the player; `version` changes when they do.
+        const std::vector<uint8_t>* ground = nullptr;
+        int size = 0;
+        double ground_radius = 0.0;
+        std::uint64_t version = 0;
+        double east = 0.0, north = 0.0;
+        struct Mark {
+            std::string kind, label;  // kind: "exit" (a scene exit) or "mark" (a script's)
+            double east = 0.0, north = 0.0;
+        };
+        std::vector<Mark> marks;
+    };
+    Map map;
 };
 
 // A timer's seconds as the HUD writes them: "0:07", "1:05", "1:02:03".

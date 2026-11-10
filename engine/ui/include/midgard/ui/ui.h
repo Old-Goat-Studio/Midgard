@@ -150,6 +150,11 @@ public:
     std::vector<Problem> check(Rml::ElementDocument* document, bool touch);
 
     Rml::Context* context();
+    // A picture made by the game (the minimap's ground), for screens to show as
+    // <img src="midgard://image/NAME"/>: RGBA8, top row first. Setting it again shows the new
+    // one. False if the pixels don't match the size.
+    bool set_image(const std::string& name, uint32_t width, uint32_t height,
+                   const std::vector<uint8_t>& rgba);
     // A direction key ("Up", "Down", "Left", "Right" as RmlUi's key) to the focused screen, as
     // the d-pad and arrow keys move: into and out of scrolling lists too.
     void navigate(int rml_key);

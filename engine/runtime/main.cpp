@@ -71,6 +71,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -278,6 +279,8 @@ public:
     virtual std::vector<std::string> status() const { return {}; }
     // What the HUD shows (6.0); none: no HUD (the demo and test scenes).
     virtual std::optional<midgard::ui::HudData> hud() const { return std::nullopt; }
+    // A HUD is shown from now on (the game makes what only it needs: the minimap's ground).
+    virtual void hud_shown() {}
     // How dark the picture is (a scene change fading out and in): 0 clear, 1 black.
     virtual float fade() const { return 0.0f; }
     // The player's profile file: used from now on, and saved when the game ends.
@@ -634,8 +637,28 @@ public:
             d.timers.push_back({t.id, t.label, t.value});
         for (const midgard::hud::Note& n : h.notes()) d.notes.push_back({n.text, n.opacity()});
         d.prompt = h.prompt();
+        // The compass and minimap (step 4), true on the world's shape.
+        const double heading = game_.heading();
+        if (h.compass) d.heading = heading;
+        d.map.shown = h.minimap;
+        if (h.minimap) {
+            const auto& ground = game_.minimap();
+            d.map.radius = midgard::Game::kMinimapRadius;
+            if (!ground.pixels.empty()) {
+                d.map.ground = &ground.pixels;
+                d.map.size = ground.size;
+                d.map.ground_radius = ground.radius;
+                d.map.version = ground.version;
+                const glm::dvec2 off = game_.minimap_offset();
+                d.map.east = off.x;
+                d.map.north = off.y;
+            }
+            for (const auto& m : game_.map_marks(midgard::Game::kMinimapRadius * 1.5))
+                d.map.marks.push_back({m.kind, m.label, m.east, m.north});
+        }
         return d;
     }
+    void hud_shown() override { game_.want_minimap(); }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     std::string title() const override { return game_.package().manifest.game_name; }
     std::optional<std::filesystem::path> icon() const override {
@@ -1031,6 +1054,28 @@ midgard::ui::HudData sample_hud() {
     d.timers = {{"escape", "Escape", 65.0}};
     d.notes = {{"Picked up a key", 1.0f}, {"Found a secret", 1.0f}, {"Saved", 0.5f}};
     d.prompt = "Press E to open";
+    d.heading = 30.0;
+    static const std::vector<uint8_t> ground = [] {  // hills in greens and a lake
+        const int n = 64;
+        std::vector<uint8_t> px(size_t(n) * n * 4);
+        for (int y = 0; y < n; ++y)
+            for (int x = 0; x < n; ++x) {
+                const double dx = x - 44.0, dy = y - 20.0;
+                const bool lake = dx * dx + dy * dy < 90.0;
+                const double hill = 0.5 + 0.25 * std::sin(x * 0.2) * std::cos(y * 0.15);
+                uint8_t* p = &px[(size_t(y) * n + x) * 4];
+                p[0] = lake ? 40 : uint8_t(70 + 60 * hill);
+                p[1] = lake ? 90 : uint8_t(100 + 50 * hill);
+                p[2] = lake ? 140 : uint8_t(40 + 20 * hill);
+                p[3] = 255;
+            }
+        return px;
+    }();
+    d.map.shown = true;
+    d.map.ground = &ground;
+    d.map.size = 64;
+    d.map.version = 1;
+    d.map.marks = {{"exit", "", 40.0, 70.0}, {"mark", "Shrine", -60.0, -30.0}};
     return d;
 }
 
@@ -1227,7 +1272,8 @@ int run_screenshot(const Options& opt, Source& source) {
     }
     if (hud_data) {
         hud = std::make_unique<midgard::ui::Hud>(*ui);
-        hud->show(*hud_data);
+        if (!opt.hud_test) source.hud_shown();
+        hud->show(opt.hud_test ? *hud_data : *source.hud());  // (with the minimap's ground)
     }
     if (opt.ui_test) {
         Rml::ElementDocument* screen = midgard::ui::open_test_screen(*ui);
@@ -1443,7 +1489,10 @@ int run_window(const Options& opt, Source& source) {
             uo.platform = ui_platform(window);
             ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
             // The HUD, for a game (or --hud-test), under any menu.
-            if (opt.hud_test || source.hud()) hud = std::make_unique<midgard::ui::Hud>(*ui);
+            if (opt.hud_test || source.hud()) {
+                hud = std::make_unique<midgard::ui::Hud>(*ui);
+                if (!opt.hud_test) source.hud_shown();
+            }
             if (opt.ui_test && !midgard::ui::open_test_screen(*ui))
                 warn("The UI test screen didn't open\n");
         } catch (const std::exception& e) {

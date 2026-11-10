@@ -36,10 +36,46 @@
         #crosshair { position: absolute; left: 50%; top: 50%; width: 6dp; height: 6dp;
                      margin-left: -3dp; margin-top: -3dp; border-radius: 3dp;
                      background-color: #ffffffd0; border: 1dp #000000a0; }
+        /* The compass: a strip of marks sliding under a window 300 dp wide. */
+        #compass { position: absolute; left: 50%; top: 12dp; width: 300dp; height: 30dp;
+                   margin-left: -150dp; overflow: hidden; clip: always; background-color: #10141c90; }
+        /* (square, and clip: always: RmlUi doesn't count absolutely placed parts as overflowing,
+           and a rounded box would need clip masks, which Midgard doesn't draw yet) */
+        /* (in a row, each 15 degrees wide, so the window clips them) */
+        #strip { position: absolute; top: 0; height: 30dp; width: 1850dp; white-space: nowrap;
+                 margin-left: -18.75dp; }
+        .tick { display: inline-block; width: 37.5dp; height: 30dp; line-height: 30dp;
+                text-align: center; font-size: 12dp; color: #b8c4d8a0; }
+        .tick.major { font-size: 17dp; color: #ffffff; }
+        #needle { position: absolute; left: 149dp; top: 0; width: 2dp; height: 6dp;
+                  background-color: #ffd27a; }
+
+        /* The minimap: north up, the player in the middle. */
+        #minimap { position: absolute; right: 16dp; bottom: 16dp; width: 160dp; height: 160dp;
+                   overflow: hidden; clip: always; background-color: #1c2a1ce0;
+                   border: 2dp #ffffff60; }
+        #ground { position: absolute; }
+        .mark { position: absolute; width: 10dp; height: 10dp; margin-left: -5dp;
+                margin-top: -5dp; border-radius: 5dp; background-color: #ffd27a;
+                border: 1dp #000000a0; }
+        .mark.exit { background-color: #6fb6ff; border-radius: 2dp; }
+        .mark-label { position: absolute; left: 12dp; top: -4dp; width: 120dp;
+                      font-size: 12dp; }
+        #arrow { position: absolute; left: 50%; top: 50%; width: 24dp; height: 24dp;
+                 margin-left: -12dp; margin-top: -12dp; }
+        #arrow .nose { position: absolute; left: 9dp; top: 0; width: 6dp; height: 14dp;
+                       background-color: #ffd27a; border: 1dp #000000c0; border-radius: 3dp; }
+        #arrow .body { position: absolute; left: 6dp; top: 9dp; width: 12dp; height: 12dp;
+                       background-color: #ffffff; border: 1dp #000000c0; border-radius: 6dp; }
+        #north { position: absolute; left: 50%; top: 2dp; width: 16dp; margin-left: -8dp;
+                 text-align: center; font-size: 12dp; color: #ffffffc0; }
+
         /* A phone held upright: the two sides share the width. */
         @media (orientation: portrait) {
-            #bars { width: 44%; }
-            #right { width: 44%; }
+            #bars { width: 44%; top: 52dp; }
+            #right { width: 44%; top: 52dp; }
+            #minimap { width: 120dp; height: 120dp; }
+            #prompt { bottom: 150dp; }
         }
     </style>
 </head>
@@ -61,6 +97,25 @@
         </div>
         <p id="prompt" data-if="has_prompt"><span class="shadow">{{prompt}}</span></p>
         <div id="crosshair" data-if="crosshair"></div>
+        <div id="compass" data-if="compass">
+            <div id="strip" data-style-left="compass_left + 'dp'">
+                <div data-for="m : compass_marks" class="tick" data-class-major="m.major">{{m.text}}</div>
+            </div>
+            <div id="needle"></div>
+        </div>
+        <div id="minimap" data-if="minimap">
+            <img id="ground" src="midgard://image/minimap" data-if="has_ground"
+                 data-style-left="ground_left + '%'" data-style-top="ground_top + '%'"
+                 data-style-width="ground_width + '%'" data-style-height="ground_width + '%'"/>
+            <div class="mark" data-for="k : map_marks" data-class-exit="k.kind == 'exit'"
+                 data-style-left="k.left + '%'" data-style-top="k.top + '%'">
+                <div class="mark-label shadow" data-if="k.label != ''">{{k.label}}</div>
+            </div>
+            <div id="arrow" data-style-transform="'rotate(' + arrow + 'deg)'">
+                <div class="nose"></div><div class="body"></div>
+            </div>
+            <div id="north" class="shadow">N</div>
+        </div>
     </div>
 </body>
 </rml>

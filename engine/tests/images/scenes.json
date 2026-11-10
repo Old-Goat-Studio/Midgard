@@ -373,12 +373,12 @@
     },
     {
       "name": "hud_desktop",
-      "_about": "The HUD (milestone 6.0) with made-up data over the demo scene: stat bars, a score and a counter, a timer, three notes (the last fading), a prompt and the crosshair.",
+      "_about": "The HUD (milestone 6.0) with made-up data over the demo scene: stat bars, a score and a counter, a timer, three notes (the last fading), a prompt, the crosshair, the compass facing 30 degrees (north-north-east) and the minimap (a made-up ground with a lake, a scene exit and a labelled mark, and the player's arrow).",
       "args": ["--size", "1280x720", "--hud-test"]
     },
     {
       "name": "hud_phone",
-      "_about": "The same HUD on a phone held upright (1.5 pixels a dp), clear of a pretend notch and gesture bar: the bars and the right-hand column share the width.",
+      "_about": "The same HUD on a phone held upright (1.5 pixels a dp), clear of a pretend notch and gesture bar: the compass on top, the bars and the right-hand column sharing the width under it, a smaller minimap, and the prompt above it.",
       "args": ["--size", "540x1170", "--hud-test", "--ui-scale", "1.5", "--safe-area", "0,90,0,60", "--quality", "phone"]
     }
   ]

@@ -43,10 +43,18 @@ const std::string& base_sheet() {
     return text;
 }
 
+// Pictures the game makes (Ui::set_image), by name: what midgard://image/NAME shows.
+struct Picture {
+    uint32_t width = 0, height = 0;
+    std::vector<uint8_t> rgba;
+};
+constexpr const char* kImagePrefix = "midgard://image/";
+
 // ---- drawing: RmlUi's geometry into the renderer's UI frame ---------------------------------
 class RenderBridge final : public Rml::RenderInterface {
 public:
     explicit RenderBridge(render::Renderer& renderer) : renderer_(renderer) {}
+    std::map<std::string, Picture> pictures;
 
     struct Geometry {
         std::vector<render::UiVertex> vertices;
@@ -88,6 +96,14 @@ public:
     }
 
     Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions, const Rml::String& source) override {
+        if (source.rfind(kImagePrefix, 0) == 0) {
+            const auto it = pictures.find(source.substr(std::strlen(kImagePrefix)));
+            if (it == pictures.end() || it->second.rgba.empty()) return 0;
+            std::vector<uint8_t> rgba = it->second.rgba;
+            premultiply(rgba);
+            dimensions = {int(it->second.width), int(it->second.height)};
+            return upload(it->second.width, it->second.height, rgba);
+        }
         Rml::String data;
         if (!Rml::GetFileInterface()->LoadFile(source, data) || data.empty()) return 0;
         int w = 0, h = 0, channels = 0;
@@ -100,10 +116,7 @@ public:
         }
         std::vector<uint8_t> rgba(pixels, pixels + size_t(w) * h * 4);
         stbi_image_free(pixels);
-        for (size_t i = 0; i < rgba.size(); i += 4) {  // (RmlUi draws premultiplied alpha)
-            const unsigned a = rgba[i + 3];
-            for (int c = 0; c < 3; ++c) rgba[i + c] = uint8_t((rgba[i + c] * a + 127) / 255);
-        }
+        premultiply(rgba);
         dimensions = {w, h};
         return upload(uint32_t(w), uint32_t(h), rgba);
     }
@@ -136,6 +149,13 @@ public:
     void end() { renderer_.set_ui(std::move(frame_)); }
 
 private:
+    static void premultiply(std::vector<uint8_t>& rgba) {  // (RmlUi draws premultiplied alpha)
+        for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
+            const unsigned a = rgba[i + 3];
+            for (int c = 0; c < 3; ++c) rgba[i + c] = uint8_t((rgba[i + c] * a + 127) / 255);
+        }
+    }
+
     Rml::TextureHandle upload(uint32_t w, uint32_t h, std::span<const uint8_t> rgba) {
         try {
             return Rml::TextureHandle(renderer_.upload_ui_texture(w, h, rgba));
@@ -682,6 +702,15 @@ void Ui::render() {
 
 Rml::Context* Ui::context() {
     return impl_->context;
+}
+
+bool Ui::set_image(const std::string& name, uint32_t width, uint32_t height,
+                   const std::vector<uint8_t>& rgba) {
+    if (width == 0 || height == 0 || rgba.size() != size_t(width) * height * 4) return false;
+    impl_->bridge.pictures[name] = {width, height, rgba};
+    // (the screens showing it load it again when next drawn)
+    Rml::ReleaseTexture(kImagePrefix + name, &impl_->bridge);
+    return true;
 }
 
 void Ui::navigate(int rml_key) {

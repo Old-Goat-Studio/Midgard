@@ -1328,6 +1328,33 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             },
             "The crosshair: True shows it, False hides it, None (as it starts) shows it in "
             "first person only.")
+        .def_property(
+            "compass", [](const UiHandle&) { return current_game().hud().compass; },
+            [](const UiHandle&, bool on) { current_game().hud().compass = on; },
+            "Whether the compass shows at the top of the screen.")
+        .def_property(
+            "minimap", [](const UiHandle&) { return current_game().hud().minimap; },
+            [](const UiHandle&, bool on) { current_game().hud().minimap = on; },
+            "Whether the minimap shows at the bottom right.")
+        .def_property_readonly(
+            "heading", [](const UiHandle&) { return current_game().heading(); },
+            "The way the camera faces, in degrees from north (0 north, 90 east, 180 south, 270 "
+            "west), as the compass shows it on the world's shape.")
+        .def(
+            "mark",
+            [](const UiHandle&, const EntityHandle& entity, const std::string& label) {
+                if (!entity.exists()) raise_reference_error("that entity is gone");
+                current_game().hud().marks[entity.id] = label;
+            },
+            py::arg("entity"), py::arg("label") = "",
+            "Marks an entity on the minimap (a quest's goal, a lost friend), with a label if "
+            "given, until unmark().")
+        .def(
+            "unmark",
+            [](const UiHandle&, const EntityHandle& entity) {
+                return current_game().hud().marks.erase(entity.id) > 0;
+            },
+            py::arg("entity"), "Takes an entity's mark off the minimap. False if it had none.")
         .def("__repr__", [](const UiHandle&) { return std::string("<midgard.ui>"); });
     m.attr("ui") = UiHandle{};
 

@@ -6,6 +6,7 @@
 #pragma once
 
 #include <deque>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -37,6 +38,11 @@ public:
     bool visible = true;
     // The crosshair: shown, hidden, or (none) as the camera has it: in first person only.
     std::optional<bool> crosshair;
+    // The compass (top middle) and the minimap (bottom right).
+    bool compass = true;
+    bool minimap = true;
+    // Entities marked on the minimap by scripts: entity id -> label ("" for none).
+    std::map<std::string, std::string> marks;
 
     void notify(const std::string& text, double seconds = 4.0);
     const std::deque<Note>& notes() const { return notes_; }

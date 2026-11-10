@@ -126,16 +126,12 @@ std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int heigh
                                     map_projection_name(projection) + " map");
     width = std::clamp(width, 1, 4096);
     height = std::clamp(height, 1, 4096);
-    const TerrainSettings& s = terrain.settings();
     const size_t count = size_t(width) * size_t(height);
-    std::vector<double> heights(count, s.sea_level);
     std::vector<std::optional<SurfacePoint>> places(count);
     for (int y = 0; y < height; ++y)
-        for (int x = 0; x < width; ++x) {
-            const size_t i = size_t(y) * width + x;
-            places[i] = world_map_place(terrain, width, height, x, y, projection);
-            if (places[i]) heights[i] = terrain.height(places[i]->face, places[i]->u, places[i]->v);
-        }
+        for (int x = 0; x < width; ++x)
+            places[size_t(y) * width + x] =
+                world_map_place(terrain, width, height, x, y, projection);
     // Metres a pixel, along each axis, for the shading.
     const glm::dvec2 face = shape.face_size();
     double across = face.x / double(width), down = face.y / double(height);
@@ -146,6 +142,17 @@ std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int heigh
         across = 4.0 * face.x / double(width);
         down = 3.0 * face.x / double(height);
     }
+    return map_pixels(terrain, width, height, places, across, down);
+}
+
+std::vector<std::uint8_t> map_pixels(const Terrain& terrain, int width, int height,
+                                     const std::vector<std::optional<SurfacePoint>>& places,
+                                     double across, double down) {
+    const TerrainSettings& s = terrain.settings();
+    const size_t count = size_t(width) * size_t(height);
+    std::vector<double> heights(count, s.sea_level);
+    for (size_t i = 0; i < count && i < places.size(); ++i)
+        if (places[i]) heights[i] = terrain.height(places[i]->face, places[i]->u, places[i]->v);
     // A neighbour's height, or this pixel's off the map's edge or off the cross.
     const auto h_at = [&](int x, int y, double fallback) {
         if (x < 0 || y < 0 || x >= width || y >= height) return fallback;

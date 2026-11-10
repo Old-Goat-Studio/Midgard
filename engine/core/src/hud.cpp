@@ -73,6 +73,9 @@ nlohmann::json HudState::dump() const {
     nlohmann::json timers = nlohmann::json::object();
     for (const Timer& t : timers_) timers[t.id] = t.value;
     return {{"visible", visible},
+            {"compass", compass},
+            {"minimap", minimap},
+            {"marks", marks},
             {"crosshair", crosshair ? nlohmann::json(*crosshair) : nlohmann::json()},
             {"prompt", prompt_},
             {"notes", notes},

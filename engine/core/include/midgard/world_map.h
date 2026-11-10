@@ -41,6 +41,13 @@ std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int heigh
 // In the shape's usual projection.
 std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int height);
 
+// The pixels of a map whose pixels are these places (none: transparent), `across` and `down`
+// metres apart (for the slopes' shading): the colouring every map uses (world_map,
+// compass.h's local_map).
+std::vector<std::uint8_t> map_pixels(const Terrain& terrain, int width, int height,
+                                     const std::vector<std::optional<SurfacePoint>>& places,
+                                     double across, double down);
+
 // Where a map pixel's middle is on the world (face, u, v), or none for a pixel off the map (the
 // corners of the cube's cross).
 std::optional<SurfacePoint> world_map_place(const Terrain& terrain, int width, int height, int x,

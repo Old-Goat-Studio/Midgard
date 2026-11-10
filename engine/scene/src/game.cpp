@@ -271,6 +271,7 @@ void Game::update(const Actions& actions, float dt) {
     stat_changes_ = stats_.take_changes();  // (scripts' since the last update, too)
     hud_.update(dt);
     finished_timers_ = hud_.take_finished();
+    update_minimap();
     update_weather_look(dt);
     update_falling(dt);
     update_ground_cover(dt);
@@ -511,6 +512,77 @@ void Game::rebuild_weather() {
     weather_ = scene_weather(
         scene_.settings, scene_.weather_types, local_calendar(),
         [this]() -> const Terrain* { return terrain_ ? &terrain_->terrain() : nullptr; });
+}
+
+double Game::heading() const {
+    const render::Camera cam = camera(1.0f);
+    const glm::mat4& v = cam.view;  // (world to camera: its rotation's rows are the camera's axes)
+    const glm::dvec3 forward(-v[0][2], -v[1][2], -v[2][2]);
+    return heading_of(bearing_at(scene_.settings.body, cam.origin), forward);
+}
+
+void Game::update_minimap(bool now) {
+    if (!minimap_wanted_ || !terrain_) return;
+    // One made in the background, ready: shown (if it is of this scene).
+    if (minimap_job_ &&
+        minimap_job_->pixels.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        std::vector<std::uint8_t> pixels = minimap_job_->pixels.get();
+        if (minimap_job_->scene == scene_.id) {
+            minimap_.centre = minimap_job_->centre;
+            minimap_.radius = kMinimapGroundRadius;
+            minimap_.size = kMinimapSize;
+            minimap_.pixels = std::move(pixels);
+            ++minimap_.version;
+            minimap_scene_ = scene_.id;
+        }
+        minimap_job_.reset();
+    }
+    const glm::dvec3 here = player_position();
+    const Bearing b = bearing_at(scene_.settings.body, minimap_.centre);
+    const glm::dvec2 moved = east_north(b, minimap_.centre, here);
+    const bool stale = minimap_.pixels.empty() || minimap_scene_ != scene_.id ||
+                       glm::length(moved) > kMinimapGroundRadius / 4.0;
+    if (!stale || (minimap_job_ && !now)) return;
+    if (now) {  // (the first: a screenshot, or the HUD's first frame)
+        minimap_job_.reset();
+        minimap_.centre = here;
+        minimap_.radius = kMinimapGroundRadius;
+        minimap_.size = kMinimapSize;
+        minimap_.pixels = local_map(terrain_->terrain(), here, kMinimapGroundRadius, kMinimapSize);
+        ++minimap_.version;
+        minimap_scene_ = scene_.id;
+        return;
+    }
+    // (the terrain is read from background jobs already: its heights and colours are const)
+    const Terrain* terrain = &terrain_->terrain();
+    minimap_job_ = MinimapJob{here, scene_.id, std::async(std::launch::async, [terrain, here] {
+                                  return local_map(*terrain, here, kMinimapGroundRadius, kMinimapSize);
+                              })};
+}
+
+glm::dvec2 Game::minimap_offset() const {
+    return east_north(bearing_at(scene_.settings.body, minimap_.centre), minimap_.centre,
+                      player_position());
+}
+
+std::vector<Game::MapMark> Game::map_marks(double radius) const {
+    std::vector<MapMark> out;
+    const glm::dvec3 here = player_position();
+    const Bearing b = bearing_at(scene_.settings.body, here);
+    const auto place = [&](entt::entity e, std::string kind, std::string label) {
+        const glm::dvec3 at(scene_.world_matrix(e)[3]);
+        const glm::dvec2 en = east_north(b, here, at);
+        if (glm::length(en) > radius) return;
+        out.push_back({std::move(kind), std::move(label), en.x, en.y});
+    };
+    for (const entt::entity e : scene_.registry.view<const SceneExit>()) place(e, "exit", "");
+    if (!hud_.marks.empty()) {
+        for (const entt::entity e : scene_.registry.view<const EntityInfo>()) {
+            const auto it = hud_.marks.find(scene_.registry.get<EntityInfo>(e).id);
+            if (it != hud_.marks.end()) place(e, "mark", it->second);
+        }
+    }
+    return out;
 }
 
 void Game::set_stat_data(const nlohmann::json& rows) {
@@ -1144,7 +1216,8 @@ void Game::reload_scene_settings() {
 }
 
 void Game::rebuild_terrain() {
-    nav_world_.reset();  // (its jobs read the terrain)
+    nav_world_.reset();    // (its jobs read the terrain)
+    minimap_job_.reset();  // (so does the minimap's: its future waits for it)
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
     place_again();  // (none without terrain)
@@ -1881,6 +1954,7 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     }
     stop_sources();
     nav_world_.reset();
+    minimap_job_.reset();  // (it reads the terrain: its future waits for it)
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
     placed_.reset();
