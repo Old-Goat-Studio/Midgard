@@ -605,12 +605,16 @@ class _Builder:
             "trigger": {"size": [3.0, 2.0, 3.0]}, "script": {"module": "fire_pit"}})
 
     def screens(self) -> None:
-        """The ready-made title, pause, settings and game over screens; the title says the
-        tour's name and starts with New game."""
-        for kind in ("title", "pause", "game_over"):
+        """The ready-made splash, title, pause, settings and game over screens; the splash and
+        the title say the tour's name, and the title starts with New game."""
+        for kind in ("splash", "title", "pause", "game_over"):
             menus.save_all(self.p, menus.from_template(self.p, kind))
         screens = menus.load_all(self.p)
         for screen in screens:
+            if screen["screen"].get("role") == "splash":
+                for e in screen["screen"]["elements"]:
+                    if e["id"] == "title":
+                        e["text"] = TITLE
             if screen["screen"].get("role") != "title":
                 continue
             for e in screen["screen"]["elements"]:

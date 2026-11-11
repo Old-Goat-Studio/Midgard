@@ -41,6 +41,8 @@ def slug(name: str) -> str:
 
 def tidy(folder_name: str) -> str:
     """A folder's name as shown when it has none of its own: "nox_footsteps" -> "Nox footsteps"."""
+    if folder_name != folder_name.lower() or " " in folder_name:
+        return folder_name  # (a name kept as it was, as an imported folder tree's are)
     return folder_name.replace("_", " ").capitalize()
 
 

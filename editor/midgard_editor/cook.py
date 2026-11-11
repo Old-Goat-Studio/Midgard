@@ -328,6 +328,12 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
         file = menus.image_file(project, image)
         if file is not None and file.suffix.lower() in menus.IMAGE_SUFFIXES:
             files[image] = ("ui/" + image[len(menus.IMAGE_PREFIX):], file.read_bytes())
+    # The Asset Library fonts screens use: every .ttf and .otf in each font's folder.
+    root = Path(project.root).resolve()
+    for font in {f for screen in menus.load_all(project) for f in menus.fonts_of(screen["screen"])}:
+        for file in menus.font_files(project, font):
+            rel = file.resolve().relative_to(root).as_posix()
+            files[menus.IMAGE_PREFIX + rel] = ("ui/" + rel, file.read_bytes())
     content: list[dict[str, str]] = []
     tmp = out / "game.pak.tmp"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as pak:

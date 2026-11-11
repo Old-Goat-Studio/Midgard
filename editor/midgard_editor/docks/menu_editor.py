@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 
 from .. import engine, menus
 from ..project import Project
-from .fresh_combo import FreshComboBox
+from .fresh_combo import FreshComboBox, decorate_fonts, decorate_pictures
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 HANDLE = 8  # pixels: the resize handle at a chosen element's bottom right corner
@@ -231,7 +231,8 @@ class MenuEditor(QWidget):
         new_menu = QMenu(self.new_button)
         new_menu.addAction("Blank menu", lambda: self.new_screen())
         new_menu.addSeparator()
-        for kind, label in (("title", "Title screen"), ("pause", "Pause menu"),
+        for kind, label in (("splash", "Splash screen"), ("title", "Title screen"),
+                            ("pause", "Pause menu"),
                             ("settings", "Settings"), ("game_over", "Game over")):
             new_menu.addAction(label, lambda k=kind: self.new_from_template(k))
         self.new_button.setMenu(new_menu)
@@ -404,6 +405,19 @@ class MenuEditor(QWidget):
             lambda _i: self._set_style("align", self.align.currentData() or None))
         self.bold = QCheckBox("Bold")
         self.bold.toggled.connect(lambda on: self._set_style("bold", on or None))
+        self.italic = QCheckBox("Italic")
+        self.italic.toggled.connect(lambda on: self._set_style("italic", on or None))
+        self.font = FreshComboBox(lambda: self._fill_font(self.font.currentData() or ""))
+        self.font.setToolTip("The text's font: Midgard's own, or one from the Asset Library's "
+                             "Fonts section (TrueType or OpenType; its bold and italic files are "
+                             "used when it has them)")
+        self.font.activated.connect(
+            lambda _i: self._set_style("font", self.font.currentData() or None))
+        self.seconds = _spin(0, 60, 1, " s")
+        self.seconds.setToolTip("The splash shows at least this long, however soon the game "
+                                "has loaded (0: only while it loads)")
+        self.seconds.valueChanged.connect(
+            lambda v: self._set_screen("seconds", round(v, 1) or None, "least time"))
         self.colour = ColourButton("Text colour")
         self.colour.changed.connect(lambda c: self._set_style("color", c))
         self.fill = ColourButton("Background")
@@ -470,6 +484,7 @@ class MenuEditor(QWidget):
                 ("", self.modal, "modal"), ("", self.pauses, "pauses"),
                 ("", self.music, "music"),
                 ("Used as", self.role, "role"), ("When it runs out", self.stat, "stat"),
+                ("Shows at least", self.seconds, "seconds"),
                 ("Background", self.background, "background"),
                 ("Background picture", self.pictures["screen_image"], "screen_image"),
                 ("Name", self.element_id, "id"), ("Kind", self.kind_label, "kind"),
@@ -486,8 +501,10 @@ class MenuEditor(QWidget):
                 ("Inside", self.parent_box, "parent"), ("Anchor", self.anchor, "anchor"),
                 ("X", self.x, "x"), ("Y", self.y, "y"), ("Width", self.w, "w"),
                 ("Height", self.h, "h"), ("Text", self.text, "text"),
+                ("Font", self.font, "font"),
                 ("Text size", self.font_size, "font_size"), ("Align", self.align, "align"),
-                ("", self.bold, "bold"), ("Text colour", self.colour, "color"),
+                ("", self.bold, "bold"), ("", self.italic, "italic"),
+                ("Text colour", self.colour, "color"),
                 ("Fill", self.fill, "fill"), ("Border", self.border, "border"),
                 ("Border width", self.border_width, "border_width"),
                 ("Corners", self.radius, "radius"), ("Does", self.action, "action"),
@@ -606,6 +623,8 @@ class MenuEditor(QWidget):
                            "background", "screen_image"}
             if s is not None and s["screen"].get("role") == "game_over":
                 screen_rows |= {"stat"}
+            if s is not None and s["screen"].get("role") == "splash":
+                screen_rows |= {"seconds"}
             kind = e.get("kind", "text") if e else ""
             slots = [slot for slot, _label in menus.PICTURES.get(kind, [("image", "Image")])]
             element_rows = {"id", "kind", "parent", "anchor", "x", "y", "w", "h", *slots}
@@ -616,7 +635,7 @@ class MenuEditor(QWidget):
             if kind == "option":
                 element_rows |= {"group", "ticked"}
             if kind in ("text", "button", "check", "option"):
-                element_rows |= {"text", "font_size", "align", "bold", "color"}
+                element_rows |= {"text", "font", "font_size", "align", "bold", "italic", "color"}
             if kind in ("panel", "text", "button"):
                 element_rows |= {"fill", "border", "border_width", "radius"}
             if kind == "button":
@@ -643,6 +662,7 @@ class MenuEditor(QWidget):
                 self.music.setChecked(screen.get("music", True) is not False)
                 self.background.set_value(screen.get("background"))
                 self.role.setCurrentIndex(max(0, self.role.findData(screen.get("role", ""))))
+                self.seconds.setValue(float(screen.get("seconds", 0) or 0))
                 self.stat.clear()
                 from .. import stats as stat_data
                 for st in stat_data.load_all(self.project):
@@ -695,6 +715,8 @@ class MenuEditor(QWidget):
                 self.font_size.setValue(float(style.get("font_size") or 0))
                 self.align.setCurrentIndex(max(0, self.align.findData(style.get("align", ""))))
                 self.bold.setChecked(bool(style.get("bold")))
+                self.italic.setChecked(bool(style.get("italic")))
+                self._fill_font(style.get("font", ""))
                 self.colour.set_value(style.get("color"))
                 self.fill.set_value(style.get("background"))
                 self.border.set_value(style.get("border"))
@@ -740,8 +762,9 @@ class MenuEditor(QWidget):
         w, h, scale, safe = self.preview_size()
         try:
             images = menus.image_files(self.project, [{"screen": screen}])
+            fonts = menus.font_folders(self.project, [{"screen": screen}])
             pixels, boxes, checks = screen_preview().render(json.dumps(screen), w, h, scale,
-                                                         list(safe), scale > 1.0, images)
+                                                         list(safe), scale > 1.0, images, fonts)
             self.canvas.image = QImage(pixels, w, h, QImage.Format.Format_RGBA8888).copy()
             self.canvas.boxes = {k: tuple(v) for k, v in boxes.items()}
             self.canvas.order = [e.get("id") for e in screen.get("elements", [])]
@@ -1011,6 +1034,22 @@ class MenuEditor(QWidget):
         self._edit_element(change, f"Set '{eid}'s {key.replace('_', ' ')}",
                            merge_key=f"{eid}:style:{key}")
 
+    def _fill_font(self, chosen: str) -> None:
+        """The fonts to choose from (Midgard's, then the Asset Library's), the choice kept."""
+        self.font.clear()
+        for key, label in menus.BUILT_IN_FONTS.items():
+            self.font.addItem(label, key)
+        if self.project is not None:
+            for ref, label in sorted(menus.gui_fonts(self.project).items(),
+                                     key=lambda kv: kv[1].lower()):
+                self.font.addItem(label, ref)
+        if chosen and self.font.findData(chosen) < 0:
+            self.font.addItem(f"(missing) {chosen[3:]}", chosen)
+        self.font.setCurrentIndex(max(0, self.font.findData(chosen)))
+        if self.project is not None:  # (each drawn in itself)
+            project = self.project
+            decorate_fonts(self.font, lambda ref: menus.font_files(project, ref))
+
     def _fill_picture(self, slot: str, chosen: str) -> None:
         box = self.pictures[slot]
         box.clear()
@@ -1020,6 +1059,9 @@ class MenuEditor(QWidget):
         if chosen and box.findData(chosen) < 0:
             box.addItem(f"(missing) {chosen[3:]}", chosen)
         box.setCurrentIndex(max(0, box.findData(chosen)))
+        if self.project is not None:  # (each with its thumbnail, and shown when pointed at)
+            project = self.project
+            decorate_pictures(box, lambda ref: menus.image_file(project, ref))
 
     def _refill_picture(self, slot: str) -> None:
         """A picture list about to open: the GUI section as it is now, the choice kept."""

@@ -32,7 +32,7 @@ class AddFromMasterDialog(QDialog):
     def __init__(self, project, master: mst.Master, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Add from the Master Asset Library")
-        self.resize(820, 560)
+        self.resize(1180, 600)
         self.project = project
         self.master = master
         self.added: list[lib.Asset] = []
@@ -63,7 +63,12 @@ class AddFromMasterDialog(QDialog):
         self.tree.setRootIsDecorated(False)
         self.tree.itemSelectionChanged.connect(self._chosen)
         self.tree.itemDoubleClicked.connect(lambda *_: self.add_chosen())
-        layout.addWidget(self.tree, 1)
+        from .asset_window import AssetPlayer
+        self.player = AssetPlayer()  # (the asset chosen, seen or heard before it's added)
+        middle = QHBoxLayout()
+        middle.addWidget(self.tree, 1)
+        middle.addWidget(self.player)
+        layout.addLayout(middle, 1)
         self.info = QLabel()
         self.info.setWordWrap(True)
         layout.addWidget(self.info)
@@ -130,6 +135,14 @@ class AddFromMasterDialog(QDialog):
         if len(chosen) == 1 and chosen[0].description:
             notes.insert(0, chosen[0].description)
         self.info.setText(" ".join(notes))
+        shown = chosen[-1] if chosen else None
+        if shown is not self.player.asset:
+            self.player.show_asset(shown)
+
+    def done(self, result: int) -> None:
+        self.player.drop()
+        self.player.release()
+        super().done(result)
 
     def add_chosen(self) -> list[lib.Asset]:
         """The chosen assets copied into the project's library."""

@@ -444,7 +444,8 @@ class PlaySession(QObject):
             return
         screens = menus.live_message(self.project)
         self.send({"type": "screens.put", "screens": screens,
-                   "images": menus.image_files(self.project, screens)})
+                   "images": menus.image_files(self.project, screens),
+                   "fonts": menus.font_folders(self.project, screens)})
 
     def _game_settings_changed(self) -> None:
         """The Project Page's crosshair, pointer and menu music: the running game follows."""

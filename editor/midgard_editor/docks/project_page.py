@@ -33,7 +33,7 @@ from ..project import (
     Project,
 )
 from ..undo import SetConfigCommand, SetStringCommand
-from .fresh_combo import FreshComboBox
+from .fresh_combo import FreshComboBox, decorate_pictures
 
 PREVIEW = {"logo": 160, "icon": 96}
 
@@ -153,9 +153,6 @@ class ProjectPage(QScrollArea):
         self.error_log.toggled.connect(self._error_log_toggled)
         form.addRow("Error log", self.error_log)
         # The game's screens (6.0): the splash, the crosshair, the menu pointer, menu music.
-        self.splash = FreshComboBox(self.show_game_settings)
-        self.splash.setToolTip("A picture shown while the game loads (from the Asset Library's "
-                               "GUI section). Without one, the game's name shows")
         self.crosshair = FreshComboBox(self.show_game_settings)
         self.crosshair.setToolTip("The crosshair's picture, in the middle of the screen (from "
                                   "the GUI section). Without one, a small white dot")
@@ -174,14 +171,13 @@ class ProjectPage(QScrollArea):
         self.menu_music = FreshComboBox(self.show_game_settings)
         self.menu_music.setToolTip("A playlist (the Audio panel's) that plays while a menu shows, "
                                    "over the scene's music; a screen can keep it off")
-        for key, box in (("splash", self.splash), ("crosshair", self.crosshair),
+        for key, box in (("crosshair", self.crosshair),
                          ("pointer", self.pointer), ("menu_music", self.menu_music),
                          ("crosshair_views", self.crosshair_views)):
             box.activated.connect(lambda _i, k=key, b=box: self._set_game(k, b.currentData()))
         self.crosshair_size.editingFinished.connect(
             lambda: self._set_game("crosshair_size", self.crosshair_size.value()))
         screens = QFormLayout()
-        screens.addRow("Splash screen", self.splash)
         screens.addRow("Crosshair", self.crosshair)
         screens.addRow("Crosshair shows", self.crosshair_views)
         screens.addRow("Crosshair size", self.crosshair_size)
@@ -253,8 +249,7 @@ class ProjectPage(QScrollArea):
             return
         settings = menus.game_settings(p)
         pictures = sorted(menus.gui_images(p).items(), key=lambda kv: kv[1].lower())
-        for key, box in (("splash", self.splash), ("crosshair", self.crosshair),
-                         ("pointer", self.pointer)):
+        for key, box in (("crosshair", self.crosshair), ("pointer", self.pointer)):
             box.clear()
             box.addItem("None", "")
             for ref, label in pictures:
@@ -263,6 +258,7 @@ class ProjectPage(QScrollArea):
             if chosen and box.findData(chosen) < 0:
                 box.addItem(f"(missing) {chosen[3:]}", chosen)
             box.setCurrentIndex(max(0, box.findData(chosen)))
+            decorate_pictures(box, lambda ref: menus.image_file(p, ref))
         self.menu_music.clear()
         self.menu_music.addItem("None", "")
         for playlist in music.load_all(p):
@@ -287,7 +283,7 @@ class ProjectPage(QScrollArea):
             return
         else:
             settings[key] = value
-        names = {"splash": "splash screen", "crosshair": "crosshair", "pointer": "menu pointer",
+        names = {"crosshair": "crosshair", "pointer": "menu pointer",
                  "menu_music": "menu music", "crosshair_views": "when the crosshair shows",
                  "crosshair_size": "crosshair size"}
         self.project.undo_stack.push(menus.SetGameSettingsCommand(

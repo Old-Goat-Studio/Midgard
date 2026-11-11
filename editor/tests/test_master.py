@@ -208,6 +208,7 @@ def test_add_from_master_copies_the_chosen_assets(library_window, master):
     assert dialog.tree.topLevelItemCount() == 1
     dialog.search.setText("")
     dialog.choose("Logo")
+    assert dialog.player.asset is not None and dialog.player.asset.name == "Logo"  # (seen)
     added = dialog.add_chosen()
     assert [a.name for a in added] == ["Logo"]
     assert "Added 1 asset" in dialog.report

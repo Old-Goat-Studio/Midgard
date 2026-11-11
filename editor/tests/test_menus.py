@@ -467,7 +467,6 @@ def test_the_project_page_sets_the_splash_crosshair_pointer_and_menu_music(qtbot
         box.setCurrentIndex(box.findData(data))
         box.activated.emit(box.currentIndex())
 
-    pick(page.splash, refs["splash"])
     pick(page.crosshair, refs["aim"])
     pick(page.crosshair_views, "all")
     page.crosshair_size.setValue(48)
@@ -476,7 +475,7 @@ def test_the_project_page_sets_the_splash_crosshair_pointer_and_menu_music(qtbot
     assert page.menu_music.findText("Menu Theme") >= 0
     pick(page.menu_music, "mus_menu")
     assert menus.game_settings(project) == {
-        "splash": refs["splash"], "crosshair": refs["aim"], "crosshair_views": "all",
+        "crosshair": refs["aim"], "crosshair_views": "all",
         "crosshair_size": 48, "pointer": refs["arrow"], "menu_music": "mus_menu"}
     # One undo step each; back to the defaults, they're left out.
     project.undo_stack.undo()
@@ -489,7 +488,7 @@ def test_the_project_page_sets_the_splash_crosshair_pointer_and_menu_music(qtbot
     result = cook(project, tmp_path / "pkg")
     with zipfile.ZipFile(result.out_dir / "game.pak") as pak:
         names = pak.namelist()
-    for name in ("splash", "aim", "arrow"):
+    for name in ("aim", "arrow"):
         assert "ui/" + refs[name][3:] in names
     settings = menus.game_settings(project)
     menus.save_game_settings(project, {**settings, "pointer": "ui:library/gone.png",
@@ -523,13 +522,164 @@ def test_pictures_imported_later_are_in_the_lists_when_they_open(qtbot, project,
     editor.set_project(project)
     editor.new_screen("Menu")
     editor.choose_element("close")
-    assert page.splash.count() == 1 and editor.image.count() == 1  # (None only)
+    assert page.crosshair.count() == 1 and editor.image.count() == 1  # (None only)
     file = tmp_path / "logo.png"
     image = QImage(16, 16, QImage.Format.Format_RGBA8888)
     image.fill(QColor("green"))
     assert image.save(str(file))
     asset_library.import_asset(project, [file], "gui", "Logo")
-    for box in (page.splash, page.crosshair, page.pointer, editor.image):
+    for box in (page.crosshair, page.pointer, editor.image):
         box.showPopup()
         box.hidePopup()
         assert box.findText("Logo (logo.png)") >= 0
+
+
+def test_the_splash_is_a_screen_and_shows_at_least_its_time(qtbot, project):
+    from midgard_editor.docks.project_page import ProjectPage
+
+    editor = MenuEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+    sid = editor.new_from_template("splash")
+    screen = menus.load(project, sid)["screen"]
+    assert screen["role"] == "splash" and screen["modal"] is False
+    assert {e["id"] for e in screen["elements"]} == {"title", "loading"}
+    assert editor.role.findData("splash") >= 0
+    # Its least time is the splash screen's own (shown with nothing chosen).
+    editor.choose_element("")
+    assert editor.form.isRowVisible(editor.seconds)
+    assert editor.seconds.value() == 2.0  # (the ready-made one's)
+    editor.seconds.setValue(4.0)
+    assert menus.load(project, sid)["screen"]["seconds"] == 4.0
+    editor.seconds.setValue(0.0)
+    assert "seconds" not in menus.load(project, sid)["screen"]
+    # Not on other screens, nor on the Project Page any more.
+    other = editor.new_from_template("pause")
+    editor.choose_screen(other)
+    editor.choose_element("")
+    assert not editor.form.isRowVisible(editor.seconds)
+    page = ProjectPage()
+    qtbot.addWidget(page)
+    page.set_project(project)
+    assert not hasattr(page, "splash") and not hasattr(page, "splash_seconds")
+
+
+def test_text_takes_a_font_from_the_library_and_the_cook_packs_it(qtbot, project, tmp_path):
+    from midgard_editor import asset_library
+
+    editor = MenuEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+    sid = editor.new_screen("Menu")
+    editor.choose_element("title")
+    assert editor.form.isRowVisible(editor.font) and editor.form.isRowVisible(editor.italic)
+    # Midgard's own fonts, then the library's (added since the list was made: it refills).
+    assert [editor.font.itemData(i) for i in range(editor.font.count())] == ["", "OpenDyslexic"]
+    source = tmp_path / "Dyslexic"
+    source.mkdir()
+    (source / "Dyslexic-Regular.ttf").write_bytes(engine_font_bytes())
+    asset_library.import_asset(project, [source], "fonts", "Dyslexic", licence="OFL-1.1",
+                               author="Abbie Gonzalez", title="OpenDyslexic")
+    editor.font.showPopup()
+    editor.font.hidePopup()
+    ref = next(r for r in menus.gui_fonts(project))
+    assert editor.font.findData(ref) >= 0
+    editor.font.setCurrentIndex(editor.font.findData(ref))
+    editor.font.activated.emit(editor.font.currentIndex())
+    editor.italic.setChecked(True)
+    style = element(project, sid, "title")["style"]
+    assert style["font"] == ref and style["italic"] is True
+    assert menus.fonts_of(menus.load(project, sid)["screen"]) == [ref]
+    assert menus.font_folders(project, menus.load_all(project)) == {
+        ref: str(menus.font_folder(project, ref))}
+    assert menus.problems(project) == []
+    # The canvas draws it; the cook packs the font's files.
+    editor.render()
+    result = cook(project, tmp_path / "pkg")
+    with zipfile.ZipFile(result.out_dir / "game.pak") as pak:
+        assert any(n.startswith("ui/") and n.endswith("Dyslexic-Regular.ttf")
+                   for n in pak.namelist())
+    # A font that isn't there: said.
+    screens = menus.load_all(project)
+    screens[0]["screen"]["elements"][1]["style"]["font"] = "ui:library/fonts/gone"
+    menus.save_all(project, screens)
+    assert any("gone" in p and "default font" in p for p in menus.problems(project))
+
+
+def engine_font_bytes() -> bytes:
+    """OpenDyslexic's file, as Midgard bundles it (a real font to import)."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2] / "engine" / "ui" / "fonts"
+    return next(root.glob("OpenDyslexic*Regular*")).read_bytes()
+
+
+def test_picture_and_font_lists_preview_what_they_hold(qtbot, project, tmp_path):
+    from PySide6.QtCore import Qt
+    from test_asset_window import a_picture
+
+    from midgard_editor import asset_library
+    from midgard_editor.docks.project_page import ProjectPage
+
+    pictures = tmp_path / "pics"
+    pictures.mkdir()
+    asset_library.import_asset(project, [a_picture(pictures, "aim.png")], "gui", "Aim")
+    fonts = tmp_path / "Dyslexic"
+    fonts.mkdir()
+    (fonts / "Dyslexic-Regular.otf").write_bytes(engine_font_bytes())
+    asset_library.import_asset(project, [fonts], "fonts", "Dyslexic", licence="OFL-1.1",
+                               author="Abbie Gonzalez", title="OpenDyslexic")
+    editor = MenuEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+    editor.new_screen("Menu")
+    editor.choose_element("title")
+    editor.font.showPopup()
+    editor.font.hidePopup()
+    ref = next(iter(menus.gui_fonts(project)))
+    i = editor.font.findData(ref)
+    font = editor.font.itemData(i, Qt.ItemDataRole.FontRole)
+    assert font is not None and font.family()  # (drawn in itself)
+    assert "quick brown fox" in editor.font.itemData(i, Qt.ItemDataRole.ToolTipRole)
+    page = ProjectPage()
+    qtbot.addWidget(page)
+    page.set_project(project)
+    aim = next(iter(menus.gui_images(project)))
+    i = page.crosshair.findData(aim)
+    assert not page.crosshair.itemIcon(i).isNull()
+    tip = page.crosshair.itemData(i, Qt.ItemDataRole.ToolTipRole)
+    assert "<img" in tip and "aim.png" in tip and "(8 x 8)" in tip
+    assert page.crosshair.itemIcon(0).isNull()  # (None: no picture)
+
+
+PAUSING_SCRIPT = """
+import midgard
+
+def on_start(entity):
+    midgard.ui.on_click("scr_pause", "resume", lambda: print("heard resume"))
+    midgard.ui.show("scr_pause")
+    midgard.ui.click("scr_pause", "resume")  # (the button heard, paused or not)
+    midgard.ui.show("scr_pause")
+
+def on_update(entity, dt):
+    x, y, z = entity.position
+    entity.position = (x + 1.0, y, z)  # (a walker: stands still while the game is paused)
+    print("updated")
+"""
+
+
+@needs_scripting
+def test_a_pausing_screen_stops_what_scripts_move(project, tmp_path):
+    menus.save_all(project, [{"id": "scr_pause", "name": "Pause", "screen": {
+        "pauses": True, "elements": [{"id": "resume", "kind": "button"}]}}])
+    project.put_entity(Entity("e000092", "Walker", None, {
+        "transform": {}, "script": {"module": "walker_script"}}))
+    write_script(project, "walker_script", PAUSING_SCRIPT)
+    package = cook(project, tmp_path / "pkg").out_dir
+    dumped, run = simulate(package, 30)
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.splitlines()
+    assert "heard resume" in lines
+    assert "updated" not in lines  # (on_update isn't called while it shows)
+    walker = next(e for e in dumped["entities"] if e["name"] == "Walker")
+    assert walker["position"][0] == pytest.approx(0.0)
+    assert dumped["hud"]["screens"] == ["scr_pause"]

@@ -2,6 +2,7 @@
 #include "midgard/ui/screens.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <set>
 
@@ -21,7 +22,8 @@ std::string key(const std::string& screen, const std::string& element) {
 struct Screens::Impl : Rml::EventListener {
     Ui& ui;
     ImageLoader images;
-    std::set<std::string> tried;  // pictures loaded, or found missing
+    FontLoader fonts;
+    std::set<std::string> tried;  // pictures and fonts loaded, or found missing
     struct Open {
         Rml::ElementDocument* document = nullptr;
         std::string rml;  // what it was made from (made again when that changes)
@@ -150,8 +152,23 @@ struct Screens::Impl : Rml::EventListener {
     }
 };
 
-Screens::Screens(Ui& ui, ImageLoader images) : impl_(std::make_unique<Impl>(ui)) {
+Screens::Screens(Ui& ui, ImageLoader images, FontLoader fonts) : impl_(std::make_unique<Impl>(ui)) {
     impl_->images = std::move(images);
+    impl_->fonts = std::move(fonts);
+}
+
+void load_fonts(Ui& ui, const ScreenDef& screen, const Screens::FontLoader& fonts,
+                std::set<std::string>& tried) {
+    for (const std::string& font : screen_fonts(screen)) {
+        if (!fonts || !tried.insert(font).second) continue;
+        for (auto& [name, bytes] : fonts(font)) {
+            std::string lower = name;
+            for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+            const bool italic = lower.find("italic") != std::string::npos ||
+                                lower.find("oblique") != std::string::npos;
+            ui.add_font(screen_font_family(font), std::move(bytes), italic);
+        }
+    }
 }
 
 Screens::~Screens() {
@@ -194,6 +211,7 @@ void Screens::sync(const std::vector<ScreenDef>& defs, const std::vector<std::st
                 Rml::Log::Message(Rml::Log::LT_WARNING, "Screen '%s': no picture %s",
                                   d.name.c_str(), image.c_str());
         }
+        load_fonts(s.ui, d, s.fonts, s.tried);
         Impl::Open o;
         o.def = d;
         o.rml = screen_rml(d);

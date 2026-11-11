@@ -48,6 +48,8 @@ def route(start):
 
 
 def on_start(entity):
+    if "scr_title" in midgard.ui.screens:  # (New game: the title pauses the game till then)
+        midgard.ui.click("scr_title", "play")
     state.update(waited=0.0, started=False, done=False, samples=0, grounded=0, low=1e12,
                  high=-1e12, quarters=[], day=False, night=False, air=0.0, longest_air=0.0)
 
@@ -96,6 +98,11 @@ def on_update(entity, dt):
 FLY = """import midgard
 
 said = {"up": False, "down": False}
+
+
+def on_start(entity):
+    if "scr_title" in midgard.ui.screens:  # (New game: the title pauses the game till then)
+        midgard.ui.click("scr_title", "play")
 
 
 def on_update(entity, dt):

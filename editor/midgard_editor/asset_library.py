@@ -133,6 +133,14 @@ def library_dir(project) -> Path:
     return Path(project.root) / FOLDER
 
 
+def folder_name(name: str) -> str:
+    """A folder name kept as it was (an imported folder's: spaces and capitals and all), less only
+    what no file system allows (< > : " / \\ | ? * and control characters, trailing dots and
+    spaces)."""
+    s = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip().rstrip(".")
+    return s or slug(name)
+
+
 def slug(name: str) -> str:
     """A folder name from an asset's name: lower case, words joined by underscores."""
     s = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
@@ -416,6 +424,59 @@ def _looks_like(path: Path) -> str | None:
     return None if ok else f"isn't a {ext} file inside"
 
 
+def tree_name(sources: list[Path]) -> str:
+    """The name of what is imported, as it was: one folder's, or one zip's (its single top
+    folder's, if it has one); "" for loose files or several sources."""
+    import zipfile
+    if len(sources) != 1:
+        return ""
+    source = Path(sources[0])
+    if source.is_dir():
+        return source.name
+    if source.suffix.lower() == ".zip" and source.is_file():
+        try:
+            with zipfile.ZipFile(source) as z:
+                names = [n for n in z.namelist() if not n.startswith("__MACOSX/")]
+        except (OSError, zipfile.BadZipFile):
+            return source.stem
+        tops = {n.split("/", 1)[0] for n in names}
+        if len(tops) == 1 and all("/" in n for n in names):
+            return tops.pop()
+        return source.stem
+    return ""
+
+
+def _mirrored(kept: list[tuple[Path, str]],
+              root: str) -> list[tuple[list[str], str, list[tuple[Path, str]]]]:
+    """A folder tree as the library will have it (step: the import keeps its folders): each
+    folder holding content becomes an asset named after it, in folders named after those above
+    it (the import's own first), with its files at their paths inside it and the text (a
+    licence, a read-me) of its folder and those above it (the nearest of a name kept).
+    Returns (the folders above, its own name, its files) for each, in order."""
+    def folder_of(rel: str) -> str:
+        return rel.rsplit("/", 1)[0] if "/" in rel else ""
+
+    text = [(p, rel) for p, rel in kept if p.suffix.lower() in TEXT]
+    by_folder: dict[str, list[tuple[Path, str]]] = {}
+    for p, rel in kept:
+        if p.suffix.lower() not in TEXT:
+            by_folder.setdefault(folder_of(rel), []).append((p, rel))
+    out = []
+    for folder in sorted(by_folder):
+        names = [root, *folder.split("/")] if folder else [root]
+        inside = [(p, rel[len(folder) + 1:] if folder else rel) for p, rel in by_folder[folder]]
+        # Text from here up: the nearest of each name (this folder's licence over the pack's).
+        above = [""] + ["/".join(folder.split("/")[:i + 1])
+                        for i in range(len(folder.split("/")))] if folder else [""]
+        notes: dict[str, Path] = {}
+        for level in above:  # (from the top down: nearer ones replace)
+            for p, rel in text:
+                if folder_of(rel) == level:
+                    notes[rel.rsplit("/", 1)[-1]] = p
+        out.append((names[:-1], names[-1], inside + [(p, n) for n, p in notes.items()]))
+    return out
+
+
 def _gathered(sources: list[Path], scratch: Path) -> list[tuple[Path, str]]:
     """The files to import, each with its path in the asset: loose files by name, a folder's
     files as they are under it, a zip's (opened into `scratch`, never outside it) likewise."""
@@ -522,7 +583,7 @@ def _sorted(files: list[tuple[Path, str]], type_: str) -> tuple[list[tuple[Path,
 
 def _make(project, files: list[tuple[Path, str]], type_: str, name: str, *, category: str,
           description: str, licence: str, author: str, source: str, title: str,
-          today: str) -> Asset:
+          today: str, within: list[str] | None = None) -> Asset:
     """An asset from files already sorted (their content first). LibraryError if it can't
     be made (nothing usable, already in the library, its licence): nothing is left behind."""
     import datetime
@@ -532,12 +593,19 @@ def _make(project, files: list[tuple[Path, str]], type_: str, name: str, *, cate
     if (twin := find_duplicate(project, content[0][0])) is not None:
         raise LibraryError(f"{content[0][1]} is in the library already, as "
                            f"'{twin.name}' ({twin.id})")
+    # (an imported folder tree: in folders named as its were, the asset by its folder's name)
     parent = type_folder(project, type_, category)
-    folder = parent / slug(name)
+    base = slug(name)
+    if within is not None:
+        parent = parent.joinpath(*(folder_name(n) for n in within))
+        base = folder_name(name)
+    folder = parent / base
     n = 2
     while folder.exists():  # (never over another's)
-        folder = parent / f"{slug(name)}_{n}"
+        folder = parent / f"{base}_{n}"
         n += 1
+    if within:
+        category = "/".join([c for c in category.split("/") if c] + within)
     asset = Asset(folder=folder, name=name, type=type_, category=category,
                   description=description.strip(), licence=licence, author=author.strip(),
                   source=source.strip(), title=title.strip(),
@@ -674,6 +742,21 @@ def import_assets(project, sources: list[Path], type_: str, name: str, *, catego
         if not files:
             raise LibraryError("there is nothing to import")
         kept, result.skipped = _sorted(files, type_)
+        # A folder (or zip) whose files are in more than one folder: its tree kept, an asset
+        # for each folder (not models, whose textures stay with them).
+        root = tree_name([Path(s) for s in sources])
+        folders = {rel.rsplit("/", 1)[0] if "/" in rel else "" for p, rel in kept
+                   if p.suffix.lower() not in TEXT}
+        if root and len(folders) > 1 and type_ not in ("models", "objects"):
+            for within, own, group in _mirrored(kept, root):
+                try:
+                    asset = _make(project, group, type_, own, within=within, **meta)
+                except LibraryError as e:
+                    result.refused.append(("/".join([*within, own]), str(e)))
+                    continue
+                result.assets.append(asset)
+                result.warnings += [f"{asset.name}: {w}" for w in asset.warnings]
+            return result
         if roles is not None and type_ == "textures":
             kept, unused = _named_by_role(kept, roles, name, Path(scratch))
             result.skipped += unused

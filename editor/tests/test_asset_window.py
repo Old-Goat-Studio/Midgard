@@ -562,30 +562,29 @@ def test_a_fonts_sample_doesnt_stay_on_for_what_comes_after(project, qtbot, tmp_
 
 
 def test_sounds_in_a_packs_folders_are_listed_by_their_own_names(project, qtbot, tmp_path):
-    """A pack keeps its folders: the list names each file, not the folder they share."""
+    """A pack keeps its folders: an asset for each (Lasers, Doors), in folders named as the
+    pack's, each with the pack's read-me; the list names each file."""
     pack = tmp_path / "pick"
     (pack / "Sci-Fi Sound Pack" / "Lasers").mkdir(parents=True)
     (pack / "Sci-Fi Sound Pack" / "Doors").mkdir()
-    (pack / "Sci-Fi Sound Pack" / "Lasers" / "laser_01.ogg").write_bytes(OGG + b"\x01" * 10)
-    (pack / "Sci-Fi Sound Pack" / "Lasers" / "laser_02.ogg").write_bytes(OGG + b"\x02" * 20)
-    (pack / "Sci-Fi Sound Pack" / "Doors" / "door_open.ogg").write_bytes(OGG + b"\x03" * 30)
+    (pack / "Sci-Fi Sound Pack" / "Lasers" / "laser_01.ogg").write_bytes(OGG + b"" * 10)
+    (pack / "Sci-Fi Sound Pack" / "Lasers" / "laser_02.ogg").write_bytes(OGG + b"" * 20)
+    (pack / "Sci-Fi Sound Pack" / "Doors" / "door_open.ogg").write_bytes(OGG + b"" * 30)
     (pack / "Sci-Fi Sound Pack" / "readme.txt").write_text("CC0", "utf-8")
-    lib.import_asset(project, [pack], "effects", "Sci-Fi")
+    result = lib.import_assets(project, [pack], "effects", "Sci-Fi")
+    assert sorted(a.name for a in result.assets) == ["Doors", "Lasers"]
     window = AssetWindow()
     qtbot.addWidget(window)
     window.set_project(project)
     window.show()
-    window.select("effects/miscellaneous/sci_fi")
+    window.select("effects/miscellaneous/pick/Sci-Fi Sound Pack/Lasers")
     rows = [tuple(window.files_list.topLevelItem(i).text(c) for c in range(3))
             for i in range(window.files_list.topLevelItemCount())]
-    assert rows == [("door_open.ogg", "66 bytes", "Sci-Fi Sound Pack/Doors"),
-                    ("laser_01.ogg", "46 bytes", "Sci-Fi Sound Pack/Lasers"),
-                    ("laser_02.ogg", "56 bytes", "Sci-Fi Sound Pack/Lasers"),
-                    ("readme.txt", "3 bytes", "Sci-Fi Sound Pack")]
-    assert window.files_list.topLevelItem(1).toolTip(0) == \
-        "Sci-Fi Sound Pack/Lasers/laser_01.ogg"
+    assert rows == [("laser_01.ogg", "46 bytes", ""),
+                    ("laser_02.ogg", "56 bytes", ""),
+                    ("readme.txt", "3 bytes", "")]
     window.files_list.topLevelItem(0).setSelected(False)
-    window.files_list.topLevelItem(2).setSelected(True)
+    window.files_list.topLevelItem(1).setSelected(True)
     assert window.player.choose.currentData()[1].name == "laser_02.ogg"
 
 
@@ -757,3 +756,63 @@ def test_a_models_size_is_where_its_nodes_put_it(project):
     # Without nodes placing it: as it is.
     doc.pop("nodes"), doc.pop("scenes"), doc.pop("scene")
     assert model_bounds(glb(doc)) == ([-100, -200, 0], [100, 50, 300])
+
+
+def test_the_import_dialog_previews_what_it_holds_before_importing(project, qtbot, tmp_path):
+    import zipfile
+    pack = tmp_path / "Pack"
+    (pack / "Sub Folder").mkdir(parents=True)
+    a_picture(pack, "a.png")
+    a_picture(pack / "Sub Folder", "b.png")
+    (pack / "chime.ogg").write_bytes(OGG)
+    (pack / "readme.txt").write_text("hello")
+    dialog = ImportDialog(project, "gui")
+    qtbot.addWidget(dialog)
+    dialog.quiet = True
+    dialog.add_sources([pack])
+    listed = [dialog.preview_list.item(i).text() for i in range(dialog.preview_list.count())]
+    assert listed == ["a.png", "chime.ogg", "Sub Folder/b.png"]
+    assert dialog.preview_list.currentRow() == 0
+    assert dialog.player.kind == "picture" and not dialog.player.picture.pixmap().isNull()
+    assert not dialog.preview_list.item(0).icon().isNull()  # (a thumbnail)
+    dialog.preview_list.setCurrentRow(2)
+    assert dialog.player.choose.currentData()[1].name == "b.png"
+    # A zip's files: unpacked to be shown, gone when the dialog closes.
+    zipped = tmp_path / "more.zip"
+    with zipfile.ZipFile(zipped, "w") as z:
+        z.write(pack / "a.png", "inside/c.png")
+    dialog.add_sources([zipped])
+    shown = dict(dialog._previewed)
+    assert "more.zip/c.png" in shown and shown["more.zip/c.png"].is_file()
+    assert "Pack/a.png" in shown  # (each under its source's name)
+    scratch = Path(dialog._scratch.name)
+    dialog.sources.clear()
+    dialog.refresh_preview()
+    assert dialog.preview_list.count() == 0 and not scratch.exists()
+    dialog.add_sources([zipped])
+    scratch = Path(dialog._scratch.name)
+    dialog.reject()
+    assert not scratch.exists()
+    # Nothing that can be shown: said.
+    other = ImportDialog(project, "gui")
+    qtbot.addWidget(other)
+    other.add_sources([pack / "readme.txt"])
+    assert other.preview_list.count() == 0 and "nothing" in other.preview_label.text()
+
+
+def test_pictures_are_previewed_at_their_actual_size(project, qtbot, tmp_path):
+    from PySide6.QtGui import QColor, QImage
+
+    from midgard_editor.docks.asset_window import PLAYER_SIZE, AssetPlayer
+    player = AssetPlayer()
+    qtbot.addWidget(player)
+    big = QImage(2000, 1000, QImage.Format.Format_RGB32)
+    big.fill(QColor("red"))
+    big.save(str(tmp_path / "big.png"))
+    icon = lib.import_asset(project, [a_picture(tmp_path, "icon.png")], "gui", "Icon")
+    player.show_asset(icon)
+    assert player.picture.pixmap().size().toTuple() == (8, 8)  # (not stretched up)
+    banner = lib.import_asset(project, [tmp_path / "big.png"], "gui", "Banner")
+    player.show_asset(banner)
+    w, h = player.picture.pixmap().size().toTuple()
+    assert w == PLAYER_SIZE[0] and h <= PLAYER_SIZE[1]  # (too big: made to fit)

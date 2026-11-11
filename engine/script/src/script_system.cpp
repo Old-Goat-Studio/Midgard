@@ -1700,6 +1700,10 @@ bool ScriptSystem::needed(const Game& game) {
 void ScriptSystem::update(const Actions& actions, float dt) {
     Impl& s = *impl_;
     g_context = &s.context;
+    // A pausing screen shows: the scripts' time stands still with the world's, and on_update
+    // isn't called (so nothing a script moves moves); its buttons are still heard.
+    const bool frozen = s.context.game->frozen();
+    if (frozen) dt = 0.0f;
     s.context.actions = &actions;
     s.context.dt = dt;
     s.context.time += dt;
@@ -1830,6 +1834,7 @@ void ScriptSystem::update(const Actions& actions, float dt) {
         }
     }
 
+    if (s.context.game->frozen()) return;  // (a script may have shown a pausing screen)
     for (const auto& [e, module] : std::vector(s.started.begin(), s.started.end()))
         if (reg.valid(e)) s.call(module, "on_update", handle(e), dt);
 }

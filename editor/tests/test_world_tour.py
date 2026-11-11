@@ -141,6 +141,7 @@ def test_the_running_tour_plays_its_music_and_ambience(tour, tmp_path):
     from midgard_editor import about
     if not about.runtime_candidates():
         pytest.skip("the runtime isn't built here")
+    press_new_game(tour)
     out = cook(tour, tmp_path / "pkg").out_dir
     run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
                           "--simulate", "300", "--dump-scene"],
@@ -181,30 +182,58 @@ def test_the_tour_comes_with_its_checklist(tour):
         assert world in checklist
 
 
+# (The title and game over screens pause the game: on_update isn't called while they show, so
+# the tester presses their buttons from on_start, which still runs, and from a stats callback.)
 EXIT_SCRIPT = """
 import midgard
 
-s = {"frame": 0}
+s = {"frame": 0, "died": False}
+
+
+def health_changed(stat, before, after):
+    if stat == "health" and after <= 0.0 and not s["died"]:
+        s["died"] = True
+        print("died", midgard.ui.screens, after)
+        midgard.ui.click("scr_game_over", "again")
+        s["frame"] = 1000
+
+
+def on_start(entity):
+    print("opens at", midgard.ui.screens)
+    midgard.ui.click("scr_title", "play")
+    print("new game", midgard.ui.screens)
+    midgard.stats.on_change(health_changed)
 
 
 def on_update(entity, dt):
     s["frame"] += 1
     f = s["frame"]
-    if f == 2:
-        print("opens at", midgard.ui.screens)
-        midgard.ui.click("scr_title", "play")
-    elif f == 3:
-        print("new game", midgard.ui.screens)
+    if f == 1:
         midgard.player().position = midgard.find("Coin 1").position
     elif f == 30:
         print("score", midgard.stats.get("score"))
         midgard.player().position = midgard.find("Fire Pit").position
-    elif f == 240:
-        print("died", midgard.ui.screens, midgard.stats.get("health"))
-        midgard.ui.click("scr_game_over", "again")
-    elif f == 250:
+    elif f == 1010:
         print("again", midgard.ui.screens, midgard.stats.get("health"))
 """
+
+
+START_SCRIPT = """
+import midgard
+
+
+def on_start(entity):
+    midgard.ui.click("scr_title", "play")  # (New game: the title pauses the game till then)
+"""
+
+
+def press_new_game(tour) -> None:
+    """A script that presses the title's New game as the game starts (as a player would)."""
+    from midgard_editor.scene_model import Entity
+    hub = next(e.id for e in tour.entities(MAIN_SCENE) if e.is_folder)
+    tour.put_entity(Entity(tour.next_entity_id(), "Starter", hub, {
+        "transform": {}, "script": {"module": "starter"}}), MAIN_SCENE)
+    (tour.root / "scripts" / "starter.py").write_text(START_SCRIPT, encoding="utf-8")
 
 
 @needs_engine
@@ -219,8 +248,8 @@ def test_the_exit_the_tour_opens_at_its_title_scores_dies_and_respawns(tmp_path)
         pytest.skip("the runtime isn't built here")
     tour = world_tour.make_world_tour(tmp_path / "exit")
     roles = {s["screen"].get("role"): s["id"] for s in menus.load_all(tour)}
-    assert roles == {"title": "scr_title", "settings": "scr_settings", "pause": "scr_pause",
-                     "game_over": "scr_game_over"}
+    assert roles == {"splash": "scr_splash", "title": "scr_title", "settings": "scr_settings",
+                     "pause": "scr_pause", "game_over": "scr_game_over"}
     assert menus.problems(tour) == []
     title = menus.load(tour, "scr_title")["screen"]
     assert {e["id"]: e.get("text") for e in title["elements"]}["play"] == "New game"

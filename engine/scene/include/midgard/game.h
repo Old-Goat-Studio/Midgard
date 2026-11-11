@@ -248,10 +248,11 @@ public:
     const GameSettings& game_settings() const { return settings_; }
     // The Project Page's edits while the game plays (the live link's settings.put).
     void set_game_settings(const nlohmann::json& settings);
-    // A screen that pauses the game shows: the world stands still (updates take no time), but
-    // its sounds and music carry on (menu music fades in) and scripts hear its buttons.
+    // A screen that pauses the game shows: the world stands still (updates take no time, and
+    // scripts' on_update isn't called), but its sounds and music carry on (menu music fades in)
+    // and scripts hear its buttons. Frozen: set so, or a shown screen pauses.
     void set_frozen(bool frozen) { frozen_ = frozen; }
-    bool frozen() const { return frozen_; }
+    bool frozen() const;
 
     // ---- the game's own screens (6.0 step 7: midgard/screen.h's roles) ----
     // The screen used as the title, pause menu, settings or game over (nullptr: none).

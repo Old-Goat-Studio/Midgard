@@ -6,11 +6,13 @@
 #include <pybind11/stl.h>
 
 #include <array>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -19,6 +21,7 @@
 
 #include "midgard/render/renderer.h"
 #include "midgard/screen.h"
+#include "midgard/ui/screens.h"
 #include "midgard/ui/ui.h"
 
 namespace py = pybind11;
@@ -35,7 +38,8 @@ public:
     // problems (with touch: a finger's too). Throws ValueError for a screen that can't be read.
     std::tuple<py::bytes, py::dict, std::vector<std::string>> render(
         const std::string& json, uint32_t width, uint32_t height, float scale,
-        std::array<float, 4> safe, bool touch, const std::map<std::string, std::string>& images) {
+        std::array<float, 4> safe, bool touch, const std::map<std::string, std::string>& images,
+        const std::map<std::string, std::string>& fonts) {
         ScreenDef def;
         try {
             def = screen_from_json("preview", "Preview", json);
@@ -46,6 +50,7 @@ public:
         height = std::max(height, 16u);
         if (!renderer_ || width != width_ || height != height_) {
             ui_.reset();  // (before its renderer)
+            fonts_tried_.clear();
             renderer_.reset();
             render::RendererDesc desc;
             desc.offscreen = true;
@@ -72,6 +77,27 @@ public:
             }
             ui_->set_image_file(screen_image_name(image), bytes);
         }
+        // Its fonts, from their folders (each once while the preview lasts).
+        ui::load_fonts(
+            *ui_, def,
+            [&](const std::string& font) {
+                std::vector<std::pair<std::string, std::vector<uint8_t>>> out;
+                const auto it = fonts.find(font);
+                if (it == fonts.end()) return out;
+                std::error_code ec;
+                for (const auto& f : std::filesystem::recursive_directory_iterator(
+                         std::filesystem::u8path(it->second), ec)) {
+                    std::string ext = f.path().extension().string();
+                    for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+                    if (ext != ".ttf" && ext != ".otf") continue;
+                    std::ifstream in(f.path(), std::ios::binary);
+                    out.emplace_back(f.path().filename().string(),
+                                     std::vector<uint8_t>(std::istreambuf_iterator<char>(in),
+                                                          std::istreambuf_iterator<char>()));
+                }
+                return out;
+            },
+            fonts_tried_);
         ui_->set_safe_area({safe[0], safe[1], safe[2], safe[3]});
         Rml::ElementDocument* doc =
             ui_->open_text(screen_rml(def), "midgard://screen/preview", false);
@@ -108,6 +134,7 @@ private:
     std::unique_ptr<render::Renderer> renderer_;
     std::unique_ptr<ui::Ui> ui_;
     uint32_t width_ = 0, height_ = 0;
+    std::set<std::string> fonts_tried_;  // (fonts loaded into this UI)
 };
 
 }  // namespace
@@ -120,6 +147,7 @@ void bind_screen_preview(py::module_& m) {
              py::arg("height"), py::arg("scale") = 1.0f,
              py::arg("safe") = std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f},
              py::arg("touch") = false, py::arg("images") = std::map<std::string, std::string>{},
+             py::arg("fonts") = std::map<std::string, std::string>{},
              "Draws a screen (its JSON) at width x height pixels, scale pixels a dp, clear of a "
              "safe area (left, top, right, bottom): (RGBA8 bytes, {element id: (x, y, w, h)}, "
              "[the screen checks' problems]). ValueError for a screen that can't be read.");

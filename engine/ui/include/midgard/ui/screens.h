@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -26,7 +27,11 @@ public:
     // `images` gives a picture's file bytes by its "ui:" content id (empty: it isn't there,
     // and the element shows without it).
     using ImageLoader = std::function<std::vector<uint8_t>(const std::string& content)>;
-    explicit Screens(Ui& ui, ImageLoader images = {});
+    // `fonts` gives an Asset Library font's files (by its "ui:" folder): each file's name and
+    // bytes (none: it isn't there, and its text shows in the default font).
+    using FontLoader = std::function<std::vector<std::pair<std::string, std::vector<uint8_t>>>(
+        const std::string& folder)>;
+    explicit Screens(Ui& ui, ImageLoader images = {}, FontLoader fonts = {});
     ~Screens();
     Screens(const Screens&) = delete;
     Screens& operator=(const Screens&) = delete;
@@ -58,5 +63,10 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+
+// A screen's Asset Library fonts into the UI (once each, as `tried` remembers): a file whose
+// name says italic (or oblique) is the italic face.
+void load_fonts(Ui& ui, const ScreenDef& screen, const Screens::FontLoader& fonts,
+                std::set<std::string>& tried);
 
 }  // namespace midgard::ui

@@ -4984,7 +4984,6 @@ TEST_CASE("game settings: the splash, crosshair, pointer and menu music; frozen 
     const midgard::GameSettings s = midgard::game_settings_from_json(
         R"({"splash": "ui:a.png", "crosshair": "tex:b", "crosshair_views": "all",
             "crosshair_size": 1000, "pointer": "ui:p.png", "menu_music": "mus_menu"})");
-    CHECK(s.splash == "ui:a.png");
     CHECK(s.crosshair.empty());  // (not a GUI picture)
     CHECK(s.crosshair_views == "all");
     CHECK(s.crosshair_size == 256.0);
@@ -5018,7 +5017,6 @@ TEST_CASE("game settings: the splash, crosshair, pointer and menu music; frozen 
     CHECK(midgard::read_package_content(pkg.dir, "ui:none.png").empty());
 
     midgard::Game game(pkg.dir);
-    CHECK(game.game_settings().splash == "ui:splash.png");
     CHECK(game.game_settings().crosshair_views == "all");
     CHECK(game.screen("scr_quiet")->music == false);
     midgard::audio::MixerOptions offline;
@@ -5035,9 +5033,16 @@ TEST_CASE("game settings: the splash, crosshair, pointer and menu music; frozen 
     run(5);
     CHECK(game.music()->playing().empty());
     // A menu: its music, over the scene's.
+    CHECK_FALSE(game.frozen());
     game.hud().show_screen("scr_menu");
     run(5);
     CHECK(game.music()->playing() == "mus_menu");
+    // It pauses: the game knows (a simulation, with no screens drawn, too), and its clock
+    // stands still.
+    CHECK(game.frozen());
+    const std::int64_t paused_at = game.time().now();
+    run(60);
+    CHECK(game.time().now() == paused_at);
     // Frozen (a pausing screen): the clock stands still, the music plays on.
     const std::int64_t now = game.time().now();
     game.set_frozen(true);
@@ -5048,8 +5053,10 @@ TEST_CASE("game settings: the splash, crosshair, pointer and menu music; frozen 
     // Closed: the menu music goes. A screen that keeps it off doesn't start it.
     // (the music director settles on a new choice over 2 seconds)
     game.hud().hide_screen("scr_menu");
+    CHECK_FALSE(game.frozen());
     run(200);
     CHECK(game.music()->playing().empty());
+    CHECK(game.time().now() > paused_at);  // (going again)
     game.hud().show_screen("scr_quiet");
     run(200);
     CHECK(game.music()->playing().empty());
@@ -5057,4 +5064,48 @@ TEST_CASE("game settings: the splash, crosshair, pointer and menu music; frozen 
     game.set_game_settings(nlohmann::json{{"crosshair_views", "none"}});
     CHECK(game.game_settings().crosshair_views == "none");
     CHECK(game.game_settings().menu_music.empty());
+}
+
+TEST_CASE("the splash: a screen used as it, read before the game loads; its least time") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {}, "player": {}}')"}});
+    CHECK_FALSE(midgard::load_splash_screen(pkg.dir / "Game.db"));
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO screen (id, name, position, screen) VALUES
+        ('scr_title', 'Title', 0, '{"role": "title", "elements": []}'),
+        ('scr_splash', 'Splash', 1, '{"role": "splash", "modal": false, "seconds": 2.5,
+            "elements": [
+            {"id": "name", "kind": "text", "text": "My Game",
+             "style": {"font": "ui:library/fonts/roboto", "italic": true}},
+            {"id": "logo", "kind": "image", "image": "ui:logo.png"}]}'))");
+    sqlite3_close(db);
+    const auto splash = midgard::load_splash_screen(pkg.dir / "Game.db");
+    REQUIRE(splash);
+    CHECK(splash->id == "scr_splash");
+    CHECK(splash->find("name")->text == "My Game");
+    CHECK(midgard::screen_images(*splash) == std::vector<std::string>{"ui:logo.png"});
+    CHECK(splash->seconds == 2.5);  // (it shows at least this long)
+    CHECK(midgard::screen_fonts(*splash) == std::vector<std::string>{"ui:library/fonts/roboto"});
+    const std::string rml = midgard::screen_rml(*splash);
+    CHECK(rml.find("font-family: " + midgard::screen_font_family("ui:library/fonts/roboto")) !=
+          std::string::npos);
+    CHECK(rml.find("font-style: italic") != std::string::npos);
+    // The fonts packed under a font's folder (only .ttf and .otf).
+    const std::vector<midgard::ContentEntry> content = {
+        {"ui:library/fonts/roboto/Roboto-Regular.ttf", "ui/a.ttf", ""},
+        {"ui:library/fonts/roboto/Roboto-Italic.ttf", "ui/b.ttf", ""},
+        {"ui:library/fonts/roboto/readme.txt", "ui/c.txt", ""},
+        {"ui:library/fonts/other/Other.otf", "ui/d.otf", ""}};
+    const auto fonts = midgard::package_fonts(
+        content, "ui:library/fonts/roboto",
+        [](const std::string& id) { return std::vector<uint8_t>(id.size(), 1); });
+    REQUIRE(fonts.size() == 2);
+    CHECK(fonts[0].first == "Roboto-Regular.ttf");
+    CHECK(fonts[1].first == "Roboto-Italic.ttf");
+    CHECK_THROWS_AS(midgard::screen_from_json("s", "S", R"({"elements": [{"id": "a",
+                        "style": {"font": "Comic Sans"}}]})"),
+                    midgard::ScreenError);
+    // The game itself never shows it: the title shows as it starts.
+    midgard::Game game(pkg.dir);
+    CHECK(game.hud().screens() == std::vector<std::string>{"scr_title"});
 }

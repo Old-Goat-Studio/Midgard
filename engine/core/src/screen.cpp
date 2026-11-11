@@ -69,7 +69,8 @@ const std::vector<std::string>& screen_actions() {
 }
 
 const std::vector<std::string>& screen_roles() {
-    static const std::vector<std::string> roles = {"", "title", "pause", "settings", "game_over"};
+    static const std::vector<std::string> roles = {"",      "splash",   "title",
+                                                   "pause", "settings", "game_over"};
     return roles;
 }
 
@@ -127,11 +128,13 @@ ScreenDef screen_from_json(const std::string& id, const std::string& name,
     };
     s.role = string(j, "role", "", who);
     if (!known(screen_roles(), s.role))
-        throw ScreenError(who + ": no role '" + s.role + "' (title, pause, settings or game_over)");
+        throw ScreenError(who + ": no role '" + s.role +
+                          "' (splash, title, pause, settings or game_over)");
     s.stat = string(j, "stat", "health", who);
     s.modal = flag(j, "modal", true, who);
     s.pauses = flag(j, "pauses", false, who);
     s.music = flag(j, "music", true, who);
+    s.seconds = std::clamp(number(j, "seconds", 0.0, who), 0.0, 60.0);
     s.background = rgba(j, "background", who);
     s.image = string(j, "image", "", who);
     if (!s.image.empty() && !s.image.starts_with("ui:"))
@@ -205,6 +208,13 @@ ScreenDef screen_from_json(const std::string& id, const std::string& name,
                 el.style.align != "right")
                 throw ScreenError(in + ": no alignment '" + el.style.align + "'");
             el.style.bold = flag(st, "bold", false, in);
+            el.style.italic = flag(st, "italic", false, in);
+            el.style.font = string(st, "font", "", in);
+            if (!el.style.font.empty() && el.style.font != "Inconsolata" &&
+                el.style.font != "OpenDyslexic" && !el.style.font.starts_with("ui:"))
+                throw ScreenError(in + ": no font '" + el.style.font +
+                                  "' (Inconsolata, OpenDyslexic, or one from the Asset "
+                                  "Library's Fonts)");
         }
         if (e.contains("action")) {
             const json& a = e.at("action");
@@ -243,6 +253,21 @@ std::vector<std::string> screen_images(const ScreenDef& screen) {
         add(e.image);
         for (const auto& [state, image] : e.images) add(image);
     }
+    return out;
+}
+
+std::vector<std::string> screen_fonts(const ScreenDef& screen) {
+    std::vector<std::string> out;
+    for (const ScreenElement& e : screen.elements)
+        if (e.style.font.starts_with("ui:") &&
+            std::find(out.begin(), out.end(), e.style.font) == out.end())
+            out.push_back(e.style.font);
+    return out;
+}
+
+std::string screen_font_family(const std::string& font) {
+    std::string out = "font_";  // (letters, digits and underscores: an RCSS name)
+    for (const char c : font) out += std::isalnum(static_cast<unsigned char>(c)) ? c : '_';
     return out;
 }
 
@@ -306,6 +331,11 @@ std::string look(const ScreenElement& e) {
     if (s.radius) out += " border-radius: " + dp(*s.radius) + ";";
     if (!s.align.empty()) out += " text-align: " + s.align + ";";
     if (s.bold) out += " font-weight: bold;";
+    if (s.italic) out += " font-style: italic;";
+    if (!s.font.empty())
+        out +=
+            " font-family: " + (s.font.starts_with("ui:") ? screen_font_family(s.font) : s.font) +
+            ";";
     return out;
 }
 

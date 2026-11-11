@@ -323,6 +323,12 @@ public:
         return {};
     }
     virtual std::map<std::string, std::string> player_keys() const { return {}; }
+    // An Asset Library font's files (by its "ui:" folder): names and bytes.
+    virtual std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
+        const std::string& folder) const {
+        (void)folder;
+        return {};
+    }
     // A screen's picture: its file's bytes by "ui:" content id (empty: none).
     virtual std::vector<uint8_t> ui_image(const std::string& content) const {
         (void)content;
@@ -737,6 +743,27 @@ public:
     std::string rebinding() const override { return game_.rebinding(); }
     std::string key_chosen(const std::string& key) override { return game_.key_chosen(key); }
     std::map<std::string, std::string> player_keys() const override { return game_.player_keys(); }
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
+        const std::string& folder) const override {
+        auto found = midgard::package_fonts(
+            game_.package().manifest.content, folder,
+            [this](const std::string& id) { return game_.read_content(id); });
+        const auto live = ui_font_folders_.find(folder);
+        if (found.empty() && live != ui_font_folders_.end()) {
+            std::error_code ec;
+            for (const auto& f : std::filesystem::recursive_directory_iterator(
+                     std::filesystem::u8path(live->second), ec)) {
+                std::string ext = f.path().extension().string();
+                for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+                if (ext != ".ttf" && ext != ".otf") continue;
+                std::ifstream in(f.path(), std::ios::binary);
+                found.emplace_back(f.path().filename().string(),
+                                   std::vector<uint8_t>((std::istreambuf_iterator<char>(in)),
+                                                        std::istreambuf_iterator<char>()));
+            }
+        }
+        return found;
+    }
     std::vector<uint8_t> ui_image(const std::string& content) const override {
         // From the package; under the editor, a picture chosen since the game was cooked comes
         // from the project's file (the live link's screens.put says where).
@@ -837,6 +864,9 @@ public:
                 for (const auto& [content, file] :
                      message.value("images", nlohmann::json::object()).items())
                     if (file.is_string()) ui_image_files_[content] = file.get<std::string>();
+                for (const auto& [font, folder] :
+                     message.value("fonts", nlohmann::json::object()).items())
+                    if (folder.is_string()) ui_font_folders_[font] = folder.get<std::string>();
                 game_.set_screen_data(message.at("screens"));
             } catch (const std::exception& ex) {
                 warn("live link: %s\n", ex.what());
@@ -989,6 +1019,7 @@ private:
     midgard::Game game_;
     // Pictures chosen in the Menu editor since the game was cooked: their files.
     std::map<std::string, std::string> ui_image_files_;
+    std::map<std::string, std::string> ui_font_folders_;  // (and fonts: their folders)
     bool scripts_tried_ = false;
 #ifdef MIDGARD_HAS_SCRIPTING
     std::unique_ptr<midgard::script::Interpreter> python_;  // before scripts_: outlives it
@@ -1645,17 +1676,19 @@ void set_window_icon(SDL_Window* window, const std::filesystem::path& file) {
     stbi_image_free(pixels);
 }
 
-// The splash (milestone 6.0): while the game loads, its splash picture (the Project Page's)
-// over black, or its name without one, drawn again and again (the window answering the system)
-// until `ready` says the game has loaded. Its UI goes before the game's is made.
+// The splash (milestone 6.0): while the game loads, its splash screen (the Menu editor's,
+// used as the splash), else its name over black;
+// drawn again and again (the window answering the system) until `ready` says the game has
+// loaded and it has shown as long as the Project Page says. Its UI goes before the game's.
 void show_splash(SDL_Window* window, render::Renderer& renderer, const Options& opt,
                  const std::filesystem::path& package_dir, const std::string& title,
                  const std::function<bool()>& ready) {
-    std::vector<uint8_t> picture;
+    std::optional<midgard::ScreenDef> screen;
+    double least = 0.0;  // seconds it shows, however soon the game is ready (the screen's)
     try {
         const midgard::Manifest m = midgard::load_manifest(package_dir / "manifest.json");
-        picture = midgard::read_package_content(
-            package_dir, midgard::load_game_settings(package_dir / m.database).splash);
+        screen = midgard::load_splash_screen(package_dir / m.database);
+        if (screen) least = screen->seconds;
     } catch (const std::exception&) {
     }
     std::unique_ptr<midgard::ui::Ui> ui;
@@ -1669,25 +1702,38 @@ void show_splash(SDL_Window* window, render::Renderer& renderer, const Options& 
         uo.scale = opt.ui_scale;
         uo.platform = ui_log_only();
         ui = std::make_unique<midgard::ui::Ui>(renderer, uo);
-        const bool has_picture = ui->set_image_file("splash", picture);
+        if (screen) {  // (its pictures and fonts, from the package)
+            for (const std::string& image : midgard::screen_images(*screen))
+                ui->set_image_file(midgard::screen_image_name(image),
+                                   midgard::read_package_content(package_dir, image));
+            std::set<std::string> tried;
+            midgard::ui::load_fonts(
+                *ui, *screen,
+                [&](const std::string& folder) {
+                    return midgard::read_package_fonts(package_dir, folder);
+                },
+                tried);
+        }
         const std::string rml =
-            "<rml><head><link type=\"text/rcss\" href=\"midgard://base.rcss\"/><style>"
-            "body { background-color: #000000; }"
-            "#splash { position: absolute; left: 0; top: 0; right: 0; bottom: 0;"
-            " decorator: image(midgard://image/splash contain); }"
-            "#title { position: absolute; left: 0; right: 0; top: 45%; text-align: center;"
-            " font-size: 36dp; color: #e8ecf4; }"
-            "</style></head><body>" +
-            std::string(has_picture
-                            ? "<div id=\"splash\"></div>"
-                            : "<div id=\"title\">" + midgard::rml_escape(title) + "</div>") +
-            "</body></rml>";
+            screen ? midgard::screen_rml(*screen)
+                   : "<rml><head><link type=\"text/rcss\" href=\"midgard://base.rcss\"/><style>"
+                     "body { background-color: #000000; }"
+                     "#title { position: absolute; left: 0; right: 0; top: 45%; text-align: center;"
+                     " font-size: 36dp; color: #e8ecf4; }"
+                     "</style></head><body><div id=\"title\">" +
+                         midgard::rml_escape(title) + "</div></body></rml>";
         ui->open_text(rml, "midgard://splash.rml", false);
     } catch (const std::exception& e) {
         warn("No splash: %s\n", e.what());
         ui.reset();
     }
     double t = 0.0;
+    const auto start = std::chrono::steady_clock::now();
+    const auto done = [&] {
+        return ready() &&
+               std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() >=
+                   least;
+    };
     do {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -1703,8 +1749,8 @@ void show_splash(SDL_Window* window, render::Renderer& renderer, const Options& 
         renderer.render_frame(render::Camera{}, render::Light{}, {},
                               glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
         t += 1.0 / 60.0;
-        if (!ready()) SDL_Delay(16);
-    } while (!ready());
+        if (!done()) SDL_Delay(16);
+    } while (!done());
     ui.reset();
     renderer.set_ui({});  // (the game's UI draws from now on)
 }
@@ -1825,7 +1871,8 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
             }
             if (source.screen_defs())
                 screens = std::make_unique<midgard::ui::Screens>(
-                    *ui, [&source](const std::string& c) { return source.ui_image(c); });
+                    *ui, [&source](const std::string& c) { return source.ui_image(c); },
+                    [&source](const std::string& f) { return source.ui_fonts(f); });
             if (opt.ui_test && !midgard::ui::open_test_screen(*ui))
                 warn("The UI test screen didn't open\n");
         } catch (const std::exception& e) {

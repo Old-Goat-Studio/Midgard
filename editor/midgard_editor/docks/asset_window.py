@@ -173,7 +173,9 @@ class ImportDialog(QDialog):
         self.asset: lib.Asset | None = None
         self.imported: lib.ImportResult | None = None
         self.last_report = ""
-        layout = QVBoxLayout(self)
+        outer = QHBoxLayout(self)
+        layout = QVBoxLayout()
+        outer.addLayout(layout, 1)
         layout.addWidget(QLabel("Files (copied into the library: the originals stay where "
                                 "they are)"))
         self.sources = QListWidget()
@@ -188,8 +190,23 @@ class ImportDialog(QDialog):
         clear = QPushButton("Clear")
         clear.clicked.connect(self.sources.clear)
         clear.clicked.connect(self.refresh_pictures)
+        clear.clicked.connect(self.refresh_preview)
         row.addWidget(clear)
         layout.addLayout(row)
+        # What the files hold, each seen or heard before anything is imported.
+        side = QVBoxLayout()
+        outer.addLayout(side)
+        self.preview_label = QLabel("Preview: choose a file to see or play it")
+        side.addWidget(self.preview_label)
+        self.preview_list = QListWidget()
+        self.preview_list.setIconSize(QSize(32, 32))
+        self.preview_list.currentRowChanged.connect(self._preview_chosen)
+        side.addWidget(self.preview_list, 1)
+        self.player = AssetPlayer()
+        self.player.listed_outside = True
+        side.addWidget(self.player)
+        self._scratch = None  # (a zip's files, unpacked to be shown)
+        self._previewed: list[tuple[str, Path]] = []
         self.details = AssetDetailsForm(type_)
         layout.addWidget(self.details)
         # A texture set: each picture (by its own name) and its role; saved <name>_<role>.
@@ -210,7 +227,59 @@ class ImportDialog(QDialog):
         buttons.accepted.connect(lambda: self.do_import())
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self.resize(520, 560)
+        self.resize(960, 600)
+
+    def refresh_preview(self) -> None:
+        """The files to preview: everything the sources hold that can be shown (a zip's
+        unpacked to a scratch folder, kept until the dialog closes)."""
+        import tempfile
+        self.player.release()
+        if self._scratch is not None:
+            self._scratch.cleanup()
+            self._scratch = None
+        found: list[tuple[str, Path]] = []
+        if self.sources.count():
+            self._scratch = tempfile.TemporaryDirectory(prefix="midgard_preview_")
+            sources = self.source_paths()
+            for source in sources:  # (several: each file under its source's name)
+                try:
+                    gathered = lib._gathered([source], Path(self._scratch.name))
+                except (lib.LibraryError, OSError):
+                    continue
+                found += [(f"{source.name}/{rel}" if len(sources) > 1 else rel, p)
+                          for p, rel in gathered if file_kind(p)]
+        found.sort(key=lambda f: f[0].lower())
+        self._previewed = found[:PREVIEW_MOST]
+        self.preview_list.blockSignals(True)
+        self.preview_list.clear()
+        for rel, path in self._previewed:
+            item = QListWidgetItem(rel)
+            if file_kind(path) == "picture":
+                icon = small_icon(path)
+                if icon is not None:
+                    item.setIcon(icon)
+            self.preview_list.addItem(item)
+        self.preview_list.blockSignals(False)
+        more = len(found) - len(self._previewed)
+        self.preview_label.setText(
+            "Preview: nothing in these can be shown" if self.sources.count() and not found
+            else f"Preview ({len(found)} files; the first {PREVIEW_MOST}): choose one"
+            if more > 0 else "Preview: choose a file to see or play it")
+        self.player.show_files(self._previewed)
+        if self._previewed:
+            self.preview_list.setCurrentRow(0)
+
+    def _preview_chosen(self, row: int) -> None:
+        if 0 <= row < len(self._previewed):
+            self.player.choose_file(self._previewed[row][1])
+
+    def done(self, result: int) -> None:
+        self.player.drop()
+        self.player.release()
+        if self._scratch is not None:
+            self._scratch.cleanup()
+            self._scratch = None
+        super().done(result)
 
     def refresh_pictures(self) -> None:
         """The pictures to give roles to (a texture import's), each with its guessed role."""
@@ -256,6 +325,7 @@ class ImportDialog(QDialog):
             stem = Path(paths[0]).stem.replace("_", " ").replace("-", " ").strip()
             self.details.name.setText(stem[:1].upper() + stem[1:])
         self.refresh_pictures()
+        self.refresh_preview()
 
     def _add_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Files to import")
@@ -451,6 +521,33 @@ def model_bounds(glb: bytes) -> tuple[list[float], list[float]] | None:
     return (lo, hi) if lo[0] != float("inf") else None
 
 
+def file_kind(path: Path) -> str:
+    """How a file is shown: "model", "sound", "font", "picture" or "" (it can't be)."""
+    ext = Path(path).suffix.lower()
+    if ext in lib.MODEL_SUFFIXES:
+        return "model"
+    if ext in lib.AUDIO:
+        return "sound"
+    if ext in (".ttf", ".otf"):
+        return "font"
+    if ext in (".png", ".jpg", ".jpeg"):
+        return "picture"
+    return ""
+
+
+PREVIEW_MOST = 2000  # (files listed to preview, at most: a huge pack's first ones)
+
+
+def fitted(pixmap: QPixmap) -> QPixmap:
+    """A picture at its actual size (an icon, a button frame), made smaller only when it is
+    bigger than the player; never stretched up."""
+    w, h = PLAYER_SIZE
+    if pixmap.width() <= w and pixmap.height() <= h:
+        return pixmap
+    return pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatio,
+                         Qt.TransformationMode.SmoothTransformation)
+
+
 class AssetPlayer(QWidget):
     """The selected asset, shown or played: a picture; a model turning (a skinned one playing
     its clips) through the engine; a sound; a font's sample."""
@@ -524,6 +621,7 @@ class AssetPlayer(QWidget):
         from .. import textures
         self._preparer = textures.Preparer(self)
         self._preparer.ready.connect(self._textures_ready)
+        self._loose = False  # (showing loose files, not an asset's)
         self.show_asset(None)
 
     # ---- what it shows ----------------------------------------------------------------------
@@ -532,10 +630,27 @@ class AssetPlayer(QWidget):
         the first of them shown."""
         self.stop()
         self.asset = asset
+        self._loose = False
         self.choose.blockSignals(True)
         self.choose.clear()
         for label, kind, path in self.choices(asset):
             self.choose.addItem(label, (kind, path))
+        self.choose.blockSignals(False)
+        self.choose.setVisible(self.choose.count() > 1 and not self.listed_outside)
+        self.show_choice()
+
+    def show_files(self, files: list[tuple[str, Path]]) -> None:
+        """Loose files (what an import holds, before it is made): those that can be shown, by
+        their labels, the first of them shown."""
+        self.stop()
+        self.asset = None
+        self._loose = True
+        self.choose.blockSignals(True)
+        self.choose.clear()
+        for label, path in files:
+            kind = file_kind(path)
+            if kind:
+                self.choose.addItem(label, (kind, path))
         self.choose.blockSignals(False)
         self.choose.setVisible(self.choose.count() > 1 and not self.listed_outside)
         self.show_choice()
@@ -599,8 +714,8 @@ class AssetPlayer(QWidget):
         self.picture.setWordWrap(False)
         self.clip.clear()
         choice = self.choose.currentData()
-        if self.asset is None:
-            self.picture.setText("")
+        if self.asset is None and not (self._loose and choice is not None):
+            self.picture.setText("(nothing here can be shown)" if self._loose else "")
         elif choice is None:
             self.picture.setText("(nothing to show)")
         else:
@@ -674,7 +789,11 @@ class AssetPlayer(QWidget):
         each, for big ones): the window carries on meanwhile."""
         found = self._material_slots()
         if found is None:
-            self.picture.setText("(not in a library)")
+            colour = lib.texture_set(self.asset).get("color")
+            if colour is not None:
+                self._show_picture(colour)
+            else:
+                self.picture.setText("(not in a library)")
             return
         root, slots = found
         waiting = self._preparer.waiting(root, slots.values())
@@ -737,8 +856,7 @@ class AssetPlayer(QWidget):
             self.picture.setText(f"{path.name} can't be shown")
             return
         self.kind = "picture"
-        self.picture.setPixmap(pixmap.scaled(*PLAYER_SIZE, Qt.AspectRatioMode.KeepAspectRatio,
-                                             Qt.TransformationMode.SmoothTransformation))
+        self.picture.setPixmap(fitted(pixmap))
 
     def _show_font(self, path: Path) -> None:
         from PySide6.QtGui import QFont, QFontDatabase
@@ -911,6 +1029,7 @@ class LibraryPicker(QDialog):
         self.setWindowTitle(title)
         self.project = project
         self.chosen: Path | None = None
+        self.chosen_asset: lib.Asset | None = None
         self.choices = lib.files_of(project, types, suffixes)
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
@@ -919,10 +1038,9 @@ class LibraryPicker(QDialog):
         for asset, path in self.choices:
             item = QListWidgetItem(f"{asset.name}  ({path.name})\n{licence_label(asset.licence)}")
             if path.suffix.lower() in (".png", ".jpg", ".jpeg"):
-                pixmap = QPixmap(str(path))
-                if not pixmap.isNull():
-                    item.setIcon(QIcon(pixmap.scaled(THUMB, THUMB,
-                                                     Qt.AspectRatioMode.KeepAspectRatio)))
+                icon = small_icon(path, THUMB)
+                if icon is not None:
+                    item.setIcon(icon)
             self.list.addItem(item)
         self.list.currentRowChanged.connect(self._picked)
         self.list.itemDoubleClicked.connect(lambda _i: self.accept_current())
@@ -954,13 +1072,32 @@ class LibraryPicker(QDialog):
         row = self.list.currentRow()
         if row < 0:
             return
-        self.chosen = self.choices[row][1]
+        self.chosen_asset, self.chosen = self.choices[row]
         self.player.drop()
         self.accept()
 
     def done(self, result: int) -> None:
         self.player.drop()
         super().done(result)
+
+
+_ICONS: dict[tuple[str, int, float], QIcon] = {}
+
+
+def small_icon(path: Path, size: int = 32) -> QIcon | None:
+    """A picture's thumbnail (kept, while the file is unchanged); None: not a picture."""
+    try:
+        key = (str(path), size, Path(path).stat().st_mtime)
+    except OSError:
+        return None
+    if key not in _ICONS:
+        image = QImage(str(path))
+        if image.isNull():
+            return None
+        _ICONS[key] = QIcon(QPixmap.fromImage(image.scaled(
+            size, size, Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation)))
+    return _ICONS[key]
 
 
 MATERIAL_ROW = "\x00material"  # (the files list's row for a texture set's whole material)

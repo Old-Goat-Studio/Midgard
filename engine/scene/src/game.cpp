@@ -240,9 +240,16 @@ CameraSweep Game::camera_sweep() const {
     };
 }
 
+bool Game::frozen() const {
+    if (frozen_) return true;
+    for (const std::string& id : hud_.screens())
+        if (const ScreenDef* s = screen(id); s && s->pauses) return true;
+    return false;
+}
+
 void Game::update(const Actions& actions, float dt) {
     const float real_dt = dt;
-    if (frozen_) dt = 0.0f;  // (a pausing screen: the world stands still)
+    if (frozen()) dt = 0.0f;  // (a pausing screen: the world stands still)
     update_scene_change(dt);
     time_events_ = std::move(skipped_);
     skipped_.clear();

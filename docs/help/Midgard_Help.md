@@ -253,7 +253,9 @@ fonts. It's kept inside the project folder (in `library/`), so it travels with t
 
 **Assets ▸ Import Into Library…** (or **Import** in the library window):
 
-1. Choose files, a folder or a .zip file.
+1. Choose files, a folder or a .zip file. The **Preview** list on the right shows everything
+   in them that can be seen or heard: click one to see a picture, read a font's sample, play a
+   sound or turn a model, before anything is imported.
 2. Choose the type (Textures, Models, Music…), where it goes (a texture's kind, or a sound's
    album), and a name.
 3. Choose the **licence** and fill in who made it (see below).
@@ -353,7 +355,9 @@ In the Master Asset Library program:
 In Midgard:
 
 - **Assets ▸ Add from Master…** (or **Add from Master…** in the library window): find assets,
-  choose them and press **Add to Project**. Those the project already has are greyed.
+  choose them and press **Add to Project**. The asset you choose is shown on the right first (a
+  picture, a font's sample, a sound to play, a model turning). Those the project already has
+  are greyed.
 - An asset copied from the Master says so in its details. When the Master gets a newer
   version, the library window offers **Update from Master**.
 - **Send to Master** gives one of your project's assets to the Master, for your other
@@ -1126,8 +1130,16 @@ On the canvas, **click** an element to choose it, **drag** it to move it, and dr
 square at its **corner** to resize it. Each drag is one step to undo. **Preview** shows the
 screen at a desktop size, or on a phone held sideways or upright (clear of its notch).
 
-**The look.** Text, buttons and check boxes have a **Text size**, **Align** (left, middle or
-right), **Bold** and a **Text colour**. Panels, text and buttons have a **Fill** colour, a
+**The look.** Text, buttons, check boxes and option buttons have a **Font**, a **Text size**,
+**Align** (left, middle or right), **Bold**, **Italic** and a **Text colour**. The fonts are
+Midgard's own (**Inconsolata**, the default, and **OpenDyslexic**) and the TrueType (.ttf) and
+OpenType (.otf) fonts in the **Fonts** section of your Asset Library: import a font family's
+folder there, with its licence (most free fonts are under the SIL Open Font License), and it's
+in the list. A font with bold and italic files uses them for Bold and Italic. The fonts your
+screens use go into the finished game, and are credited like any asset. In the **Font** list
+each of the library's fonts is written in itself; rest the pointer on one for a bigger sample.
+
+Panels, text and buttons have a **Fill** colour, a
 **Border** colour and width, and **Corners** (how round). Every colour can be see-through (its
 opacity), and **Default** goes back to Midgard's usual look.
 
@@ -1135,7 +1147,9 @@ opacity), and **Default** goes back to Midgard's usual look.
 holds the PNG and JPEG pictures in the **GUI** section of your Asset Library (**Assets ▸ Asset
 Library**: import button frames, panels, ticks and logos there, with their licence). Each picture
 is stretched to fill its place, so a frame keeps its look at any size. **None** takes a picture
-away. What each has:
+away. Each picture in a list has a small thumbnail; rest the pointer on one to see it bigger,
+with its size in pixels (the Project Page's Crosshair and Menu pointer lists work the same
+way). What each has:
 
 | | Pictures |
 |---|---|
@@ -1164,8 +1178,8 @@ game**, or **Tell scripts only**. Your scripts hear every click whatever it does
 
 - **Takes the player's input**: a menu. While it shows, the game's controls wait and the mouse
   is free. Untick it for something to play under, like a score panel.
-- **Pauses the game**: everything stands still while it shows (a pause menu). Scripts still hear
-  its buttons.
+- **Pauses the game**: everything stands still while it shows (a pause menu), including what
+  scripts move: their `on_update` isn't called until it closes. Scripts still hear its buttons.
 
 It also has a **Background** colour over the whole game behind it (a see-through dark one dims
 the game).
@@ -1173,6 +1187,12 @@ the game).
 **Ready-made screens.** **New** offers a **Blank menu**, or four screens that work as they
 are, with no scripting:
 
+- **Splash screen**: shows while the game loads, before anything else: your game's name and
+  "Loading…" over a dark background, to dress up with your own words, fonts and pictures. With
+  the screen chosen (no element), **Shows at least** says how many seconds it stays up however
+  quickly the game loads (0: only while it loads), so a quick load doesn't flash it past. (Its
+  buttons don't work: nothing has loaded to answer them.) Without a splash screen, the game's
+  name shows while it loads.
 - **Title screen**: shows when the game starts, the game paused behind it. **Play** closes it,
   **Settings** opens the settings, **Quit** ends the game.
 - **Pause menu**: **Esc** (or a controller's **Start**, or a phone's **Back**) opens it while
@@ -1202,8 +1222,6 @@ clicked, waits for a new one. **Respawn the player** is one more thing a button 
 **The game's own screen settings** are on the **Project Page** (Window ▸ Project Page), under
 **Game screens**, because they're the whole game's:
 
-- **Splash screen**: a picture shown while the game loads (a big game can take a while). It's
-  fitted to the screen, over black. Without one, the game's name shows.
 - **Crosshair**: the aiming mark's picture, in the middle of the screen (without one, a small
   white dot), its **Crosshair size** in dp, and **Crosshair shows**: **In first person** (as
   it starts), **In every view**, or **Never**. Scripts can still show or hide it
@@ -1570,7 +1588,7 @@ Positions are in metres as `(x, y, z)`; Y is up. Angles are in degrees. Colours 
 | Function | When it's called |
 |---|---|
 | `on_start(entity)` | Once, when the script starts. |
-| `on_update(entity, dt)` | Every frame; `dt` is the seconds since the last one. |
+| `on_update(entity, dt)` | Every frame; `dt` is the seconds since the last one. Not while a screen that pauses the game shows. |
 | `on_trigger_enter(entity, other)` | The player walked into this entity's trigger. |
 | `on_trigger_exit(entity, other)` | The player left it. |
 | `on_reload(entity)` | You saved the script while the game was running. |

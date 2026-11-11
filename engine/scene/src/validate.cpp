@@ -278,6 +278,17 @@ ValidationReport validate_package(const std::filesystem::path& dir) {
                     if (bytes.size() < 20 || bytes.size() % 4 != 0 ||
                         std::memcmp(bytes.data(), magic, 4) != 0)
                         throw AssetError("not a compiled shader (SPIR-V)");
+                } else if (c.path.starts_with("ui/") &&
+                           (c.path.ends_with(".ttf") || c.path.ends_with(".otf") ||
+                            c.path.ends_with(".TTF") || c.path.ends_with(".OTF"))) {
+                    // A screen's font (milestone 6.0): TrueType or OpenType, as the UI reads it.
+                    static const uint8_t ttf[4] = {0x00, 0x01, 0x00, 0x00};
+                    static const uint8_t otf[4] = {'O', 'T', 'T', 'O'};
+                    static const uint8_t tru[4] = {'t', 'r', 'u', 'e'};
+                    if (bytes.size() < 12 || (std::memcmp(bytes.data(), ttf, 4) != 0 &&
+                                              std::memcmp(bytes.data(), otf, 4) != 0 &&
+                                              std::memcmp(bytes.data(), tru, 4) != 0))
+                        throw AssetError("not a TrueType or OpenType font");
                 } else if (c.path.starts_with("ui/")) {
                     // A screen's picture (milestone 6.0): PNG or JPEG, as the UI reads it.
                     static const uint8_t png[4] = {0x89, 'P', 'N', 'G'};

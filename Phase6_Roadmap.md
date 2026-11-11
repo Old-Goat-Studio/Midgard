@@ -109,6 +109,27 @@ stamina bars, a score a script raises, a pick-up notification and a compass that
 walking round a planet. They pause, change the volume and a key binding, die and respawn. 📱 All
 of this works on the phone, by touch.
 
+#### 6.0b Terrain textures · M
+Added at the user's request (Nov 2026), before 6.1: picture textures on the terrain, which 5.9's
+procedural ground (colours by slope, height, biome and season) never had. Each ground layer
+(grass, dry grass, sand, rock, snow, and each biome's ground) can take a **texture set** from the
+Asset Library's Textures section (colour, normal and roughness maps) and a tile size in metres;
+a layer without one keeps the procedural colour. The textures blend exactly where the colours
+blend now (slope, height above the sea, biome, the paint brushes), with snow cover, autumn and
+dry-grass tints laid over them. On every world shape, by **triplanar** sampling (no single "up"
+to lay them from on a planet or inside a cylinder; no stretching on slopes, no seams at the
+cube-sphere's faces); sampled at two scales so they're detailed up close without visible repeats
+far off; a cheaper path on phones. Steps:
+1. ground layers take a texture set (the World Type editor's Climate and Biomes; cooked as
+   textures are); 2. the renderer samples them (texture arrays, triplanar, blended as the
+   colours are); 3. detail and distance (two scales, fading the repeat; the phone tier);
+4. painting a texture (a brush that paints a chosen layer, stored as terrain stamps);
+5. exit.
+**Exit:** a world type's grass, rock and snow given texture sets shows them on a bounded area, a
+planet, a cylinder and a hollow world, blended by slope and height with no seams or stretching,
+snow lying over them in winter; a path painted across the grass shows its texture; picture tests
+on each shape; it runs smoothly on the phone.
+
 #### 6.1 Input mapping · M
 The Input editor (actions and their keys, buttons and touch controls), contexts (walking, flying,
 menus, vehicles), the touch layout editor, the player's rebinding screen, and prompts that show

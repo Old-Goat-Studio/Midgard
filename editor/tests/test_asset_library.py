@@ -3,6 +3,7 @@
 asset.json and LICENSE.md; only CC0 and CC BY (credited) allowed; files checked against what was
 imported; credits; folders by type, kind and album."""
 import json
+from pathlib import Path
 
 import pytest
 
@@ -326,3 +327,51 @@ def test_organizing_keeps_licence_md_and_everything_else_in_step(project):
     lt.new_collection(root, "textures", "Sci-fi")
     lt.move(root, [again.id], "textures/sci_fi", update_asset=lib.update_fields)
     assert [a.id for a in lib.scan(project)[0]] == ["textures/sci_fi/old_plates"]
+
+
+def _picture(path: Path, colour: str) -> None:
+    from PySide6.QtGui import QColor, QImage
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = QImage(8, 8, QImage.Format.Format_RGBA8888)
+    image.fill(QColor(colour))
+    assert image.save(str(path))
+
+
+def test_a_folder_with_folders_keeps_its_tree(project, tmp_path, qapp):
+    """Imported, a folder whose files are in more than one folder keeps its tree: an asset for
+    each folder holding pictures, named after it, in folders named as the originals (spaces and
+    capitals kept), each with the licences of its folder and those above it."""
+    pack = tmp_path / "Kenney Game Assets"
+    _picture(pack / "UI Pack" / "PNG" / "blue_button00.png", "blue")
+    _picture(pack / "UI Pack" / "PNG" / "green_button00.png", "green")
+    _picture(pack / "Crosshairs" / "Black" / "crosshair001.png", "black")
+    _picture(pack / "Crosshairs" / "White" / "crosshair001.png", "white")
+    (pack / "License.txt").write_text("CC0", "utf-8")
+    (pack / "Crosshairs" / "Readme.txt").write_text("Crosshairs", "utf-8")
+    result = lib.import_assets(project, [pack], "gui", "Kenney Game Assets",
+                              licence="CC0-1.0")
+    assert result.refused == []
+    names = sorted(a.name for a in result.assets)
+    assert names == ["Black", "PNG", "White"]
+    gui = lib.library_dir(project) / "gui"
+    png = gui / "Kenney Game Assets" / "UI Pack" / "PNG"
+    assert (png / "blue_button00.png").is_file() and (png / "green_button00.png").is_file()
+    assert (png / "License.txt").is_file() and not (png / "Readme.txt").exists()
+    black = gui / "Kenney Game Assets" / "Crosshairs" / "Black"
+    assert {p.name for p in black.iterdir()} >= {"crosshair001.png", "License.txt",
+                                                 "Readme.txt"}
+    by_name = {a.name: a for a in result.assets}
+    assert by_name["White"].category == "Kenney Game Assets/Crosshairs"
+    # Found again by a scan, each its own asset.
+    assets, _problems = lib.scan(project)
+    assert sum(1 for a in assets if a.type == "gui") == 3
+    # A folder whose files are all in one folder: one asset, as before.
+    single = tmp_path / "Logos"
+    _picture(single / "logo.png", "red")
+    _picture(single / "logo_small.png", "orange")
+    one = lib.import_assets(project, [single], "gui", "Logos")
+    assert [a.name for a in one.assets] == ["Logos"]
+    # Models keep their textures with them (not split by folder).
+    assert lib.tree_name([pack]) == "Kenney Game Assets"
+    assert lib.tree_name([pack, single]) == ""
+    assert lib.folder_name('a<b>:c?') == "a_b__c_"

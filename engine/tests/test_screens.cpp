@@ -11,6 +11,7 @@
 
 #include "midgard/render/renderer.h"
 #include "midgard/screen.h"
+#include "midgard/ui/fonts.h"
 #include "midgard/ui/screens.h"
 #include "midgard/ui/ui.h"
 
@@ -358,4 +359,42 @@ TEST_CASE("screens: pictures for each state; options in groups; disabled control
     CHECK(chose != events.end());
     CHECK(doc->GetElementById("el-easy-box")->HasAttribute("checked"));
     CHECK_FALSE(doc->GetElementById("el-hard-box")->HasAttribute("checked"));
+}
+
+TEST_CASE("screens: text in a font from the Asset Library, loaded as the screen opens") {
+    auto renderer = offscreen(640, 480);
+    if (!renderer) return;
+    ui::Options o;
+    o.width = 640;
+    o.height = 480;
+    ui::Ui u(*renderer, o);
+    const midgard::ScreenDef s = screen_from_json("f", "Fonts", R"({"elements": [
+        {"id": "plain", "kind": "text", "text": "Wide words here and there", "y": 10, "w": 120,
+         "h": 10},
+        {"id": "fancy", "kind": "text", "text": "Wide words here and there", "y": 200, "w": 120,
+         "h": 10,
+         "style": {"font": "ui:library/fonts/dyslexic"}}]})");
+    std::vector<std::string> asked;
+    ui::Screens screens(u, {}, [&](const std::string& folder) {
+        asked.push_back(folder);
+        const auto font = midgard::ui::fonts::opendyslexic_regular();
+        return std::vector<std::pair<std::string, std::vector<uint8_t>>>{
+            {"Dyslexic-Regular.otf", std::vector<uint8_t>(font.begin(), font.end())}};
+    });
+    screens.sync({s}, {"f"}, {}, {});
+    u.update(0.0);
+    REQUIRE(screens.document("f"));
+    CHECK(asked == std::vector<std::string>{"ui:library/fonts/dyslexic"});
+    Rml::Element* plain = screens.document("f")->GetElementById("el-plain");
+    Rml::Element* fancy = screens.document("f")->GetElementById("el-fancy");
+    CHECK(fancy->GetComputedValues().font_family() ==
+          midgard::screen_font_family("ui:library/fonts/dyslexic"));
+    (void)plain;
+    // The family has a face now (an unknown one has none).
+    Rml::FontEngineInterface* engine = Rml::GetFontEngineInterface();
+    CHECK(engine->GetFontFaceHandle(midgard::screen_font_family("ui:library/fonts/dyslexic"),
+                                    Rml::Style::FontStyle::Normal, Rml::Style::FontWeight::Normal,
+                                    16) != 0);
+    CHECK(engine->GetFontFaceHandle("font_not_loaded", Rml::Style::FontStyle::Normal,
+                                    Rml::Style::FontWeight::Normal, 16) == 0);
 }

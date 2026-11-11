@@ -47,7 +47,8 @@ ANCHORS = {"top_left": "Top left", "top": "Top", "top_right": "Top right", "left
 ACTIONS = {"none": "Nothing", "close": "Close this screen", "open": "Open a screen…",
            "quit": "Quit the game", "respawn": "Respawn the player", "event": "Tell scripts only"}
 # What the game uses a screen for by itself (engine/core/include/midgard/screen.h).
-ROLES = {"": "Only when shown", "title": "Title screen (when the game starts)",
+ROLES = {"": "Only when shown", "splash": "Splash screen (while the game loads)",
+         "title": "Title screen (when the game starts)",
          "pause": "Pause menu (Esc, Start, a phone's Back)", "settings": "Settings",
          "game_over": "Game over (when a stat runs out)"}
 BUSES = {"master": "Volume (everything)", "music": "Music volume", "effects": "Effects volume",
@@ -74,6 +75,16 @@ def _panel(h: float) -> dict:
 # The ready-made screens (step 7): what each is called, and the screen (its Settings button
 # opens "{settings}", the settings screen's id).
 TEMPLATES: dict[str, tuple[str, dict]] = {
+    "splash": ("Splash", {
+        "role": "splash", "modal": False, "seconds": 2, "background": [0.02, 0.03, 0.06, 1.0],
+        "elements": [
+            {"id": "title", "kind": "text", "anchor": "center", "x": 0, "y": -20, "w": 600,
+             "h": 70, "text": "My Game",
+             "style": {"font_size": 48, "align": "center", "bold": True,
+                       "color": [1.0, 0.82, 0.48, 1.0]}},
+            {"id": "loading", "kind": "text", "anchor": "bottom", "x": 0, "y": -40, "w": 300,
+             "h": 30, "text": "Loading…", "style": {"font_size": 18, "align": "center",
+                                                   "color": [0.8, 0.84, 0.9, 1.0]}}]}),
     "title": ("Title", {
         "role": "title", "modal": True, "pauses": True, "background": [0.03, 0.04, 0.08, 0.85],
         "elements": [_panel(320), _title("My Game", [1.0, 0.82, 0.48, 1.0]),
@@ -213,6 +224,56 @@ def gui_images(project: Project) -> dict[str, str]:
             for asset, path in asset_library.files_of(project, ("gui",), IMAGE_SUFFIXES)}
 
 
+FONT_SUFFIXES = (".ttf", ".otf")  # (what the game's UI reads)
+BUILT_IN_FONTS = {"": "Inconsolata (the default)", "OpenDyslexic": "OpenDyslexic"}
+
+
+def gui_fonts(project: Project) -> dict[str, str]:
+    """The Asset Library's fonts (TrueType or OpenType), by "ui:" and their folder: names."""
+    from . import asset_library
+    found: dict[str, str] = {}
+    root = Path(project.root).resolve()
+    for asset, _path in asset_library.files_of(project, ("fonts",), FONT_SUFFIXES):
+        found[IMAGE_PREFIX + asset.folder.resolve().relative_to(root).as_posix()] = asset.name
+    return found
+
+
+def font_folder(project: Project, font: str) -> Path | None:
+    """The folder a "ui:" font names (None: not one, outside the project, or not there)."""
+    if not font.startswith(IMAGE_PREFIX):
+        return None
+    root = Path(project.root).resolve()
+    folder = (root / font[len(IMAGE_PREFIX):]).resolve()
+    return folder if folder.is_relative_to(root) and folder.is_dir() else None
+
+
+def font_files(project: Project, font: str) -> list[Path]:
+    folder = font_folder(project, font)
+    return sorted(p for p in folder.rglob("*") if p.suffix.lower() in FONT_SUFFIXES) \
+        if folder is not None else []
+
+
+def fonts_of(screen: dict[str, Any]) -> list[str]:
+    """The Asset Library fonts a screen's text uses (each once)."""
+    out: list[str] = []
+    for e in screen.get("elements", []) if isinstance(screen, dict) else []:
+        font = e.get("style", {}).get("font", "") if isinstance(e, dict) and \
+            isinstance(e.get("style"), dict) else ""
+        if isinstance(font, str) and font.startswith(IMAGE_PREFIX) and font not in out:
+            out.append(font)
+    return out
+
+
+def font_folders(project: Project, screens: list[dict[str, Any]]) -> dict[str, str]:
+    """The fonts some screens use, by "ui:" folder: the folders (those that are there)."""
+    out = {}
+    for s in screens:
+        for font in fonts_of(s.get("screen", s)):
+            if (folder := font_folder(project, font)) is not None:
+                out[font] = str(folder)
+    return out
+
+
 def images_of(screen: dict[str, Any]) -> list[str]:
     """The pictures a screen shows (each once)."""
     out: list[str] = []
@@ -248,7 +309,7 @@ def image_files(project: Project, screens: list[dict[str, Any]]) -> dict[str, st
 #    "crosshair_size": 32, "pointer": "ui:...", "menu_music": "<playlist id>"}
 SETTINGS_KEY = "game.settings"
 CROSSHAIR_VIEWS = {"first": "In first person", "all": "In every view", "none": "Never"}
-SETTING_PICTURES = ("splash", "crosshair", "pointer")
+SETTING_PICTURES = ("crosshair", "pointer")
 
 
 def game_settings(project: Project) -> dict[str, Any]:
@@ -280,7 +341,7 @@ def settings_problems(project: Project) -> list[str]:
     """The game settings' pictures that aren't there, and a menu music playlist that's gone."""
     from . import music
     settings = game_settings(project)
-    names = {"splash": "splash screen", "crosshair": "crosshair", "pointer": "menu pointer"}
+    names = {"crosshair": "crosshair", "pointer": "menu pointer"}
     found = []
     for key in SETTING_PICTURES:
         image = settings.get(key, "")
@@ -446,6 +507,11 @@ def problems_of(screen: Any, screen_ids: set[str] | None = None) -> list[str]:
                 elif not isinstance(picture, str) or not picture.startswith(IMAGE_PREFIX):
                     found.append(f"{name}'s '{state}' picture isn't one from the Asset "
                                  "Library's GUI section")
+        font = e.get("style", {}).get("font", "") if isinstance(e.get("style"), dict) else ""
+        if font and font not in BUILT_IN_FONTS and (not isinstance(font, str) or
+                                                    not font.startswith(IMAGE_PREFIX)):
+            found.append(f"{name} has the font '{font}', which isn't Midgard's or the Asset "
+                         "Library's")
         if "enabled" in e and not isinstance(e["enabled"], bool):
             found.append(f"{name}'s 'enabled' isn't true or false")
         binds = e.get("binds", "")
@@ -467,6 +533,10 @@ def problems(project: Project) -> list[str]:
     found = [f"Screen '{s['name']}' {p}." for s in screens
              for p in problems_of(s["screen"], ids)]
     for s in screens:
+        for font in fonts_of(s["screen"]):
+            if not font_files(project, font):
+                found.append(f"Screen '{s['name']}' uses the font '{font[3:]}', which isn't in "
+                             "the project; its text shows in the default font.")
         for image in images_of(s["screen"]):
             if image.startswith(IMAGE_PREFIX) and image_file(project, image) is None:
                 found.append(f"Screen '{s['name']}' shows the picture "

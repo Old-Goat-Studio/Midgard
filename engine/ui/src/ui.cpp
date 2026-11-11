@@ -6,6 +6,7 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <map>
 #include <unordered_map>
@@ -396,6 +397,7 @@ struct Ui::Impl {
     std::map<Rml::Input::KeyIdentifier, double> held;
     Rml::Input::KeyIdentifier stick_x = Rml::Input::KI_UNKNOWN, stick_y = Rml::Input::KI_UNKNOWN;
     int64_t primary_touch = -1;
+    std::deque<std::vector<uint8_t>> fonts;  // (font faces read from memory: kept while used)
 
     Impl(render::Renderer& r, Options o) : renderer(r), options(std::move(o)), bridge(r) {}
 
@@ -722,6 +724,15 @@ bool Ui::set_image_file(const std::string& name, const std::vector<uint8_t>& enc
     std::vector<uint8_t> rgba(pixels, pixels + size_t(w) * size_t(h) * 4);
     stbi_image_free(pixels);
     return set_image(name, uint32_t(w), uint32_t(h), rgba);
+}
+
+bool Ui::add_font(const std::string& family, std::vector<uint8_t> bytes, bool italic) {
+    if (bytes.empty()) return false;
+    impl_->fonts.push_back(std::move(bytes));
+    const std::vector<uint8_t>& kept = impl_->fonts.back();
+    return Rml::LoadFontFace({reinterpret_cast<const Rml::byte*>(kept.data()), kept.size()}, family,
+                             italic ? Rml::Style::FontStyle::Italic : Rml::Style::FontStyle::Normal,
+                             Rml::Style::FontWeight::Auto, false);
 }
 
 bool Ui::has_image(const std::string& name) const {
