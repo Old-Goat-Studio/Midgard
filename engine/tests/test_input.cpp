@@ -87,6 +87,73 @@ TEST_CASE("bindings load from a package database, with defaults for old packages
     fs::remove_all(dir, ec);
 }
 
+TEST_CASE("contexts: an action counts only in its own, and one key can do two things") {
+    InputMap map = InputMap::defaults();
+    map.add({"honk", "keyboard", "H", 1.0f});
+    map.add({"brake", "keyboard", "Space", 1.0f});  // (Space jumps on foot)
+    map.set_context("honk", "vehicle");
+    map.set_context("brake", "vehicle");
+    map.set_context("jump", "on_foot");
+    Actions a(map);
+    a.set("keyboard", "H", 1.0f);
+    a.set("keyboard", "Space", 1.0f);
+    CHECK(a.down("honk"));  // (no context chosen yet: everything counts)
+    a.set_context("on_foot");
+    CHECK_FALSE(a.down("honk"));  // (a vehicle's)
+    CHECK(a.down("jump"));
+    CHECK_FALSE(a.down("brake"));
+    CHECK(a.axis("move_y") == 0.0f);  // (always: nothing pressed)
+    a.set_context("vehicle");
+    CHECK(a.down("honk"));
+    CHECK(a.down("brake"));
+    CHECK_FALSE(a.down("jump"));  // Space brakes in the car
+    a.begin_frame();
+    CHECK_FALSE(a.pressed("brake"));  // (held across the frame)
+    // Midgard's own: always, but going down, which is for flying.
+    CHECK(InputMap::defaults().context("move_x") == "always");
+    CHECK(InputMap::defaults().context("descend") == "flying");
+}
+
+TEST_CASE("contexts load from schema 23 on; before, every action counts always") {
+    std::random_device rd;
+    const fs::path dir = fs::temp_directory_path() / ("midgard_ctx_" + std::to_string(rd()));
+    fs::create_directories(dir);
+    const auto make = [&](const char* name, int version) {
+        const fs::path file = dir / name;
+        sqlite3* db = nullptr;
+        const std::u8string u8 = file.u8string();
+        sqlite3_open(std::string(u8.begin(), u8.end()).c_str(), &db);
+        std::vector<fs::path> migrations;
+        for (const auto& e : fs::directory_iterator(fs::path(MIDGARD_SCHEMA_DIR) / "migrations"))
+            migrations.push_back(e.path());
+        std::sort(migrations.begin(), migrations.end());
+        for (const auto& m : migrations) {
+            if (std::stoi(m.filename().string().substr(0, 4)) > version) continue;
+            std::ifstream in(m);
+            std::stringstream sql;
+            sql << in.rdbuf();
+            REQUIRE(sqlite3_exec(db, sql.str().c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+        }
+        sqlite3_exec(db, ("PRAGMA user_version = " + std::to_string(version)).c_str(), nullptr,
+                     nullptr, nullptr);
+        sqlite3_exec(db,
+                     "INSERT INTO input_action (id, kind, context) VALUES ('honk', 'button', "
+                     "'vehicle'); INSERT INTO input_binding VALUES ('honk', 'keyboard', 'H', 1)",
+                     nullptr, nullptr, nullptr);
+        sqlite3_close(db);
+        return file;
+    };
+    const InputMap now = InputMap::load(make("now.db", 23));
+    CHECK(now.context("honk") == "vehicle");
+    CHECK(now.context("jump") == "always");
+    CHECK(now.context("descend") == "flying");
+    const InputMap old = InputMap::load(make("old.db", 22));
+    CHECK(old.context("honk") == "always");  // (before contexts were kept to)
+    CHECK(old.context("move_x") == "always");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+}
+
 namespace {
 
 midgard::Scene player_scene() {

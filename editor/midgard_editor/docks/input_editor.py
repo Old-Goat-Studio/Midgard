@@ -126,6 +126,15 @@ class InputPanel(QWidget):
                              "(moving forward and back: W one way, S the other)")
         self.kind.activated.connect(lambda _i: self._set("kind", self.kind.currentData()))
         form.addRow("Kind", self.kind)
+        self.context = QComboBox()
+        for key, label in ia.CONTEXTS.items():
+            self.context.addItem(label, key)
+        self.context.setToolTip("When it counts: always, or only on foot, flying, in menus or in "
+                                "vehicles (a script says when: midgard.set_input_context). One "
+                                "key can do different things in different contexts")
+        self.context.activated.connect(lambda _i: self._set("context",
+                                                            self.context.currentData()))
+        form.addRow("Counts", self.context)
         self.rebindable = QCheckBox("Players can change its keys and buttons")
         self.rebindable.toggled.connect(lambda on: self._set("rebindable", on))
         form.addRow("", self.rebindable)
@@ -228,6 +237,7 @@ class InputPanel(QWidget):
             self.id_label.setText(f"<code>midgard.{read}(\"{a['id']}\")</code>")
             self.kind.setCurrentIndex(max(0, self.kind.findData(a["kind"])))
             self.kind.setEnabled(a["id"] not in ia.BUILT_IN)
+            self.context.setCurrentIndex(max(0, self.context.findData(a["context"])))
             self.rebindable.setChecked(a["rebindable"])
             self._show_bindings(a)
             found = ia.problems_of(a, self.actions)
@@ -300,7 +310,7 @@ class InputPanel(QWidget):
             for b in new["bindings"]:
                 if (b["device"], b["control"]) not in ia.RATES:
                     b["scale"] = 1.0
-        label = {"name": "Rename", "kind": "Change the kind of",
+        label = {"name": "Rename", "kind": "Change the kind of", "context": "Change when",
                  "rebindable": "Change rebinding of"}[key]
         self._push(new, f"{label} action '{a['name']}'", merge)
 
@@ -372,7 +382,7 @@ class InputPanel(QWidget):
         if self.project is None or not ia.has_tables(self.project):
             return None
         action = {"id": ia.new_id(self.project, name), "name": name, "kind": "button",
-                  "context": "on_foot", "rebindable": True, "bindings": []}
+                  "context": "always", "rebindable": True, "bindings": []}
         self._filling = True
         try:
             self.project.undo_stack.push(ia.SetActionCommand(

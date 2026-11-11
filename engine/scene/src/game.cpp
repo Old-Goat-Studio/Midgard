@@ -240,6 +240,17 @@ CameraSweep Game::camera_sweep() const {
     };
 }
 
+std::string Game::input_context() const {
+    if (!script_context_.empty()) return script_context_;
+    for (const std::string& id : hud_.screens())
+        if (const ScreenDef* s = screen(id); s && s->modal) return "menu";
+    const entt::entity p = camera_ ? camera_->player() : entt::entity(entt::null);
+    if (p != entt::null && scene_.registry.valid(p))
+        if (const Player* player = scene_.registry.try_get<Player>(p); player && player->fly)
+            return "flying";
+    return "on_foot";
+}
+
 bool Game::frozen() const {
     if (frozen_) return true;
     for (const std::string& id : hud_.screens())

@@ -159,3 +159,72 @@ def test_a_script_reads_the_games_own_action(project, panel, tmp_path):
     write_script(project, "horn", HONK_SCRIPT.replace('"honk"', '"hoot"'))
     warnings = cook(project, tmp_path / "pkg2").warnings
     assert any("reads action 'hoot'" in w for w in warnings)
+
+
+def test_contexts_built_ins_and_clashes(project, panel):
+    actions = {a["id"]: a for a in ia.load_all(project)}
+    assert actions["jump"]["context"] == "always"
+    assert actions["descend"]["context"] == "flying"
+    panel.new_action("Brake")
+    assert ia.load(project, "brake")["context"] == "always"
+    panel.add_binding("keyboard", "B")
+    panel.context.setCurrentIndex(panel.context.findData("vehicle"))
+    panel.context.activated.emit(panel.context.currentIndex())
+    assert ia.load(project, "brake")["context"] == "vehicle"
+    # Left Ctrl goes down while flying; braking in a car can have it too (never both at once).
+    panel.add_binding("keyboard", "Left Ctrl")
+    assert ia.problems(project) == []
+    # But not Space: jumping counts always.
+    panel.add_binding("keyboard", "Space")
+    assert any("'Jump' and 'Brake' both use Space" in p for p in ia.problems(project))
+    assert ia.overlap("on_foot", "always") and not ia.overlap("on_foot", "flying")
+
+
+CAR_SCRIPT = """
+import midgard
+
+s = {"frame": 0}
+
+
+def on_update(entity, dt):
+    s["frame"] += 1
+    f = s["frame"]
+    if f == 5:
+        print("context", midgard.input_context())
+    if f == 30:
+        midgard.set_input_context("vehicle")
+        print("context", midgard.input_context())
+    if f == 60:
+        midgard.set_input_context(None)
+        print("context", midgard.input_context())
+    if f == 61:
+        try:
+            midgard.set_input_context("submarine")
+        except ValueError:
+            print("refused")
+    if midgard.pressed("honk"):
+        print("honk at", f)
+    if midgard.pressed("jump"):
+        print("jump at", f)
+"""
+
+
+@needs_scripting
+def test_a_script_chooses_the_vehicle_context(project, panel, tmp_path):
+    panel.new_action("Honk")
+    panel.add_binding("keyboard", "H")
+    panel.context.setCurrentIndex(panel.context.findData("vehicle"))
+    panel.context.activated.emit(panel.context.currentIndex())
+    project.put_entity(Entity("e000094", "Car", None, {
+        "transform": {}, "script": {"module": "car"}}))
+    write_script(project, "car", CAR_SCRIPT)
+    package = cook(project, tmp_path / "pkg").out_dir
+    # H held on foot (frames 10 to 20), in the car (40 to 50), on foot again (70 to 80).
+    _dump, run = simulate(package, 90, "--hold", "H:10:20", "--hold", "H:40:50",
+                          "--hold", "H:70:80")
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.splitlines()
+    assert lines.count("context on_foot") == 2 and "context vehicle" in lines
+    honks = [line for line in lines if line.startswith("honk at")]
+    assert len(honks) == 1 and 40 <= int(honks[0].split()[-1]) <= 42  # (only in the car)
+    assert "refused" in lines

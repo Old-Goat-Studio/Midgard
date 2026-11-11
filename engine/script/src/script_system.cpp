@@ -1563,11 +1563,29 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         },
         py::arg("name"), "True in the frame an input action goes down.");
     m.def(
+        "input_context", [] { return current_game().input_context(); },
+        "The input context now: 'on_foot', 'flying', 'menu', 'vehicle' (actions of others "
+        "read nothing).");
+    m.def(
+        "set_input_context",
+        [](std::optional<std::string> context) {
+            if (context && !context->empty() &&
+                std::find(std::begin(kContexts), std::end(kContexts), *context) ==
+                    std::end(kContexts))
+                throw py::value_error("no input context '" + *context +
+                                      "' (on_foot, flying, menu or vehicle)");
+            current_game().set_input_context(context.value_or(""));
+        },
+        py::arg("context"),
+        "Chooses the input context ('vehicle' in a car, say); None: the game's own again.");
+    m.def(
         "sky", [] { return tuple3(current_game().scene().settings.sky); },
         "The sky colour (r, g, b).");
     m.def(
         "set_sky",
-        [](float r, float g, float b) { current_game().scene().settings.sky = {r, g, b}; },
+        [](float r, float g, float b) {
+            current_game().scene().settings.sky = {r, g, b};
+        },
         py::arg("r"), py::arg("g"), py::arg("b"), "Changes the sky colour.");
 }
 

@@ -24,7 +24,11 @@ from .project import Project
 BUILT_IN = ("move_x", "move_y", "look_x", "look_y", "zoom", "jump", "run", "view", "use",
             "menu", "descend")
 KINDS = {"button": "Button (pressed or not)", "axis": "Axis (from -1 to 1)"}
-CONTEXTS = {"on_foot": "On foot", "flying": "Flying", "menu": "Menus", "vehicle": "Vehicles"}
+# Contexts (6.1 step 2; migration 23): an action counts only while its context is the game's.
+# The game is in "menu" while a menu shows, "flying" while the player flies, else "on_foot"; a
+# script can choose another ("vehicle" in a car: midgard.set_input_context).
+CONTEXTS = {"always": "Always", "on_foot": "On foot", "flying": "Flying", "menu": "In menus",
+            "vehicle": "In vehicles"}
 DEVICES = {"keyboard": "Keyboard", "mouse": "Mouse", "gamepad": "Gamepad", "touch": "Touch"}
 MOUSE = {"left": "Left button", "right": "Right button", "middle": "Middle button (wheel)",
          "x1": "Back button", "x2": "Forward button", "delta_x": "Moving left and right",
@@ -84,7 +88,7 @@ def load_all(project: Project) -> list[dict[str, Any]]:
     for action, device, control, scale in bindings:
         by_action.setdefault(action, []).append(
             {"device": device, "control": control, "scale": float(scale)})
-    out = [{"id": r[0], "name": r[1] or r[0], "kind": r[2], "context": r[3] or "on_foot",
+    out = [{"id": r[0], "name": r[1] or r[0], "kind": r[2], "context": r[3] or "always",
             "rebindable": bool(r[4]), "bindings": by_action.get(r[0], [])} for r in rows]
 
     def order(a):
@@ -105,7 +109,7 @@ def save(project: Project, action: dict[str, Any]) -> None:
                     "kind = excluded.kind, context = excluded.context, "
                     "rebindable = excluded.rebindable",
                     (action["id"], action.get("name", ""), action.get("kind", "button"),
-                     action.get("context", "on_foot"), int(action.get("rebindable", True))))
+                     action.get("context", "always"), int(action.get("rebindable", True))))
         con.execute("DELETE FROM input_binding WHERE action = ?", (action["id"],))
         for b in action.get("bindings", []):
             con.execute("INSERT OR IGNORE INTO input_binding (action, device, control, scale) "
@@ -133,9 +137,15 @@ def new_id(project: Project, name: str) -> str:
     return candidate
 
 
+def overlap(a: str, b: str) -> bool:
+    """Whether two contexts can be the game's at once (always is with every one)."""
+    return a == b or "always" in (a, b)
+
+
 def _clashes(a: dict[str, Any], b: dict[str, Any]) -> list[str]:
     """Controls two actions of the same context share (pressing one would do both)."""
-    if a["id"] == b["id"] or a.get("context") != b.get("context"):
+    if a["id"] == b["id"] or not overlap(a.get("context", "always"),
+                                         b.get("context", "always")):
         return []
     mine = {(x["device"], x["control"]) for x in a.get("bindings", [])}
     shared = mine & {(x["device"], x["control"]) for x in b.get("bindings", [])}

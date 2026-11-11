@@ -294,6 +294,8 @@ public:
     virtual std::optional<midgard::ui::HudData> hud() const { return std::nullopt; }
     // The player is flying (the touch controls show their Down button).
     virtual bool flying() const { return false; }
+    // The input context the actions are in this frame (midgard/input.h).
+    virtual std::string input_context() const { return "on_foot"; }
     // The Menu editor's screens (6.0), and the game's state of them: which are shown, and the
     // text and values scripts set. None without a game.
     virtual const std::vector<midgard::ScreenDef>* screen_defs() const { return nullptr; }
@@ -782,6 +784,7 @@ public:
         return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)),
                                     std::istreambuf_iterator<char>());
     }
+    std::string input_context() const override { return game_.input_context(); }
     bool flying() const override {
         const entt::entity p = game_.camera_rig().player();
         const auto* player =
@@ -1655,6 +1658,7 @@ int run_headless(const Options& opt, Source& source) {
             }
             if (stop) break;
             actions.begin_frame();
+            actions.set_context(source.input_context());
             if (!paused) source.update(actions, 1.0f / 60.0f);
             ++frames;
             const auto now = std::chrono::steady_clock::now();
@@ -2190,6 +2194,7 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
                 // (A screen that pauses the game: everything stands still, but its music
                 // plays on and scripts still hear its buttons.)
                 source.set_frozen(screens && screens->pauses());
+                actions.set_context(source.input_context());
                 source.update(actions, dt);
             }
             const float t = std::chrono::duration<float>(now - start).count();
@@ -2350,6 +2355,7 @@ int run_simulation(const Options& opt, Source& source) {
         for (const Options::Hold& h : opt.holds)
             keys[h.key] = std::max(keys[h.key], frame >= h.from && frame < h.to ? 1.0f : 0.0f);
         for (const auto& [key, value] : keys) actions.set("keyboard", key, value);
+        actions.set_context(source.input_context());
         source.update(actions, 1.0f / 60.0f);
         source.settle();
         mixer.mix(block);

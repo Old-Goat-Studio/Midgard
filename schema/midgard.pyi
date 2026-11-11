@@ -734,6 +734,15 @@ def pressed(name: str) -> bool:
     """True in the frame an input action goes down."""
 
 
+def input_context() -> str:
+    """The input context now: 'on_foot', 'flying', 'menu', 'vehicle' (actions of others read
+    nothing)."""
+
+
+def set_input_context(context: str | None) -> None:
+    """Chooses the input context ('vehicle' in a car, say); None: the game's own again."""
+
+
 def sky() -> Vector:
     """The sky colour (r, g, b)."""
 

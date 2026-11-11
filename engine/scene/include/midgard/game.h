@@ -252,6 +252,11 @@ public:
     // scripts' on_update isn't called), but its sounds and music carry on (menu music fades in)
     // and scripts hear its buttons. Frozen: set so, or a shown screen pauses.
     void set_frozen(bool frozen) { frozen_ = frozen; }
+    // The input context now (milestone 6.1; midgard/input.h): a script's if it chose one, else
+    // "menu" while a menu shows, "flying" while the player flies, else "on_foot".
+    std::string input_context() const;
+    void set_input_context(const std::string& context) { script_context_ = context; }
+    const std::string& script_input_context() const { return script_context_; }
     bool frozen() const;
 
     // ---- the game's own screens (6.0 step 7: midgard/screen.h's roles) ----
@@ -603,6 +608,7 @@ private:
     std::string rebinding_;  // an action waiting for its new key
     GameSettings settings_;
     bool frozen_ = false;
+    std::string script_context_;  // the input context a script chose ("": the game's)
     bool menu_music_on_ = false;  // the menu music forced over the scene's
     bool dead_ = false;           // the game over screen showed (until respawn)
     struct Place {

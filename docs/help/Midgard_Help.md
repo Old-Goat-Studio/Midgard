@@ -1052,11 +1052,18 @@ player does, such as *Honk the horn*, *Crouch* or *Open the map*.
 - **Kind**: a **button** is pressed or not (jump); an **axis** goes from -1 to 1 (moving
   forward and back). An axis's keys each push one way: choose **+** or **−** for each (W
   forward +, S back −). Mouse movement and dragging have a number instead: how far it turns.
+- **Counts** says when the action works: **Always**, or only **On foot**, **Flying**, **In
+  menus** or **In vehicles**. The game is *in menus* while a menu shows, *flying* while the
+  player flies, and otherwise *on foot*; a script can put it *in vehicles* (or any of them):
+  `midgard.set_input_context("vehicle")` when the player gets into a car, and
+  `midgard.set_input_context(None)` when they get out. So one key can do two things: Left Ctrl
+  goes down while flying and brakes in a car. Midgard's own actions count always, except
+  **Go down (flying)**.
 - **Players can change its keys and buttons** lets players rebind it in the game's settings.
 - **Add Key…** then press the key (any key, Escape and Space too: only **Cancel** stops it).
   **Add Mouse**, **Add Gamepad** and **Add Touch** list what you can choose. **✕** removes one.
 - Red text under it says what's wrong: an action with nothing that does it, or a key two
-  actions share (pressing it would do both). Building the game says so too, and warns about a
+  actions share when both can count at once (pressing it would do both). Building the game says so too, and warns about a
   script reading an action your game doesn't have.
 
 Every change is one Undo step. Mouse buttons (left, right, middle, back and forward) count only
@@ -1712,6 +1719,8 @@ The player's own script also gets `on_trigger_enter(player, trigger)` and `on_tr
 | `midgard.action("move_y")` | An action's value this frame, -1 to 1. |
 | `midgard.down("run")` | True while it's held. |
 | `midgard.pressed("jump")` | True only in the frame it's pressed. |
+| `midgard.input_context()` | When actions count now: `"on_foot"`, `"flying"`, `"menu"` or `"vehicle"`. |
+| `midgard.set_input_context("vehicle")` | Chooses it (in a car, say); `None` gives the game its own back. Actions of other contexts read nothing. |
 
 Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`, `view`, `use`,
 `menu`, `descend`; and your game's own, made in the Input editor (by their ids).

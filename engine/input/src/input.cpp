@@ -60,6 +60,7 @@ InputMap InputMap::defaults() {
     };
     InputMap m;
     for (const Binding& b : kDefaults) m.add(b);
+    m.set_context("descend", "flying");  // (the rest count always)
     return m;
 }
 InputMap InputMap::load(const std::filesystem::path& database) {
@@ -90,6 +91,19 @@ InputMap InputMap::load(const std::filesystem::path& database) {
     const InputMap fallback = defaults();  // (kept: its bindings are a reference into it)
     for (const Binding& b : fallback.bindings())
         if (!bound.contains(b.action)) m.add(b);
+    // Their contexts (schema 23 on: before, every action said "on_foot" and none was kept to
+    // it, so they all count always, as the defaults' do).
+    int version = 0;
+    if (sqlite3_prepare_v2(db.get(), "PRAGMA user_version", -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) version = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+    }
+    m.set_context("descend", "flying");
+    if (version >= 23 && sqlite3_prepare_v2(db.get(), "SELECT id, context FROM input_action", -1,
+                                            &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) m.set_context(text(0), text(1));
+        sqlite3_finalize(stmt);
+    }
     return m;
 }
 
@@ -110,7 +124,25 @@ std::string InputMap::control(const std::string& action, const std::string& devi
     return {};
 }
 
+void InputMap::set_context(const std::string& action, const std::string& context) {
+    if (context.empty() || context == kAlwaysContext)
+        contexts_.erase(action);
+    else
+        contexts_[action] = context;
+}
+
+const std::string& InputMap::context(const std::string& action) const {
+    static const std::string always = kAlwaysContext;
+    const auto it = contexts_.find(action);
+    return it == contexts_.end() ? always : it->second;
+}
+
 Actions::Actions(InputMap map) : map_(std::move(map)) {}
+
+bool Actions::active(const std::string& action) const {
+    const std::string& c = map_.context(action);
+    return context_.empty() || c == kAlwaysContext || c == context_;
+}
 
 void Actions::begin_frame() {
     deltas_.clear();
@@ -128,6 +160,7 @@ void Actions::add_delta(const std::string& device, const std::string& control, f
 }
 
 float Actions::held(const std::string& action) const {
+    if (!active(action)) return 0.0f;  // (another context's)
     // Direction-style bindings (|scale| <= 1: keys, stick directions), clamped to -1..1.
     float sum = 0.0f;
     for (const Binding& b : map_.bindings()) {
@@ -139,6 +172,7 @@ float Actions::held(const std::string& action) const {
 }
 
 float Actions::axis(const std::string& action, float dt) const {
+    if (!active(action)) return 0.0f;
     float value = held(action);
     for (const Binding& b : map_.bindings()) {
         if (b.action != action) continue;
