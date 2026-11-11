@@ -600,7 +600,11 @@ struct Character::Impl {
     float half_cylinder = 0.0f;
     bool swimming = false;
     // How deep its middle floats: the water at its shoulders.
+    // Swimming starts with its middle this deep (chest-deep water, standing)...
     float float_depth() const { return 0.3f * desc.height; }
+    // ...and it floats with its middle this deep: lying along the surface as a swimmer does,
+    // its back at the surface, not standing in the water up to its shoulders.
+    float swim_depth() const { return 0.08f * desc.height; }
 
     JPH::Vec3 up_at(const JPH::RVec3& p) const {
         const glm::dvec3 g = world->gravity(from_jolt(p));
@@ -665,15 +669,17 @@ void Character::step(const glm::vec3& walk, float jump_speed) {
     // spring in place of gravity) and it swims along it, slower than it walks. Where the
     // ground comes up under it, it stands and walks out; at a bank it can jump.
     const float depth = float(c.world->water_depth(from_jolt(ch.GetPosition())));
-    c.swimming = depth > c.float_depth();
+    // (It starts swimming chest-deep, floats up to the surface, and keeps swimming there until
+    // its feet find the ground again.)
+    c.swimming = depth > c.float_depth() || (c.swimming && depth > 0.0f && !standing);
     JPH::Vec3 next;
     if (c.swimming) {
         constexpr float kSpring = 20.0f, kDamping = 9.0f, kSwim = 0.6f;
         const float rising = velocity.Dot(up);
         float speed =
-            rising + (kSpring * (depth - c.float_depth()) - kDamping * rising) * float(kStep);
+            rising + (kSpring * (depth - c.swim_depth()) - kDamping * rising) * float(kStep);
         speed = std::clamp(speed, -20.0f, 3.0f);
-        if (jump_speed > 0.0f && depth < c.float_depth() + 0.3f) speed = jump_speed;
+        if (jump_speed > 0.0f && depth < c.swim_depth() + 0.3f) speed = jump_speed;
         next = up * speed + along * kSwim;
     } else if (standing) {
         const JPH::Vec3 normal = ch.GetGroundNormal();

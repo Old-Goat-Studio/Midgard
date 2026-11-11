@@ -31,6 +31,7 @@ from . import (
     contract,
     engine,
     gltf_pack,
+    input_actions,
     menus,
     meshes,
     model_materials,
@@ -473,6 +474,9 @@ def cook(project: Project, out_dir: Path | None = None,
     warnings += menus.problems(project)  # (6.0: the Menu editor's screens)
     warnings += menus.settings_problems(project)  # (the splash, crosshair, pointer, music)
     warnings += stats.script_problems(project, script_files(project.root / "scripts"))
+    warnings += input_actions.script_problems(
+        project, script_files(project.root / "scripts"))
+    warnings += [f"Input: {p}." for p in input_actions.problems(project)]
     _cook_icon(project, out)
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
     (out / f"{project.name}.config").write_text(json.dumps(runtime_config, indent=2) + "\n",

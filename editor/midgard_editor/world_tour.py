@@ -91,9 +91,10 @@ PLANET_CEILING = 200.0  # metres up: the atmosphere's ceiling, and space beyond 
 HERO = "lib:models/superhero/superhero_male.glb"
 HERO_SKIN = "tex:library/models/superhero/superhero_male_basecolor.png"
 MOVES = "lib:models/universal_animation_library/animation_library.glb"
-# The player's animation graph: idle, walk, jog and sprint blended by speed, and jumping.
+# The player's animation graph: idle, walk, jog and sprint blended by speed, jumping, and
+# swimming (treading water, swimming forward). The game sets "grounded" and "swimming".
 LOCOMOTION = {
-    "parameters": {"grounded": True}, "triggers": [], "root_motion": False,
+    "parameters": {"grounded": True, "swimming": False}, "triggers": [], "root_motion": False,
     "layers": [{
         "name": "Base", "start": "Locomotion", "any_pos": [-220, -120],
         "states": {
@@ -102,8 +103,12 @@ LOCOMOTION = {
                                      ["Jog_Fwd_Loop", 4], ["Sprint_Loop", 8]]},
             "JumpStart": {"clip": "Jump_Start", "loop": False, "pos": [260, -120]},
             "Fall": {"clip": "Jump_Loop", "loop": True, "pos": [520, 0]},
-            "Land": {"clip": "Jump_Land", "loop": False, "pos": [260, 120]}},
+            "Land": {"clip": "Jump_Land", "loop": False, "pos": [260, 120]},
+            "Swim": {"blend": "speed", "loop": True, "pos": [0, 260],
+                     "clips": [["Swim_Idle_Loop", 0], ["Swim_Fwd_Loop", 1.2]]}},
         "transitions": [
+            {"from": "*", "to": "Swim", "when": [["swimming", ">", 0.5]], "blend": 0.3},
+            {"from": "Swim", "to": "Locomotion", "when": [["swimming", "<", 0.5]], "blend": 0.3},
             {"from": "Locomotion", "to": "JumpStart",
              "when": [["grounded", "<", 0.5], ["vertical_speed", ">", 1]], "blend": 0.1},
             {"from": "Locomotion", "to": "Fall",

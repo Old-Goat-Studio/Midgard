@@ -273,7 +273,12 @@ void Game::update(const Actions& actions, float dt) {
     update_exits(actions);
     load_characters();  // (new ones from live edits; read once each)
     characters_.set_player(physics_->player());
+    if (const physics::Character* c = physics_->character())  // (flying: no body, as grounded)
+        characters_.set_player_footing(c->on_ground() || c->swimming(), c->swimming());
+    else
+        characters_.set_player_footing(true, false);
     characters_.update(scene_, dt);
+    lift_swimmer();
     apply_root_motion();
     stream_navigation();
     cross_atmosphere();
@@ -1655,6 +1660,25 @@ std::vector<render::DrawItem> Game::draws(const glm::dvec3& origin) const {
     }
     if (const auto light = world_light_.draw(scene_, origin)) out.push_back(*light);
     return out;
+}
+
+// A swimming player's body raised so its head is just above the water, whatever its swimming
+// clip does with its body (treading water upright, swimming flat): from where the clip has put
+// the head this frame (without the lift), eased there by Characters.
+void Game::lift_swimmer() {
+    const entt::entity player = physics_->player();
+    if (player == entt::null || !scene_.registry.valid(player)) return;
+    float target = 0.0f;
+    const physics::Character* c = physics_->character();
+    if (c && c->swimming())
+        if (const auto head = characters_.bone_position(scene_, player, HumanBone::Head)) {
+            const glm::dvec3 up = glm::normalize(glm::dvec3(scene_.world_matrix(player)[1]));
+            const glm::dvec3 unlifted = *head - up * double(characters_.lift(player));
+            constexpr double kHeadAbove = 0.12;  // metres
+            target =
+                float(std::clamp(physics_->world().water_depth(unlifted) + kHeadAbove, 0.0, 1.5));
+        }
+    characters_.set_lift(player, target);
 }
 
 render::TerrainLook Game::terrain_look() const {

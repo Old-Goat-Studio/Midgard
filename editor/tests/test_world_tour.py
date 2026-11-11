@@ -313,3 +313,67 @@ def test_the_exit_of_6_0b_the_tours_ground_is_textured_with_a_path(tour, tmp_pat
         assert sum(n.endswith(".ktx2") for n in pak.namelist()) >= len(used)
     credits = (result.out_dir / "CREDITS.txt").read_text("utf-8")
     assert "Cobbles" in credits and "Glowmoss" in credits
+
+
+SWIM_TESTER = """
+import midgard
+
+s = {"frame": 0}
+
+
+def on_start(entity):
+    if "scr_title" in midgard.ui.screens:  # (New game: the title pauses the game till then)
+        midgard.ui.click("scr_title", "play")
+
+
+def on_update(entity, dt):
+    s["frame"] += 1
+    player = midgard.player()
+    if s["frame"] == 2 and MODE.startswith("swim"):  # out to the open sea round the islands
+        player.position = (1400.0, 2.0, 1400.0)
+    if s["frame"] == 200:
+        print("swimming", player.swimming, "on ground", player.on_ground)
+"""
+
+
+@pytest.mark.parametrize("mode", ["swim", "swim_forward", "jump"])
+def test_the_player_swims_and_jumps_as_her_animations_show(tmp_path, mode):
+    """The game sets the player's graph's "grounded" and "swimming": in the sea she swims (the
+    Swim state: treading water, swimming forward), and a jump on land leaves the ground's
+    animation for the jump's."""
+    import subprocess
+
+    from midgard_editor import about
+    from midgard_editor.scene_model import Entity
+    if engine.module() is None or not about.runtime_candidates():
+        pytest.skip("needs the engine module and the runtime")
+    tour = world_tour.make_world_tour(tmp_path / mode)
+    archipelago = next(s["id"] for s in scenes.load_all(tour) if s["name"] == "Archipelago")
+    tour.put_entity(Entity(tour.next_entity_id(), "Tester", None, {
+        "transform": {}, "script": {"module": "tester"}}), archipelago)
+    (tour.root / "scripts" / "tester.py").write_text(
+        f"MODE = {mode!r}\n" + SWIM_TESTER, encoding="utf-8")
+    out = cook(tour, tmp_path / "pkg", entry_scene=archipelago).out_dir
+    frames = 40 if mode == "jump" else 220
+    extra = {"swim": [], "swim_forward": ["--hold", "W:120:220"],
+             "jump": ["--hold", "Space:20:24"]}[mode]
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--simulate", str(frames), "--dump-scene", *extra],
+                         capture_output=True, text=True, timeout=180)
+    assert run.returncode == 0, run.stderr
+    dump = json.loads(run.stdout[run.stdout.index("\n{") + 1:])
+    player = next(e for e in dump["entities"] if e.get("name") == "Player")
+    state = player["character"]["state"]
+    if mode.startswith("swim"):
+        assert "swimming True on ground False" in run.stdout.splitlines()
+        assert state == "Swim"
+        # Her head just above the water (treading water, upright); swimming forward, lying
+        # along the surface, her hips near it too: not half a metre down.
+        from midgard_editor import world_types
+        sea = world_types.recipe(tour, "wt_sample_archipelago")["terrain"].get("sea_level", 0.0)
+        bones = player["character"]["bones"]
+        assert 0.0 < bones["head"][1] - sea < 0.3, bones["head"]
+        if mode == "swim_forward":
+            assert abs(bones["hips"][1] - sea) < 0.35, bones["hips"]
+    else:
+        assert state in ("JumpStart", "Fall", "Land"), state  # (jumped: not on the ground's)

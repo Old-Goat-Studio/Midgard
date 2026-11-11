@@ -30,7 +30,8 @@
 // == != < <= > >=. A layer of more than one state names the one it starts in. "after" is how many
 // of the state's cycles must have played (1: all of a clip that doesn't loop). "speed" and
 // "vertical_speed" (metres a second, along the character's up) are set by the game from how the
-// character moves, whether declared or not.
+// character moves, whether declared or not; and, for the player, "grounded" (1 standing on the
+// ground, 0 in the air) and "swimming" (1 in water deep enough to swim).
 #pragma once
 
 #include <functional>
@@ -103,6 +104,9 @@ struct AnimGraph {
 // The parameters the game sets from how a character moves.
 inline constexpr const char* kSpeedParameter = "speed";
 inline constexpr const char* kVerticalSpeedParameter = "vertical_speed";
+// The player's (from its physics character): standing on the ground, and swimming.
+inline constexpr const char* kGroundedParameter = "grounded";
+inline constexpr const char* kSwimmingParameter = "swimming";
 
 // A graph playing on one character.
 class AnimPlayer {

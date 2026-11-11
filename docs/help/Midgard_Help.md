@@ -1038,6 +1038,30 @@ smoothing.
 
 Walking is relative to the camera, and the player turns to face the way it walks.
 
+### The Input editor: your game's actions and their keys
+
+The table above is Midgard's ready-made set. The **Input** panel (a tab behind the Viewport, or
+**Window ▸ Input**) shows it and lets you change it and add your own **actions**: things the
+player does, such as *Honk the horn*, *Crouch* or *Open the map*.
+
+- The list on the left has every action: Midgard's own first, then your game's (marked ★).
+  **New Action** adds one; **Delete** removes one of yours (Midgard's are kept).
+- **Name** is what players see (the Controls screen, "Press E to use"). **Id** is what your
+  scripts read: `midgard.pressed("honk")`. An action of your own can have its id changed;
+  Midgard's are fixed.
+- **Kind**: a **button** is pressed or not (jump); an **axis** goes from -1 to 1 (moving
+  forward and back). An axis's keys each push one way: choose **+** or **−** for each (W
+  forward +, S back −). Mouse movement and dragging have a number instead: how far it turns.
+- **Players can change its keys and buttons** lets players rebind it in the game's settings.
+- **Add Key…** then press the key (any key, Escape and Space too: only **Cancel** stops it).
+  **Add Mouse**, **Add Gamepad** and **Add Touch** list what you can choose. **✕** removes one.
+- Red text under it says what's wrong: an action with nothing that does it, or a key two
+  actions share (pressing it would do both). Building the game says so too, and warns about a
+  script reading an action your game doesn't have.
+
+Every change is one Undo step. Mouse buttons (left, right, middle, back and forward) count only
+once the game has the mouse, so the click that takes the mouse doesn't do anything else.
+
 ### Touch controls: playing on a phone
 
 On a phone the game shows **on-screen controls** by itself, so no game controller is needed:
@@ -1327,8 +1351,11 @@ does. Click **Animation Graph…** in the Character section to open the **Animat
 - **States** are boxes, each playing an animation (or a blend of several by speed, so it eases
   from walk to run smoothly).
 - **Transitions** are arrows between states, each with a condition, such as "speed > 0.2".
-- **Parameters** are the values conditions test. **speed** is filled in automatically from how
-  fast the character moves; scripts can set others ("is_swimming", "health").
+- **Parameters** are the values conditions test. Some are filled in automatically: **speed**
+  (how fast the character moves), **vertical_speed** (rising or falling) and, for the player,
+  **grounded** (1 standing on the ground, 0 in the air) and **swimming** (1 in water deep enough
+  to swim). Use them for a jump that leaves the ground and a swim in the sea ("swimming > 0.5").
+  Scripts can set others ("health").
 - **Triggers** fire once (a "jump" or "attack").
 - **Layers** play on top for part of the body (waving while walking).
 - **Events** mark moments in an animation ("footstep") that scripts hear.
@@ -1664,7 +1691,7 @@ The player's own script also gets `on_trigger_enter(player, trigger)` and `on_tr
 | `entity.add_impulse(x, y, z)` | A sudden shove (a kick, an explosion). |
 | `entity.set_animation(name, value)` | Sets an animation graph parameter. |
 | `entity.trigger_animation(name)` | Fires an animation graph trigger. |
-| `entity.animation(name)` | Reads a parameter ("speed" is always there). |
+| `entity.animation(name)` | Reads a parameter ("speed", "vertical_speed", "grounded" and "swimming" are always there). |
 | `entity.animation_state(layer=0)` | The animation state it's in. |
 | `entity.look_at(target)` | Turns its head to a point or an entity; `None` stops. |
 | `entity.reach(hand, target, weight=1)` | Reaches "left" or "right" hand to a point or entity; `None` lets go. |
@@ -1687,7 +1714,7 @@ The player's own script also gets `on_trigger_enter(player, trigger)` and `on_tr
 | `midgard.pressed("jump")` | True only in the frame it's pressed. |
 
 Built-in actions: `move_x`, `move_y`, `look_x`, `look_y`, `zoom`, `jump`, `run`, `view`, `use`,
-`menu`.
+`menu`, `descend`; and your game's own, made in the Input editor (by their ids).
 
 ### Physics questions
 

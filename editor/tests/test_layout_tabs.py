@@ -13,20 +13,22 @@ def tab_order(window: MainWindow, panel: str) -> list[str]:
     return [bar.tab(i).text() for i in range(bar.count())]
 
 
-def drag_first_tab_to_the_end(window: MainWindow, panel: str) -> None:
-    """Drags the area's first tab along its tab strip onto the last one, as a user would."""
+def drag_last_tab_to_the_front(window: MainWindow, panel: str) -> None:
+    """Drags the area's last tab along its tab strip onto the first one, as a user would. (This
+    way the dragged tab, travelling with the cursor, stays within the strip: dragged past its
+    end it would come out of the strip and float.)"""
     bar = window.panels[panel].dockAreaWidget().titleBar().tabBar()
-    first, last = bar.tab(0), bar.tab(bar.count() - 1)
-    start = first.rect().center()
-    origin = first.mapToGlobal(start)
-    target = last.mapToGlobal(last.rect().center())
-    QTest.mousePress(first, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    last, first = bar.tab(bar.count() - 1), bar.tab(0)
+    start = last.rect().center()
+    origin = last.mapToGlobal(start)
+    target = first.mapToGlobal(first.rect().center())
+    QTest.mousePress(last, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
     # The dragged tab travels with the cursor, so each step is placed from screen positions.
     for step in range(1, 21):  # a real mouse's moves arrive one by one
-        QTest.mouseMove(first, first.mapFromGlobal(origin + (target - origin) * step / 20))
+        QTest.mouseMove(last, last.mapFromGlobal(origin + (target - origin) * step / 20))
         QApplication.processEvents()
-    end = first.mapFromGlobal(target)
-    QTest.mouseRelease(first, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    end = last.mapFromGlobal(target)
+    QTest.mouseRelease(last, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
 
 
 def open_window(qtbot, settings) -> MainWindow:
@@ -43,27 +45,27 @@ def test_dragged_tabs_keep_their_order_after_a_restart(qtbot, settings):
     window = open_window(qtbot, settings)
     assert tab_order(window, "viewport") == ["Viewport", "Script Editor", "Project Page", "Objects",
                                              "World Types", "Animation", "Audio",
+                                             "Shader Editor", "Stats", "Menu Editor", "Input"]
+    drag_last_tab_to_the_front(window, "viewport")
+    drag_last_tab_to_the_front(window, "log")
+    assert tab_order(window, "viewport") == ["Input", "Viewport", "Script Editor", "Project Page",
+                                             "Objects", "World Types", "Animation", "Audio",
                                              "Shader Editor", "Stats", "Menu Editor"]
-    drag_first_tab_to_the_end(window, "viewport")
-    drag_first_tab_to_the_end(window, "log")
-    assert tab_order(window, "viewport") == ["Script Editor", "Project Page", "Objects",
-                                             "World Types", "Animation", "Audio",
-                                             "Shader Editor", "Stats", "Menu Editor", "Viewport"]
     assert tab_order(window, "log") == ["History", "Log"]
     assert not window.dock_manager.floatingWidgets()  # moved along the strip, not undocked
     window.close()
 
     again = open_window(qtbot, settings)
-    assert tab_order(again, "viewport") == ["Script Editor", "Project Page", "Objects",
-                                             "World Types", "Animation", "Audio",
-                                             "Shader Editor", "Stats", "Menu Editor", "Viewport"]
+    assert tab_order(again, "viewport") == ["Input", "Viewport", "Script Editor", "Project Page",
+                                             "Objects", "World Types", "Animation", "Audio",
+                                             "Shader Editor", "Stats", "Menu Editor"]
     assert tab_order(again, "log") == ["History", "Log"]
 
 
 def test_the_layout_is_kept_without_a_tidy_exit(qtbot, settings):
     window = open_window(qtbot, settings)
-    drag_first_tab_to_the_end(window, "project")
+    drag_last_tab_to_the_front(window, "project")
     qtbot.waitUntil(lambda: settings.get("layout_last") is not None, timeout=5000)
     # No close: as if the editor crashed. The next one still has the new order.
     again = open_window(qtbot, settings)
-    assert tab_order(again, "project") == ["Scene", "Scenes", "Project"]
+    assert tab_order(again, "project") == ["Scenes", "Project", "Scene"]

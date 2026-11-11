@@ -25,10 +25,15 @@ glm::dmat4 standing(const Scene& scene, entt::entity e) {
 // walks, as cameras, spot lights and arrivals do): half a turn about its up.
 const glm::mat4 kFacing = glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0, 1, 0));
 
-glm::mat4 standing_offset(const Scene& scene, entt::entity e) {
+glm::mat4 standing_offset(const Scene& scene, entt::entity e, float lift = 0.0f) {
     const Player* p = scene.registry.try_get<Player>(e);
-    return p ? glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f * p->height, 0.0f))
-             : glm::mat4(1.0f);
+    return glm::translate(glm::mat4(1.0f),
+                          glm::vec3(0.0f, (p ? -0.5f * p->height : 0.0f) + lift, 0.0f));
+}
+
+// standing(), raised by a character's lift (Characters::set_lift).
+glm::dmat4 lifted(const Scene& scene, entt::entity e, float lift) {
+    return standing(scene, e) * glm::translate(glm::dmat4(1.0), glm::dvec3(0.0, lift, 0.0));
 }
 
 }  // namespace
@@ -427,10 +432,17 @@ void Characters::update(const Scene& scene, float dt) {
         }
         s.last = at;
         s.placed = true;
+        // Lifted (a swimmer), eased over a quarter of a second.
+        s.lift += (s.lift_target - s.lift) * std::min(1.0f, dt / 0.25f);
+        if (std::abs(s.lift - s.lift_target) < 1e-4f) s.lift = s.lift_target;
         if (s.player) {
             if (automatic_) {
                 s.player->set(kSpeedParameter, s.speed);
                 s.player->set(kVerticalSpeedParameter, s.vertical_speed);
+                if (e == player_) {
+                    s.player->set(kGroundedParameter, player_grounded_ ? 1.0f : 0.0f);
+                    s.player->set(kSwimmingParameter, player_swimming_ ? 1.0f : 0.0f);
+                }
             }
             const AnimPlayer::Step step = s.player->update(dt * c.speed, *s.pose);
             for (const std::string& name : step.events) events_.push_back({e, name});
@@ -464,7 +476,7 @@ void Characters::draws(const Scene& scene, const glm::dvec3& origin, const Mater
         if (e == hidden || !s.m || !s.m->uploaded || s.palette.empty()) continue;
         if (!scene.registry.valid(e)) continue;
         render::DrawItem d = scene.draw_item(e, s.m->gpu, origin);
-        d.model = d.model * standing_offset(scene, e) * s.m->armature;
+        d.model = d.model * standing_offset(scene, e, s.lift) * s.m->armature;
         if (const Material* m = scene.registry.try_get<Material>(e)) materials.apply(*m, d);
         d.skin = s.palette;
         out.push_back(d);
@@ -521,7 +533,7 @@ std::optional<glm::dvec3> Characters::look_target(const Scene& scene, const Char
     if (const auto it = states_.find(target);
         it != states_.end() && it->second.pose && it->second.bones[size_t(HumanBone::Head)] >= 0) {
         const State& t = it->second;
-        const glm::dmat4 w = standing(scene, target);
+        const glm::dmat4 w = lifted(scene, target, t.lift);
         const glm::vec4 head =
             t.m->armature * t.pose->model()[size_t(t.bones[size_t(HumanBone::Head)])][3];
         return glm::dvec3(w * glm::dvec4(glm::dvec3(head), 1.0));
@@ -546,7 +558,7 @@ void Characters::apply_ik(const Scene& scene, entt::entity e, const CharacterRef
         return;
 
     // The model's frame in the world: around the entity's place (kept in doubles there).
-    const glm::dmat4 world = standing(scene, e);
+    const glm::dmat4 world = lifted(scene, e, s.lift);
     const glm::dvec3 origin(world[3]);
     glm::mat4 frame(world);
     frame[3] = glm::vec4(0, 0, 0, 1);
@@ -711,7 +723,16 @@ std::optional<glm::dvec3> Characters::bone_position(const Scene& scene, entt::en
     const int j = s.bones[size_t(bone)];
     if (j < 0) return std::nullopt;
     const glm::vec4 p = s.m->armature * s.pose->model()[size_t(j)][3];
-    return glm::dvec3(standing(scene, e) * glm::dvec4(glm::dvec3(p), 1.0));
+    return glm::dvec3(lifted(scene, e, s.lift) * glm::dvec4(glm::dvec3(p), 1.0));
+}
+
+void Characters::set_lift(entt::entity e, float metres) {
+    graph_state(e).lift_target = metres;
+}
+
+float Characters::lift(entt::entity e) const {
+    const auto it = states_.find(e);
+    return it == states_.end() ? 0.0f : it->second.lift;
 }
 
 std::string Characters::state_of(entt::entity e, size_t layer) const {

@@ -615,6 +615,7 @@ private:
     void apply_volumes();
     void save_settings();
     void update_screens();  // death; the bound sliders' and keys' values and texts
+    void lift_swimmer();    // a swimming player's head above the water (Characters::set_lift)
     bool minimap_wanted_ = false;
     MinimapGround minimap_;
     std::string minimap_scene_;  // (made again in another scene)

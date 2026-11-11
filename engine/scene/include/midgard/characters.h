@@ -92,6 +92,15 @@ public:
     void set_ground(Ground ground) { ground_ = std::move(ground); }
     // Who "look": "player" means.
     void set_player(entt::entity player) { player_ = player; }
+    // A character's drawn body raised along its up by `metres` (eased there over a moment):
+    // a swimmer's, so its head is above the water whatever its swimming clip does with it.
+    void set_lift(entt::entity e, float metres);
+    float lift(entt::entity e) const;
+    // The player's footing, from its physics (its graph's "grounded" and "swimming").
+    void set_player_footing(bool grounded, bool swimming) {
+        player_grounded_ = grounded;
+        player_swimming_ = swimming;
+    }
     // Scripts': what a character looks at (a point, or an entity; neither: what its component
     // says), and where a hand reaches (none: nowhere), by a weight.
     void look_at(entt::entity e, std::optional<glm::dvec3> point, entt::entity target = entt::null);
@@ -151,6 +160,7 @@ private:
         bool uploaded = false;
     };
     struct State {
+        float lift = 0.0f, lift_target = 0.0f;  // (set_lift)
         std::string model, clips, clip;
         std::map<std::string, std::string> rig;
         std::string graph;
@@ -217,6 +227,7 @@ private:
     bool automatic_ = true;
     Ground ground_;
     entt::entity player_ = entt::null;
+    bool player_grounded_ = true, player_swimming_ = false;
     std::vector<std::pair<entt::entity, glm::vec3>> motions_;
 };
 

@@ -1052,6 +1052,19 @@ void feed(midgard::Actions& actions, const SDL_Event& e) {
         case SDL_EVENT_MOUSE_WHEEL:
             actions.add_delta("mouse", "wheel", e.wheel.y);
             break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP: {
+            // (6.1) Mouse buttons: "left", "right", "middle", "x1", "x2"; only while the game
+            // has the mouse, so the click that takes it doesn't also fire an action.
+            if (e.button.which == SDL_TOUCH_MOUSEID) break;
+            SDL_Window* focus = SDL_GetMouseFocus();
+            const bool down = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+            if (down && !(focus && SDL_GetWindowRelativeMouseMode(focus))) break;
+            static const char* const kButtons[] = {"", "left", "middle", "right", "x1", "x2"};
+            if (e.button.button >= 1 && e.button.button <= 5)
+                actions.set("mouse", kButtons[e.button.button], down ? 1.0f : 0.0f);
+            break;
+        }
         case SDL_EVENT_GAMEPAD_ADDED:
             SDL_OpenGamepad(e.gdevice.which);
             break;

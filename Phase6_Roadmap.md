@@ -139,6 +139,14 @@ menus, vehicles), the touch layout editor, the player's rebinding screen, and pr
 the right key or button for the device in use.
 **Exit:** you add an action in the Input editor, a script uses it, the player rebinds it in the
 game, and its prompt shows a key, a gamepad button or a touch control as the device changes. 📱
+Steps (planned Nov 2026, about 6 to 8 days): 1. the Input editor (actions, their names and ids,
+keys pressed to bind, mouse, gamepad and touch; clashes and unbound actions said; mouse
+buttons fed; migration 22: names, rebindable); 2. contexts (on foot, flying, menus, vehicles;
+an action counts only in its context; scripts switch); 3. the touch layout editor (buttons
+placed, sized, labelled, for the game's own actions too); 4. the player's rebinding (a Controls
+screen for keyboard and gamepad, reset to defaults, kept in the profile); 5. prompts ("Press
+{use}": the key, button or touch control for the device in use); 6. exit (the World Tour's own
+action, rebound in the game, its prompt by device; the phone).
 
 #### 6.2 Worlds and characters · L
 World folders and `world.json`; the **New World** screen (shape and size, seed, name and

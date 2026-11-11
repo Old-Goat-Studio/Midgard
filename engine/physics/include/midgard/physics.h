@@ -217,9 +217,10 @@ public:
     glm::vec3 velocity() const;
     glm::vec3 up() const;
     bool on_ground() const;  // standing on something it can stand on
-    // In water deep enough to swim (World::set_water): it floats with the surface at its
-    // shoulders, swims along it slower than it walks, and can climb out where the ground rises
-    // (or jump out at the edge).
+    // In water deep enough to swim (chest-deep; World::set_water): it floats up to lie along
+    // the surface, its middle just under it (8% of its height), swims along it slower than it
+    // walks, and goes on swimming until its feet find the ground; it can climb out where the
+    // ground rises (or jump out at the edge).
     bool swimming() const;
     BodyId body() const;  // the capsule other bodies and queries see
     const CharacterDesc& desc() const;

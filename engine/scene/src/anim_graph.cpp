@@ -118,6 +118,8 @@ AnimGraph AnimGraph::parse(const json& j) {
     }
     g.parameters.try_emplace(kSpeedParameter, 0.0f);
     g.parameters.try_emplace(kVerticalSpeedParameter, 0.0f);
+    g.parameters.try_emplace(kGroundedParameter, 1.0f);  // (the player's: the game sets them)
+    g.parameters.try_emplace(kSwimmingParameter, 0.0f);
     if (const auto t = j.find("triggers"); t != j.end()) {
         if (!t->is_array()) bad("'triggers' must be a list of names");
         for (const json& name : *t) {

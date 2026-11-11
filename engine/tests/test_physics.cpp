@@ -482,17 +482,17 @@ TEST_CASE("the character swims on the water and walks out up a beach") {
     desc.position = {-20, 3, 0};
     Character c(world, desc);
 
-    // Dropped in: it bobs up and floats with its middle 0.3 m down (the water at its
-    // shoulders), not sinking to the floor.
+    // Dropped in: it bobs up and floats with its middle 0.08 m down (lying along the surface as
+    // a swimmer does), not sinking to the floor, and goes on swimming there.
     walk_for(world, c, 8.0, {0, 0, 0});
     CHECK(c.swimming());
-    CHECK(c.position().y == doctest::Approx(-0.3).epsilon(0.1));
+    CHECK(c.position().y == doctest::Approx(-0.08).epsilon(0.25));
     CHECK(std::abs(c.velocity().y) < 0.1f);
     // Swimming at 0.6 times its walk: 4 m/s for a second goes about 2.4 m.
     const double x = c.position().x;
     walk_for(world, c, 1.0, {4, 0, 0});
     CHECK(c.position().x - x == doctest::Approx(2.4).epsilon(0.1));
-    CHECK(c.position().y == doctest::Approx(-0.3).epsilon(0.15));
+    CHECK(c.position().y == doctest::Approx(-0.08).epsilon(0.3));
     // On towards the beach: up it and out of the water, walking again.
     walk_for(world, c, 15.0, {4, 0, 0});
     CHECK_FALSE(c.swimming());
