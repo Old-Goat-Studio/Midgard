@@ -20,6 +20,12 @@ Sound's footsteps and ambiences, yd's Desert Theme), put in the project's Asset 
 Where you arrive in a world, the ground is flattened round you at its own height there (kept
 above the sea), with the pad home behind you.
 
+Milestone 6.0b's exit: the worlds' ground is textured, every layer a texture set made with
+Midgard's own texture generator (colour, normal, ambient occlusion, metal and roughness; the
+Hollow World's moss glows too), in the project's Asset Library (CC0): grass, dry grass, sand,
+rock and snow, the Planet's biomes their own, and a cobbled path painted from where you arrive
+(the world type's first paint layer, "Path").
+
 Milestone 6.0's exit: it opens at its title screen (New game, Settings, Quit) and has the
 ready-made pause menu, settings (volume, music, the Jump and Use keys) and game over screens,
 with the HUD's health and stamina bars, score and compass. Five coins in the hub raise the
@@ -126,6 +132,39 @@ AMBIENCE = {
                      ("Calm wind", ["dawn", "day", "dusk", "night"], 0.3)],
 }
 
+# The ground's texture sets (6.0b), made with the texture generator: (name, category, the
+# pattern's settings, the colour ramp, the bumps' strength, roughness (least, most), the glow's
+# ramp or None).
+_GREEN = [[0.0, [0.10, 0.22, 0.05]], [0.55, [0.22, 0.40, 0.10]], [1.0, [0.40, 0.55, 0.18]]]
+GROUND_SETS = (
+    ("Grass", "ground", {"pattern": "noise", "scale": 10, "octaves": 5, "roughness": 0.65},
+     _GREEN, 1.5, (0.75, 0.95), None),
+    ("Dry Grass", "ground", {"pattern": "noise", "scale": 10, "octaves": 5, "roughness": 0.65},
+     [[0.0, [0.36, 0.30, 0.14]], [0.6, [0.60, 0.52, 0.27]], [1.0, [0.78, 0.70, 0.42]]],
+     1.5, (0.8, 0.95), None),
+    ("Sand", "ground", {"pattern": "waves", "scale": 7, "warp": 1.2, "angle": 20},
+     [[0.0, [0.66, 0.56, 0.38]], [1.0, [0.86, 0.77, 0.56]]], 2.0, (0.85, 0.95), None),
+    ("Rock", "stone", {"pattern": "ridged", "scale": 4, "octaves": 6, "roughness": 0.6},
+     [[0.0, [0.22, 0.21, 0.20]], [1.0, [0.60, 0.58, 0.54]]], 4.0, (0.55, 0.85), None),
+    ("Snow", "ground", {"pattern": "noise", "scale": 3, "octaves": 4, "roughness": 0.5},
+     [[0.0, [0.80, 0.84, 0.92]], [1.0, [0.97, 0.98, 1.0]]], 1.0, (0.45, 0.7), None),
+    ("Forest Floor", "ground", {"pattern": "cells", "scale": 12, "jitter": 1.0},
+     [[0.0, [0.10, 0.08, 0.05]], [0.5, [0.22, 0.18, 0.10]], [1.0, [0.18, 0.30, 0.10]]],
+     2.5, (0.8, 0.95), None),
+    ("Cobbles", "stone", {"pattern": "cells", "scale": 6, "jitter": 0.9},
+     [[0.0, [0.16, 0.15, 0.14]], [0.18, [0.40, 0.38, 0.35]], [1.0, [0.66, 0.63, 0.58]]],
+     4.0, (0.5, 0.8), None),
+    ("Glowmoss", "ground", {"pattern": "noise", "scale": 8, "octaves": 5, "roughness": 0.6},
+     [[0.0, [0.05, 0.16, 0.14]], [1.0, [0.20, 0.42, 0.30]]], 1.5, (0.8, 0.95),
+     [[0.0, [0.0, 0.0, 0.0]], [0.82, [0.0, 0.0, 0.0]], [1.0, [0.25, 1.0, 0.7]]]),
+)
+GROUND_SIZE = 256  # pixels (each map)
+# Each world type's ground: its layers' sets (and tiles), the Planet's biomes their own.
+GROUND_OF = {"grass": ("Grass", 3.0), "dry_grass": ("Dry Grass", 3.0), "sand": ("Sand", 4.0),
+             "rock": ("Rock", 6.0), "snow": ("Snow", 4.0), "paint_1": ("Cobbles", 2.0)}
+BIOME_GROUND = {"Tundra": ("Dry Grass", "Dry Grass"), "Desert": ("Sand", "Sand"),
+                "Forest": ("Forest Floor", "Dry Grass"), "Grassland": ("Grass", "Dry Grass")}
+
 CHECKLIST = '''# The World Tour: things to try
 
 A hub and four worlds, one of each shape Midgard makes, each its own size, with its own day and
@@ -149,6 +188,9 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
 - [ ] The **Audio** panel: the footsteps on each kind of ground, each world's ambience by time
       of day, and the music.
 - [ ] **Calendar** panel: drag the scrubber; the sun moves through the day.
+- [ ] **World ▸ Ground Textures…** (in a world's scene): each layer's texture set, made with the
+      texture generator, and the **Path** paint layer (cobbles). In the **Terrain** panel,
+      **Paint** offers **Path**: paint one of your own.
 
 ## Playing (press F5)
 
@@ -164,6 +206,9 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
 - [ ] Wherever you arrive, the **glowing pad** behind you takes you back to the hub (stand on
       it, press E). The first time you arrive, the sky is clear for an hour; then the world's
       own weather comes in.
+- [ ] **The ground** in every world is textured: grass, sand on the shore, rock on the steep
+      slopes, snow up high, each with its bumps catching the sun. A **cobbled path** leads
+      away from where you arrive.
 - [ ] **Archipelago** (blue door): islands in a sea, and the sound of the sea. Walk to the
       shore: sand underfoot sounds different from grass.
 - [ ] **Habitat** (yellow door): inside a spinning cylinder. Look up: the land curves up both
@@ -175,7 +220,8 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
       to climb out through the atmosphere (200 m) into space, the whole planet below; hold
       Left Ctrl to come back down, landing on the ground below you.
 - [ ] **Hollow World** (purple door): inside a sphere, the far side overhead through the haze,
-      an eerie hum. The **Exit Site** takes you outside.
+      an eerie hum, the moss underfoot glowing faintly (brightest at night). The **Exit Site**
+      takes you outside.
 - [ ] Press **V** in each world: behind her, through her eyes (her arms), from above. Her feet
       stay on the slopes.
 - [ ] Wait (or drag the Calendar's scrubber while playing): the day turns to night, with the
@@ -193,7 +239,7 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
       screen).
 - [ ] Pick up a coin, burn in the fire pit and **Try again**, all by touch. **Menu** (or the
       phone's Back button) opens the pause menu; in **Settings** drag the volume.
-- [ ] Visit each world; it runs smoothly, with sound.
+- [ ] Visit each world; it runs smoothly, with sound, the ground textured as on the PC.
 '''
 
 WELCOME = '''"""A fair welcome: the first time you arrive in a world, its sky is clear for an hour
@@ -430,13 +476,80 @@ class _Builder:
         face, u, v, _h = engine.module().Body(json.dumps(body)).surface(0.0, 0.0, 0.0)
         stamp = {"tool": "flatten", "radius": 40.0, "strength": 1.0, "height": height,
                  "face": face, "points": [[u, v]]}
+        # A cobbled path from where you arrive (6.0b: the world type's first paint layer).
+        shape = engine.module().Body(json.dumps(body))
+        points = []
+        for x, z in ((0.0, 6.0), (6.0, -4.0), (10.0, -14.0), (8.0, -26.0), (14.0, -36.0)):
+            f, pu, pv, _ = shape.surface(x, height, z)
+            if f == face:
+                points.append([pu, pv])
+        path = {"tool": "paint", "paint": "paint_1", "radius": 1.6, "strength": 1.0,
+                "face": face, "points": points}
         with self.p.connect() as con:
             con.execute("INSERT INTO terrain_stamp (scene, stamp) VALUES (?, ?)",
                         (scene, json.dumps(stamp)))
+            if len(points) > 1:
+                con.execute("INSERT INTO terrain_stamp (scene, stamp) VALUES (?, ?)",
+                            (scene, json.dumps(path)))
         player = self.named(scene, "Player")
         player.components["transform"]["position"] = [0.0, height + 1.0, 3.0]
         self.p.put_entity(player, scene)
         return height
+
+    def ground_textures(self) -> None:
+        """The ground's texture sets (6.0b), made with the texture generator into the project's
+        Asset Library, and every world type's layers given them."""
+        import tempfile
+
+        from . import texture_gen
+        sets = {}
+        with tempfile.TemporaryDirectory(prefix="tour_ground_") as scratch:
+            for name, category, pattern, ramp, bumps, (rough_lo, rough_hi), glow in GROUND_SETS:
+                folder = Path(scratch) / name.replace(" ", "")
+                folder.mkdir()
+                base = {**texture_gen.DEFAULT, **pattern, "size": GROUND_SIZE, "seed": 7}
+                stem = name.lower().replace(" ", "_")
+                maps = {"color": {**base, "colors": ramp},
+                        "normal": {**base, "output": "normal", "strength": bumps},
+                        "occlusion": {**base, "colors": [[0.0, [0.45, 0.45, 0.45]],
+                                                         [0.6, [1.0, 1.0, 1.0]]]},
+                        # (glTF's: roughness in green, no metal)
+                        "metallic_roughness": {**base, "colors": [[0.0, [0.0, rough_hi, 0.0]],
+                                                                  [1.0, [0.0, rough_lo, 0.0]]]}}
+                if glow is not None:
+                    maps["emissive"] = {**base, "colors": glow}
+                roles = {}
+                for role, recipe in maps.items():
+                    size, pixels, problems = texture_gen.generate(recipe)
+                    if problems:
+                        raise RuntimeError(f"{name} {role}: {'; '.join(problems)}")
+                    file = folder / f"{stem}_{role}.png"
+                    texture_gen.to_image(size, pixels).save(str(file), "PNG")
+                    roles[file.name] = role
+                sets[name] = asset_library.import_asset(
+                    self.p, [folder], "textures", name, category=category,
+                    description="Made with Midgard's texture generator for the World Tour's "
+                                "ground.", licence="CC0-1.0", author="Midgard", title=name,
+                    roles=roles)
+
+        def layer(name: str, tile: float) -> dict:
+            slots = asset_library.material_textures(self.p, sets[name])
+            return {"textures": {k: slots[k] for k in world_types.GROUND_SLOTS if k in slots},
+                    "tile": tile}
+
+        for _world, sample_id, _colour in WORLDS:
+            recipe = world_types.recipe(self.p, sample_id)
+            terrain = recipe.setdefault("terrain", {})
+            ground = {k: layer(n, tile) for k, (n, tile) in GROUND_OF.items()}
+            ground["paint_1"]["name"] = "Path"
+            if sample_id == "wt_sample_hollow":  # (glowing moss underfoot)
+                ground["grass"] = layer("Glowmoss", 3.0)
+            terrain["ground"] = ground
+            for biome in terrain.get("biomes", []):
+                lush, dry = BIOME_GROUND.get(biome.get("name"), ("Grass", "Dry Grass"))
+                biome["texture"] = layer(lush, 3.0)
+                biome["dry_texture"] = layer(dry, 3.0)
+            world_types.SaveRecipeCommand(self.p, sample_id, recipe).redo()
 
     def name_of(self, scene: str) -> str:
         return self.scene_names[scene]
@@ -579,6 +692,7 @@ class _Builder:
         self.coins_and_fire(hub)
         self.screens()
         self.checklist()
+        self.ground_textures()  # (6.0b)
         return p
 
     def coins_and_fire(self, hub: str) -> None:

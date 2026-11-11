@@ -109,7 +109,7 @@ stamina bars, a score a script raises, a pick-up notification and a compass that
 walking round a planet. They pause, change the volume and a key binding, die and respawn. 📱 All
 of this works on the phone, by touch.
 
-#### 6.0b Terrain textures · M
+#### 6.0b Terrain textures · M ✅ (built Nov 2026; phone check owed)
 Added at the user's request (Nov 2026), before 6.1: picture textures on the terrain, which 5.9's
 procedural ground (colours by slope, height, biome and season) never had. Each ground layer
 (grass, dry grass, sand, rock, snow, and each biome's lush and dry ground) can take a **texture
@@ -125,8 +125,9 @@ far off; a cheaper path on phones. Steps:
 1. ground layers take a texture set (the World Type editor's Ground Textures tab, its sets
    previewed as whole materials; cooked as textures are); 2. the renderer samples them (texture arrays, triplanar, blended as the
    colours are); 3. detail and distance (two scales, fading the repeat; the phone tier);
-4. painting a texture (a brush that paints a chosen layer, stored as terrain stamps);
-5. exit.
+4. painting a texture (two paint layers per world type, named and textured, painted as
+   terrain stamps); 5. exit (the World Tour's ground textured with sets from the texture
+   generator, a path painted in each world).
 **Exit:** a world type's grass, rock and snow given texture sets shows them on a bounded area, a
 planet, a cylinder and a hollow world, blended by slope and height with no seams or stretching,
 snow lying over them in winter; a path painted across the grass shows its texture; picture tests

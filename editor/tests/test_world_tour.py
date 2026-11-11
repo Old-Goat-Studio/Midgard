@@ -275,3 +275,41 @@ def test_the_exit_the_tour_opens_at_its_title_scores_dies_and_respawns(tmp_path)
                          capture_output=True, text=True, timeout=180)
     dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
     assert "Picked up a coin (+10)" in dump["hud"]["notes"]
+
+
+def test_the_exit_of_6_0b_the_tours_ground_is_textured_with_a_path(tour, tmp_path):
+    """6.0b's exit: every world's ground layers have texture sets made with the texture
+    generator (colour, normal, occlusion, metal/roughness; the Hollow World's moss glows), the
+    Planet's biomes their own, a cobbled path painted where you arrive; cooked, packed and
+    credited, with no warnings."""
+    import zipfile
+
+    from midgard_editor import asset_library, terrain_stamps, world_types
+    sets = {a.name: a for a in asset_library.scan(tour)[0] if a.type == "textures"}
+    assert set(sets) == {name for name, *_ in world_tour.GROUND_SETS}
+    assert all(a.licence == "CC0-1.0" for a in sets.values())
+    for _world, sample_id, _colour in world_tour.WORLDS:
+        ground = world_types.recipe(tour, sample_id)["terrain"]["ground"]
+        assert set(ground) == set(world_tour.GROUND_OF)
+        for layer in ground.values():
+            assert {"base_color", "normal", "occlusion", "metallic_roughness"} <= set(
+                layer["textures"])
+        assert ground["paint_1"]["name"] == "Path"
+    hollow = world_types.recipe(tour, "wt_sample_hollow")["terrain"]["ground"]["grass"]
+    assert "emissive" in hollow["textures"]  # (glowing moss)
+    planet = world_types.recipe(tour, "wt_sample_temperate_planet")["terrain"]
+    assert all("texture" in b and "dry_texture" in b for b in planet["biomes"])
+    for name, *_ in world_tour.WORLDS:
+        scene = next(s["id"] for s in scenes.load_all(tour) if s["name"] == name)
+        paints = [s for _id, s in terrain_stamps.load(tour, scene) if s.get("paint") == "paint_1"]
+        assert paints and len(paints[0]["points"]) >= 2, name
+    # Cooked: every map packed (the engine's check finds them all), and credited.
+    archipelago = next(s["id"] for s in scenes.load_all(tour) if s["name"] == "Archipelago")
+    result = cook(tour, tmp_path / "pkg", entry_scene=archipelago)
+    assert not [w for w in result.warnings if "texture" in w.lower()]
+    used = {t for _who, t in world_types.used_ground_textures(tour)}
+    assert used <= {c["id"] for c in result.manifest["content"]}
+    with zipfile.ZipFile(result.out_dir / "game.pak") as pak:
+        assert sum(n.endswith(".ktx2") for n in pak.namelist()) >= len(used)
+    credits = (result.out_dir / "CREDITS.txt").read_text("utf-8")
+    assert "Cobbles" in credits and "Glowmoss" in credits

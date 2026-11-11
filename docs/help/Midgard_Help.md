@@ -137,6 +137,11 @@ editor can be undone with **Ctrl+Z**.
   - **Hollow World**: inside a sphere 2.5 km in radius, with the far side overhead through
     the haze. An **Exit Site** pad takes you outside.
 
+  Every world's ground is textured (grass, sand, rock, snow, the Planet's desert and forest,
+  the Hollow World's faintly glowing moss), each texture set made with Midgard's own texture
+  generator and in the project's Asset Library, and a cobbled **Path** (the world type's
+  first paint layer) leads away from where you arrive.
+
   It opens at its **title screen** (New game, Settings, Quit) and has a pause menu (Esc),
   settings and a game over screen, all made in the Menu editor (section 15). Five gold
   **coins** round the hub raise your Score with a note each; standing in the red **fire pit**
