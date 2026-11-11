@@ -10,7 +10,7 @@ the height where the stroke began. Clear All removes every stroke (undoable too)
 """
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -28,6 +28,8 @@ from ..terrain_stamps import PAINTS, TOOLS, ClearStampsCommand
 
 
 class TerrainPanel(QWidget):
+    open_ground_textures = Signal()  # the World Types panel's Ground Textures, wanted
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.project: Project | None = None
@@ -71,6 +73,16 @@ class TerrainPanel(QWidget):
         layout.addLayout(buttons)
         layout.addLayout(form)
         layout.addWidget(self.status)
+        # The ground's picture textures are the world type's (6.0b): a way there from here.
+        self.textures = QPushButton("Ground Textures…")
+        self.textures.setToolTip("Picture textures for grass, sand, rock, snow and each biome: "
+                                 "the scene's world type's (the World Types panel's Ground "
+                                 "Textures tab)")
+        self.textures.clicked.connect(self.open_ground_textures)
+        textures_row = QHBoxLayout()
+        textures_row.addWidget(self.textures)
+        textures_row.addStretch()
+        layout.addLayout(textures_row)
         layout.addStretch()
         self._tool_chosen()
         self.set_project(None)

@@ -13,7 +13,7 @@ import json
 import logging
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -306,6 +306,44 @@ class WorldTypePanel(QWidget):
         climate_layout.addLayout(row)
         self.tabs.addTab(climate, "Climate and Biomes")
 
+        # Ground textures (6.0b): a texture set for each ground layer and biome.
+        ground_textures = QWidget()
+        textures_layout = QVBoxLayout(ground_textures)
+        note = QLabel("Picture textures for the ground: a texture set from the Asset Library "
+                      "for each layer (its colour, normal, metal and roughness, ambient "
+                      "occlusion and emissive maps), repeating every Tile metres. A layer "
+                      "without one keeps its colour. Double-click a row to choose.")
+        note.setWordWrap(True)
+        textures_layout.addWidget(note)
+        self.ground_textures = QTableWidget(0, 4)
+        self.ground_textures.setHorizontalHeaderLabels(
+            ["Ground", "Texture set", "Maps used (untick to leave one out)", "Tile"])
+        header = self.ground_textures.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.ground_textures.verticalHeader().setVisible(False)
+        self.ground_textures.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.ground_textures.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.ground_textures.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.ground_textures.setIconSize(QSize(32, 32))
+        self.ground_textures.cellDoubleClicked.connect(lambda row, _c: self.choose_ground(row))
+        textures_layout.addWidget(self.ground_textures, 1)
+        row = QHBoxLayout()
+        choose = QPushButton("Choose Texture Set…")
+        choose.clicked.connect(lambda: self.choose_ground(self.ground_textures.currentRow()))
+        row.addWidget(choose)
+        clear = QPushButton("Clear")
+        clear.clicked.connect(lambda: self.set_ground_texture(
+            self._ground_keys[self.ground_textures.currentRow()], None)
+            if 0 <= self.ground_textures.currentRow() < len(self._ground_keys) else None)
+        row.addWidget(clear)
+        row.addStretch(1)
+        textures_layout.addLayout(row)
+        self._ground_keys: list[tuple] = []  # each row's layer: ("ground", name) or
+        #                                      ("biome", index, "texture" or "dry_texture")
+        self.ground_textures_tab = ground_textures
+        self.tabs.addTab(ground_textures, "Ground Textures")
+
         # Placements.
         placements = QWidget()
         placements_layout = QVBoxLayout(placements)
@@ -446,6 +484,12 @@ class WorldTypePanel(QWidget):
         self.chooser.blockSignals(False)
         self._chosen()
 
+    def show_ground_textures(self, world_type: str | None = None) -> None:
+        """The Ground Textures tab, a world type chosen (the scene's) if given."""
+        if world_type is not None and self.chooser.findData(world_type) >= 0:
+            self.chooser.setCurrentIndex(self.chooser.findData(world_type))
+        self.tabs.setCurrentWidget(self.ground_textures_tab)
+
     def _chosen(self) -> None:
         """Shows the chosen world type's latest version."""
         same = self.world_type == self.chooser.currentData()
@@ -488,6 +532,7 @@ class WorldTypePanel(QWidget):
         for b in terrain.get("biomes", []):
             self._biome_row(b)
         self.biomes.blockSignals(False)
+        self._fill_ground_textures()
         self.placements.blockSignals(True)
         self.placements.setRowCount(0)
         for rule in terrain.get("placements", []):
@@ -679,10 +724,13 @@ class WorldTypePanel(QWidget):
         if self._loading:
             return
         biomes = []
+        old = self._ground().get("biomes", [])
         try:
             for row in range(self.biomes.rowCount()):
                 cells = [self.biomes.item(row, c).text() for c in range(7)]
-                biomes.append({"name": cells[0],
+                kept = {k: old[row][k] for k in ("texture", "dry_texture")
+                        if row < len(old) and k in old[row]}
+                biomes.append({**kept, "name": cells[0],
                                "temperature": [float(cells[1]), float(cells[2])],
                                "moisture": [float(cells[3]), float(cells[4])],
                                "color": json.loads(cells[5]),
@@ -695,6 +743,156 @@ class WorldTypePanel(QWidget):
         else:
             ground.pop("biomes", None)
         self.save({**self.recipe, "terrain": ground}, "Change the biomes")
+        self._fill_ground_textures()
+
+    # ---- ground textures -----------------------------------------------------------------------
+    def _ground_texture(self, key: tuple) -> dict | None:
+        terrain = self._ground()
+        if key[0] == "ground":
+            return (terrain.get("ground") or {}).get(key[1])
+        biomes = terrain.get("biomes", [])
+        return biomes[key[1]].get(key[2]) if key[1] < len(biomes) else None
+
+    def _fill_ground_textures(self) -> None:
+        """A row for each ground layer, then each biome's lush and dry ground: its texture
+        set (with a thumbnail, and its colour map when the pointer rests on it), the maps it
+        has, and its tile."""
+        from ..asset_library import asset_of, texture_set
+        from .asset_window import small_icon
+        from .fresh_combo import picture_tip
+        table = self.ground_textures
+        keys = [("ground", k) for k in world_types.GROUND_LAYERS]
+        labels = list(world_types.GROUND_LAYERS.values())
+        for i, b in enumerate(self._ground().get("biomes", [])):
+            name = b.get("name") or f"Biome {i + 1}"
+            keys += [("biome", i, "texture"), ("biome", i, "dry_texture")]
+            labels += [f"{name} (biome)", f"{name} (biome, dry)"]
+        self._ground_keys = keys
+        current = table.currentRow()
+        table.setRowCount(len(keys))
+        for row, (key, label) in enumerate(zip(keys, labels, strict=True)):
+            g = self._ground_texture(key) or {}
+            slots = g.get("textures", {})
+            table.setItem(row, 0, QTableWidgetItem(label))
+            set_item = QTableWidgetItem("(its colour)")
+            asset = None
+            if slots and self.project is not None:
+                from .. import textures
+                parsed = textures.parse(next(iter(slots.values())))
+                if parsed is not None:
+                    asset = asset_of(self.project, self.project.root / parsed[0])
+            if slots:
+                set_item.setText(asset.name if asset is not None else "(not in the library)")
+            colour = texture_set(asset).get("color") if asset is not None else None
+            if colour is not None:
+                icon = small_icon(colour, 32)
+                if icon is not None:
+                    set_item.setIcon(icon)
+                set_item.setToolTip(picture_tip(asset.name, colour))
+            table.setItem(row, 1, set_item)
+            table.setItem(row, 2, QTableWidgetItem())
+            table.setCellWidget(row, 2, self._map_boxes(key, g) if slots else QWidget())
+            tile = _spin(0.1, 1000.0, float(g.get("tile", world_types.DEFAULT_TILE)), " m")
+            tile.setEnabled(bool(slots))
+            tile.setToolTip("How far the textures stretch before they repeat, in metres")
+            tile.editingFinished.connect(lambda k=key, box=tile: self._set_tile(k, box.value()))
+            table.setCellWidget(row, 3, tile)
+        if 0 <= current < len(keys):
+            table.setCurrentCell(current, 0)
+
+    def _map_boxes(self, key: tuple, g: dict) -> QWidget:
+        """A tick box for each of a layer's maps: ticked, used; unticked, left out (kept, to
+        tick again); greyed, the set has none."""
+        slots, off = g.get("textures", {}), g.get("off", [])
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(4, 0, 4, 0)
+        row.setSpacing(8)
+        holder.boxes = {}
+        for slot, name in world_types.GROUND_MAP_NAMES.items():
+            box = QCheckBox(name)
+            box.setEnabled(slot in slots)
+            box.setChecked(slot in slots and slot not in off)
+            box.setToolTip(f"The set's {name.lower()} map: untick to leave it out (its glow, "
+                           "shine or bumps not wanted here)" if slot in slots
+                           else f"This set has no {name.lower()} map")
+            box.toggled.connect(lambda on, k=key, s=slot: self.set_map_used(k, s, on))
+            row.addWidget(box)
+            holder.boxes[slot] = box
+        row.addStretch(1)
+        return holder
+
+    def set_map_used(self, key: tuple, slot: str, used: bool) -> None:
+        """One of a layer's maps used, or left out (kept in the layer, to use again)."""
+        old = self._ground_texture(key)
+        if not old or slot not in old.get("textures", {}):
+            return
+        off = [s for s in old.get("off", []) if s != slot] + ([] if used else [slot])
+        off = [s for s in world_types.GROUND_SLOTS if s in off]  # (in the maps' order)
+        if off == old.get("off", []):
+            return
+        new = {k: v for k, v in old.items() if k != "off"}
+        if off:
+            new["off"] = off
+        name = world_types.GROUND_MAP_NAMES[slot].lower()
+        self._put_ground_texture(key, new, f"{'Use' if used else 'Leave out'} the "
+                                 f"{self._key_label(key)} texture's {name} map")
+
+    def choose_ground(self, row: int) -> None:
+        """A texture set chosen for a row's layer, with its material previewed."""
+        if self.project is None or not 0 <= row < len(self._ground_keys):
+            return
+        from .asset_window import TextureSetPicker
+        picker = TextureSetPicker(self.project, "Texture Set for "
+                                  f"{self.ground_textures.item(row, 0).text()}", self)
+        if picker.exec() and picker.chosen is not None:
+            self.set_ground_texture(self._ground_keys[row], picker.chosen)
+
+    def set_ground_texture(self, key: tuple, asset) -> None:
+        """A layer's texture set (its five maps, as a material takes them), or none (None);
+        its tile kept."""
+        from ..asset_library import material_textures
+        old = self._ground_texture(key) or {}
+        new = None
+        if asset is not None:
+            slots = material_textures(self.project, asset)
+            new = {"textures": {s: slots[s] for s in world_types.GROUND_SLOTS if s in slots},
+                   "tile": old.get("tile", world_types.DEFAULT_TILE)}
+        self._put_ground_texture(key, new, f"Set the {self._key_label(key)} texture" if new
+                                 else f"Clear the {self._key_label(key)} texture")
+
+    def _set_tile(self, key: tuple, tile: float) -> None:
+        old = self._ground_texture(key)
+        if old and round(tile, 3) != old.get("tile"):
+            self._put_ground_texture(key, {**old, "tile": round(tile, 3)},
+                                     f"Set the {self._key_label(key)} texture's tile")
+
+    def _key_label(self, key: tuple) -> str:
+        return self.ground_textures.item(self._ground_keys.index(key), 0).text().lower() \
+            if key in self._ground_keys else "ground"
+
+    def _put_ground_texture(self, key: tuple, value: dict | None, label: str) -> None:
+        terrain = copy.deepcopy(self._ground())
+        if key[0] == "ground":
+            ground = dict(terrain.get("ground") or {})
+            if value is None:
+                ground.pop(key[1], None)
+            else:
+                ground[key[1]] = value
+            if ground:
+                terrain["ground"] = ground
+            else:
+                terrain.pop("ground", None)
+        else:
+            biomes = terrain.get("biomes", [])
+            if key[1] >= len(biomes):
+                return
+            if value is None:
+                biomes[key[1]].pop(key[2], None)
+            else:
+                biomes[key[1]][key[2]] = value
+        self.save({**self.recipe, "terrain": terrain}, label)
+        self._fill_ground_textures()
 
     def add_biome(self) -> None:
         if self.biomes.rowCount() >= 8:
@@ -952,7 +1150,11 @@ class WorldTypePanel(QWidget):
             if self._view is None:
                 self._view = midgard.Viewport()
                 self._view.attach_offscreen(width, height)
+                self._view_sent: dict[str, int] = {}
             self._view.set_settings(json.dumps(settings))
+            if self.project is not None:  # (the ground's textures, 6.0b)
+                world_types.send_ground_textures(self._view, self.project, settings,
+                                                 self._view_sent)
             ground = self._view.terrain_ground([0.0, 0.0, 0.0])
             base, up = (list(ground[1]), list(ground[2])) if ground else ([0.0] * 3, [0, 1, 0])
             base[1] = max(base[1], settings["terrain"].get("sea_level", 0.0))

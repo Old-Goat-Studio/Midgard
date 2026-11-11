@@ -1100,6 +1100,82 @@ def small_icon(path: Path, size: int = 32) -> QIcon | None:
     return _ICONS[key]
 
 
+MAP_NAMES = {"base_color": "colour", "normal": "normal", "metallic_roughness": "metal/rough",
+             "occlusion": "AO", "emissive": "emissive"}
+
+
+def maps_text(slots: dict[str, str]) -> str:
+    """Which maps a texture set has, and which it hasn't: "colour, normal, AO (no emissive)"."""
+    have = [MAP_NAMES[s] for s in MAP_NAMES if s in slots]
+    lacks = [MAP_NAMES[s] for s in MAP_NAMES if s not in slots]
+    return ", ".join(have) + (f" (no {', '.join(lacks)})" if lacks and have else "")
+
+
+class TextureSetPicker(QDialog):
+    """Choose a texture set from the Asset Library: each set once, its colour map's thumbnail
+    and which maps it has, and the whole material shown (on a sphere, a cube or a plane, tiled)
+    as it is picked."""
+
+    def __init__(self, project: Project, title: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.project = project
+        self.chosen: lib.Asset | None = None
+        self.sets = sorted((a for a in lib.scan(project)[0] if a.type == "textures"
+                            and lib.material_textures(project, a)),
+                           key=lambda a: a.name.lower())
+        layout = QVBoxLayout(self)
+        row = QHBoxLayout()
+        self.list = QListWidget()
+        self.list.setIconSize(QSize(THUMB, THUMB))
+        for asset in self.sets:
+            maps = maps_text(lib.material_textures(project, asset))
+            item = QListWidgetItem(f"{asset.name}\n{maps}")
+            colour = lib.texture_set(asset).get("color")
+            icon = small_icon(colour, THUMB) if colour is not None else None
+            if icon is not None:
+                item.setIcon(icon)
+            item.setToolTip(f"{asset.name}: {licence_label(asset.licence)}")
+            self.list.addItem(item)
+        self.list.currentRowChanged.connect(self._picked)
+        self.list.itemDoubleClicked.connect(lambda _i: self.accept_current())
+        row.addWidget(self.list, 1)
+        self.player = AssetPlayer()
+        row.addWidget(self.player)
+        layout.addLayout(row)
+        if not self.sets:
+            empty = QLabel("The library has no texture sets yet: Assets ▸ Import Into Library, "
+                           "as Textures, brings them in.")
+            empty.setWordWrap(True)
+            layout.addWidget(empty)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.use_button = buttons.addButton("Use", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.use_button.setEnabled(False)
+        buttons.accepted.connect(self.accept_current)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.resize(760, 440)
+
+    def _picked(self, row: int) -> None:
+        self.use_button.setEnabled(row >= 0)
+        self.player.show_asset(self.sets[row] if row >= 0 else None)
+
+    def pick(self, row: int) -> None:
+        self.list.setCurrentRow(row)
+
+    def accept_current(self) -> None:
+        row = self.list.currentRow()
+        if row < 0:
+            return
+        self.chosen = self.sets[row]
+        self.player.drop()
+        self.accept()
+
+    def done(self, result: int) -> None:
+        self.player.drop()
+        super().done(result)
+
+
 MATERIAL_ROW = "\x00material"  # (the files list's row for a texture set's whole material)
 
 

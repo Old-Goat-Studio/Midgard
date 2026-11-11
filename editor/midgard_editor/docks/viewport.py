@@ -398,16 +398,20 @@ class ViewportPanel(QWidget):
 
     def _settings_changed(self, scene: str) -> None:
         if self.project is not None and scene == self.project.scene:
-            self.view.set_settings(json.dumps(world_types.resolved_settings(
-                self.project, self.project.scene_settings())))
+            settings = world_types.resolved_settings(self.project, self.project.scene_settings())
+            self.view.set_settings(json.dumps(settings))
+            world_types.send_ground_textures(self.view, self.project, settings,
+                                             self._sent_content)
             self.request_render()
 
     def _sync_all(self) -> None:
         self.view.clear()
         if self.project is not None:
             # The fallback for a scene without a Sky entity, as in the game.
-            self.view.set_settings(json.dumps(world_types.resolved_settings(
-                self.project, self.project.scene_settings())))
+            settings = world_types.resolved_settings(self.project, self.project.scene_settings())
+            self.view.set_settings(json.dumps(settings))
+            world_types.send_ground_textures(self.view, self.project, settings,
+                                             self._sent_content)
             self.send_environments()
             self.send_terrain()
             for entity in parents_first(self.project.entities()):

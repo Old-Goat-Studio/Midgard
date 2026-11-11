@@ -183,6 +183,25 @@ render::TerrainLook TerrainStreamer::look() const {
     for (const Biome& b : t.biomes)
         out.biomes.push_back({float(b.temperature_min), float(b.temperature_max),
                               float(b.moisture_min), float(b.moisture_max), b.color, b.dry_color});
+    // The layers' picture textures (6.0b), their maps in a material's order.
+    const auto add = [&](int slot, const GroundTexture& g) {
+        if (g.textures().empty()) return;  // (none, or all switched off)
+        out.ground.push_back({slot,
+                              float(g.tile),
+                              {g.map("base_color"), g.map("metallic_roughness"), g.map("normal"),
+                               g.map("occlusion"), g.map("emissive")}});
+    };
+    const std::pair<const char*, int> layers[] = {{"grass", render::kGroundSlotGrass},
+                                                  {"dry_grass", render::kGroundSlotDryGrass},
+                                                  {"sand", render::kGroundSlotSand},
+                                                  {"rock", render::kGroundSlotRock},
+                                                  {"snow", render::kGroundSlotSnow}};
+    for (const auto& [name, slot] : layers)
+        if (const auto it = t.ground.find(name); it != t.ground.end()) add(slot, it->second);
+    for (size_t i = 0; i < t.biomes.size() && i < size_t(render::kMaxTerrainBiomes); ++i) {
+        add(render::ground_slot_biome(int(i), false), t.biomes[i].texture);
+        add(render::ground_slot_biome(int(i), true), t.biomes[i].dry_texture);
+    }
     return out;
 }
 

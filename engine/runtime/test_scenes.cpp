@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
@@ -718,15 +719,129 @@ private:
 // Terrain (milestone 5.9) at noon on the Earth-like environment: a bounded area seen from a
 // hill above it (land, then the ocean band at its edge), a flat-wrap cylinder at one of its end
 // walls, and a habitat seen along its length with the far side overhead.
+// Ground textures for the picture tests (6.0b): small made-up texture sets, every map of them
+// (colour, metal/roughness, normal, occlusion, glow), as the cook makes them (KTX2), by content
+// id. Grass in blades, sand in ripples, rock in slabs with glowing cracks, snow in drifts.
+std::unordered_map<std::string, std::vector<uint8_t>> ground_test_textures() {
+    constexpr uint32_t size = 128;
+    const auto make = [](bool srgb, const std::function<glm::vec4(float, float)>& f) {
+        std::vector<uint8_t> px;
+        px.reserve(size * size * 4);
+        for (uint32_t y = 0; y < size; ++y)
+            for (uint32_t x = 0; x < size; ++x) {
+                const glm::vec4 c = glm::clamp(f((x + 0.5f) / size, (y + 0.5f) / size), 0.0f, 1.0f);
+                for (int i = 0; i < 4; ++i)
+                    px.push_back(static_cast<uint8_t>(std::lround(c[i] * 255)));
+            }
+        return render::encode_ktx2(render::make_texture(size, size, srgb, std::move(px)), {0});
+    };
+    // A height field's normal (OpenGL's: x right, y up the picture), from its slopes.
+    const auto normal_of = [&](const std::function<float(float, float)>& h, float strength) {
+        return make(false, [=](float u, float v) {
+            const float e = 1.0f / size;
+            const float dx = (h(u + e, v) - h(u - e, v)) / (2 * e);
+            const float dy = (h(u, v - e) - h(u, v + e)) / (2 * e);
+            const glm::vec3 n = glm::normalize(glm::vec3(-dx * strength, -dy * strength, 1.0f));
+            return glm::vec4(n * 0.5f + 0.5f, 1.0f);
+        });
+    };
+    constexpr float tau = 6.2831853f;
+    const auto blades = [=](float u, float v) {
+        return 0.5f + 0.5f * std::sin((u * 4.0f + std::sin(v * tau) * 0.3f) * tau);
+    };
+    const auto ripples = [=](float u, float v) {
+        return 0.5f + 0.5f * std::sin((v * 3.0f + std::sin(u * tau) * 0.3f) * tau);
+    };
+    // Slabs: 3 x 3 a tile, alternate rows offset; d is the distance to the nearest crack.
+    const auto crack = [](float u, float v) {
+        const float row = std::floor(v * 3.0f);
+        const float uu = u * 3.0f + (int(row) % 2 ? 0.5f : 0.0f);
+        const float fu = uu - std::floor(uu), fv = v * 3.0f - row;
+        return std::min({fu, 1.0f - fu, fv, 1.0f - fv});
+    };
+    const auto slab = [=](float u, float v) { return std::min(crack(u, v) * 12.0f, 1.0f); };
+    const auto drifts = [=](float u, float v) {
+        return 0.5f + 0.25f * std::sin(u * tau * 2.0f) * std::cos(v * tau * 3.0f);
+    };
+    std::unordered_map<std::string, std::vector<uint8_t>> out;
+    out["tex:test/grass_color.png"] = make(true, [=](float u, float v) {
+        const float b = blades(u, v);
+        return glm::vec4(
+            glm::mix(glm::vec3(0.10f, 0.25f, 0.06f), glm::vec3(0.35f, 0.55f, 0.15f), b), 1.0f);
+    });
+    out["tex:test/grass_normal.png#linear"] = normal_of(blades, 0.06f);
+    out["tex:test/grass_ao.png#linear"] = make(false, [=](float u, float v) {
+        return glm::vec4(glm::vec3(0.6f + 0.4f * blades(u, v)), 1.0f);
+    });
+    out["tex:test/dry_color.png"] = make(true, [=](float u, float v) {
+        const float b = blades(u, v);
+        return glm::vec4(
+            glm::mix(glm::vec3(0.40f, 0.34f, 0.15f), glm::vec3(0.70f, 0.62f, 0.32f), b), 1.0f);
+    });
+    out["tex:test/sand_color.png"] = make(true, [=](float u, float v) {
+        return glm::vec4(
+            glm::mix(glm::vec3(0.62f, 0.52f, 0.33f), glm::vec3(0.86f, 0.76f, 0.52f), ripples(u, v)),
+            1.0f);
+    });
+    out["tex:test/sand_normal.png#linear"] = normal_of(ripples, 0.05f);
+    out["tex:test/rock_color.png"] = make(true, [=](float u, float v) {
+        const float tone = 0.45f + 0.08f * std::sin(std::floor(u * 3.0f) * 7.0f + v * 2.0f);
+        return glm::vec4(glm::vec3(tone, tone * 0.97f, tone * 0.92f) * (0.35f + 0.65f * slab(u, v)),
+                         1.0f);
+    });
+    out["tex:test/rock_mr.png#linear"] = make(false, [=](float u, float v) {
+        return glm::vec4(1.0f, 0.35f + 0.5f * slab(u, v), 0.0f, 1.0f);  // smooth slabs
+    });
+    out["tex:test/rock_normal.png#linear"] = normal_of(slab, 0.15f);
+    out["tex:test/rock_ao.png#linear"] = make(false, [=](float u, float v) {
+        return glm::vec4(glm::vec3(0.3f + 0.7f * slab(u, v)), 1.0f);
+    });
+    out["tex:test/rock_glow.png"] = make(true, [=](float u, float v) {
+        const float lava = 1.0f - std::min(crack(u, v) * 30.0f, 1.0f);
+        return glm::vec4(glm::vec3(1.0f, 0.35f, 0.05f) * lava, 1.0f);
+    });
+    out["tex:test/snow_color.png"] = make(true, [=](float u, float v) {
+        return glm::vec4(glm::vec3(0.86f, 0.9f, 0.96f) + 0.06f * drifts(u, v), 1.0f);
+    });
+    out["tex:test/snow_mr.png#linear"] = make(false, [=](float u, float v) {
+        return glm::vec4(1.0f, 0.45f + 0.2f * drifts(u, v), 0.0f, 1.0f);
+    });
+    out["tex:test/snow_normal.png#linear"] = normal_of(drifts, 0.2f);
+    return out;
+}
+
+// The ground layers that use them (a world type's "ground", as the editor writes it).
+nlohmann::json ground_test_layers() {
+    return nlohmann::json::parse(R"({
+        "grass": {"textures": {"base_color": "tex:test/grass_color.png",
+                               "normal": "tex:test/grass_normal.png#linear",
+                               "occlusion": "tex:test/grass_ao.png#linear"}, "tile": 2.0},
+        "dry_grass": {"textures": {"base_color": "tex:test/dry_color.png",
+                                   "normal": "tex:test/grass_normal.png#linear"}, "tile": 2.0},
+        "sand": {"textures": {"base_color": "tex:test/sand_color.png",
+                              "normal": "tex:test/sand_normal.png#linear"}, "tile": 3.0},
+        "rock": {"textures": {"base_color": "tex:test/rock_color.png",
+                              "metallic_roughness": "tex:test/rock_mr.png#linear",
+                              "normal": "tex:test/rock_normal.png#linear",
+                              "occlusion": "tex:test/rock_ao.png#linear",
+                              "emissive": "tex:test/rock_glow.png"}, "tile": 4.0},
+        "snow": {"textures": {"base_color": "tex:test/snow_color.png",
+                              "metallic_roughness": "tex:test/snow_mr.png#linear",
+                              "normal": "tex:test/snow_normal.png#linear"}, "tile": 3.0}})");
+}
+
 class TerrainScene : public TestScene {
 public:
-    explicit TerrainScene(const std::string& which) {
+    // textured: the ground's layers have picture textures (6.0b; ground_test_textures).
+    explicit TerrainScene(const std::string& which, bool textured = false) : textured_(textured) {
         nlohmann::json body, terrain = nlohmann::json::object();
         if (which == "winter") summer_ = -1.0;  // deep winter: snow down to the shore
         if (which == "autumn") autumn_ = 1.0;   // between summer and winter, the leaves turning
         // After a snowfall (milestone 5.15): the placed scene in autumn, under settled snow.
         if (which == "snowfall") ground_.snow = 0.85f;
-        if (which == "placed" || which == "snowfall") {
+        if ((which == "placed" || which == "snowfall") && textured) {
+            body = {{"shape", "bounded_area"}, {"width", 3000}, {"length", 3000}, {"seed", 7}};
+        } else if (which == "placed" || which == "snowfall") {
             // A world type's objects on a bounded area (milestone 5.11): "trees" (a trunk and a
             // crown, both cubes) on the gentle ground, and grey boulders, leaning with it, on the
             // steeper.
@@ -818,14 +933,17 @@ public:
             look_ = {0.0, 250.0, -1500.0};
         }
         body["id"] = which;
+        if (textured) terrain["ground"] = ground_test_layers();
         scene_.settings.body = body_from_json(body);
         scene_.settings.terrain = terrain_from_json(terrain);
         if (which == "placed" || which == "snowfall") {  // above a hillside, looking across it
             const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
             eye_ = t.ground({-420.0, 0.0, -380.0}) + glm::dvec3(0.0, 28.0, 0.0);
             look_ = t.ground({-500.0, 0.0, -470.0});
-            placed_ = std::make_unique<PlacedObjects>(t);
-            placed_->update(scene_, eye_, 1000);
+            if (!textured) {
+                placed_ = std::make_unique<PlacedObjects>(t);
+                placed_->update(scene_, eye_, 1000);
+            }
         }
         if (which == "habitat_rod") {  // on the floor, looking up at the light rod on the axis
             const Terrain t(*scene_.settings.body, *scene_.settings.terrain);
@@ -902,6 +1020,10 @@ public:
         scene_.solar_phase = 0.2;
         streamer_ =
             std::make_unique<TerrainStreamer>(*scene_.settings.body, *scene_.settings.terrain);
+        if (textured && which == "placed")  // (a patch of rock painted in front: its maps seen)
+            streamer_->set_stamps({stamp_from_json(nlohmann::json::parse(R"({"tool": "paint",
+                "paint": "rock", "radius": 14, "strength": 1, "face": 0,
+                "points": [[0.343, 0.37], [0.333, 0.35]]})"))});
         up_ = glm::vec3(scene_.settings.body->up(eye_));
         if (which == "hollow_far" || which == "planet_biomes") far_ = 20000.0f;
         if (which == "space") {  // (the whole planet, from 6 km over its ground)
@@ -912,6 +1034,14 @@ public:
     void upload(render::Renderer& renderer) override {
         light_.upload(renderer);
         cube_ = renderer.upload_mesh(render::make_cube());
+        if (textured_) {
+            ground_maps_ = ground_test_textures();
+            renderer.set_ground_reader([this](const std::string& id) {
+                const auto it = ground_maps_.find(id);
+                if (it == ground_maps_.end()) throw std::runtime_error("no such map");
+                return it->second;
+            });
+        }
     }
     void stream(render::Renderer& renderer, const glm::dvec3& origin) override {
         streamer_->update(origin, &renderer, true);
@@ -957,6 +1087,8 @@ private:
     glm::vec3 up_{0, 1, 0};
     double summer_ = 0.0, autumn_ = 0.0;
     float far_ = 8000.0f;  // the far plane (inside a big hollow world, past its far side)
+    bool textured_ = false;
+    std::unordered_map<std::string, std::vector<uint8_t>> ground_maps_;
 };
 
 const char* const kDayShapes[] = {"area", "flat_cylinder", "planet", "hollow", "habitat"};
@@ -973,11 +1105,28 @@ std::vector<std::string> names() {
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             out.push_back(std::string("day_") + shape + "_" + time);
-    for (const char* which :
-         {"terrain_area", "terrain_strip", "terrain_habitat", "terrain_shore", "terrain_planet",
-          "terrain_planet_low", "terrain_hollow", "terrain_hollow_far", "terrain_habitat_ground",
-          "terrain_habitat_rod", "terrain_hollow_light", "terrain_planet_biomes", "terrain_placed",
-          "terrain_snowfall", "terrain_winter", "terrain_autumn", "space"})
+    for (const char* which : {"terrain_area",
+                              "terrain_strip",
+                              "terrain_habitat",
+                              "terrain_shore",
+                              "terrain_planet",
+                              "terrain_planet_low",
+                              "terrain_hollow",
+                              "terrain_hollow_far",
+                              "terrain_habitat_ground",
+                              "terrain_habitat_rod",
+                              "terrain_hollow_light",
+                              "terrain_planet_biomes",
+                              "terrain_placed",
+                              "terrain_snowfall",
+                              "terrain_winter",
+                              "terrain_autumn",
+                              "space",
+                              "terrain_textured",
+                              "terrain_textured_planet",
+                              "terrain_textured_habitat",
+                              "terrain_textured_hollow",
+                              "terrain_textured_winter"})
         out.push_back(which);
     return out;
 }
@@ -1061,6 +1210,15 @@ std::unique_ptr<TestScene> make(const std::string& name) {
     if (name == "space") return std::make_unique<TerrainScene>("space");
     if (name == "terrain_winter") return std::make_unique<TerrainScene>("winter");
     if (name == "terrain_autumn") return std::make_unique<TerrainScene>("autumn");
+    // The ground's picture textures (6.0b): on a hillside, a planet across a cube edge, a
+    // habitat's floor, a hollow world, and under winter's snow.
+    if (name == "terrain_textured") return std::make_unique<TerrainScene>("placed", true);
+    if (name == "terrain_textured_planet")
+        return std::make_unique<TerrainScene>("planet_low", true);
+    if (name == "terrain_textured_habitat")
+        return std::make_unique<TerrainScene>("habitat_ground", true);
+    if (name == "terrain_textured_hollow") return std::make_unique<TerrainScene>("hollow", true);
+    if (name == "terrain_textured_winter") return std::make_unique<TerrainScene>("winter", true);
     for (const char* shape : kDayShapes)
         for (const auto& [time, phase] : kDayTimes)
             if (name == std::string("day_") + shape + "_" + time)

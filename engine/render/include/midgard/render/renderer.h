@@ -95,14 +95,34 @@ struct TerrainBiome {
     glm::vec3 color{0.27f, 0.42f, 0.16f};      // sRGB, lush
     glm::vec3 dry_color{0.55f, 0.50f, 0.28f};  // sRGB, dry
 };
+// A ground layer's picture textures (milestone 6.0b; midgard/terrain.h's GroundTexture): its
+// slot (kGroundSlotGrass to kGroundSlotSnow, then each biome's lush and dry ground), how many
+// metres a tile covers, and its maps' content ids in a material's order (base colour,
+// metal/roughness, normal, occlusion, emissive; "" none). The renderer reads each map once,
+// through set_ground_reader, into one texture array per kind of map: triplanar, so the same on
+// every world shape, slopes and the cube-sphere's faces alike.
+inline constexpr int kGroundSlotGrass = 0, kGroundSlotDryGrass = 1, kGroundSlotSand = 2,
+                     kGroundSlotRock = 3, kGroundSlotSnow = 4;
+inline constexpr int kGroundSlots = 5 + 2 * kMaxTerrainBiomes;
+constexpr int ground_slot_biome(int biome, bool dry) {
+    return 5 + 2 * biome + (dry ? 1 : 0);
+}
+struct GroundLayerLook {
+    int slot = 0;
+    float tile = 4.0f;  // metres
+    std::array<std::string, 5> maps;
+    bool operator==(const GroundLayerLook&) const = default;
+};
+
 struct TerrainLook {
     // The world's shape, for "up" at each point: 0 flat (+Y), 1 a curved cylinder (towards its
     // axis, along Z through `center`), 2 a sphere's outside (away from `center`), 3 its inside.
     int shape = 0;
     glm::dvec3 center{0.0};
-    bool climate = false;              // snow where the temperature is below freezing
-    float season_offset = 0.0f;        // degrees Celsius added by the season (summer warmer)
-    std::vector<TerrainBiome> biomes;  // none: the 5.9 grass
+    bool climate = false;                 // snow where the temperature is below freezing
+    float season_offset = 0.0f;           // degrees Celsius added by the season (summer warmer)
+    std::vector<TerrainBiome> biomes;     // none: the 5.9 grass
+    std::vector<GroundLayerLook> ground;  // (6.0b) the layers with picture textures
 };
 
 // A line drawn into the scene for debugging (collider outlines and the like): its ends relative
@@ -226,6 +246,18 @@ public:
     // The terrain's look, for every frame from now on (shaders/terrain.frag): the world's shape
     // (the terrain works out "up" at each point from it) and its climate and biomes.
     void set_terrain_look(const TerrainLook& look);
+    // How the ground's textures are read (6.0b): a map's KTX2 bytes by content id; it throws
+    // when it can't (yet: a map not sent is asked for again on later frames). The maps are made
+    // ready when a terrain look first names them (each read and sized once, kept while named).
+    using ReadGroundTexture = std::function<std::vector<uint8_t>(const std::string&)>;
+    void set_ground_reader(ReadGroundTexture read);
+    // The ground's maps on the GPU: (texture sets, slices of each array, each slice's size).
+    struct GroundStats {
+        int sets = 0;
+        uint32_t size = 0;
+        std::vector<std::string> missing;  // maps named that couldn't be read
+    };
+    GroundStats ground_stats() const;
 
     // Brightness before tone mapping (1 = as lit); the environment will drive it later.
     void set_exposure(float exposure);

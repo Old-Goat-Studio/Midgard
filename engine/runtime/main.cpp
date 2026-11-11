@@ -453,7 +453,12 @@ public:
             warn("%s; starting a new one\n", e.what());
         }
     }
-    void upload(render::Renderer& renderer) override { game_.upload_meshes(renderer); }
+    void upload(render::Renderer& renderer) override {
+        game_.upload_meshes(renderer);
+        // The ground's picture textures (6.0b), from the package.
+        renderer.set_ground_reader(
+            [this](const std::string& id) { return game_.read_content(id); });
+    }
     void stream(render::Renderer& renderer, const glm::dvec3& camera, bool wait) override {
         game_.stream_terrain(renderer, camera, wait);
     }

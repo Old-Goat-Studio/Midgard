@@ -258,6 +258,7 @@ void Viewport::attach_window(const std::string& platform, uint64_t handle, uint3
                                   "' windows (on Linux, start the editor with X11)");
     }
     renderer_ = std::make_unique<render::Renderer>(desc);
+    use_ground_reader();
     upload_meshes();
 }
 
@@ -268,7 +269,18 @@ void Viewport::attach_offscreen(uint32_t width, uint32_t height) {
     desc.width = std::max(width, 1u);
     desc.height = std::max(height, 1u);
     renderer_ = std::make_unique<render::Renderer>(desc);
+    use_ground_reader();
     upload_meshes();
+}
+
+// The ground's picture textures (6.0b): from what the editor sent (set_texture), asked again
+// on later frames until it has.
+void Viewport::use_ground_reader() {
+    renderer_->set_ground_reader([this](const std::string& texture) {
+        const auto it = texture_data_.find(texture);
+        if (it == texture_data_.end()) throw AssetError("not sent to the viewport");
+        return it->second;
+    });
 }
 
 void Viewport::set_terrain_stamps(const std::string& stamps_json) {

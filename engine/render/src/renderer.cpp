@@ -16,6 +16,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <map>
+#include <set>
 #include <tuple>
 
 #include <volk.h>
@@ -100,6 +102,13 @@ struct FrameData {
     glm::vec4 ground;         // x: wetness, y: snow (render::GroundCover)
     glm::vec4 stars;          // brightness, density, seed (render::Stars)
     glm::vec4 clock;          // seconds (repeating hourly): surface shaders' time (5.17)
+    // The ground's picture textures (6.0b), a slot each (grass, dry grass, sand, rock, snow,
+    // then each biome's lush and dry): x 1 / its tile (metres), y its slice in the arrays, z
+    // which maps it has (bits, a material's order: 1 colour, 2 metal/roughness, 4 normal, 8
+    // occlusion, 16 emissive; 0 none: its colour as before); and the camera's place modulo the
+    // tile, so the pattern stays put on the world however far from its origin the camera is.
+    glm::vec4 ground_layer[kGroundSlots];
+    glm::vec4 ground_offset[kGroundSlots];
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -348,6 +357,26 @@ struct Renderer::Impl {
     bool anisotropy = false;
     float max_anisotropy = 1.0f;
     GpuFormat texture_format = GpuFormat::RGBA8;  // what KTX2 textures are transcoded to
+
+    // The ground's picture textures (6.0b): one array per kind of map (a material's order:
+    // colour, metal/roughness, normal, occlusion, emissive), a slice per texture set, every
+    // slice ground_size square; bound as the terrain's set 1. Placeholders (1 x 1) until a
+    // terrain look names some.
+    std::array<Image, 5> ground_arrays;
+    VkDescriptorSet ground_set = VK_NULL_HANDLE;
+    Renderer::ReadGroundTexture ground_reader;
+    std::map<std::string, TextureData> ground_maps;  // read and sized, by content id
+    std::set<std::string> ground_missing;            // named, but not read (asked again later)
+    uint32_t ground_size = 0;
+    std::string ground_key;  // the sets in the arrays, in slice order
+    int ground_sets = 0;
+    int ground_retry = 0;  // frames until the missing maps are asked for again
+    struct GroundSlot {
+        int slice = -1;
+        float tile = 4.0f;
+        int mask = 0;
+    };
+    std::array<GroundSlot, kGroundSlots> ground_slots{};
 
     QualitySettings quality;
     // The sun's shadow maps: one depth image with a layer per cascade (a 1 x 1 layer when
@@ -2340,6 +2369,238 @@ struct Renderer::Impl {
         white_linear = solid_texture(255, 255, 255, false);
         flat_normal = solid_texture(128, 128, 255, false);  // straight out of the surface
         create_material(MaterialTextures{});                // MaterialId 0: no textures
+        ground_set = allocate_material_set();
+        build_ground_arrays({}, 1);
+    }
+
+    // ---- the ground's picture textures (6.0b) -------------------------------------------------
+    static constexpr VkFormat kGroundFormats[5] = {
+        VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+        VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB};
+    // What a set without a map reads: white, rough and not metal, flat, unoccluded, dark.
+    static constexpr uint8_t kGroundDefaults[5][4] = {{255, 255, 255, 255},
+                                                      {255, 230, 0, 255},
+                                                      {128, 128, 255, 255},
+                                                      {255, 255, 255, 255},
+                                                      {0, 0, 0, 255}};
+
+    // Each slice's size: smaller on phones (and never past the tier's largest texture).
+    uint32_t ground_target_size() const {
+        const uint32_t wanted = quality.tier == Quality::Phone ? 512u : 1024u;
+        return std::max(1u, std::min(wanted, std::max(quality.max_texture_size, 1u)));
+    }
+
+    // A map's KTX2 bytes as a size x size texture with its mipmaps: from its smallest level at
+    // least that big, resampled (bilinear, wrapping: it tiles).
+    static TextureData prepare_ground_map(std::span<const uint8_t> ktx2, uint32_t size, bool srgb) {
+        const TextureData decoded = decode_ktx2(ktx2);
+        uint32_t w = decoded.width, h = decoded.height;
+        size_t level = 0;
+        while (level + 1 < decoded.levels.size() && w / 2 >= size && h / 2 >= size) {
+            ++level;
+            w = std::max(1u, w / 2);
+            h = std::max(1u, h / 2);
+        }
+        const std::vector<uint8_t>& src = decoded.levels[level];
+        if (src.size() != size_t(w) * h * 4) throw RenderError("a ground map's size is wrong");
+        std::vector<uint8_t> out(size_t(size) * size * 4);
+        for (uint32_t y = 0; y < size; ++y) {
+            const float fy = (float(y) + 0.5f) * float(h) / float(size) - 0.5f;
+            const float y0f = std::floor(fy);
+            const float ty = fy - y0f;
+            const uint32_t y0 = uint32_t((int64_t(y0f) % h + h) % h), y1 = (y0 + 1) % h;
+            for (uint32_t x = 0; x < size; ++x) {
+                const float fx = (float(x) + 0.5f) * float(w) / float(size) - 0.5f;
+                const float x0f = std::floor(fx);
+                const float tx = fx - x0f;
+                const uint32_t x0 = uint32_t((int64_t(x0f) % w + w) % w), x1 = (x0 + 1) % w;
+                for (int c = 0; c < 4; ++c) {
+                    const auto at = [&](uint32_t px, uint32_t py) {
+                        return float(src[(size_t(py) * w + px) * 4 + size_t(c)]);
+                    };
+                    const float v = (at(x0, y0) * (1 - tx) + at(x1, y0) * tx) * (1 - ty) +
+                                    (at(x0, y1) * (1 - tx) + at(x1, y1) * tx) * ty;
+                    out[(size_t(y) * size + x) * 4 + size_t(c)] =
+                        uint8_t(std::clamp(v + 0.5f, 0.0f, 255.0f));
+                }
+            }
+        }
+        return make_texture(size, size, srgb, std::move(out));
+    }
+
+    // The arrays made again: a slice for each set (its five maps by content id, "" none), each
+    // size x size. (Waits for the GPU: the old arrays may still be drawing.)
+    void build_ground_arrays(const std::vector<std::array<std::string, 5>>& sets, uint32_t size) {
+        vkDeviceWaitIdle(device);
+        const uint32_t layers = std::max<uint32_t>(1, uint32_t(sets.size()));
+        uint32_t levels = 1;
+        while ((size >> levels) > 0) ++levels;
+        std::array<VkDescriptorImageInfo, kMaterialBindings> images{};
+        std::array<VkWriteDescriptorSet, kMaterialBindings> writes{};
+        for (int k = 0; k < 5; ++k) {
+            destroy_image(ground_arrays[size_t(k)]);
+            Image& img = ground_arrays[size_t(k)];
+            VkImageCreateInfo iinfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+            iinfo.imageType = VK_IMAGE_TYPE_2D;
+            iinfo.format = kGroundFormats[k];
+            iinfo.extent = {size, size, 1};
+            iinfo.mipLevels = levels;
+            iinfo.arrayLayers = layers;
+            iinfo.samples = VK_SAMPLE_COUNT_1_BIT;
+            iinfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+            iinfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            VmaAllocationCreateInfo ainfo{};
+            ainfo.usage = VMA_MEMORY_USAGE_AUTO;
+            check(vmaCreateImage(allocator, &iinfo, &ainfo, &img.image, &img.allocation, nullptr),
+                  "Creating the ground's textures");
+            VkImageViewCreateInfo vinfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+            vinfo.image = img.image;
+            vinfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            vinfo.format = kGroundFormats[k];
+            vinfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
+            check(vkCreateImageView(device, &vinfo, nullptr, &img.view),
+                  "Creating the ground's texture view");
+            // Each slice's levels: the set's map, or this kind's default.
+            const bool srgb = kGroundFormats[k] == VK_FORMAT_R8G8B8A8_SRGB;
+            const uint8_t* d = kGroundDefaults[k];
+            const TextureData fallback = make_texture(size, size, srgb, [&] {
+                std::vector<uint8_t> px(size_t(size) * size * 4);
+                for (size_t i = 0; i < px.size(); i += 4) std::memcpy(&px[i], d, 4);
+                return px;
+            }());
+            VkDeviceSize total = 0;
+            for (const auto& level : fallback.levels) total += level.size();
+            total *= layers;
+            Buffer staging = create_buffer(total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
+            std::vector<VkBufferImageCopy> copies;
+            VkDeviceSize offset = 0;
+            for (uint32_t layer = 0; layer < layers; ++layer) {
+                const TextureData* data = &fallback;
+                if (layer < sets.size() && !sets[layer][size_t(k)].empty())
+                    if (const auto it = ground_maps.find(sets[layer][size_t(k)]);
+                        it != ground_maps.end() && it->second.width == size)
+                        data = &it->second;
+                uint32_t s = size;
+                for (uint32_t i = 0; i < levels; ++i) {
+                    const std::vector<uint8_t>& level = data->levels[i];
+                    std::memcpy(static_cast<uint8_t*>(staging.mapped) + offset, level.data(),
+                                level.size());
+                    VkBufferImageCopy copy{};
+                    copy.bufferOffset = offset;
+                    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i, layer, 1};
+                    copy.imageExtent = {s, s, 1};
+                    copies.push_back(copy);
+                    offset += level.size();
+                    s = std::max(1u, s / 2);
+                }
+            }
+            vmaFlushAllocation(allocator, staging.allocation, 0, VK_WHOLE_SIZE);
+            immediate([&](VkCommandBuffer cmd) {
+                VkImageMemoryBarrier to_dst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+                to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                to_dst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                to_dst.srcQueueFamilyIndex = to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                to_dst.image = img.image;
+                to_dst.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                                     &to_dst);
+                vkCmdCopyBufferToImage(cmd, staging.buffer, img.image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                       static_cast<uint32_t>(copies.size()), copies.data());
+                VkImageMemoryBarrier to_read = to_dst;
+                to_read.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                to_read.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                to_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                to_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                                     nullptr, 1, &to_read);
+            });
+            destroy_buffer(staging);
+        }
+        // Set 1 for the terrain: the arrays, then (unused by it) white for the shader maps.
+        for (uint32_t i = 0; i < kMaterialBindings; ++i) {
+            const VkImageView view =
+                i < 5 ? ground_arrays[i].view : textures[white_linear].image.view;
+            images[i] = {material_sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            writes[i].dstSet = ground_set;
+            writes[i].dstBinding = i;
+            writes[i].descriptorCount = 1;
+            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[i].pImageInfo = &images[i];
+        }
+        vkUpdateDescriptorSets(device, kMaterialBindings, writes.data(), 0, nullptr);
+        ground_size = size;
+        ground_sets = int(sets.size());
+    }
+
+    // The terrain look's layers: their sets read (what isn't yet), the arrays made again when
+    // the sets change, and each slot's slice, tile and maps.
+    void update_ground() {
+        std::vector<std::array<std::string, 5>> sets;
+        ground_slots.fill(GroundSlot{});
+        std::vector<std::pair<int, int>> slot_sets;  // (slot, set)
+        for (const GroundLayerLook& g : terrain_look.ground) {
+            if (g.slot < 0 || g.slot >= kGroundSlots) continue;
+            bool any = false;
+            for (const std::string& m : g.maps) any = any || !m.empty();
+            if (!any) continue;
+            auto it = std::find(sets.begin(), sets.end(), g.maps);
+            if (it == sets.end()) it = sets.insert(sets.end(), g.maps);
+            ground_slots[size_t(g.slot)].tile = std::max(g.tile, 0.01f);
+            slot_sets.emplace_back(g.slot, int(it - sets.begin()));
+        }
+        const uint32_t size = ground_target_size();
+        if (size != ground_size && ground_size > 1) ground_maps.clear();  // (a new tier)
+        std::string key = std::to_string(size) + '\n';
+        for (const auto& set : sets)
+            for (const std::string& m : set) key += m + '\n';
+        bool changed = key != ground_key;
+        // Read what isn't ready (the missing ones only now and then: they may come later).
+        const bool retry = ground_retry-- <= 0;
+        if (retry) ground_retry = 60;
+        for (const auto& set : sets)
+            for (size_t k = 0; k < 5; ++k) {
+                const std::string& id = set[k];
+                if (id.empty() || ground_maps.contains(id)) continue;
+                if (ground_missing.contains(id) && !retry) continue;
+                try {
+                    if (!ground_reader) throw RenderError("no reader");
+                    const std::vector<uint8_t> bytes = ground_reader(id);
+                    ground_maps[id] = prepare_ground_map(
+                        bytes, size, kGroundFormats[k] == VK_FORMAT_R8G8B8A8_SRGB);
+                    ground_missing.erase(id);
+                    changed = true;
+                } catch (const std::exception&) {
+                    ground_missing.insert(id);
+                }
+            }
+        // Each slot: its slice, and the maps it has.
+        for (const auto& [slot, set] : slot_sets) {
+            int mask = 0;
+            for (size_t k = 0; k < 5; ++k)
+                if (!sets[size_t(set)][k].empty() && ground_maps.contains(sets[size_t(set)][k]))
+                    mask |= 1 << k;
+            ground_slots[size_t(slot)].slice = set;
+            ground_slots[size_t(slot)].mask = mask;
+        }
+        if (!changed) return;
+        // Maps no longer named are let go.
+        std::erase_if(ground_maps, [&](const auto& entry) {
+            for (const auto& set : sets)
+                if (std::find(set.begin(), set.end(), entry.first) != set.end()) return false;
+            return true;
+        });
+        std::erase_if(ground_missing, [&](const std::string& id) {
+            for (const auto& set : sets)
+                if (std::find(set.begin(), set.end(), id) != set.end()) return false;
+            return true;
+        });
+        build_ground_arrays(sets, sets.empty() ? 1 : size);
+        ground_key = key;
     }
 
     VkDescriptorSet allocate_material_set() {
@@ -2575,7 +2836,7 @@ struct Renderer::Impl {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1,
                                     &set, 0, nullptr);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1,
-                                    &materials[0], 0, nullptr);
+                                    &ground_set, 0, nullptr);
             for (const DrawItem& d : draws) {
                 if (!d.terrain || d.mesh >= meshes.size()) continue;
                 const GpuMesh& m = meshes[d.mesh];
@@ -2689,6 +2950,7 @@ struct Renderer::Impl {
                 destroy_buffer(m.indices);
             }
             for (GpuTexture& t : textures) destroy_image(t.image);
+            for (Image& a : ground_arrays) destroy_image(a);
             for (UiTexture& t : ui_textures) destroy_ui_texture(t);
             for (VkDescriptorPool p : ui_pools) vkDestroyDescriptorPool(device, p, nullptr);
             if (ui_pipeline) vkDestroyPipeline(device, ui_pipeline, nullptr);
@@ -3051,6 +3313,19 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
             data.biome_color[i] = glm::vec4(to_linear(b.color), 1.0f);
             data.biome_dry[i] = glm::vec4(to_linear(b.dry_color), 1.0f);
         }
+        for (int i = 0; i < kGroundSlots; ++i) {
+            const auto& s = r.ground_slots[size_t(i)];
+            data.ground_layer[i] =
+                glm::vec4(s.mask ? 1.0f / s.tile : 0.0f, float(s.slice), float(s.mask), 0.0f);
+            const double tile = double(s.tile);
+            const auto wrap = [tile](double v) {
+                const double m = std::fmod(v, tile);
+                return float(m < 0.0 ? m + tile : m);
+            };
+            data.ground_offset[i] = s.mask ? glm::vec4(wrap(camera.origin.x), wrap(camera.origin.y),
+                                                       wrap(camera.origin.z), 0.0f)
+                                           : glm::vec4(0.0f);
+        }
     }
     std::memcpy(f.ubo.mapped, &data, sizeof(data));
     vmaFlushAllocation(r.allocator, f.ubo.allocation, 0, VK_WHOLE_SIZE);
@@ -3104,6 +3379,22 @@ const std::vector<std::string>& Renderer::validation_messages() const {
 
 void Renderer::set_terrain_look(const TerrainLook& look) {
     impl_->terrain_look = look;
+    impl_->update_ground();
+}
+
+void Renderer::set_ground_reader(ReadGroundTexture read) {
+    impl_->ground_reader = std::move(read);
+    impl_->ground_missing.clear();  // (asked again with this reader)
+    impl_->ground_retry = 0;
+    impl_->update_ground();
+}
+
+Renderer::GroundStats Renderer::ground_stats() const {
+    GroundStats s;
+    s.sets = impl_->ground_sets;
+    s.size = impl_->ground_size;
+    s.missing.assign(impl_->ground_missing.begin(), impl_->ground_missing.end());
+    return s;
 }
 
 void Renderer::set_environment(const Environment& environment) {

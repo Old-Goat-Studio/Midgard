@@ -100,6 +100,12 @@ void validate_scene(const Manifest& m, const std::filesystem::path& dir,
         if (scene.settings.terrain) {
             for (std::string& problem : terrain_problems(*scene.settings.terrain))
                 report.errors.push_back(std::move(problem));
+            // The ground's textures (6.0b): each in the package.
+            for (const std::string& texture : ground_textures(*scene.settings.terrain))
+                if (!content_ids.contains(texture))
+                    report.warnings.push_back("the ground uses texture '" + texture +
+                                              "', which is not in the package; it is drawn "
+                                              "without it");
             // A ground slower to make than a chunk's budget allows.
             if (!scene.settings.terrain->graph.empty()) {
                 try {

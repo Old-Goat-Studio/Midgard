@@ -103,6 +103,62 @@ const char* wall_look_name(WallLook look) {
     return "cliff";
 }
 
+namespace {
+// A ground layer's textures: {"textures": {slot: "tex:..."}, "tile": metres}.
+GroundTexture ground_texture_from_json(const nlohmann::json& j) {
+    if (!j.is_object())
+        throw std::runtime_error("a ground texture is {\"textures\": {...}, \"tile\": metres}");
+    GroundTexture g;
+    if (j.contains("tile")) {
+        if (!j.at("tile").is_number()) throw std::runtime_error("ground: \"tile\" is metres");
+        g.tile = j.at("tile").get<double>();
+    }
+    if (j.contains("textures")) {
+        const nlohmann::json& m = j.at("textures");
+        if (!m.is_object())
+            throw std::runtime_error("ground: \"textures\" is an object of maps by slot");
+        for (const auto& [slot, id] : m.items()) {
+            if (!id.is_string()) throw std::runtime_error("ground: each map is a content id");
+            std::string* into = slot == "base_color"           ? &g.base_color
+                                : slot == "normal"             ? &g.normal
+                                : slot == "metallic_roughness" ? &g.metallic_roughness
+                                : slot == "occlusion"          ? &g.occlusion
+                                : slot == "emissive"           ? &g.emissive
+                                                               : nullptr;
+            if (!into)
+                throw std::runtime_error("ground: '" + slot +
+                                         "' isn't a map (base_color, normal, "
+                                         "metallic_roughness, occlusion or emissive)");
+            *into = id.get<std::string>();
+        }
+    }
+    if (j.contains("off")) {
+        if (!j.at("off").is_array()) throw std::runtime_error("ground: \"off\" is a list of maps");
+        for (const nlohmann::json& slot : j.at("off")) {
+            const std::string name = slot.is_string() ? slot.get<std::string>() : "";
+            if (std::find(std::begin(kGroundSlots), std::end(kGroundSlots), name) ==
+                std::end(kGroundSlots))
+                throw std::runtime_error(
+                    "ground: \"off\" names maps (base_color, normal, "
+                    "metallic_roughness, occlusion or emissive)");
+            g.off.push_back(name);
+        }
+    }
+    return g;
+}
+
+nlohmann::json ground_texture_to_json(const GroundTexture& g) {
+    nlohmann::json maps = nlohmann::json::object();
+    const std::string* values[] = {&g.base_color, &g.normal, &g.metallic_roughness, &g.occlusion,
+                                   &g.emissive};
+    for (size_t i = 0; i < std::size(kGroundSlots); ++i)
+        if (!values[i]->empty()) maps[kGroundSlots[i]] = *values[i];
+    nlohmann::json out{{"textures", maps}, {"tile", g.tile}};
+    if (!g.off.empty()) out["off"] = g.off;
+    return out;
+}
+}  // namespace
+
 TerrainSettings terrain_from_json(const nlohmann::json& j) {
     if (!j.is_object()) throw std::runtime_error("terrain settings are a JSON object");
     TerrainSettings t;
@@ -192,6 +248,9 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
             };
             colour("color", biome.color);
             colour("dry_color", biome.dry_color);
+            if (b.contains("texture")) biome.texture = ground_texture_from_json(b.at("texture"));
+            if (b.contains("dry_texture"))
+                biome.dry_texture = ground_texture_from_json(b.at("dry_texture"));
             t.biomes.push_back(biome);
         }
     }
@@ -234,6 +293,12 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
             t.placements.push_back(rule);
         }
     }
+    if (j.contains("ground")) {
+        if (!j.at("ground").is_object())
+            throw std::runtime_error("terrain: \"ground\" is an object of layers");
+        for (const auto& [layer, value] : j.at("ground").items())
+            t.ground[layer] = ground_texture_from_json(value);
+    }
     return t;
 }
 
@@ -274,14 +339,54 @@ nlohmann::json terrain_to_json(const TerrainSettings& t) {
     }
     if (!t.biomes.empty()) {
         j["biomes"] = nlohmann::json::array();
-        for (const Biome& b : t.biomes)
-            j["biomes"].push_back({{"name", b.name},
-                                   {"temperature", {b.temperature_min, b.temperature_max}},
-                                   {"moisture", {b.moisture_min, b.moisture_max}},
-                                   {"color", {b.color.r, b.color.g, b.color.b}},
-                                   {"dry_color", {b.dry_color.r, b.dry_color.g, b.dry_color.b}}});
+        for (const Biome& b : t.biomes) {
+            nlohmann::json biome{{"name", b.name},
+                                 {"temperature", {b.temperature_min, b.temperature_max}},
+                                 {"moisture", {b.moisture_min, b.moisture_max}},
+                                 {"color", {b.color.r, b.color.g, b.color.b}},
+                                 {"dry_color", {b.dry_color.r, b.dry_color.g, b.dry_color.b}}};
+            if (!b.texture.empty()) biome["texture"] = ground_texture_to_json(b.texture);
+            if (!b.dry_texture.empty())
+                biome["dry_texture"] = ground_texture_to_json(b.dry_texture);
+            j["biomes"].push_back(biome);
+        }
+    }
+    if (!t.ground.empty()) {
+        j["ground"] = nlohmann::json::object();
+        for (const auto& [layer, g] : t.ground) j["ground"][layer] = ground_texture_to_json(g);
     }
     return j;
+}
+
+std::string GroundTexture::map(const std::string& slot) const {
+    if (std::find(off.begin(), off.end(), slot) != off.end()) return "";
+    return slot == "base_color"           ? base_color
+           : slot == "normal"             ? normal
+           : slot == "metallic_roughness" ? metallic_roughness
+           : slot == "occlusion"          ? occlusion
+           : slot == "emissive"           ? emissive
+                                          : "";
+}
+
+std::vector<std::string> GroundTexture::textures() const {
+    std::vector<std::string> out;
+    for (const char* slot : kGroundSlots)
+        if (std::string id = map(slot); !id.empty()) out.push_back(std::move(id));
+    return out;
+}
+
+std::vector<std::string> ground_textures(const TerrainSettings& t) {
+    std::vector<std::string> out;
+    const auto add = [&](const GroundTexture& g) {
+        for (const std::string& id : g.textures())
+            if (std::find(out.begin(), out.end(), id) == out.end()) out.push_back(id);
+    };
+    for (const auto& [layer, g] : t.ground) add(g);
+    for (const Biome& b : t.biomes) {
+        add(b.texture);
+        add(b.dry_texture);
+    }
+    return out;
 }
 
 std::vector<std::string> terrain_problems(const TerrainSettings& t) {
@@ -333,6 +438,25 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
         if (!(r.align >= 0.0 && r.align <= 1.0)) out.push_back(who + "align is 0 to 1");
         if (!(r.distance >= 10.0 && r.distance <= 2000.0))
             out.push_back(who + "the distance is from 10 to 2000 m");
+    }
+    // The ground's textures (6.0b): known layers, sensible tiles, content ids.
+    const auto texture_problems = [&](const std::string& who, const GroundTexture& g) {
+        if (!(g.tile >= 0.1 && g.tile <= 1000.0))
+            out.push_back(who + "its texture's tile is from 0.1 to 1000 m");
+        for (const std::string& id : g.textures())
+            if (id.find(':') == std::string::npos)
+                out.push_back(who + "'" + id + "' isn't a texture's content id");
+    };
+    for (const auto& [layer, g] : t.ground) {
+        if (std::find_if(std::begin(kGroundLayers), std::end(kGroundLayers),
+                         [&](const char* n) { return layer == n; }) == std::end(kGroundLayers))
+            out.push_back("ground: '" + layer +
+                          "' isn't a layer (grass, dry_grass, sand, rock or snow)");
+        texture_problems("ground '" + layer + "': ", g);
+    }
+    for (const Biome& b : t.biomes) {
+        texture_problems("biome '" + b.name + "': ", b.texture);
+        texture_problems("biome '" + b.name + "' (dry): ", b.dry_texture);
     }
     if (int(t.biomes.size()) > kMaxBiomes)
         out.push_back("biomes: at most " + std::to_string(kMaxBiomes));

@@ -840,3 +840,60 @@ TEST_CASE("placing objects by biome, and on a planet") {
         }
     CHECK(on_planet > 0);
 }
+
+TEST_CASE("ground layers and biomes take texture sets: every map, a tile, read and written") {
+    const nlohmann::json j = nlohmann::json::parse(R"({
+        "ground": {
+            "grass": {"textures": {"base_color": "tex:library/textures/grass/g_color.png",
+                                   "normal": "tex:library/textures/grass/g_normal.png#linear",
+                                   "metallic_roughness":
+                                       "tex:library/textures/grass/g_mr.png#linear",
+                                   "occlusion": "tex:library/textures/grass/g_ao.png#linear",
+                                   "emissive": "tex:library/textures/grass/g_glow.png"},
+                      "tile": 3.0},
+            "rock": {"textures": {"base_color": "tex:library/textures/rock/r_color.png"}}},
+        "biomes": [{"name": "Forest",
+                    "texture": {"textures": {"base_color": "tex:f.png"}, "tile": 2.0},
+                    "dry_texture": {"textures": {"normal": "tex:g.png#linear"}}}]})");
+    const midgard::TerrainSettings t = midgard::terrain_from_json(j);
+    const midgard::GroundTexture& grass = t.ground.at("grass");
+    CHECK(grass.tile == 3.0);
+    CHECK(grass.normal == "tex:library/textures/grass/g_normal.png#linear");
+    CHECK(grass.occlusion == "tex:library/textures/grass/g_ao.png#linear");
+    CHECK(grass.metallic_roughness == "tex:library/textures/grass/g_mr.png#linear");
+    CHECK(grass.emissive == "tex:library/textures/grass/g_glow.png");
+    CHECK(grass.textures().size() == 5);
+    CHECK(t.ground.at("rock").tile == 4.0);  // (the default)
+    CHECK(t.biomes[0].texture.base_color == "tex:f.png");
+    CHECK(t.biomes[0].dry_texture.normal == "tex:g.png#linear");
+    CHECK(midgard::ground_textures(t).size() == 8);
+    CHECK(midgard::terrain_problems(t).empty());
+    // Written as read.
+    CHECK(midgard::terrain_from_json(midgard::terrain_to_json(t)) == t);
+    // Maps switched off: kept, but not used (nor packed), and written as read.
+    midgard::TerrainSettings dimmed = midgard::terrain_from_json(nlohmann::json::parse(R"({
+        "ground": {"rock": {"textures": {"base_color": "tex:c.png", "emissive": "tex:e.png",
+                                          "metallic_roughness": "tex:m.png#linear"},
+                             "off": ["emissive", "metallic_roughness"]}}})"));
+    const midgard::GroundTexture& rock = dimmed.ground.at("rock");
+    CHECK(rock.emissive == "tex:e.png");
+    CHECK(rock.map("emissive").empty());
+    CHECK(rock.map("base_color") == "tex:c.png");
+    CHECK(rock.textures() == std::vector<std::string>{"tex:c.png"});
+    CHECK(midgard::ground_textures(dimmed) == std::vector<std::string>{"tex:c.png"});
+    CHECK(midgard::terrain_from_json(midgard::terrain_to_json(dimmed)) == dimmed);
+    CHECK_THROWS(midgard::terrain_from_json(
+        nlohmann::json::parse(R"({"ground": {"rock": {"off": ["sparkle"]}}})")));
+    // Refused: an unknown map; told: an unknown layer, a tile out of range.
+    CHECK_THROWS(midgard::terrain_from_json(
+        nlohmann::json::parse(R"({"ground": {"grass": {"textures": {"height": "tex:h.png"}}}})")));
+    midgard::TerrainSettings bad = t;
+    bad.ground["lava"] = grass;
+    bad.ground["sand"].tile = 0.0;
+    bad.ground["sand"].base_color = "tex:s.png";
+    const auto problems = midgard::terrain_problems(bad);
+    CHECK(std::any_of(problems.begin(), problems.end(),
+                      [](const std::string& p) { return p.find("'lava'") != std::string::npos; }));
+    CHECK(std::any_of(problems.begin(), problems.end(),
+                      [](const std::string& p) { return p.find("tile") != std::string::npos; }));
+}

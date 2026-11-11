@@ -609,8 +609,31 @@ Each stroke is one Undo step.
 The ground's look comes from Midgard itself: grass from dry to lush, sand on beaches, rock on
 steep slopes, and snow on high ground or in cold climates. It changes with the seasons. You
 control it through the World Type's **Climate and Biomes** (colours for each zone) and the paint
-brushes. *Putting your own picture textures onto terrain isn't available yet.* For a special
-patch (a stone courtyard), place a textured **Plane** or flattened **Cube** on the ground.
+brushes.
+
+**Picture textures**: open them with **World ▸ Ground Textures…**, or the **Ground
+Textures…** button in the **Terrain** panel. Both open the **World Types** panel on its
+**Ground Textures** tab (the third tab along its top), with your scene's world type chosen. It lists every ground layer (**Grass**, **Dry grass**, **Sand**, **Rock**,
+**Snow**) and each biome's lush and dry ground. Double-click a row (or **Choose Texture Set…**)
+to pick a **texture set** from your Asset Library's Textures: each set's whole material is
+shown on a sphere, a cube or a plane as you pick it. The layer takes all of the set's maps:
+its colour, **normal** map, **metal and roughness**, **ambient occlusion (AO)** and **emissive**
+(glow) map. The **Maps used** column has a tick box for each: untick one to leave it out (an emissive map that glows where you don't want it, or a metal map that makes the ground shine). It's kept with the layer, so ticking it again brings it back, and maps left out don't go into the finished game. A greyed box is a map the set doesn't have. **Tile** is how
+many metres the texture covers before it repeats. **Clear** gives the layer its colour back.
+The textures go into the finished game, and CC BY sets are credited.
+
+The ground draws them where each layer lies: grass from dry to lush, sand on beaches, rock on
+steep slopes and where you paint rock, snow in the cold, each biome in its zone, blended where
+the colours used to blend. They're laid along the world's three directions and blended by the
+way the ground faces (*triplanar*), so they look the same on a flat area, a cylinder, a planet
+or a hollow world, don't stretch on cliffs, and have no seams. Each textured layer is lit as a
+material: its normal map gives it bumps that catch the sun, metal and roughness decide its
+shine, ambient occlusion darkens its cracks, and its emissive map glows (at night too). Winter
+snow, autumn colours and rain-wet ground still lie over them. A layer without a texture keeps
+its colour. The 3D preview in the World Types panel and the Viewport show them as the game does.
+
+For a special patch (a stone courtyard), place a textured **Plane** or flattened **Cube** on
+the ground.
 
 ---
 

@@ -54,4 +54,10 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 ground;  // what the weather left (render::GroundCover): x wetness, y snow (0 .. 1)
     vec4 stars;   // render::Stars: x brightness (0: none), y density, z seed
     vec4 clock;   // x: seconds of play (repeating every hour), for surface shaders (5.17)
+    // The ground's picture textures (6.0b), a slot each (0 grass, 1 dry grass, 2 sand, 3 rock,
+    // 4 snow, then each biome's lush and dry): x 1 / its tile, y its slice, z its maps (bits: 1
+    // colour, 2 metal/roughness, 4 normal, 8 occlusion, 16 emissive; 0: its colour); and the
+    // camera's place modulo the tile (xyz), so the pattern stays put on the world.
+    vec4 ground_layer[21];
+    vec4 ground_offset[21];
 } frame;

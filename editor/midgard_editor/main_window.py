@@ -192,6 +192,7 @@ class MainWindow(QMainWindow):
         self.scenes_panel.set_can_open(True)
         self.scenes_panel.open_requested.connect(self.open_scene)
         self.viewport.brush = self.terrain_panel.brush  # Sculpt on: the viewport's left button
+        self.terrain_panel.open_ground_textures.connect(self.edit_ground_textures)
         self.calendar_panel.season_scrubbed.connect(self.viewport.set_season)
         self.calendar_panel.time_scrubbed.connect(self._time_scrubbed)
         self.objects_panel.place_requested.connect(self.place_object)
@@ -488,6 +489,8 @@ class MainWindow(QMainWindow):
         self.world_shape_action = add_action(world, "World &Shape…", self.edit_world_shape)
         self.physics_layers_action = add_action(world, "&Physics Layers…",
                                                 self.edit_physics_layers)
+        self.ground_textures_action = add_action(world, "&Ground Textures…",
+                                                 self.edit_ground_textures)
 
         assets = bar.addMenu("&Assets")
         self.library_action = add_action(assets, "Asset &Library…", self.show_asset_library,
@@ -800,6 +803,17 @@ class MainWindow(QMainWindow):
         self.panels["animation"].toggleView(True)
         self.panels["animation"].setAsCurrentTab()
         self.animation_panel.show_entity(entity_id)
+
+    def edit_ground_textures(self) -> None:
+        """The World Types panel on its Ground Textures tab, the scene's world type chosen
+        (World ▸ Ground Textures, and the Terrain panel's button)."""
+        self.panels["world_types"].toggleView(True)
+        self.panels["world_types"].setAsCurrentTab()
+        world = None
+        if self.project is not None:
+            from . import world_types
+            world = world_types.scene_world(self.project)
+        self.world_type_panel.show_ground_textures(world["world_type"] if world else None)
 
     def edit_shader(self, shader: str) -> None:
         """Shows a surface shader in the Shader editor (the Material editor's Edit button)."""

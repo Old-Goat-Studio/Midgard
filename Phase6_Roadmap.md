@@ -112,16 +112,18 @@ of this works on the phone, by touch.
 #### 6.0b Terrain textures · M
 Added at the user's request (Nov 2026), before 6.1: picture textures on the terrain, which 5.9's
 procedural ground (colours by slope, height, biome and season) never had. Each ground layer
-(grass, dry grass, sand, rock, snow, and each biome's ground) can take a **texture set** from the
-Asset Library's Textures section (colour, normal and roughness maps) and a tile size in metres;
+(grass, dry grass, sand, rock, snow, and each biome's lush and dry ground) can take a **texture
+set** from the Asset Library's Textures section, with all its maps (colour, normal, metal and
+roughness, ambient occlusion and emissive: every one used, at the user's request) and a tile
+size in metres;
 a layer without one keeps the procedural colour. The textures blend exactly where the colours
 blend now (slope, height above the sea, biome, the paint brushes), with snow cover, autumn and
 dry-grass tints laid over them. On every world shape, by **triplanar** sampling (no single "up"
 to lay them from on a planet or inside a cylinder; no stretching on slopes, no seams at the
 cube-sphere's faces); sampled at two scales so they're detailed up close without visible repeats
 far off; a cheaper path on phones. Steps:
-1. ground layers take a texture set (the World Type editor's Climate and Biomes; cooked as
-   textures are); 2. the renderer samples them (texture arrays, triplanar, blended as the
+1. ground layers take a texture set (the World Type editor's Ground Textures tab, its sets
+   previewed as whole materials; cooked as textures are); 2. the renderer samples them (texture arrays, triplanar, blended as the
    colours are); 3. detail and distance (two scales, fading the repeat; the phone tier);
 4. painting a texture (a brush that paints a chosen layer, stored as terrain stamps);
 5. exit.

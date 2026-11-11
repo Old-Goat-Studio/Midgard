@@ -43,6 +43,7 @@ from . import (
     surface_shaders,
     textures,
     weather,
+    world_types,
 )
 from .project import Project
 from .version import BUILD, VERSION
@@ -164,6 +165,8 @@ def used_mesh_assets(project: Project, model_textures: bool = True) -> set[str]:
         a for e in entities for a in character_assets_used(e.components)} | {
         t for e in entities for t in textures.components_textures(e.components)
         if textures.parse(t) is not None} | {
+        t for _who, t in world_types.used_ground_textures(project)
+        if textures.parse(t) is not None} | {
         s for e in entities for s in sounds.sounds_in(e.components)} | {
         s for ev in sound_events.load_all(project) for s in sound_events.sounds_of(ev)}
 
@@ -260,16 +263,18 @@ def _cook_assets(project: Project, out: Path, warnings: list[str],
     texture_users = [(f"Entity '{e.name}'", e.components) for e in all_entities]
     texture_users += [(f"Object '{o.name}'", p.get("components", {})) for o in project.objects()
                       if not o.source for p in o.parts]
-    for user, components in texture_users:
-        for texture in textures.components_textures(components):
-            if texture in files or textures.parse(texture) is None:
-                continue
-            data = textures.texture_data(project.root, texture)
-            if data is None:
-                warnings.append(f"{user} uses texture '{textures.describe(texture)}', which is "
-                                "not in the project (or can't be read); it is drawn without it.")
-            else:
-                files[texture] = (textures.pak_path(texture), data)
+    used_textures = [(user, t) for user, components in texture_users
+                     for t in textures.components_textures(components)]
+    used_textures += world_types.used_ground_textures(project)  # (the ground's, 6.0b)
+    for user, texture in used_textures:
+        if texture in files or textures.parse(texture) is None:
+            continue
+        data = textures.texture_data(project.root, texture)
+        if data is None:
+            warnings.append(f"{user} uses texture '{textures.describe(texture)}', which is "
+                            "not in the project (or can't be read); it is drawn without it.")
+        else:
+            files[texture] = (textures.pak_path(texture), data)
     # Surface shaders the materials use (milestone 5.17), compiled to SPIR-V: one that doesn't
     # compile is left out (drawn magenta), its mistakes warned of with their lines.
     for user, components in texture_users:

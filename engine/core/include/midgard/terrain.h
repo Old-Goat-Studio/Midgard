@@ -29,6 +29,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -64,6 +65,31 @@ struct Climate {
     bool operator==(const Climate&) const = default;
 };
 
+// A ground layer's picture textures (milestone 6.0b): a texture set from the Asset Library,
+// its maps by slot as a material's ("tex:" content ids; any may be missing): the colour, the
+// normal map, metal and roughness (glTF's: roughness in green, metal in blue), ambient
+// occlusion and emission. Tiled every `tile` metres across the ground. With no colour map the
+// layer keeps its procedural colour.
+inline constexpr const char* kGroundSlots[] = {"base_color", "normal", "metallic_roughness",
+                                               "occlusion", "emissive"};
+struct GroundTexture {
+    std::string base_color, normal, metallic_roughness, occlusion, emissive;
+    double tile = 4.0;  // metres
+    // Maps switched off (kGroundSlots' names): named, but not used (nor packed) until switched
+    // on again, for a set whose glow or shine doesn't suit the ground.
+    std::vector<std::string> off;
+    bool empty() const {
+        return base_color.empty() && normal.empty() && metallic_roughness.empty() &&
+               occlusion.empty() && emissive.empty();
+    }
+    // A slot's map if it is used ("" none, or switched off).
+    std::string map(const std::string& slot) const;
+    std::vector<std::string> textures() const;  // the maps used, in kGroundSlots' order
+    bool operator==(const GroundTexture&) const = default;
+};
+// The ground layers that aren't a biome's (the 5.9 ground, and what lies over any biome).
+inline constexpr const char* kGroundLayers[] = {"grass", "dry_grass", "sand", "rock", "snow"};
+
 // A biome: ground of its own colours where the temperature and moisture are in its ranges
 // (blended a little across its edges with its neighbours'); dry_color where the moisture is
 // low, color where it is high. Sand, rock and snow still come by their own rules.
@@ -74,6 +100,7 @@ struct Biome {
     double moisture_min = 0.0, moisture_max = 1.0;             // 0 dry to 1 lush
     glm::vec3 color{0.27f, 0.42f, 0.16f};                      // sRGB, lush
     glm::vec3 dry_color{0.55f, 0.50f, 0.28f};                  // sRGB, dry
+    GroundTexture texture, dry_texture;                        // (6.0b) lush and dry
     bool operator==(const Biome&) const = default;
 };
 
@@ -132,8 +159,14 @@ struct TerrainSettings {
     std::vector<Biome> biomes;
     // Objects placed over it (milestone 5.11).
     std::vector<PlacementRule> placements;
+    // The ground layers' picture textures (6.0b), by kGroundLayers' names; a layer not here
+    // keeps its procedural colour.
+    std::map<std::string, GroundTexture> ground;
     bool operator==(const TerrainSettings&) const = default;
 };
+
+// Every texture the ground's layers and biomes name (each once, in order).
+std::vector<std::string> ground_textures(const TerrainSettings& t);
 
 // From the scene settings' "terrain" object. Throws std::runtime_error naming what's wrong with
 // JSON that can't be read; terrain_problems() lists what the cook refuses.

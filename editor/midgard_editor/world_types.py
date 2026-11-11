@@ -73,6 +73,66 @@ def resolved_settings(project: Project, settings: dict[str, Any]) -> dict[str, A
     return out
 
 
+# Ground textures (milestone 6.0b; midgard/terrain.h's GroundTexture): each ground layer, and
+# each biome's lush and dry ground, can take a texture set from the Asset Library: its maps by
+# slot ("tex:" ids, as a material's) and a tile size in metres:
+#     "terrain": {"ground": {"grass": {"textures": {"base_color": "tex:...", ...}, "tile": 4}},
+#                 "biomes": [{..., "texture": {...}, "dry_texture": {...}}]}
+GROUND_LAYERS = {"grass": "Grass", "dry_grass": "Dry grass", "sand": "Sand", "rock": "Rock",
+                 "snow": "Snow"}
+GROUND_SLOTS = ("base_color", "normal", "metallic_roughness", "occlusion", "emissive")
+# Each map's short name, for the tick boxes that switch one off ("off": a list of slots; the map
+# is kept but neither drawn nor packed).
+GROUND_MAP_NAMES = {"base_color": "Colour", "normal": "Normal", "metallic_roughness": "Metal/rough",
+                    "occlusion": "AO", "emissive": "Emissive"}
+DEFAULT_TILE = 4.0
+
+
+def ground_textures(recipe: dict[str, Any]) -> list[str]:
+    """Every texture a recipe's ground layers and biomes use (each once, in order)."""
+    terrain = recipe.get("terrain", {}) if isinstance(recipe, dict) else {}
+    found: list[dict] = list((terrain.get("ground") or {}).values())
+    for b in terrain.get("biomes", []) or []:
+        found += [b[k] for k in ("texture", "dry_texture") if isinstance(b.get(k), dict)]
+    out: list[str] = []
+    for g in found:
+        off = g.get("off") or [] if isinstance(g, dict) else []
+        for slot in GROUND_SLOTS:
+            if slot in off:
+                continue  # (switched off: not drawn, so not packed)
+            t = (g.get("textures") or {}).get(slot) if isinstance(g, dict) else None
+            if isinstance(t, str) and t and t not in out:
+                out.append(t)
+    return out
+
+
+def send_ground_textures(view, project: Project, settings: dict[str, Any],
+                         sent: dict[str, int]) -> None:
+    """The ground textures resolved scene settings name, sent to an engine view (once each, again
+    when a file changes; `sent` remembers): the view reads them as the ground needs them."""
+    from . import textures
+    for texture in ground_textures({"terrain": settings.get("terrain") or {}}):
+        data = textures.texture_data(project.root, texture)
+        if data is None or sent.get(texture) == hash(data):
+            continue
+        try:
+            view.set_texture(texture, data)
+        except RuntimeError:
+            continue  # (drawn without it)
+        sent[texture] = hash(data)
+
+
+def used_ground_textures(project: Project) -> list[tuple[str, str]]:
+    """(who, texture) for the ground textures of the world types the scenes are made with."""
+    out = []
+    for world_type, version in sorted(used_versions(project)):
+        found = recipe(project, world_type, version)
+        name = next((t["name"] for t in load_all(project) if t["id"] == world_type), world_type)
+        for texture in ground_textures(found or {}):
+            out.append((f"World type '{name}'", texture))
+    return out
+
+
 def used_versions(project: Project) -> set[tuple[str, int]]:
     """The world type versions the project's scenes are made with."""
     with project.connect() as con:

@@ -337,6 +337,36 @@
       "max_bad": 0.01
     },
     {
+      "name": "terrain_textured",
+      "_about": "The ground's picture textures (6.0b) on a hillside: grass, dry grass and a painted patch of rock, each layer's texture set laid triplanar and lit as a material (rock: slabs with its normal, metal/roughness and occlusion maps, and glowing cracks from its emissive map). Textures seen at a slant are filtered a little differently by each driver, so up to 4% of pixels may differ.",
+      "args": ["--size", "480x270", "--scene", "terrain_textured"],
+      "max_bad": 0.04
+    },
+    {
+      "name": "terrain_textured_planet",
+      "_about": "terrain_planet_low with picture textures: across the edge between two cube faces, the textures run on with no seam and no stretching. The same allowance as terrain_textured.",
+      "args": ["--size", "480x270", "--scene", "terrain_textured_planet"],
+      "max_bad": 0.04
+    },
+    {
+      "name": "terrain_textured_habitat",
+      "_about": "terrain_habitat_ground with picture textures: a cylinder's floor, textured the same as flat ground. The same allowance as terrain_textured.",
+      "args": ["--size", "480x270", "--scene", "terrain_textured_habitat"],
+      "max_bad": 0.04
+    },
+    {
+      "name": "terrain_textured_hollow",
+      "_about": "terrain_hollow with picture textures: inside a hollow world, the textures on the ground and on the far side overhead. The same allowance as terrain_textured.",
+      "args": ["--size", "480x270", "--scene", "terrain_textured_hollow"],
+      "max_bad": 0.04
+    },
+    {
+      "name": "terrain_textured_winter",
+      "_about": "terrain_winter with picture textures: winter's snow (its own texture set) laid over the textured ground down to the shore, sand textured at the water. The same allowance as terrain_textured.",
+      "args": ["--size", "480x270", "--scene", "terrain_textured_winter"],
+      "max_bad": 0.04
+    },
+    {
       "name": "terrain_planet",
       "_about": "A 3 km planet from low orbit over a cube corner, where three of the cube-sphere's faces meet: hills, lakes and seas run across the face edges with no seams (milestone 5.10).",
       "args": ["--size", "480x270", "--scene", "terrain_planet"],

@@ -140,6 +140,7 @@ public:
 
 private:
     void upload_meshes();
+    void use_ground_reader();    // (6.0b: the ground's textures, from texture_data_)
     bool needs_surface() const;  // an entity draws the world's surface
 
     Scene scene_;
