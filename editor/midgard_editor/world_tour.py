@@ -33,6 +33,11 @@ with the HUD's health and stamina bars, score and compass. Five coins in the hub
 score with a note each; the hub's fire pit burns health away, and at none the game over screen
 offers Try again (back where you arrived, refilled).
 
+Milestone 6.1's exit: the tour's own action, "Ring the bell" (R, a gamepad's right bumper, and
+a Ring touch button), which the bell in the hub's script reads; walking up to the bell shows
+"Press {ring} to ring the bell" with the control for the device in use; and the player can
+change its key and gamepad button on the Controls screen.
+
     python -m midgard_editor.world_tour <folder>     makes <folder>/WorldTour
 """
 import json
@@ -205,6 +210,10 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
       **Reset** puts them all back). **New game** starts.
 - [ ] **Coins:** five gold coins round the hub. Walk through one: **Score** goes up 10 and a note
       says so.
+- [ ] **The bell** (gold, on a post across the hub from the fire pit): walk up to it and a
+      hint says *Press R to ring the bell*; press it: *Ding!* Pick up a gamepad and the hint
+      says *RB*; on a phone, the **Ring** button. In **Settings ▸ Controls**, give *Ring the
+      bell* another key: the hint and the bell follow it.
 - [ ] **The fire pit** (the red glow beside the hub): stand in it and **Health** burns away; at
       none, **You died**: **Try again** puts you back where you arrived, health full.
 - [ ] **Esc** (or a controller's Start) opens the **pause menu**; Esc again goes back.
@@ -325,6 +334,30 @@ def on_trigger_enter(entity, other):
     midgard.ui.notify("Picked up a coin (+10)")
     x, y, z = entity.position
     entity.position = (x, y - 1000.0, z)
+'''
+
+BELL = '''"""The bell (6.1's exit): walk up to it and a hint says what rings it, on the device
+in use ("Press {ring}": R, the right bumper, the Ring button); ringing it is the tour's own
+action, "ring", which players can rebind on the Controls screen."""
+import midgard
+
+near = {"on": False, "rung": 0}
+
+
+def on_trigger_enter(entity, other):
+    near["on"] = True
+    midgard.ui.show("scr_bell_hint")
+
+
+def on_trigger_exit(entity, other):
+    near["on"] = False
+    midgard.ui.hide("scr_bell_hint")
+
+
+def on_update(entity, dt):
+    if near["on"] and midgard.pressed("ring"):
+        near["rung"] += 1
+        midgard.ui.notify(f"Ding! The bell rings ({near['rung']})")
 '''
 
 FIRE = '''"""The fire pit: standing in it burns Health away (the game over screen shows at none)."""
@@ -697,10 +730,43 @@ class _Builder:
             if name == "Planet":  # a jetpack up through the atmosphere into space
                 self.pad_launch(scene, world, height)
         self.coins_and_fire(hub)
+        self.bell(hub)
         self.screens()
         self.checklist()
         self.ground_textures()  # (6.0b)
         return p
+
+    def bell(self, hub: str) -> None:
+        """6.1's exit: the tour's own action, its touch button, the bell that reads it, and the
+        hint (a prompt) shown near it."""
+        from . import input_actions
+        input_actions.save(self.p, {
+            "id": "ring", "name": "Ring the bell", "kind": "button", "context": "on_foot",
+            "rebindable": True, "bindings": [
+                {"device": "keyboard", "control": "R", "scale": 1.0},
+                {"device": "gamepad", "control": "rightshoulder", "scale": 1.0},
+                {"device": "touch", "control": "ring", "scale": 1.0}]})
+        settings = menus.game_settings(self.p)
+        settings["touch"] = {"buttons": input_actions.touch_layout(self.p) + [
+            {"id": "ring", "label": "Ring", "x": 282, "y": 92, "r": 30,
+             "narrow": [258, 330, 28], "toggles": False, "shows": "on_foot"}]}
+        menus.save_game_settings(self.p, settings)
+        screens = menus.load_all(self.p)
+        screens.append({"id": "scr_bell_hint", "name": "Bell hint", "screen": {
+            "modal": False, "pauses": False, "music": False, "background": [0, 0, 0, 0],
+            "elements": [{"id": "hint", "kind": "text", "anchor": "bottom", "x": 0, "y": -130,
+                          "w": 420, "h": 40, "text": "Press {ring} to ring the bell",
+                          "style": {"font_size": 22, "align": "center", "bold": True,
+                                    "color": [1.0, 0.95, 0.75, 1.0]}}]}})
+        menus.save_all(self.p, screens)
+        (self.p.root / "scripts" / "bell.py").write_text(BELL, encoding="utf-8")
+        self.box(MAIN_SCENE, hub, "Bell Post", [-12.0, 1.2, 6.0], [0.18, 2.4, 0.18],
+                 (0.35, 0.24, 0.15))
+        self.box(MAIN_SCENE, hub, "Bell", [-12.0, 2.3, 6.0], [0.7, 0.7, 0.7],
+                 (0.95, 0.75, 0.25), mesh="prim_sphere", glow=0.3)
+        self.put(MAIN_SCENE, "Bell Ring", hub, {
+            "transform": {"position": [-12.0, 1.0, 6.0]},
+            "trigger": {"size": [4.0, 2.0, 4.0]}, "script": {"module": "bell"}})
 
     def coins_and_fire(self, hub: str) -> None:
         """Five coins round the hub (a score a script raises, a pick-up note) and a fire pit

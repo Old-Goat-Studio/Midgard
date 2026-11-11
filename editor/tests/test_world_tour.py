@@ -377,3 +377,61 @@ def test_the_player_swims_and_jumps_as_her_animations_show(tmp_path, mode):
             assert abs(bones["hips"][1] - sea) < 0.35, bones["hips"]
     else:
         assert state in ("JumpStart", "Fall", "Land"), state  # (jumped: not on the ground's)
+
+
+BELL_TESTER = """
+import midgard
+
+s = {"frame": 0}
+
+
+def on_start(entity):
+    if "scr_title" in midgard.ui.screens:
+        midgard.ui.click("scr_title", "play")
+
+
+def on_update(entity, dt):
+    s["frame"] += 1
+    if s["frame"] == 2:  # (to the bell, in its trigger)
+        midgard.player().position = (-12.0, 1.0, 7.0)
+    if s["frame"] == 20:
+        print("near", midgard.ui.shown("scr_bell_hint"), midgard.prompt("ring"))
+"""
+
+
+def test_the_exit_of_6_1_the_tours_own_action_its_prompt_and_controls(tmp_path):
+    """6.1's exit: the tour's action (R, the right bumper, the Ring touch button), its rows on
+    the Controls screen, the bell's hint with the control for the device in use, and the bell's
+    script ringing it."""
+    import subprocess
+
+    from midgard_editor import about, input_actions, menus
+    from midgard_editor.scene_model import Entity
+    if engine.module() is None or not about.runtime_candidates():
+        pytest.skip("needs the engine module and the runtime")
+    tour = world_tour.make_world_tour(tmp_path / "exit")
+    ring = input_actions.load(tour, "ring")
+    assert ring["name"] == "Ring the bell" and ring["rebindable"]
+    assert {(b["device"], b["control"]) for b in ring["bindings"]} == {
+        ("keyboard", "R"), ("gamepad", "rightshoulder"), ("touch", "ring")}
+    assert any(b["id"] == "ring" for b in input_actions.touch_layout(tour))
+    assert input_actions.touch_problems(tour) == [] and input_actions.problems(tour) == []
+    controls = next(s for s in menus.load_all(tour) if s["id"] == "scr_controls")
+    binds = {e.get("binds") for e in controls["screen"]["elements"]}
+    assert {"key:ring", "pad:ring"} <= binds
+    assert input_actions.expand_prompts(tour, "Press {ring}", "gamepad") == "Press RB"
+    assert input_actions.expand_prompts(tour, "Press {ring}", "touch") == "Press Ring"
+    assert menus.problems(tour) == []
+    # In the game: at the bell the hint shows R; R rings it.
+    tour.put_entity(Entity(tour.next_entity_id(), "Bell Tester", None, {
+        "transform": {}, "script": {"module": "bell_tester"}}), MAIN_SCENE)
+    (tour.root / "scripts" / "bell_tester.py").write_text(BELL_TESTER, encoding="utf-8")
+    out = cook(tour, tmp_path / "pkg").out_dir
+    run = subprocess.run([str(about.runtime_candidates()[0]), "--package", str(out),
+                          "--simulate", "60", "--dump-scene", "--hold", "R:30:34"],
+                         capture_output=True, text=True, timeout=180)
+    assert run.returncode == 0, run.stderr
+    assert "near True R" in run.stdout.splitlines()
+    dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
+    assert dump["hud"]["texts"]["scr_bell_hint/hint"] == "Press R to ring the bell"
+    assert "Ding! The bell rings (1)" in dump["hud"]["notes"]

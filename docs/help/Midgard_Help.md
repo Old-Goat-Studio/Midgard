@@ -142,6 +142,11 @@ editor can be undone with **Ctrl+Z**.
   generator and in the project's Asset Library, and a cobbled **Path** (the world type's
   first paint layer) leads away from where you arrive.
 
+  A gold **bell** in the hub shows a game's own action (the Input editor's *Ring the bell*: R,
+  a gamepad's right bumper, and a **Ring** touch button): walk up to it and a hint says what
+  rings it on the device you're using (a prompt, "Press {ring}"), and its script rings it. Its
+  key and button can be changed on the **Controls** screen (Settings ▸ Controls).
+
   It opens at its **title screen** (New game, Settings, Quit) and has a pause menu (Esc),
   settings and a game over screen, all made in the Menu editor (section 15). Five gold
   **coins** round the hub raise your Score with a note each; standing in the red **fire pit**

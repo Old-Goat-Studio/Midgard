@@ -105,7 +105,8 @@ nlohmann::json HudState::dump() const {
             {"prompt", prompt_},
             {"notes", notes},
             {"timers", timers},
-            {"screens", screens_}};
+            {"screens", screens_},
+            {"texts", texts}};  // (screens' texts as set: by scripts, binds and prompts)
 }
 
 }  // namespace midgard::hud

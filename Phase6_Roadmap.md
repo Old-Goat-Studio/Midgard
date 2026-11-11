@@ -133,7 +133,7 @@ planet, a cylinder and a hollow world, blended by slope and height with no seams
 snow lying over them in winter; a path painted across the grass shows its texture; picture tests
 on each shape; it runs smoothly on the phone.
 
-#### 6.1 Input mapping · M
+#### 6.1 Input mapping · M ✅ (built Nov 2026; phone check owed)
 The Input editor (actions and their keys, buttons and touch controls), contexts (walking, flying,
 menus, vehicles), the touch layout editor, the player's rebinding screen, and prompts that show
 the right key or button for the device in use.
