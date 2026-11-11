@@ -1844,6 +1844,8 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
             Source& source;
             ~LetGo() { source.set_audio(nullptr); }
         } let_go{source};
+        // (The ground's textures made ready on worker threads: the window carries on meanwhile.)
+        renderer.set_ground_async(true);
         source.upload(renderer);
         // The in-game UI (6.0): sized by the display's density and the player's scale, clear of
         // the notch. Without its fonts the game still runs, with no screens.

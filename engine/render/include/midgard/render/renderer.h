@@ -251,6 +251,11 @@ public:
     // ready when a terrain look first names them (each read and sized once, kept while named).
     using ReadGroundTexture = std::function<std::vector<uint8_t>(const std::string&)>;
     void set_ground_reader(ReadGroundTexture read);
+    // Maps prepared on worker threads (the game's window): the ground shows its colours until
+    // they're ready, then its textures. Off (the default): each is prepared as it's named.
+    void set_ground_async(bool async);
+    // Waits for the maps being prepared, and puts them in use (before a screenshot).
+    void finish_ground_textures();
     // The ground's maps on the GPU: (texture sets, slices of each array, each slice's size).
     struct GroundStats {
         int sets = 0;

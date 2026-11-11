@@ -632,6 +632,13 @@ shine, ambient occlusion darkens its cracks, and its emissive map glows (at nigh
 snow, autumn colours and rain-wet ground still lie over them. A layer without a texture keeps
 its colour. The 3D preview in the World Types panel and the Viewport show them as the game does.
 
+Close up you see each texture at its **Tile** size. Further off, a broad, blurred copy of the same
+texture (over five times bigger) and a slow light-and-dark variation over some 40 m are mixed in,
+so the ground doesn't show a repeating pattern into the distance. On phones the textures are
+smaller (512 pixels against 1024) and drawn more simply, to keep the game smooth. When a game
+starts, the ground shows its plain colours for a moment while its textures are made ready, then
+its textures.
+
 For a special patch (a stone courtyard), place a textured **Plane** or flattened **Cube** on
 the ground.
 

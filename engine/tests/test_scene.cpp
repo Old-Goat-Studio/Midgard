@@ -41,6 +41,7 @@
 #include "midgard/gltf.h"
 #include "midgard/light_markers.h"
 #include "midgard/pak.h"
+#include "midgard/render/ktx.h"
 #include "midgard/scene.h"
 #include "midgard/survival.h"
 #include "midgard/validate.h"
@@ -5108,4 +5109,61 @@ TEST_CASE("the splash: a screen used as it, read before the game loads; its leas
     // The game itself never shows it: the title shows as it starts.
     midgard::Game game(pkg.dir);
     CHECK(game.hud().screens() == std::vector<std::string>{"scr_title"});
+}
+
+TEST_CASE("the ground's textures are read once each, prepared on workers, and put in use") {
+    namespace render = midgard::render;
+    std::unique_ptr<render::Renderer> renderer;
+    try {
+        render::RendererDesc desc;
+        desc.offscreen = true;
+        desc.width = 64;
+        desc.height = 64;
+        renderer = std::make_unique<render::Renderer>(desc);
+    } catch (const std::exception& e) {
+        MESSAGE("no Vulkan here: " << e.what());
+        return;
+    }
+    const auto ktx = [](bool srgb, uint8_t value) {
+        std::vector<uint8_t> px(16 * 16 * 4, value);
+        return render::encode_ktx2(render::make_texture(16, 16, srgb, std::move(px)), {0});
+    };
+    const std::map<std::string, std::vector<uint8_t>> files = {
+        {"tex:rock_color.png", ktx(true, 120)}, {"tex:rock_normal.png#linear", ktx(false, 128)}};
+    std::map<std::string, int> reads;
+    renderer->set_ground_reader([&](const std::string& id) {
+        ++reads[id];
+        const auto it = files.find(id);
+        if (it == files.end()) throw std::runtime_error("not here");
+        return it->second;
+    });
+    render::TerrainLook look;
+    look.ground.push_back(
+        {render::kGroundSlotRock,
+         3.0f,
+         {"tex:rock_color.png", "", "tex:rock_normal.png#linear", "", "tex:rock_glow.png"}});
+    // On workers: nothing in use until they're done, and then all of it at once.
+    renderer->set_ground_async(true);
+    renderer->set_terrain_look(look);
+    CHECK(renderer->ground_stats().sets == 0);
+    renderer->finish_ground_textures();
+    const render::Renderer::GroundStats stats = renderer->ground_stats();
+    CHECK(stats.sets == 1);
+    CHECK(stats.size == 1024);  // (the desktop tier's)
+    CHECK(stats.missing == std::vector<std::string>{"tex:rock_glow.png"});
+    // Read once each, however many frames name them (a missing one now and then).
+    for (int i = 0; i < 10; ++i) renderer->set_terrain_look(look);
+    CHECK(reads["tex:rock_color.png"] == 1);
+    CHECK(reads["tex:rock_normal.png#linear"] == 1);
+    CHECK(reads["tex:rock_glow.png"] <= 2);
+    // The same set for another layer: one slice still.
+    look.ground.push_back({render::kGroundSlotSnow, 2.0f, look.ground[0].maps});
+    renderer->set_terrain_look(look);
+    renderer->finish_ground_textures();
+    CHECK(renderer->ground_stats().sets == 1);
+    // None named: let go.
+    renderer->set_terrain_look({});
+    CHECK(renderer->ground_stats().sets == 0);
+    CHECK(renderer->ground_stats().missing.empty());
+    CHECK(renderer->render_frame({}, {}, {}, glm::vec4(0.0f)));  // (draws with the placeholders)
 }

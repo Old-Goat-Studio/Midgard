@@ -367,6 +367,12 @@
       "max_bad": 0.04
     },
     {
+      "name": "terrain_textured_phone",
+      "_about": "terrain_textured on the phone tier: one scale (no larger one far off) and fewer triplanar projections, with no seams where they're dropped. The same allowance as terrain_textured.",
+      "args": ["--size", "480x270", "--scene", "terrain_textured", "--quality", "phone"],
+      "max_bad": 0.04
+    },
+    {
       "name": "terrain_planet",
       "_about": "A 3 km planet from low orbit over a cube corner, where three of the cube-sphere's faces meet: hills, lakes and seas run across the face edges with no seams (milestone 5.10).",
       "args": ["--size", "480x270", "--scene", "terrain_planet"],

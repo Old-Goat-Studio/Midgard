@@ -11,6 +11,10 @@
 // faces. A textured layer is a material (its colour, normal, metal and roughness, ambient
 // occlusion and glow, lit as meshes are: GGX); the layers blend exactly where the colours did.
 // Ground with no textures is drawn exactly as before.
+// Detail and distance (step 3): near, each layer at its own tile; further off a larger scale
+// (5.37 times, so the two never line up) is mixed in, and a slow variation over some 40 m
+// (anchored to the world, repeating only every 4 km) shades it, so the repeat fades. The phone
+// tier keeps one scale and fewer projections.
 //
 // Each point is lit in its own frame: on a curved world the ground far round the curve (the far
 // side of a habitat, overhead) faces another way, so the sun is turned with the ground (as if
@@ -128,15 +132,28 @@ vec4 tri(sampler2DArray t, vec3 p, float slice, float scale) {
     return c;
 }
 
-// A layer: its colour (and flat, rough ground) or, with a texture set, its maps.
-Ground layer(int slot, vec3 colour, vec3 n) {
-    Ground g = Ground(colour, n, 0.9, 0.0, 1.0, vec3(0.0), 0.0);
-    const vec4 info = frame.ground_layer[slot];
-    const int maps = int(info.z + 0.5);
-    if (maps == 0) return g;
-    const float scale = info.x;  // 1 / the tile
-    const vec3 p = (v_position + frame.ground_offset[slot].xyz) * scale;
-    const float slice = info.y;
+// Value noise (0 to 1) repeating every 100 cells, so the camera's place can wrap at 4 km.
+float hash3(vec3 c) {
+    c = mod(c, 100.0);
+    return fract(sin(dot(c, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+float value_noise(vec3 p) {
+    const vec3 i = floor(p);
+    const vec3 f = p - i;
+    const vec3 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), u.x),
+                   mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), u.x), u.y),
+               mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), u.x),
+                   mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), u.x), u.y),
+               u.z);
+}
+
+// Set in main: the slow variation here (0 to 1), and how much of the larger scale to mix in.
+float ground_slow;
+float ground_far;
+
+// A set's maps at one scale, into g (its normal bent from n).
+void read_maps(inout Ground g, int maps, vec3 p, float slice, float scale, vec3 n) {
     if ((maps & 1) != 0) g.albedo = tri(ground_color, p, slice, scale).rgb;
     if ((maps & 2) != 0) {
         const vec4 mr = tri(ground_mr, p, slice, scale);
@@ -166,6 +183,30 @@ Ground layer(int slot, vec3 colour, vec3 n) {
         }
         g.normal = normalize(n + bend);
     }
+}
+
+// A layer: its colour (and flat, rough ground) or, with a texture set, its maps: at its tile,
+// with the larger scale mixed in further off and the slow variation over it.
+Ground layer(int slot, vec3 colour, vec3 n) {
+    Ground g = Ground(colour, n, 0.9, 0.0, 1.0, vec3(0.0), 0.0);
+    const vec4 info = frame.ground_layer[slot];
+    const int maps = int(info.z + 0.5);
+    if (maps == 0) return g;
+    const float slice = info.y;
+    const float scale = info.x;  // 1 / the tile
+    // How far off this layer's repeat shows: from 8 tiles away the larger scale comes in.
+    const float far = ground_far * smoothstep(8.0, 40.0, length(v_position) * scale);
+    if (far < 0.999)
+        read_maps(g, maps, (v_position + frame.ground_offset[slot].xyz) * scale, slice, scale, n);
+    if (far > 0.0) {
+        // (Read from blurred mip levels: broad patches of the set's own colours and shading,
+        // not its detail drawn five times bigger.)
+        Ground big = g;
+        read_maps(big, maps, (v_position + frame.ground_offset_far[slot].xyz) * info.w, slice,
+                  info.w * 8.0, n);
+        g = far < 0.999 ? mixg(g, big, far) : big;
+    }
+    if ((maps & 1) != 0) g.albedo *= mix(0.86, 1.14, ground_slow);
     g.pbr = 1.0;
     return g;
 }
@@ -226,6 +267,16 @@ void main() {
     tri_w /= tri_w.x + tri_w.y + tri_w.z;
     dp_dx = dFdx(v_position);
     dp_dy = dFdy(v_position);
+    // The slow variation (over some 40 m, two octaves), and the larger scale's share: up to
+    // half, more and less with the variation; none on the phone tier.
+    const vec3 q = (v_position + frame.ground_macro.xyz) / 40.0;
+    ground_slow = value_noise(q) * 0.65 + value_noise(q * 2.7 + 17.0) * 0.35;
+    const bool phone = frame.ground_macro.w > 0.5;
+    ground_far = phone ? 0.0 : 0.3 + 0.35 * ground_slow;
+    if (phone) {  // (fewer projections: the weakest dropped where the others carry it)
+        tri_w = max(tri_w - 0.12, 0.0);
+        tri_w /= tri_w.x + tri_w.y + tri_w.z;
+    }
 
     // Grass, from dry to lush, then the season's: drier in summer, turning in autumn.
     Ground g = moisture < 1.0 ? layer(kDryGrass, linear(vec3(0.55, 0.50, 0.28)), n)

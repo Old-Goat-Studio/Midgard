@@ -12,10 +12,12 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <future>
 #include <map>
 #include <set>
 #include <tuple>
@@ -107,8 +109,10 @@ struct FrameData {
     // which maps it has (bits, a material's order: 1 colour, 2 metal/roughness, 4 normal, 8
     // occlusion, 16 emissive; 0 none: its colour as before); and the camera's place modulo the
     // tile, so the pattern stays put on the world however far from its origin the camera is.
-    glm::vec4 ground_layer[kGroundSlots];
+    glm::vec4 ground_layer[kGroundSlots];  // (w: 1 / the larger scale's tile)
     glm::vec4 ground_offset[kGroundSlots];
+    glm::vec4 ground_offset_far[kGroundSlots];  // the camera's place modulo the larger tile
+    glm::vec4 ground_macro;  // xyz the camera's place modulo 4 km; w 1 on the phone tier
 };
 
 // Must match the push constants of shaders/mesh.vert and mesh.frag (112 of the guaranteed 128
@@ -370,7 +374,11 @@ struct Renderer::Impl {
     uint32_t ground_size = 0;
     std::string ground_key;  // the sets in the arrays, in slice order
     int ground_sets = 0;
-    int ground_retry = 0;  // frames until the missing maps are asked for again
+    int ground_retry = 0;       // frames until the missing maps are asked for again
+    bool ground_async = false;  // maps prepared on worker threads (the game's window)
+    bool ground_dirty = false;  // the arrays are to be made again (once nothing is pending)
+    std::map<std::string, std::future<TextureData>> ground_pending;
+    std::vector<std::array<std::string, 5>> ground_array_sets;  // the arrays' slices' sets
     struct GroundSlot {
         int slice = -1;
         float tile = 4.0f;
@@ -2537,8 +2545,9 @@ struct Renderer::Impl {
         ground_sets = int(sets.size());
     }
 
-    // The terrain look's layers: their sets read (what isn't yet), the arrays made again when
-    // the sets change, and each slot's slice, tile and maps.
+    // The terrain look's layers: their sets read (what isn't yet; prepared on a worker thread
+    // when ground_async), the arrays made again once every map named is ready (or can't be),
+    // and each slot's slice, tile and maps (those in the arrays).
     void update_ground() {
         std::vector<std::array<std::string, 5>> sets;
         ground_slots.fill(GroundSlot{});
@@ -2558,7 +2567,7 @@ struct Renderer::Impl {
         std::string key = std::to_string(size) + '\n';
         for (const auto& set : sets)
             for (const std::string& m : set) key += m + '\n';
-        bool changed = key != ground_key;
+        if (key != ground_key) ground_dirty = true;
         // Read what isn't ready (the missing ones only now and then: they may come later).
         const bool retry = ground_retry-- <= 0;
         if (retry) ground_retry = 60;
@@ -2566,41 +2575,73 @@ struct Renderer::Impl {
             for (size_t k = 0; k < 5; ++k) {
                 const std::string& id = set[k];
                 if (id.empty() || ground_maps.contains(id)) continue;
+                if (const auto p = ground_pending.find(id); p != ground_pending.end()) {
+                    if (ground_async &&
+                        p->second.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                        continue;
+                    try {
+                        ground_maps[id] = p->second.get();
+                        ground_missing.erase(id);
+                    } catch (const std::exception&) {
+                        ground_missing.insert(id);
+                    }
+                    ground_pending.erase(p);
+                    ground_dirty = true;
+                    continue;
+                }
                 if (ground_missing.contains(id) && !retry) continue;
                 try {
                     if (!ground_reader) throw RenderError("no reader");
-                    const std::vector<uint8_t> bytes = ground_reader(id);
-                    ground_maps[id] = prepare_ground_map(
-                        bytes, size, kGroundFormats[k] == VK_FORMAT_R8G8B8A8_SRGB);
+                    std::vector<uint8_t> bytes = ground_reader(id);
+                    const bool srgb = kGroundFormats[k] == VK_FORMAT_R8G8B8A8_SRGB;
+                    if (ground_async) {
+                        ground_pending.emplace(
+                            id,
+                            std::async(std::launch::async, [bytes = std::move(bytes), size, srgb] {
+                                return prepare_ground_map(bytes, size, srgb);
+                            }));
+                        continue;
+                    }
+                    ground_maps[id] = prepare_ground_map(bytes, size, srgb);
                     ground_missing.erase(id);
-                    changed = true;
+                    ground_dirty = true;
                 } catch (const std::exception&) {
                     ground_missing.insert(id);
                 }
             }
-        // Each slot: its slice, and the maps it has.
+        if (ground_dirty && ground_pending.empty()) {
+            // Maps no longer named are let go.
+            const auto named = [&](const std::string& id) {
+                for (const auto& set : sets)
+                    if (std::find(set.begin(), set.end(), id) != set.end()) return true;
+                return false;
+            };
+            std::erase_if(ground_maps, [&](const auto& entry) { return !named(entry.first); });
+            std::erase_if(ground_missing, [&](const std::string& id) { return !named(id); });
+            build_ground_arrays(sets, sets.empty() ? 1 : size);
+            ground_array_sets = sets;
+            ground_key = key;
+            ground_dirty = false;
+        }
+        // Each slot: its set's slice in the arrays as they are, and the maps in them.
         for (const auto& [slot, set] : slot_sets) {
+            const auto& maps = sets[size_t(set)];
+            const auto at = std::find(ground_array_sets.begin(), ground_array_sets.end(), maps);
+            if (at == ground_array_sets.end()) continue;  // (not ready yet: its colour)
             int mask = 0;
             for (size_t k = 0; k < 5; ++k)
-                if (!sets[size_t(set)][k].empty() && ground_maps.contains(sets[size_t(set)][k]))
-                    mask |= 1 << k;
-            ground_slots[size_t(slot)].slice = set;
+                if (!maps[k].empty() && ground_maps.contains(maps[k])) mask |= 1 << k;
+            ground_slots[size_t(slot)].slice = int(at - ground_array_sets.begin());
             ground_slots[size_t(slot)].mask = mask;
         }
-        if (!changed) return;
-        // Maps no longer named are let go.
-        std::erase_if(ground_maps, [&](const auto& entry) {
-            for (const auto& set : sets)
-                if (std::find(set.begin(), set.end(), entry.first) != set.end()) return false;
-            return true;
-        });
-        std::erase_if(ground_missing, [&](const std::string& id) {
-            for (const auto& set : sets)
-                if (std::find(set.begin(), set.end(), id) != set.end()) return false;
-            return true;
-        });
-        build_ground_arrays(sets, sets.empty() ? 1 : size);
-        ground_key = key;
+    }
+
+    // Waits for the maps being prepared, and puts them in the arrays (screenshots, the editor).
+    void finish_ground() {
+        const bool was = ground_async;
+        ground_async = false;
+        update_ground();
+        ground_async = was;
     }
 
     VkDescriptorSet allocate_material_set() {
@@ -3315,17 +3356,28 @@ bool Renderer::render_frame(const Camera& camera, const Light& light,
         }
         for (int i = 0; i < kGroundSlots; ++i) {
             const auto& s = r.ground_slots[size_t(i)];
-            data.ground_layer[i] =
-                glm::vec4(s.mask ? 1.0f / s.tile : 0.0f, float(s.slice), float(s.mask), 0.0f);
-            const double tile = double(s.tile);
-            const auto wrap = [tile](double v) {
-                const double m = std::fmod(v, tile);
-                return float(m < 0.0 ? m + tile : m);
+            // (The larger scale: 5.37 tiles, so the two never line up.)
+            const double tile = double(s.tile), far = tile * 5.37;
+            data.ground_layer[i] = glm::vec4(s.mask ? 1.0f / s.tile : 0.0f, float(s.slice),
+                                             float(s.mask), s.mask ? float(1.0 / far) : 0.0f);
+            const auto wrap = [](double v, double period) {
+                const double m = std::fmod(v, period);
+                return float(m < 0.0 ? m + period : m);
             };
-            data.ground_offset[i] = s.mask ? glm::vec4(wrap(camera.origin.x), wrap(camera.origin.y),
-                                                       wrap(camera.origin.z), 0.0f)
-                                           : glm::vec4(0.0f);
+            const auto wrapped = [&](double period) {
+                return glm::vec4(wrap(camera.origin.x, period), wrap(camera.origin.y, period),
+                                 wrap(camera.origin.z, period), 0.0f);
+            };
+            data.ground_offset[i] = s.mask ? wrapped(tile) : glm::vec4(0.0f);
+            data.ground_offset_far[i] = s.mask ? wrapped(far) : glm::vec4(0.0f);
         }
+        const auto slow = [](double v) {  // (the slow variation repeats every 4 km)
+            const double m = std::fmod(v, 4000.0);
+            return float(m < 0.0 ? m + 4000.0 : m);
+        };
+        data.ground_macro =
+            glm::vec4(slow(camera.origin.x), slow(camera.origin.y), slow(camera.origin.z),
+                      r.quality.tier == Quality::Phone ? 1.0f : 0.0f);
     }
     std::memcpy(f.ubo.mapped, &data, sizeof(data));
     vmaFlushAllocation(r.allocator, f.ubo.allocation, 0, VK_WHOLE_SIZE);
@@ -3387,6 +3439,14 @@ void Renderer::set_ground_reader(ReadGroundTexture read) {
     impl_->ground_missing.clear();  // (asked again with this reader)
     impl_->ground_retry = 0;
     impl_->update_ground();
+}
+
+void Renderer::set_ground_async(bool async) {
+    impl_->ground_async = async;
+}
+
+void Renderer::finish_ground_textures() {
+    impl_->finish_ground();
 }
 
 Renderer::GroundStats Renderer::ground_stats() const {

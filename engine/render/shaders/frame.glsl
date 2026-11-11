@@ -58,6 +58,10 @@ layout(set = 0, binding = 0) uniform Frame {
     // 4 snow, then each biome's lush and dry): x 1 / its tile, y its slice, z its maps (bits: 1
     // colour, 2 metal/roughness, 4 normal, 8 occlusion, 16 emissive; 0: its colour); and the
     // camera's place modulo the tile (xyz), so the pattern stays put on the world.
-    vec4 ground_layer[21];
+    vec4 ground_layer[21];   // (w: 1 / the larger scale's tile, step 3)
     vec4 ground_offset[21];
+    vec4 ground_offset_far[21];  // the camera's place modulo the larger scale's tile
+    // x y z: the camera's place modulo 4000 m (the slow variation's period); w: 1 on the
+    // phone tier (a cheaper path: one scale, fewer projections).
+    vec4 ground_macro;
 } frame;
