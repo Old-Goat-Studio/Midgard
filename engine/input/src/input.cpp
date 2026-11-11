@@ -65,6 +65,23 @@ InputMap InputMap::defaults() {
         m.set_info(axis, {"axis", true});
     for (const char* fixed : {"look_x", "look_y", "zoom", "menu"})
         m.set_info(fixed, {m.info(fixed).kind, false});
+    static const std::pair<const char*, const char*> kNames[] = {
+        {"move_x", "Move sideways"},
+        {"move_y", "Move forward and back"},
+        {"look_x", "Look sideways"},
+        {"look_y", "Look up and down"},
+        {"zoom", "Zoom"},
+        {"jump", "Jump"},
+        {"menu", "Menu"},
+        {"view", "Change view"},
+        {"run", "Run"},
+        {"use", "Use"},
+        {"descend", "Go down (flying)"}};
+    for (const auto& [id, name] : kNames) {
+        Info i = m.info(id);
+        i.name = name;
+        m.set_info(id, i);
+    }
     return m;
 }
 InputMap InputMap::load(const std::filesystem::path& database) {
@@ -107,11 +124,17 @@ InputMap InputMap::load(const std::filesystem::path& database) {
         m.set_info(axis, {"axis", true});
     for (const char* fixed : {"look_x", "look_y", "zoom", "menu"})
         m.set_info(fixed, {m.info(fixed).kind, false});
+    for (const auto& [id, info] : fallback.info_)  // (Midgard's names)
+        if (!m.info_.contains(id) || m.info_[id].name.empty()) {
+            Info i = m.info(id);
+            i.name = info.name;
+            m.set_info(id, i);
+        }
     if (version >= 22 &&
-        sqlite3_prepare_v2(db.get(), "SELECT id, kind, rebindable FROM input_action", -1, &stmt,
-                           nullptr) == SQLITE_OK) {
+        sqlite3_prepare_v2(db.get(), "SELECT id, kind, rebindable, name FROM input_action", -1,
+                           &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW)
-            m.set_info(text(0), {text(1), sqlite3_column_int(stmt, 2) != 0});
+            m.set_info(text(0), {text(1), sqlite3_column_int(stmt, 2) != 0, text(3)});
         sqlite3_finalize(stmt);
     }
     if (version >= 23 && sqlite3_prepare_v2(db.get(), "SELECT id, context FROM input_action", -1,
@@ -146,6 +169,12 @@ std::string InputMap::control(const std::string& action, const std::string& devi
     for (const Binding& b : bindings_)
         if (b.action == action && b.device == device && pushes(b, sign)) return b.control;
     return {};
+}
+
+bool InputMap::knows(const std::string& action) const {
+    if (info_.contains(action)) return true;
+    return std::any_of(bindings_.begin(), bindings_.end(),
+                       [&](const Binding& b) { return b.action == action; });
 }
 
 InputMap::Info InputMap::info(const std::string& action) const {
@@ -216,7 +245,11 @@ std::string control_label(const std::string& device, const std::string& control)
                                                                {"dpright", "D-pad right"},
                                                                {"back", "Back"},
                                                                {"start", "Start"},
-                                                               {"guide", "Guide"}};
+                                                               {"guide", "Guide"},
+                                                               {"leftx", "Left stick"},
+                                                               {"lefty", "Left stick"},
+                                                               {"rightx", "Right stick"},
+                                                               {"righty", "Right stick"}};
         const auto it = pad.find(control);
         return it == pad.end() ? control : it->second;
     }

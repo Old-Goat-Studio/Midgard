@@ -760,6 +760,14 @@ class MenuEditor(QWidget):
             self.canvas.update()
             return
         found = menus.problems_of(screen, {o["id"] for o in self.all()})
+        # Prompts ({use}) as the game shows them with the keyboard (and the mouse).
+        if self.project is not None and any("{" in str(e.get("text", ""))
+                                            for e in screen.get("elements", [])):
+            from .. import input_actions
+            screen = copy.deepcopy(screen)
+            for e in screen.get("elements", []):
+                if isinstance(e.get("text"), str):
+                    e["text"] = input_actions.expand_prompts(self.project, e["text"])
         w, h, scale, safe = self.preview_size()
         try:
             images = menus.image_files(self.project, [{"screen": screen}])

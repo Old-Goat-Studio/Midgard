@@ -59,12 +59,15 @@ public:
     struct Info {
         std::string kind = "button";
         bool rebindable = true;
+        std::string name;  // what players see ("Jump"; "": its id)
     };
     void set_info(const std::string& action, Info info) { info_[action] = std::move(info); }
     Info info(const std::string& action) const;
     // The slots players may rebind: each rebindable button's key and gamepad button, and each
     // way of a rebindable axis's keys, in the actions' order.
     std::vector<ControlSlot> rebindable_slots() const;
+    // Whether an action is the game's (has bindings, or is in its table).
+    bool knows(const std::string& action) const;
     // An action's context ("always" unless set: one that isn't known counts always).
     void set_context(const std::string& action, const std::string& context);
     const std::string& context(const std::string& action) const;

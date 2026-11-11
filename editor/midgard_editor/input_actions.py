@@ -128,6 +128,54 @@ def rebind_slots(project: Project) -> list[tuple[str, str, str]]:
     return out
 
 
+# Prompts (6.1 step 5): {action} in a screen's text or a note shows that action's control on
+# the device the player is using ("Press {use}": E, X, or the Use touch button).
+PROMPT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+PAD_SHORT = {"a": "A", "b": "B", "x": "X", "y": "Y", "leftshoulder": "LB",
+             "rightshoulder": "RB", "lefttrigger": "LT", "righttrigger": "RT",
+             "leftstick": "L3", "rightstick": "R3", "leftx": "Left stick",
+             "lefty": "Left stick", "rightx": "Right stick", "righty": "Right stick"}
+
+
+def prompt(project: Project, action_id: str, device: str = "keyboard",
+           actions: list[dict[str, Any]] | None = None) -> str | None:
+    """An action's control on a device as players read it (the game's own controls), its
+    name without one; None for an action the game doesn't have."""
+    actions = load_all(project) if actions is None else actions
+    a = next((x for x in actions if x["id"] == action_id), None)
+    if a is None:
+        return None
+    if device == "touch":
+        ids = [b["control"] for b in a["bindings"] if b["device"] == "touch"]
+        labels = {b["id"]: b.get("label", b["id"]) for b in touch_layout(project)}
+        return next((labels[i] for i in ids if i in labels), a["name"])
+    wanted = ("gamepad",) if device == "gamepad" else ("keyboard", "mouse")
+    for d in wanted:
+        for b in a["bindings"]:
+            if b["device"] == d and (d != "keyboard" or b.get("scale", 1.0) > 0):
+                return PAD_SHORT.get(b["control"], b["control"]) if d == "gamepad" else \
+                    b["control"] if d == "keyboard" else control_label(d, b["control"])
+    return a["name"]
+
+
+def expand_prompts(project: Project, text: str, device: str = "keyboard") -> str:
+    """Text with each {action} its control on a device (unknown ones left as they are)."""
+    if "{" not in text:
+        return text
+    actions = load_all(project)
+
+    def one(m: re.Match) -> str:
+        found = prompt(project, m.group(1), device, actions)
+        return found if found is not None else m.group(0)
+    return PROMPT.sub(one, text)
+
+
+def unknown_prompts(project: Project, text: str) -> list[str]:
+    """The {names} in a text that aren't the game's actions."""
+    known = {a["id"] for a in load_all(project)}
+    return [m.group(1) for m in PROMPT.finditer(text) if m.group(1) not in known]
+
+
 # Continuous controls: their scale is a rate, not a direction.
 RATES = {("mouse", "delta_x"), ("mouse", "delta_y"), ("touch", "drag_x"), ("touch", "drag_y")}
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,39}$")

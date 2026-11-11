@@ -35,6 +35,10 @@ from PySide6.QtWidgets import (
 NODE_WIDTH = 170.0
 HEADER = 24.0
 ROW = 20.0
+# Zoom: how far the view goes in and out, and the least Fit uses (bigger graphs are panned
+# round, middle button, rather than shrunk past reading).
+MIN_ZOOM, MAX_ZOOM, READABLE_ZOOM = 0.25, 4.0, 0.9
+NODE_FONT_POINTS = 10
 PORT_RADIUS = 5.0
 
 
@@ -279,11 +283,12 @@ class NodeItem(QGraphicsItem):
         painter.setPen(pal.highlightedText().color() if model.output == self.node_id
                        else pal.buttonText().color())
         bold = QFont(painter.font())
+        bold.setPointSize(NODE_FONT_POINTS)
         bold.setBold(True)
         painter.setFont(bold)
         painter.drawText(header.adjusted(8, 0, -14, 0), Qt.AlignmentFlag.AlignVCenter,
                          spec.title)
-        painter.setFont(QFont(painter.font().family(), painter.font().pointSize()))
+        painter.setFont(QFont(painter.font().family(), NODE_FONT_POINTS))
         # Inputs: a port each, its name, and its number when not linked.
         for i in range(model.slots(self.node_id)):
             value = node["inputs"][i] if i < len(node["inputs"]) else None
@@ -310,6 +315,7 @@ class NodeGraphView(QGraphicsView):
     """Draws a GraphModel and edits it (each edit one step on `undo_stack`)."""
     selection_changed = Signal(list)  # node ids
     edit_requested = Signal(str, int)  # node id, input: a number to type (default: a dialog)
+    zoom_changed = Signal(float)  # the view's zoom (1: as laid out)
 
     def __init__(self, model: GraphModel, undo_stack=None, parent: QWidget | None = None):
         super().__init__(parent)
@@ -375,9 +381,33 @@ class NodeGraphView(QGraphicsView):
         self.selection_changed.emit(self.selected())
 
     def fit(self) -> None:
-        if self.items_by_id:
-            self.fitInView(self.scene().itemsBoundingRect().adjusted(-40, -40, 40, 40),
-                           Qt.AspectRatioMode.KeepAspectRatio)
+        """The whole graph in view, but never smaller than can be read (a bigger graph shows
+        its middle at a readable size; pan round it with the middle button), nor bigger than
+        twice its size."""
+        if not self.items_by_id:
+            return
+        bounds = self.scene().itemsBoundingRect().adjusted(-40, -40, 40, 40)
+        self.fitInView(bounds, Qt.AspectRatioMode.KeepAspectRatio)
+        fitted = self.zoom()
+        if fitted < READABLE_ZOOM or fitted > 2.0:
+            self.set_zoom(min(max(fitted, READABLE_ZOOM), 2.0))
+            self.centerOn(bounds.center())
+        self.zoom_changed.emit(self.zoom())
+
+    def zoom(self) -> float:
+        return self.transform().m11()
+
+    def set_zoom(self, zoom: float) -> None:
+        """The zoom (1: as laid out), kept in range, about the view's middle."""
+        zoom = min(max(zoom, MIN_ZOOM), MAX_ZOOM)
+        middle = self.mapToScene(self.viewport().rect().center())
+        self.resetTransform()
+        self.scale(zoom, zoom)
+        self.centerOn(middle)
+        self.zoom_changed.emit(zoom)
+
+    def zoom_by(self, factor: float) -> None:
+        self.set_zoom(self.zoom() * factor)
 
     # ---- editing (each one undoable step) ---------------------------------------------------
     def add_node(self, kind: str, pos: QPointF) -> str:
@@ -499,14 +529,25 @@ class NodeGraphView(QGraphicsView):
 
     def wheelEvent(self, e) -> None:  # noqa: N802 (Qt's name)
         factor = 1.15 if e.angleDelta().y() > 0 else 1 / 1.15
-        scale = self.transform().m11() * factor
-        if 0.2 <= scale <= 3.0:
-            self.scale(factor, factor)
+        zoom = min(max(self.zoom() * factor, MIN_ZOOM), MAX_ZOOM)
+        if abs(zoom - self.zoom()) > 1e-6:  # (about the mouse: the view's anchor)
+            self.scale(zoom / self.zoom(), zoom / self.zoom())
+            self.zoom_changed.emit(self.zoom())
 
     def keyPressEvent(self, e) -> None:  # noqa: N802 (Qt's name)
         if e.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.remove_selected()
             return
+        if e.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if e.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+                self.zoom_by(1.25)
+                return
+            if e.key() == Qt.Key.Key_Minus:
+                self.zoom_by(1 / 1.25)
+                return
+            if e.key() == Qt.Key.Key_0:
+                self.set_zoom(1.0)
+                return
         super().keyPressEvent(e)
 
     def contextMenuEvent(self, e) -> None:  # noqa: N802 (Qt's name)
@@ -541,3 +582,44 @@ class NodeGraphView(QGraphicsView):
                 action.triggered.connect(lambda _=False, k=spec.kind: self.add_node(k, scene_pos))
                 target.addAction(action)
         return menu
+
+
+class ZoomBar(QWidget):
+    """A graph view's zoom: out, how far, in, as laid out (100%), and Fit."""
+
+    def __init__(self, view: "NodeGraphView", parent: QWidget | None = None):
+        from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton
+        super().__init__(parent)
+        self.view = view
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+
+        def button(text: str, tip: str, slot) -> QToolButton:
+            b = QToolButton()
+            b.setText(text)
+            b.setToolTip(tip)
+            b.clicked.connect(slot)
+            row.addWidget(b)
+            return b
+        self.out_button = button("−", "Zoom out (Ctrl+−, or the mouse wheel)",
+                                 lambda: view.zoom_by(1 / 1.25))
+        self.label = QLabel()
+        self.label.setMinimumWidth(48)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self.label)
+        self.in_button = button("+", "Zoom in (Ctrl++, or the mouse wheel)",
+                                lambda: view.zoom_by(1.25))
+        self.actual = button("100%", "As laid out (Ctrl+0)", lambda: view.set_zoom(1.0))
+        self.fit_button = button("Fit", "The whole graph, as big as it can be read",
+                                 view.fit)
+        hint = QLabel("Wheel: zoom · middle button: move round")
+        hint.setEnabled(False)
+        row.addWidget(hint)
+        row.addStretch(1)
+        view.zoom_changed.connect(self.show_zoom)
+        self.show_zoom(view.zoom())
+
+    def show_zoom(self, zoom: float) -> None:
+        self.label.setText(f"{round(zoom * 100)}%")
+        self.out_button.setEnabled(zoom > MIN_ZOOM + 1e-6)
+        self.in_button.setEnabled(zoom < MAX_ZOOM - 1e-6)

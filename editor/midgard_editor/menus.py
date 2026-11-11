@@ -594,7 +594,15 @@ def problems(project: Project) -> list[str]:
     ids = {s["id"] for s in screens}
     found = [f"Screen '{s['name']}' {p}." for s in screens
              for p in problems_of(s["screen"], ids)]
+    from . import input_actions
     for s in screens:
+        for e in s["screen"].get("elements", []):
+            text = e.get("text", "") if isinstance(e, dict) else ""
+            for name in input_actions.unknown_prompts(project, text) if isinstance(text, str) \
+                    else []:
+                found.append(f"Screen '{s['name']}': '{e.get('id')}' shows {{{name}}}, which "
+                             "isn't one of the game's actions (the Input editor's); it shows as "
+                             "written.")
         for font in fonts_of(s["screen"]):
             if not font_files(project, font):
                 found.append(f"Screen '{s['name']}' uses the font '{font[3:]}', which isn't in "

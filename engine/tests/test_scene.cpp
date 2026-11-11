@@ -4890,6 +4890,51 @@ TEST_CASE("screens: from the database; buttons close, open and quit; scripts hea
     CHECK(report.errors.front().find("video") != std::string::npos);
 }
 
+TEST_CASE("prompts: {action} shows its control on the device in use, as it changes") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [3, 0.5, 4]},
+                                         "player": {}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]},
+                                         "camera": {}}')"}});
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO screen (id, name, position, screen) VALUES
+        ('scr_door', 'Door', 0, '{"modal": false, "elements": [
+            {"id": "hint", "kind": "text", "text": "Press {use} to open, {nothing} stays"},
+            {"id": "use_key", "kind": "button", "text": "Use", "binds": "key:use"},
+            {"id": "plain", "kind": "text", "text": "No prompt here"}]}'))");
+    sqlite3_close(db);
+    midgard::Game game(pkg.dir);
+    game.use_profile(pkg.dir / "profile" / "profile.json");
+    midgard::hud::HudState& hud = game.hud();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    hud.show_screen("scr_door");
+    // The keyboard (and mouse): E; a gamepad: X; touch: the Use button's label.
+    CHECK(game.prompt("use") == "E");
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_door/hint") == "Press E to open, {nothing} stays");
+    CHECK_FALSE(hud.texts.contains("scr_door/plain"));
+    game.set_input_device("gamepad");
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_door/hint") == "Press X to open, {nothing} stays");
+    CHECK(game.prompt("move_x") == "Left stick");
+    game.set_input_device("touch");
+    CHECK(game.prompt("use") == "Use");
+    CHECK(game.prompt("zoom") == "Zoom");  // (no touch control: its name)
+    // The player's own control.
+    game.set_input_device("keyboard");
+    game.ui_click("scr_door", "use_key");
+    CHECK(game.control_chosen("F"));
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_door/hint") == "Press F to open, {nothing} stays");
+    // A script's text, kept as written: its prompt follows the device.
+    game.set_screen_text("scr_door", "plain", "{jump} to climb");
+    CHECK(hud.texts.at("scr_door/plain") == "Space to climb");
+    game.set_input_device("gamepad");
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_door/plain") == "A to climb");
+    CHECK(game.expand_prompts("{use}{jump} {") == "XA {");
+}
+
 TEST_CASE("controls: keys and gamepad buttons rebound, an axis's ways, swaps and Reset") {
     TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [3, 0.5, 4]},
                                          "player": {}}')"},

@@ -1296,7 +1296,7 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         .def(
             "notify",
             [](const UiHandle&, const std::string& text, double seconds) {
-                current_game().hud().notify(text, seconds);
+                current_game().hud().notify(current_game().expand_prompts(text), seconds);
             },
             py::arg("text"), py::arg("seconds") = 4.0,
             "A short note on the HUD (\"Picked up a key\") for so many seconds; it fades as it "
@@ -1421,7 +1421,7 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             [](const UiHandle&, const std::string& screen, const std::string& element,
                const std::string& text) {
                 check_element(screen, element, "");
-                current_game().hud().texts[screen + "/" + element] = text;
+                current_game().set_screen_text(screen, element, text);
             },
             py::arg("screen"), py::arg("element"), py::arg("text"),
             "Changes the text of an element (text, a button, a check) on a screen.")
@@ -1562,6 +1562,14 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             return g_context && g_context->actions && g_context->actions->pressed(name);
         },
         py::arg("name"), "True in the frame an input action goes down.");
+    m.def(
+        "prompt", [](const std::string& action) { return current_game().prompt(action); },
+        py::arg("action"),
+        "An action's control on the device in use, as players read it: 'E', 'X', the touch "
+        "button's label (in a note or a screen's text, {action} does the same).");
+    m.def(
+        "input_device", [] { return current_game().input_device(); },
+        "The device the player is using: 'keyboard' (and the mouse), 'gamepad' or 'touch'.");
     m.def(
         "input_context", [] { return current_game().input_context(); },
         "The input context now: 'on_foot', 'flying', 'menu', 'vehicle' (actions of others "

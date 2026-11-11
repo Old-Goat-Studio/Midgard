@@ -288,6 +288,19 @@ public:
     std::vector<PlayerControl> player_controls() const;
     // A slot's control now: the player's, else the game's.
     std::string control_of(const ControlSlot& slot) const;
+    // (6.1 step 5) The device the player is using now ("keyboard": the keyboard and mouse,
+    // "gamepad", "touch"), as the runtime sees it.
+    void set_input_device(const std::string& device) { input_device_ = device; }
+    const std::string& input_device() const { return input_device_; }
+    // An action's control on that device as players read it ("E", "X", the touch button's
+    // label; the player's own if they rebound it), else its name.
+    std::string prompt(const std::string& action) const;
+    // Text with prompts: each {action} (one of the game's) its control on the device in use.
+    std::string expand_prompts(const std::string& text) const;
+    // A screen element's text from a script (midgard.ui.set_text): kept as written, its
+    // prompts shown for the device in use.
+    void set_screen_text(const std::string& screen, const std::string& element,
+                         const std::string& text);
     // Every control back to the game's own (a Controls screen's Reset).
     void reset_controls();
     // The player's controls changed since asked (the runtime lays them over its actions again).
@@ -625,6 +638,8 @@ private:
     std::vector<hud::UiEvent> ui_events_;
     std::string rebinding_;  // a button's binds waiting for its new control ("key:jump")
     bool controls_changed_ = false;
+    std::string input_device_ = "keyboard";
+    std::map<std::string, std::string> written_texts_;  // scripts' screen texts, as written
     GameSettings settings_;
     bool frozen_ = false;
     std::string script_context_;  // the input context a script chose ("": the game's)

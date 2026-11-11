@@ -464,3 +464,31 @@ def test_the_world_types_paint_layers_are_named_textured_and_painted(panel, proj
     name.editingFinished.emit()
     assert "name" not in latest(project)["terrain"]["ground"]["paint_1"]
     assert world_types.paint_layer_names(project)["paint_1"] == "Paint layer 1"
+
+
+def test_the_graph_zooms_and_fits_without_shrinking_past_reading(panel, qtbot):
+    from PySide6.QtCore import Qt
+
+    from midgard_editor.node_graph import MAX_ZOOM, MIN_ZOOM, READABLE_ZOOM
+    view, bar = panel.graph_view, panel.zoom_bar
+    panel.resize(500, 400)  # (a small panel: the whole graph would be tiny)
+    view.fit()
+    assert view.zoom() >= READABLE_ZOOM
+    view.set_zoom(1.0)
+    assert bar.label.text() == "100%"
+    bar.in_button.click()
+    assert view.zoom() == pytest.approx(1.25)
+    assert bar.label.text() == "125%"
+    bar.out_button.click()
+    bar.out_button.click()
+    assert view.zoom() == pytest.approx(0.8)
+    view.set_zoom(100.0)
+    assert view.zoom() == MAX_ZOOM and not bar.in_button.isEnabled()
+    view.set_zoom(0.0)
+    assert view.zoom() == MIN_ZOOM and not bar.out_button.isEnabled()
+    bar.actual.click()
+    assert view.zoom() == 1.0
+    qtbot.keyClick(view, Qt.Key.Key_Equal, Qt.KeyboardModifier.ControlModifier)
+    assert view.zoom() == pytest.approx(1.25)
+    qtbot.keyClick(view, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
+    assert view.zoom() == 1.0

@@ -314,3 +314,44 @@ def test_the_controls_screen_lists_what_players_may_rebind(project, panel):
     assert elements["back"]["action"] == {"do": "close"}
     menus.save_all(project, screens)
     assert menus.problems(project) == []
+
+
+def test_prompts_name_each_devices_control(project, panel):
+    from midgard_editor import menus
+    assert ia.prompt(project, "use") == "E"
+    assert ia.prompt(project, "use", "gamepad") == "X"
+    assert ia.prompt(project, "use", "touch") == "Use"
+    assert ia.prompt(project, "move_y") == "W"  # (an axis: its forward key)
+    assert ia.prompt(project, "zoom", "touch") == "Zoom"  # (none: its name)
+    assert ia.prompt(project, "nothing") is None
+    assert ia.expand_prompts(project, "Press {use} or {jump}, not {nothing}") == \
+        "Press E or Space, not {nothing}"
+    assert ia.expand_prompts(project, "Press {use}", "gamepad") == "Press X"
+    # A screen showing one the game doesn't have: said.
+    menus.save_all(project, [{"id": "scr_door", "name": "Door", "screen": {"elements": [
+        {"id": "hint", "kind": "text", "text": "Press {use} to open"},
+        {"id": "bad", "kind": "text", "text": "Press {opne}"}]}}])
+    found = menus.problems(project)
+    assert len(found) == 1 and "{opne}" in found[0]
+
+
+NOTE_SCRIPT = """
+import midgard
+
+
+def on_start(entity):
+    midgard.ui.notify("Press {use} to open")
+    print("prompt", midgard.prompt("jump"), midgard.input_device())
+"""
+
+
+@needs_scripting
+def test_a_scripts_note_shows_the_key(project, tmp_path):
+    project.put_entity(Entity("e000095", "Door", None, {
+        "transform": {}, "script": {"module": "door_note"}}))
+    write_script(project, "door_note", NOTE_SCRIPT)
+    package = cook(project, tmp_path / "pkg").out_dir
+    dump, run = simulate(package, 5)
+    assert run.returncode == 0, run.stderr
+    assert "prompt Space keyboard" in run.stdout.splitlines()
+    assert "Press E to open" in dump["hud"]["notes"]

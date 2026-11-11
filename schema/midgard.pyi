@@ -734,6 +734,15 @@ def pressed(name: str) -> bool:
     """True in the frame an input action goes down."""
 
 
+def prompt(action: str) -> str:
+    """An action's control on the device in use, as players read it: 'E', 'X', the touch
+    button's label (in a note or a screen's text, {action} does the same)."""
+
+
+def input_device() -> str:
+    """The device the player is using: 'keyboard' (and the mouse), 'gamepad' or 'touch'."""
+
+
 def input_context() -> str:
     """The input context now: 'on_foot', 'flying', 'menu', 'vehicle' (actions of others read
     nothing)."""

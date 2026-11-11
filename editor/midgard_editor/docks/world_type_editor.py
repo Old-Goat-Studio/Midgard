@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import calendars, engine, environments, world_types
-from ..node_graph import GraphModel, NodeGraphView, NodeSpec, edit
+from ..node_graph import GraphModel, NodeGraphView, NodeSpec, ZoomBar, edit
 from ..physics_dialogs import SHAPES, WALLS, origin
 
 log = logging.getLogger(__name__)
@@ -268,10 +268,24 @@ class WorldTypePanel(QWidget):
         self.graph_saver = _GraphSaver(self)
         self.graph_view = NodeGraphView(self.model, undo_stack=self.graph_saver)
         self.graph_view.selection_changed.connect(self._node_chosen)
-        ground_layout.addWidget(self.graph_view, 3)
+        # The graph and the chosen node's settings side by side, the graph the most of it (drag
+        # the divider to share it otherwise).
+        graph_split = QSplitter(Qt.Orientation.Horizontal)
+        graph_column = QWidget()
+        column = QVBoxLayout(graph_column)
+        column.setContentsMargins(0, 0, 0, 0)
+        self.zoom_bar = ZoomBar(self.graph_view)
+        column.addWidget(self.zoom_bar)
+        column.addWidget(self.graph_view, 1)
+        graph_split.addWidget(graph_column)
         self.node_form_host = QWidget()
+        self.node_form_host.setMinimumWidth(180)
         self.node_form = QFormLayout(self.node_form_host)
-        ground_layout.addWidget(self.node_form_host, 1)
+        graph_split.addWidget(self.node_form_host)
+        graph_split.setStretchFactor(0, 4)
+        graph_split.setStretchFactor(1, 1)
+        graph_split.setSizes([3000, 900])
+        ground_layout.addWidget(graph_split)
         self.tabs.addTab(ground, "Ground")
 
         # Climate and biomes.
@@ -646,8 +660,10 @@ class WorldTypePanel(QWidget):
         while self.node_form.rowCount():
             self.node_form.removeRow(0)
         if len(ids) != 1 or ids[0] not in self.model.nodes:
-            self.node_form.addRow(QLabel("Right-click the canvas to add a node; choose one "
-                                         "to change its settings."))
+            hint = QLabel("Right-click the canvas to add a node; choose one to change its "
+                          "settings.")
+            hint.setWordWrap(True)
+            self.node_form.addRow(hint)
             return
         node_id = ids[0]
         node = self.model.nodes[node_id]

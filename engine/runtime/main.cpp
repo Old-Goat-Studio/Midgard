@@ -333,6 +333,8 @@ public:
     virtual std::string rebinding_device() const { return {}; }
     virtual bool control_chosen(const std::string&) { return false; }
     virtual bool take_controls_changed() { return false; }
+    // The device the player is using now (prompts follow it).
+    virtual void set_input_device(const std::string&) {}
     // An Asset Library font's files (by its "ui:" folder): names and bytes.
     virtual std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
         const std::string& folder) const {
@@ -767,6 +769,7 @@ public:
         return game_.control_chosen(control);
     }
     bool take_controls_changed() override { return game_.take_controls_changed(); }
+    void set_input_device(const std::string& device) override { game_.set_input_device(device); }
     std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
         const std::string& folder) const override {
         auto found = midgard::package_fonts(
@@ -1891,6 +1894,8 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
         // The touch controls: on a phone without a controller, or asked for (with the mouse as
         // a finger). A finger shows them; a key, a mouse click or a controller hides them.
         bool touch_wanted = opt.touch_controls;
+        std::string last_device = opt.touch_controls ? "touch" : "keyboard";
+        source.set_input_device(last_device);
         bool touch_menu_held = false;  // (the Menu button opens the pause menu as it goes down)
         std::string shown_crosshair, shown_pointer;  // (the game settings' pictures, as loaded)
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
@@ -1987,6 +1992,25 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
             actions.begin_frame();
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
+                // The device in use (prompts show its controls): the last one touched.
+                {
+                    const char* device = nullptr;
+                    if (e.type == SDL_EVENT_KEY_DOWN ||
+                        (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                         e.button.which != SDL_TOUCH_MOUSEID) ||
+                        e.type == SDL_EVENT_MOUSE_WHEEL)
+                        device = opt.touch_controls ? "touch" : "keyboard";
+                    else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+                             (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION &&
+                              std::abs(e.gaxis.value) > 16000))
+                        device = "gamepad";
+                    else if (e.type == SDL_EVENT_FINGER_DOWN)
+                        device = "touch";
+                    if (device && device != last_device) {
+                        last_device = device;
+                        source.set_input_device(device);
+                    }
+                }
                 bool consumed = false;  // handled here; the game's actions don't see it
                 // The UI first: a menu takes everything, the HUD what is aimed at it. (Android's
                 // Back button is a menu's Escape.)

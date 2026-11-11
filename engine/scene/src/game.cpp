@@ -742,6 +742,51 @@ std::map<std::string, std::string> Game::player_keys() const {
     return out;
 }
 
+std::string Game::prompt(const std::string& action) const {
+    if (!input_cache_) input_cache_ = input_map();
+    const InputMap& m = *input_cache_;
+    const std::string name = m.info(action).name.empty() ? action : m.info(action).name;
+    std::string control;
+    if (input_device_ == "gamepad") {
+        control = control_of({"gamepad", action, 0});
+        return control.empty() ? name : control_label("gamepad", control);
+    }
+    if (input_device_ == "touch") {
+        control = m.control(action, "touch");
+        for (const TouchButton& b : settings_.touch.buttons)
+            if (b.id == control) return b.label;
+        return name;
+    }
+    control = control_of({"keyboard", action, 0});
+    if (!control.empty()) return control_label("keyboard", control);
+    control = m.control(action, "mouse");
+    return control.empty() ? name : control_label("mouse", control);
+}
+
+std::string Game::expand_prompts(const std::string& text) const {
+    if (text.find('{') == std::string::npos) return text;
+    if (!input_cache_) input_cache_ = input_map();
+    std::string out;
+    size_t at = 0;
+    while (at < text.size()) {
+        const size_t open = text.find('{', at);
+        if (open == std::string::npos) break;
+        const size_t close = text.find('}', open + 1);
+        if (close == std::string::npos) break;
+        const std::string action = text.substr(open + 1, close - open - 1);
+        out += text.substr(at, open - at);
+        out += input_cache_->knows(action) ? prompt(action) : text.substr(open, close - open + 1);
+        at = close + 1;
+    }
+    return out + text.substr(at);
+}
+
+void Game::set_screen_text(const std::string& screen, const std::string& element,
+                           const std::string& text) {
+    written_texts_[screen + "/" + element] = text;
+    hud_.texts[screen + "/" + element] = expand_prompts(text);
+}
+
 void Game::reset_controls() {
     profile_.other.erase("keys");
     profile_.other.erase("pads");
@@ -817,6 +862,12 @@ void Game::update_screens() {
         for (const ScreenElement& e : s->elements) {
             if (e.binds.starts_with("volume:")) {
                 hud_.values[id + "/" + e.id] = player_volume(e.binds.substr(7));
+            } else if (const std::string k = id + "/" + e.id;
+                       e.binds.empty() &&
+                       (written_texts_.contains(k) || e.text.find('{') != std::string::npos)) {
+                // Prompts in its text: the controls for the device in use, as it changes.
+                const auto w = written_texts_.find(k);
+                hud_.texts[k] = expand_prompts(w != written_texts_.end() ? w->second : e.text);
             } else if (const auto slot = control_slot(e.binds)) {
                 if (rebinding_ == e.binds) {  // (just that: it fits a narrow button)
                     hud_.texts[id + "/" + e.id] =

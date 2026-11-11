@@ -594,7 +594,13 @@ Terrain is the ground of a large world. It's made in three layers:
 2. **World Type** (the **World Types** panel): a *recipe* for the ground: how high the hills,
    how big, where the sea is, and its climate and **biomes** (zones such as forest, desert,
    tundra, each with its own ground colour). It can also scatter objects (trees, rocks)
-   automatically. A preview map and 3D view show the result.
+   automatically. A preview map and 3D view show the result. Its **Ground** tab is the recipe's
+   graph: boxes (nodes) joined by lines, each working out part of the ground's height; click
+   one to change its settings on the right, right-click the empty canvas to add one. **Zoom**
+   with the mouse wheel, the **−** and **+** buttons above the graph (or Ctrl+− and Ctrl++),
+   **100%** (Ctrl+0) for its own size and **Fit** for the whole graph as big as can be read;
+   hold the **middle mouse button** and drag to move round a big graph. Drag the divider
+   between the graph and its settings to give either more room.
 3. **Terrain brushes** (the **Terrain** panel): your own hand-made changes on top.
 
 ### Sculpting and painting
@@ -1068,6 +1074,14 @@ player does, such as *Honk the horn*, *Crouch* or *Open the map*.
 
 Every change is one Undo step. Mouse buttons (left, right, middle, back and forward) count only
 once the game has the mouse, so the click that takes the mouse doesn't do anything else.
+
+**Prompts.** Write an action's id in braces in any text a player reads (a screen's text or
+button, a note from a script) and the game shows that action's control for the device the
+player is using: "Press {use} to open" reads *Press E to open* with the keyboard, *Press X to
+open* with a gamepad, and *Press Use to open* on a phone (the touch button's label). It follows
+the player's own keys (the Controls screen) and changes the moment they pick up another device.
+The Menu editor's canvas shows the keyboard's. A name in braces that isn't one of your actions
+shows as written, and the screen checks say so.
 
 ### Touch controls: playing on a phone
 
@@ -1741,6 +1755,8 @@ The player's own script also gets `on_trigger_enter(player, trigger)` and `on_tr
 | `midgard.action("move_y")` | An action's value this frame, -1 to 1. |
 | `midgard.down("run")` | True while it's held. |
 | `midgard.pressed("jump")` | True only in the frame it's pressed. |
+| `midgard.prompt("use")` | The action's control on the device the player is using: `"E"`, `"X"`, the touch button's label. In a note or a screen's text, `{use}` does the same. |
+| `midgard.input_device()` | That device: `"keyboard"` (and the mouse), `"gamepad"` or `"touch"`. |
 | `midgard.input_context()` | When actions count now: `"on_foot"`, `"flying"`, `"menu"` or `"vehicle"`. |
 | `midgard.set_input_context("vehicle")` | Chooses it (in a car, say); `None` gives the game its own back. Actions of other contexts read nothing. |
 
