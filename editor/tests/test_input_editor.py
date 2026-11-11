@@ -228,3 +228,60 @@ def test_a_script_chooses_the_vehicle_context(project, panel, tmp_path):
     honks = [line for line in lines if line.startswith("honk at")]
     assert len(honks) == 1 and 40 <= int(honks[0].split()[-1]) <= 42  # (only in the car)
     assert "refused" in lines
+
+
+def test_the_touch_layout_buttons_added_moved_resized_removed(project, panel):
+    touch = panel.touch
+    assert [b["id"] for b in touch.layout_now] == [b["id"] for b in ia.DEFAULT_TOUCH]
+    assert ia.touch_problems(project) == []  # (Midgard's: every button does something)
+    stack = project.undo_stack
+    # A button for the game's own action: made and bound, one step.
+    panel.new_action("Honk")
+    panel.context.setCurrentIndex(panel.context.findData("vehicle"))
+    panel.context.activated.emit(panel.context.currentIndex())
+    count = stack.count()
+    assert touch.add_for("honk") == "honk"
+    assert stack.count() == count + 1
+    button = next(b for b in ia.touch_layout(project) if b["id"] == "honk")
+    assert button["label"] == "Honk" and button["shows"] == "vehicle"
+    assert {"device": "touch", "control": "honk", "scale": 1.0} in ia.load(project, "honk")[
+        "bindings"]
+    assert ia.touch_controls(project)["honk"] == "Honk button"
+    # Dragged (sideways, then upright: each its own place), resized, relabelled.
+    touch._moved("honk", 320.0, 140.0)
+    touch.held.setCurrentIndex(1)  # upright
+    touch.choose("honk")
+    touch._moved("honk", 200.0, 400.0)
+    touch.size.setValue(80)
+    touch._set_size(80)
+    touch.label.setText("Beep")
+    touch.label.editingFinished.emit()
+    b = next(b for b in ia.touch_layout(project) if b["id"] == "honk")
+    assert (b["x"], b["y"], b["r"]) == (320.0, 140.0, 30)
+    assert b["narrow"] == [200.0, 400.0, 40.0]
+    assert b["label"] == "Beep"
+    # Removed (and its binding), one step; undone.
+    count = stack.count()
+    assert touch.remove()
+    assert stack.count() == count + 1
+    assert "honk" not in [x["id"] for x in ia.touch_layout(project)]
+    assert all(x["device"] != "touch" for x in ia.load(project, "honk")["bindings"])
+    stack.undo()
+    assert "honk" in [x["id"] for x in ia.touch_layout(project)]
+    # A button nothing uses: said. Midgard's layout again.
+    touch.choose("honk")
+    panel.choose("honk")
+    panel.remove_binding(0)
+    assert any("'Beep' does nothing" in p for p in ia.touch_problems(project))
+    touch.reset()
+    assert ia.touch_layout(project) == ia.DEFAULT_TOUCH
+
+
+def test_the_editors_default_touch_layout_is_the_engines():
+    import json
+
+    from midgard_editor import engine
+    if engine.module() is None or not hasattr(engine.module(), "default_touch_layout"):
+        pytest.skip("needs the engine module")
+    engines = json.loads(engine.module().default_touch_layout())["buttons"]
+    assert engines == ia.DEFAULT_TOUCH

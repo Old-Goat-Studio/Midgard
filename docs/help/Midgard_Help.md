@@ -1090,16 +1090,27 @@ HUD's minimap moves to the top right, above the scores.
 Connect a game controller (or a keyboard) and press a button: the controls go away. Touch the
 screen and they come back.
 
+**Your own touch layout.** The **Input** panel's **Touch Layout** tab shows a phone, held
+**Sideways** or **Upright** (each way has its own places), with the stick, the half you drag to
+look, and the buttons. **Drag** a button to move it. Choose one (on the phone or in the list)
+to change its **Label**, its **Size**, whether **a tap turns it on and off** (as Run), and when
+it **Shows**: always, only in a context (on foot, flying, in menus, in vehicles), or when the
+game has a pause menu (Menu opens it). Dashed buttons show only sometimes. **Add Button** lists
+your actions: choosing one makes a button for it and binds it (so a touch on it does the
+action). **Remove** takes a button away, with its bindings. **Midgard's Layout** puts
+Midgard's own back. Each change is one Undo step, and a game playing under the editor follows
+at once. Red text says when a button does nothing (no action has it).
+
 **Trying them on your computer:** tick **Build ▸ Play with Touch Controls**, then **Play**. The
 controls show, and the **mouse is a finger**: hold the left button and drag on the stick to
 walk, drag on the right half to look, click the buttons. The mouse isn't captured, so you
 don't need Esc. Untick it to play with the mouse and keyboard again (Midgard remembers which
 you chose).
 
-**Swimming.** Where the sea is deeper than the player's shoulders, the player swims: it floats
-with the water at its shoulders instead of sinking to the sea floor, and swims along the surface
-a little slower than it walks. Where the ground comes up under it (a beach, a gentle bank) it
-stands up and walks out. At a steep bank, **Jump** lifts it out. Jumping or falling in from a
+**Swimming.** Where the sea is deeper than the player's chest, the player swims: it floats up
+to the surface instead of sinking to the sea floor, its head just above the water (treading
+water upright, or lying along the surface as it swims forward), and swims a little slower than
+it walks. Where its feet find the bottom (a beach, a gentle bank) it stands up and walks out. At a steep bank, **Jump** lifts it out. Jumping or falling in from a
 height, it goes under for a moment and bobs back up.
 
 ### The player's stats, scores and counters

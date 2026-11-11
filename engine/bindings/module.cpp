@@ -45,6 +45,7 @@
 #include "midgard/shader_compiler.h"
 #include "midgard/terrain.h"
 #include "midgard/texture_gen.h"
+#include "midgard/touch_layout.h"
 #include "midgard/validate.h"
 #include "midgard/version.h"
 #include "midgard/world_map.h"
@@ -73,6 +74,10 @@ PYBIND11_MODULE(_midgard, m) {
     bind_screen_preview(m);
     m.doc() = "The Midgard engine, for the Midgard editor.";
 
+    m.def(
+        "default_touch_layout",
+        [] { return midgard::touch_layout_to_json(midgard::default_touch_layout()).dump(); },
+        "Midgard's own touch controls' layout, as JSON (midgard/touch_layout.h).");
     m.def(
         "version",
         [] {

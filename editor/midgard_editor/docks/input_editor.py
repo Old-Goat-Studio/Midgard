@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -40,6 +41,7 @@ from PySide6.QtWidgets import (
 
 from .. import input_actions as ia
 from ..project import Project
+from .touch_layout import TouchLayoutEditor
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 
@@ -86,7 +88,13 @@ class InputPanel(QWidget):
         self._filling = False
         split = QSplitter(Qt.Orientation.Horizontal)
         outer = QHBoxLayout(self)
-        outer.addWidget(split)
+        outer.setContentsMargins(0, 0, 0, 0)
+        # Two tabs: the actions, and the touch controls' layout (6.1 step 3).
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+        self.tabs.addTab(split, "Actions")
+        self.touch = TouchLayoutEditor()
+        self.tabs.addTab(self.touch, "Touch Layout")
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
@@ -180,6 +188,7 @@ class InputPanel(QWidget):
         if project is not None:
             project.input_changed.connect(self._changed)
         self.setEnabled(project is not None and ia.has_tables(project))
+        self.touch.set_project(project)
         self.reload()
 
     def _changed(self, _action_id: str) -> None:
@@ -372,7 +381,8 @@ class InputPanel(QWidget):
     def _fill_add_menu(self, device: str, menu: QMenu) -> None:
         menu.clear()
         a = self.current()
-        names = {"mouse": ia.MOUSE, "gamepad": ia.GAMEPAD, "touch": ia.TOUCH}[device]
+        names = {"mouse": ia.MOUSE, "gamepad": ia.GAMEPAD,
+                 "touch": ia.touch_controls(self.project)}[device]
         have = {b["control"] for b in a["bindings"] if b["device"] == device} if a else set()
         for control, label in names.items():
             act = menu.addAction(label, lambda c=control: self.add_binding(device, c))

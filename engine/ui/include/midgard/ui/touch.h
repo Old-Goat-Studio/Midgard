@@ -30,6 +30,8 @@ namespace Rml {
 class ElementDocument;
 }
 
+#include "midgard/touch_layout.h"
+
 namespace midgard::ui {
 
 class Ui;
@@ -39,7 +41,7 @@ class TouchControls {
 public:
     // The controls' screen (resources/touch.rml), over the game and under any menu, hidden
     // until shown. Throws UiError if it can't be read.
-    explicit TouchControls(Ui& ui);
+    explicit TouchControls(Ui& ui, TouchLayout layout = default_touch_layout());
     ~TouchControls();
     TouchControls(const TouchControls&) = delete;
     TouchControls& operator=(const TouchControls&) = delete;
@@ -48,10 +50,14 @@ public:
     // up). Hiding lets go of every finger.
     void set_shown(bool shown);
     bool shown() const;
-    // The Down button shows while the player flies.
-    void set_flying(bool flying);
-    // The Menu button shows when the game has a pause menu (it opens it).
+    // The game's input context: buttons that show in a context ("flying": Down) show in it.
+    void set_context(const std::string& context);
+    void set_flying(bool flying) { set_context(flying ? "flying" : "on_foot"); }
+    // Buttons that show with a pause menu (Menu: it opens it) show when the game has one.
     void set_menu(bool menu);
+    // The buttons, as the Input editor laid them out (fingers on them let go).
+    void set_layout(const TouchLayout& layout);
+    const TouchLayout& layout() const;
 
     // A finger (TouchDown, TouchMove, TouchUp, TouchCancel; x and y in pixels). True if the
     // controls took it (always, while shown: no finger on the game reaches anything else).

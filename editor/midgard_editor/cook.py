@@ -477,6 +477,7 @@ def cook(project: Project, out_dir: Path | None = None,
     warnings += input_actions.script_problems(
         project, script_files(project.root / "scripts"))
     warnings += [f"Input: {p}." for p in input_actions.problems(project)]
+    warnings += [f"Touch controls: {p}." for p in input_actions.touch_problems(project)]
     _cook_icon(project, out)
     runtime_config = {k: project.config[k] for k in RUNTIME_CONFIG_KEYS if k in project.config}
     (out / f"{project.name}.config").write_text(json.dumps(runtime_config, indent=2) + "\n",

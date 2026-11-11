@@ -42,6 +42,7 @@ add_library(midgard_core STATIC
     core/src/stats.cpp
     core/src/hud.cpp
     core/src/screen.cpp
+    core/src/touch_layout.cpp
     core/src/compass.cpp
     core/src/texture_gen.cpp
 )

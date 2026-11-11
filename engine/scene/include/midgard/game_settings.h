@@ -7,8 +7,10 @@
 //                                               starts), "all" (every view) or "none"
 //    "crosshair_size": 32,                      dp across
 //    "pointer": "ui:...",                       the mouse pointer over menus ("": the system's)
-//    "menu_music": "mus_menu"}                  a playlist that plays while a menu shows ("":
+//    "menu_music": "mus_menu",                  a playlist that plays while a menu shows ("":
 //                                               none; a screen can say not to)
+//    "touch": {"buttons": [...]}}               the touch controls' buttons (6.1;
+//                                               midgard/touch_layout.h); none: Midgard's
 //
 // Pictures are "ui:" content (PNG or JPEG from the Asset Library's GUI section), packed in
 // game.pak. The splash is a screen (midgard/screen.h's role "splash"): the runtime reads it,
@@ -25,6 +27,7 @@
 
 #include "midgard/manifest.h"
 #include "midgard/screen.h"
+#include "midgard/touch_layout.h"
 
 namespace midgard {
 
@@ -34,6 +37,7 @@ struct GameSettings {
     double crosshair_size = 32.0;
     std::string pointer;
     std::string menu_music;
+    TouchLayout touch = default_touch_layout();
 };
 
 inline constexpr const char* kGameSettingsKey = "game.settings";

@@ -47,6 +47,61 @@ TOUCH = {"stick_x": "Stick across", "stick_y": "Stick up and down",
          "drag_x": "Dragging across", "drag_y": "Dragging up and down", "jump": "Jump button",
          "use": "Use button", "run": "Run button", "view": "View button",
          "descend": "Down button (flying)"}
+# The touch controls' layout (6.1 step 3; midgard/touch_layout.h), kept in the game's settings as
+# "touch": each button's id (the touch control actions bind), label, place in dp in from the
+# safe area's bottom right (sideways; "narrow": upright), size, tap on and off, and when it
+# shows: "always", a context, or "pause_menu" (when the game has one: it opens it).
+DEFAULT_TOUCH = [
+    {"id": "jump", "label": "Jump", "x": 84, "y": 96, "r": 40, "narrow": [74, 92, 38],
+     "toggles": False, "shows": "always"},
+    {"id": "use", "label": "Use", "x": 186, "y": 62, "r": 30, "narrow": [166, 56, 28],
+     "toggles": False, "shows": "always"},
+    {"id": "run", "label": "Run", "x": 180, "y": 170, "r": 30, "narrow": [162, 152, 28],
+     "toggles": True, "shows": "always"},
+    {"id": "view", "label": "View", "x": 78, "y": 206, "r": 26, "narrow": [70, 196, 26],
+     "toggles": False, "shows": "always"},
+    {"id": "descend", "label": "Down", "x": 84, "y": 290, "r": 30, "narrow": [152, 240, 28],
+     "toggles": False, "shows": "flying"},
+    {"id": "menu", "label": "Menu", "x": 186, "y": 252, "r": 26, "narrow": [70, 290, 26],
+     "toggles": False, "shows": "pause_menu"},
+]
+TOUCH_SHOWS = {"always": "Always", "on_foot": "On foot", "flying": "Flying",
+               "menu": "In menus", "vehicle": "In vehicles",
+               "pause_menu": "When the game has a pause menu (opens it)"}
+STICK_CONTROLS = {"stick_x": "Stick across", "stick_y": "Stick up and down",
+                  "drag_x": "Dragging across", "drag_y": "Dragging up and down"}
+
+
+def touch_layout(project: Project) -> list[dict[str, Any]]:
+    """The touch buttons (Midgard's own unless the game has its own layout)."""
+    from . import menus
+    found = menus.game_settings(project).get("touch")
+    buttons = found.get("buttons") if isinstance(found, dict) else None
+    return [dict(b) for b in (buttons if isinstance(buttons, list) else DEFAULT_TOUCH)]
+
+
+def touch_controls(project: Project | None) -> dict[str, str]:
+    """The touch device's controls: the stick, dragging to look, and the layout's buttons."""
+    buttons = touch_layout(project) if project is not None else DEFAULT_TOUCH
+    return {**STICK_CONTROLS, **{b["id"]: f"{b.get('label', b['id'])} button" for b in buttons}}
+
+
+def touch_problems(project: Project) -> list[str]:
+    """Touch buttons no action uses (pressing them does nothing), and ids used twice."""
+    layout = touch_layout(project)
+    bound = {b["control"] for a in load_all(project) for b in a["bindings"]
+             if b["device"] == "touch"}
+    found, seen = [], set()
+    for b in layout:
+        if b["id"] in seen:
+            found.append(f"the touch button '{b['id']}' is there twice")
+        seen.add(b["id"])
+        if b["id"] not in bound and b.get("shows") != "pause_menu":
+            found.append(f"the touch button '{b.get('label', b['id'])}' does nothing: no action "
+                         "has it")
+    return found
+
+
 # Continuous controls: their scale is a rate, not a direction.
 RATES = {("mouse", "delta_x"), ("mouse", "delta_y"), ("touch", "drag_x"), ("touch", "drag_y")}
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -54,7 +109,8 @@ ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 def control_label(device: str, control: str) -> str:
     """How a control reads: "E", "Left button", "A (bottom)", "Jump button"."""
-    names = {"mouse": MOUSE, "gamepad": GAMEPAD, "touch": TOUCH}.get(device, {})
+    names = {"mouse": MOUSE, "gamepad": GAMEPAD,
+             "touch": {**TOUCH, **STICK_CONTROLS}}.get(device, {})
     return names.get(control, control)
 
 

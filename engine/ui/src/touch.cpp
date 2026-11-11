@@ -21,35 +21,9 @@ namespace {
 constexpr float kStickRestX = 110.0f, kStickRestY = 110.0f, kStickRestNarrow = 96.0f;
 constexpr float kStickRadius = 60.0f, kKnobRadius = 26.0f;
 constexpr float kButtonSlop = 8.0f;  // a finger this near a button's rim still presses it
-
-struct ButtonDef {
-    const char* id;
-    const char* label;
-    float x, y, r;  // from the safe area's bottom right
-    bool toggles;   // tap on, tap off (Run)
-    bool flying_only;
-    bool menu_only = false;  // shown when the game has a pause menu
-};
-constexpr ButtonDef kButtons[] = {
-    {"jump", "Jump", 84.0f, 96.0f, 40.0f, false, false},
-    {"use", "Use", 186.0f, 62.0f, 30.0f, false, false},
-    {"run", "Run", 180.0f, 170.0f, 30.0f, true, false},
-    {"view", "View", 78.0f, 206.0f, 26.0f, false, false},
-    {"descend", "Down", 84.0f, 290.0f, 30.0f, false, true},
-    {"menu", "Menu", 186.0f, 252.0f, 26.0f, false, false, true},
-};
-// On a narrow screen (a phone held upright) the buttons draw in closer to the right edge, so
-// they keep clear of the stick: the same buttons, in the same order.
+// On a narrow screen (a phone held upright) the buttons take their upright places
+// (TouchButton's nx, ny, nr), drawn in closer to the right edge, clear of the stick.
 constexpr float kNarrow = 560.0f;  // dp across the safe area
-constexpr ButtonDef kButtonsNarrow[] = {
-    {"jump", "Jump", 74.0f, 92.0f, 38.0f, false, false},
-    {"use", "Use", 166.0f, 56.0f, 28.0f, false, false},
-    {"run", "Run", 162.0f, 152.0f, 28.0f, true, false},
-    {"view", "View", 70.0f, 196.0f, 26.0f, false, false},
-    {"descend", "Down", 152.0f, 240.0f, 28.0f, false, true},
-    {"menu", "Menu", 70.0f, 290.0f, 26.0f, false, false, true},
-};
-static_assert(std::size(kButtons) == std::size(kButtonsNarrow));
 
 struct ButtonRow {
     Rml::String id, label;
@@ -73,7 +47,9 @@ struct TouchControls::Impl {
     Ui& ui;
     Rml::DataModelHandle handle;
     Rml::ElementDocument* document = nullptr;
-    bool shown = false, flying = false, menu = false;
+    bool shown = false, menu = false;
+    std::string context = "on_foot";
+    TouchLayout layout;
 
     // Each finger's job, from where it went down.
     enum class Job { Stick, Look, Button };
@@ -86,8 +62,8 @@ struct TouchControls::Impl {
     std::optional<int64_t> stick_finger, look_finger;
     float stick_x = 0.0f, stick_y = 0.0f;  // the stick's middle while a finger holds it (px)
     float knob_x = 0.0f, knob_y = 0.0f;
-    int presses[std::size(kButtons)] = {};  // fingers on each button
-    bool toggled[std::size(kButtons)] = {};
+    std::vector<int> presses;   // fingers on each button
+    std::vector<char> toggled;  // (a toggling button's: on)
     Output out;
 
     // The screen's data.
@@ -95,7 +71,10 @@ struct TouchControls::Impl {
     float stick_left = 0, stick_top = 0, stick_size = 0, knob_left = 0, knob_top = 0, knob_size = 0;
     Rml::Vector<ButtonRow> rows;
 
-    explicit Impl(Ui& u) : ui(u) {}
+    Impl(Ui& u, TouchLayout l) : ui(u), layout(std::move(l)) {
+        presses.assign(layout.buttons.size(), 0);
+        toggled.assign(layout.buttons.size(), 0);
+    }
 
     float dp() const { return ui.dp_ratio(); }
     bool narrow() const {
@@ -109,17 +88,29 @@ struct TouchControls::Impl {
                 kStickRadius * dp()};
     }
     bool button_shown(size_t i) const {
-        return (!kButtons[i].flying_only || flying) && (!kButtons[i].menu_only || menu);
+        const std::string& when = layout.buttons[i].shows;
+        return when == "always" || when == context || (when == "pause_menu" && menu);
     }
     Circle button(size_t i) const {
         const Insets& s = ui.safe_area();
-        const ButtonDef& b = narrow() ? kButtonsNarrow[i] : kButtons[i];
+        const TouchButton& b = layout.buttons[i];
         if (!button_shown(i)) return {};
-        return {float(ui.width()) - s.right - b.x * dp(),
-                float(ui.height()) - s.bottom - b.y * dp(), b.r * dp()};
+        const bool n = narrow();
+        return {float(ui.width()) - s.right - (n ? b.nx : b.x) * dp(),
+                float(ui.height()) - s.bottom - (n ? b.ny : b.y) * dp(), (n ? b.nr : b.r) * dp()};
+    }
+    // A finger on a button that went (hidden, or the layout changed) lets go of it.
+    void drop_hidden() {
+        for (auto& [id, f] : fingers)
+            if (f.job == Job::Button && f.button >= 0 &&
+                (size_t(f.button) >= layout.buttons.size() || !button_shown(size_t(f.button)))) {
+                if (size_t(f.button) < presses.size()) presses[size_t(f.button)] = 0;
+                f.button = -1;
+            }
+        refresh_buttons();
     }
     int button_at(float x, float y) const {
-        for (size_t i = 0; i < std::size(kButtons); ++i) {
+        for (size_t i = 0; i < layout.buttons.size(); ++i) {
             const Circle c = button(i);
             if (c.r > 0.0f && std::hypot(x - c.x, y - c.y) <= c.r + kButtonSlop * dp())
                 return int(i);
@@ -167,13 +158,14 @@ struct TouchControls::Impl {
         stick_finger.reset();
         look_finger.reset();
         out.stick_x = out.stick_y = out.drag_x = out.drag_y = 0.0f;
-        for (int& p : presses) p = 0;
+        std::fill(presses.begin(), presses.end(), 0);
         refresh_buttons();
     }
     void refresh_buttons() {
-        for (size_t i = 0; i < std::size(kButtons); ++i) {
-            const bool on = kButtons[i].toggles ? toggled[i] : presses[i] > 0;
-            out.buttons[kButtons[i].id] = on ? 1.0f : 0.0f;
+        out.buttons.clear();
+        for (size_t i = 0; i < layout.buttons.size(); ++i) {
+            const bool on = layout.buttons[i].toggles ? toggled[i] != 0 : presses[i] > 0;
+            out.buttons[layout.buttons[i].id] = on ? 1.0f : 0.0f;
         }
     }
 
@@ -185,7 +177,8 @@ struct TouchControls::Impl {
     }
 };
 
-TouchControls::TouchControls(Ui& ui) : impl_(std::make_unique<Impl>(ui)) {
+TouchControls::TouchControls(Ui& ui, TouchLayout layout)
+    : impl_(std::make_unique<Impl>(ui, std::move(layout))) {
     Impl& t = *impl_;
     Rml::DataModelConstructor model = ui.context()->CreateDataModel("touch");
     if (!model) throw UiError("The touch controls' data model couldn't be made");
@@ -233,7 +226,7 @@ void TouchControls::set_shown(bool shown) {
     t.shown = shown;
     t.release_all();
     if (!shown)
-        for (bool& on : t.toggled) on = false;  // (back to walking)
+        for (char& on : t.toggled) on = 0;  // (back to walking)
     t.refresh_buttons();
 }
 
@@ -241,21 +234,32 @@ bool TouchControls::shown() const {
     return impl_->shown;
 }
 
-void TouchControls::set_flying(bool flying) {
+void TouchControls::set_context(const std::string& context) {
     Impl& t = *impl_;
-    if (t.flying == flying) return;
-    t.flying = flying;
-    // A finger on the Down button as it goes lets go of it.
-    for (auto& [id, f] : t.fingers)
-        if (f.job == Impl::Job::Button && !t.button_shown(size_t(f.button))) {
-            t.presses[f.button] = 0;
-            f.button = -1;
-        }
-    t.refresh_buttons();
+    if (t.context == context) return;
+    t.context = context;
+    t.drop_hidden();  // (a finger on the Down button as it goes lets go of it)
 }
 
 void TouchControls::set_menu(bool menu) {
-    impl_->menu = menu;
+    Impl& t = *impl_;
+    if (t.menu == menu) return;
+    t.menu = menu;
+    t.drop_hidden();
+}
+
+void TouchControls::set_layout(const TouchLayout& layout) {
+    Impl& t = *impl_;
+    if (t.layout == layout) return;
+    t.release_all();
+    t.layout = layout;
+    t.presses.assign(layout.buttons.size(), 0);
+    t.toggled.assign(layout.buttons.size(), 0);
+    t.refresh_buttons();
+}
+
+const TouchLayout& TouchControls::layout() const {
+    return impl_->layout;
 }
 
 bool TouchControls::handle(const Input& in) {
@@ -272,8 +276,8 @@ bool TouchControls::handle(const Input& in) {
         if (const int b = t.button_at(in.x, in.y); b >= 0) {
             f.job = Impl::Job::Button;
             f.button = b;
-            ++t.presses[b];
-            if (kButtons[b].toggles) t.toggled[b] = !t.toggled[b];
+            ++t.presses[size_t(b)];
+            if (t.layout.buttons[size_t(b)].toggles) t.toggled[size_t(b)] = !t.toggled[size_t(b)];
             t.refresh_buttons();
         } else if (in.x < 0.5f * float(t.ui.width()) && !t.stick_finger) {
             f.job = Impl::Job::Stick;
@@ -308,7 +312,7 @@ bool TouchControls::handle(const Input& in) {
     if (f.job == Impl::Job::Stick) t.release_stick();
     if (f.job == Impl::Job::Look) t.look_finger.reset();
     if (f.job == Impl::Job::Button && f.button >= 0) {
-        t.presses[f.button] = std::max(0, t.presses[f.button] - 1);
+        t.presses[size_t(f.button)] = std::max(0, t.presses[size_t(f.button)] - 1);
         t.refresh_buttons();
     }
     t.fingers.erase(it);
@@ -341,8 +345,8 @@ TouchControls::Circle TouchControls::knob() const {
 }
 
 TouchControls::Circle TouchControls::button(const std::string& id) const {
-    for (size_t i = 0; i < std::size(kButtons); ++i)
-        if (id == kButtons[i].id) return impl_->button(i);
+    for (size_t i = 0; i < impl_->layout.buttons.size(); ++i)
+        if (id == impl_->layout.buttons[i].id) return impl_->button(i);
     return {};
 }
 
@@ -361,10 +365,10 @@ void TouchControls::update() {
     t.set(t.knob_top, px(kn.y - kn.r - s.top), "knob_top");
     t.set(t.knob_size, px(2.0f * kn.r), "knob_size");
     Rml::Vector<ButtonRow> rows;
-    for (size_t i = 0; i < std::size(kButtons); ++i) {
-        const ButtonDef& b = kButtons[i];
+    for (size_t i = 0; i < t.layout.buttons.size(); ++i) {
+        const TouchButton& b = t.layout.buttons[i];
         const Circle c = t.button(i);
-        const bool down = b.toggles ? t.toggled[i] : t.presses[i] > 0;
+        const bool down = b.toggles ? t.toggled[i] != 0 : t.presses[i] > 0;
         rows.push_back({b.id, b.label, px(c.x - c.r - s.left), px(c.y - c.r - s.top),
                         px(2.0f * c.r), down, c.r > 0.0f});
     }

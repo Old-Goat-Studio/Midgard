@@ -31,6 +31,7 @@ GameSettings game_settings_from_json(const std::string& text) {
         s.crosshair_size = std::clamp(j["crosshair_size"].get<double>(), 4.0, 256.0);
     if (j.contains("menu_music") && j["menu_music"].is_string())
         s.menu_music = j["menu_music"].get<std::string>();
+    if (j.contains("touch")) s.touch = touch_layout_from_json(j["touch"]);
     return s;
 }
 

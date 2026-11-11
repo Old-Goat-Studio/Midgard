@@ -8,6 +8,7 @@
 #include <string>
 
 #include <RmlUi/Core.h>
+#include <nlohmann/json.hpp>
 
 #include "midgard/input.h"
 #include "midgard/render/renderer.h"
@@ -255,4 +256,46 @@ TEST_CASE("touch: the default bindings walk, look and press from the touch devic
     actions.begin_frame();
     CHECK(actions.axis("look_x") == 0.0f);  // (the drag was the last frame's)
     CHECK_FALSE(actions.pressed("jump"));   // (held, not pressed again)
+}
+
+TEST_CASE("touch: a game's own layout, its buttons shown by context, kept as JSON") {
+    // A layout of two: Jump where it was, and the game's own Honk, only in vehicles.
+    midgard::TouchLayout layout;
+    layout.buttons = {{"jump", "Jump", 84, 96, 40, 74, 92, 38, false, "always"},
+                      {"honk", "Honk", 200, 100, 30, 150, 100, 30, false, "vehicle"}};
+    CHECK(midgard::touch_layout_problems(layout).empty());
+    CHECK(midgard::touch_layout_from_json(midgard::touch_layout_to_json(layout)) == layout);
+    CHECK(midgard::touch_layout_from_json(nlohmann::json()) == midgard::default_touch_layout());
+    midgard::TouchLayout twice = layout;
+    twice.buttons.push_back(layout.buttons[0]);
+    twice.buttons.back().shows = "underwater";
+    CHECK(midgard::touch_layout_problems(twice).size() == 2);
+
+    auto renderer = offscreen(1280, 720);
+    if (!renderer) return;
+    ui::Options o;
+    o.width = 1280;
+    o.height = 720;
+    ui::Ui u(*renderer, o);
+    ui::TouchControls t(u, layout);
+    t.set_shown(true);
+    t.set_context("on_foot");
+    CHECK(t.button("honk").r == 0.0f);  // (a vehicle's: not shown on foot)
+    CHECK(t.button("use").r == 0.0f);   // (not in this layout)
+    t.set_context("vehicle");
+    const ui::TouchControls::Circle honk = t.button("honk");
+    REQUIRE(honk.r > 0.0f);
+    CHECK(honk.x == doctest::Approx(1280.0f - 200.0f * u.dp_ratio()));
+    t.handle(finger(T::TouchDown, 1, honk.x, honk.y));
+    CHECK(t.peek().buttons.at("honk") == 1.0f);
+    t.handle(finger(T::TouchUp, 1, honk.x, honk.y));
+    CHECK(t.peek().buttons.at("honk") == 0.0f);
+    // Changed while playing (the editor's edits, live): the new places.
+    layout.buttons[1].x = 300;
+    t.set_layout(layout);
+    CHECK(t.button("honk").x == doctest::Approx(1280.0f - 300.0f * u.dp_ratio()));
+    t.update();
+    u.update(0.0);
+    REQUIRE(t.document() != nullptr);
+    CHECK(t.document()->GetElementById("touch-honk") != nullptr);  // (drawn)
 }

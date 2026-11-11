@@ -296,6 +296,8 @@ public:
     virtual bool flying() const { return false; }
     // The input context the actions are in this frame (midgard/input.h).
     virtual std::string input_context() const { return "on_foot"; }
+    // The touch controls' buttons (the Input editor's Touch Layout).
+    virtual midgard::TouchLayout touch_layout() const { return midgard::default_touch_layout(); }
     // The Menu editor's screens (6.0), and the game's state of them: which are shown, and the
     // text and values scripts set. None without a game.
     virtual const std::vector<midgard::ScreenDef>* screen_defs() const { return nullptr; }
@@ -785,6 +787,7 @@ public:
                                     std::istreambuf_iterator<char>());
     }
     std::string input_context() const override { return game_.input_context(); }
+    midgard::TouchLayout touch_layout() const override { return game_.game_settings().touch; }
     bool flying() const override {
         const entt::entity p = game_.camera_rig().player();
         const auto* player =
@@ -1512,7 +1515,7 @@ int run_screenshot(const Options& opt, Source& source) {
         if (!opt.hud_test) source.hud_shown();
         hud->show(opt.hud_test ? *hud_data : *source.hud());  // (with the minimap's ground)
         if (opt.touch_controls) {                             // (as a phone shows them, at rest)
-            touch = std::make_unique<midgard::ui::TouchControls>(*ui);
+            touch = std::make_unique<midgard::ui::TouchControls>(*ui, source.touch_layout());
             touch->set_shown(true);
             touch->update();
             hud->set_touch(true);
@@ -1891,7 +1894,7 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
             if (opt.hud_test || source.hud()) {
                 hud = std::make_unique<midgard::ui::Hud>(*ui);
                 if (!opt.hud_test) source.hud_shown();
-                touch = std::make_unique<midgard::ui::TouchControls>(*ui);
+                touch = std::make_unique<midgard::ui::TouchControls>(*ui, source.touch_layout());
             }
             if (source.screen_defs())
                 screens = std::make_unique<midgard::ui::Screens>(
@@ -2164,7 +2167,8 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
             // "touch" device (schema/migrations/0020_touch.sql binds it).
             if (touch) {
                 touch->set_shown(touch_wanted && !is_modal);
-                touch->set_flying(source.flying());
+                touch->set_layout(source.touch_layout());  // (the editor's edits, live)
+                touch->set_context(source.input_context());
                 touch->set_menu(source.has_pause_menu());
                 if (hud) hud->set_touch(touch->shown());
                 const midgard::ui::TouchControls::Output o = touch->take();
