@@ -24,6 +24,7 @@ from typing import Any
 
 from PySide6.QtGui import QUndoCommand
 
+from .input_actions import SLOT_PATTERN
 from .project import Project
 
 KINDS = {"panel": "Panel", "text": "Text", "button": "Button", "slider": "Slider",
@@ -45,7 +46,8 @@ ANCHORS = {"top_left": "Top left", "top": "Top", "top_right": "Top right", "left
            "center": "Middle", "right": "Right", "bottom_left": "Bottom left",
            "bottom": "Bottom", "bottom_right": "Bottom right", "fill": "Fill (stretch)"}
 ACTIONS = {"none": "Nothing", "close": "Close this screen", "open": "Open a screen…",
-           "quit": "Quit the game", "respawn": "Respawn the player", "event": "Tell scripts only"}
+           "quit": "Quit the game", "respawn": "Respawn the player", "event": "Tell scripts only",
+           "reset_controls": "Reset the controls (the game's own again)"}
 # What the game uses a screen for by itself (engine/core/include/midgard/screen.h).
 ROLES = {"": "Only when shown", "splash": "Splash screen (while the game loads)",
          "title": "Title screen (when the game starts)",
@@ -110,11 +112,12 @@ TEMPLATES: dict[str, tuple[str, dict]] = {
              "y": 134, "w": 280, "h": 22, "text": "Music", "style": {"font_size": 16}},
             {"id": "music", "kind": "slider", "parent": "panel", "anchor": "top", "x": 0,
              "y": 156, "w": 280, "h": 44, "binds": "volume:music"},
-            {**_button("jump", "Jump", 210, {"do": "none"}, binds="key:jump"), "x": -72,
-             "w": 136, "h": 48},
-            {**_button("use", "Use", 210, {"do": "none"}, binds="key:use"), "x": 72,
-             "w": 136, "h": 48},
+            {**_button("controls", "Controls", 210, {"do": "open", "screen": "{controls}"}),
+             "h": 48},
             {**_button("back", "Back", -12, {"do": "close"}), "anchor": "bottom", "h": 48}]}),
+    # (6.1 step 4) Its rows are the game's own controls, made when it is (controls_screen).
+    "controls": ("Controls", {
+        "modal": True, "pauses": True, "background": [0.0, 0.0, 0.0, 0.6], "elements": []}),
     "game_over": ("Game over", {
         "role": "game_over", "stat": "health", "modal": True, "pauses": True,
         "background": [0.25, 0.0, 0.0, 0.6],
@@ -145,19 +148,78 @@ def from_template(project: Project, kind: str) -> list[dict[str, Any]]:
         return made
 
     settings = next((s for s in screens if s["screen"].get("role") == "settings"), None)
+    controls = next((s for s in screens if is_controls(s["screen"])), None)
     needs_settings = kind in ("title", "pause") and settings is None
     made = add(kind)
+    if kind == "controls":
+        made["screen"]["elements"] = controls_elements(project)
     if needs_settings:
         settings = add("settings")
-    for e in made["screen"]["elements"]:
-        if e.get("action", {}).get("screen") == "{settings}":
-            e["action"]["screen"] = settings["id"] if settings else ""
-            if not settings:
-                e["action"] = {"do": "none"}
-    if needs_settings:  # (the made screen chosen, not its settings)
-        screens.remove(made)
-        screens.insert(len(screens) - 1, made)
-    return screens
+    if (kind == "settings" or needs_settings) and controls is None:
+        controls = add("controls")
+        controls["screen"]["elements"] = controls_elements(project)
+    for s in (made, settings):
+        for e in (s or {}).get("screen", {}).get("elements", []):
+            target = e.get("action", {}).get("screen")
+            if target in ("{settings}", "{controls}"):
+                found = settings if target == "{settings}" else controls
+                e["action"]["screen"] = found["id"] if found else ""
+                if not found:
+                    e["action"] = {"do": "none"}
+    return screens  # (the made screen first, then the settings and controls it brought)
+
+
+def is_controls(screen: dict[str, Any]) -> bool:
+    """A screen of the player's controls (buttons that rebind keys or gamepad buttons)."""
+    return any(isinstance(e, dict) and str(e.get("binds", "")).startswith(("key:", "pad:"))
+               for e in screen.get("elements", []))
+
+
+def controls_elements(project: Project) -> list[dict[str, Any]]:
+    """A Controls screen's elements: a row for each control the player may rebind (its name,
+    its key, its gamepad button), in two columns when there are many (so it fits a phone held
+    sideways), then Reset and Back."""
+    from . import input_actions
+    rows: dict[str, dict[str, str]] = {}  # name: {"Key": binds, "Gamepad button": binds}
+    for binds, name, device in input_actions.rebind_slots(project):
+        rows.setdefault(name, {})[device] = binds
+    names = list(rows)
+    columns = 2 if len(names) > 5 else 1
+    per = -(-len(names) // columns) if names else 0
+    row_h, gap = 36, 4
+    col_w = 340
+    width = col_w * columns + 20 * (columns - 1) + 20
+    height = 64 + per * (row_h + gap) + 70
+    out = [{"id": "panel", "kind": "panel", "anchor": "center", "x": 0, "y": 0, "w": width,
+            "h": height},
+           {**_title("Controls"), "y": 10, "h": 44, "w": width - 40}]
+    used: set[str] = set()
+    for i, name in enumerate(names):
+        col, row = divmod(i, per)
+        left = 10 + col * (col_w + 20)
+        y = 64 + row * (row_h + gap)
+        base = "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_") or "row"
+        rid, n = base, 2
+        while rid in used:
+            rid, n = f"{base}_{n}", n + 1
+        used.add(rid)
+        out.append({"id": f"{rid}_label", "kind": "text", "parent": "panel",
+                    "anchor": "top_left", "x": left, "y": y, "w": 110, "h": row_h,
+                    "text": name, "style": {"font_size": 15}})
+        for device, x, suffix in (("Key", left + 112, "key"), ("Gamepad button", left + 228,
+                                                                "pad")):
+            binds = rows[name].get(device)
+            if binds:
+                out.append({"id": f"{rid}_{suffix}", "kind": "button", "parent": "panel",
+                            "anchor": "top_left", "x": x, "y": y, "w": 112, "h": row_h,
+                            "text": "Key" if suffix == "key" else "Pad",
+                            "action": {"do": "none"}, "binds": binds,
+                            "style": {"font_size": 14}})
+    out.append({**_button("reset", "Reset", -12, {"do": "reset_controls"}),
+                "anchor": "bottom", "x": -90, "w": 160, "h": 48})
+    out.append({**_button("back", "Back", -12, {"do": "close"}),
+                "anchor": "bottom", "x": 90, "w": 160, "h": 48})
+    return out
 
 
 def input_actions(project: Project) -> list[str]:
@@ -518,7 +580,7 @@ def problems_of(screen: Any, screen_ids: set[str] | None = None) -> list[str]:
         if binds and not ((kind == "slider" and isinstance(binds, str) and
                            binds.startswith("volume:") and binds[7:] in BUSES) or
                           (kind == "button" and isinstance(binds, str) and
-                           binds.startswith("key:") and len(binds) > 4)):
+                           SLOT_PATTERN.match(binds))):
             found.append(f"{name} can't be tied to '{binds}' (a slider to a volume, a button "
                          "to a key)")
         if kind == "panel":

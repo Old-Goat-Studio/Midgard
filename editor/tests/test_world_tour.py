@@ -249,7 +249,7 @@ def test_the_exit_the_tour_opens_at_its_title_scores_dies_and_respawns(tmp_path)
     tour = world_tour.make_world_tour(tmp_path / "exit")
     roles = {s["screen"].get("role"): s["id"] for s in menus.load_all(tour)}
     assert roles == {"splash": "scr_splash", "title": "scr_title", "settings": "scr_settings",
-                     "pause": "scr_pause", "game_over": "scr_game_over"}
+                     "pause": "scr_pause", "game_over": "scr_game_over", None: "scr_controls"}
     assert menus.problems(tour) == []
     title = menus.load(tour, "scr_title")["screen"]
     assert {e["id"]: e.get("text") for e in title["elements"]}["play"] == "New game"

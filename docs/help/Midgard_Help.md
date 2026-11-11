@@ -1282,16 +1282,27 @@ are, with no scripting:
   **Settings** opens the settings, **Quit** ends the game.
 - **Pause menu**: **Esc** (or a controller's **Start**, or a phone's **Back**) opens it while
   playing, the game paused. **Resume** (or Esc again) goes back to the game.
-- **Settings**: a **Volume** slider (everything) and a **Music** slider, and buttons for the
-  **Jump** and **Use** keys. Click a key button, then press the key you want: it shows
-  `Press a key` until you do (Esc gives up). The player's volumes and keys are kept in their
-  profile, so they're as they left them next time. **Back** (or Esc) goes back to the menu it
-  came from.
+- **Settings**: a **Volume** slider (everything) and a **Music** slider, and **Controls**,
+  which opens the controls screen. **Back** (or Esc) goes back to the menu it came from.
+- **Controls**: a row for every control the player may change, made from your game's actions
+  (the Input editor's, those whose **Players can change its keys and buttons** is ticked): its
+  name, its **Key** and, for a button, its gamepad button (**Pad**); an axis has a row for each
+  way (Move forward, Move back…). The buttons show the control now ("Key: Space", "Pad: A").
+  Click one, then press the new key (or gamepad button): it shows `Press a key` (or `Press a
+  button`) until you do; Esc (or the gamepad's Back) gives up. If another control already had
+  it, the two swap, so no key does two things at once. **Reset** puts every control back to
+  your game's own. The player's volumes and controls are kept in their profile, so they're as
+  they left them next time. (Add actions to your game later? Make the controls screen again:
+  **New ▸ Controls**.)
 - **Game over**: shows when the player's **Health** runs out. **Try again** respawns the player
   where they arrived in the scene, health and the other stats refilled. **Quit** ends the game.
 
-A title screen or pause menu made when the project has no settings screen brings one with it.
+A title screen or pause menu made when the project has no settings screen brings one with it,
+and a settings screen brings a controls screen.
 Change any of them as you like: colours, pictures, words, more buttons.
+
+Any button can do the same: its **Setting** can be a **Key for…** or **Gamepad button for…**
+any control the player may change, and its **Does** can be **Reset the controls**.
 
 **What the game uses a screen for** (**Used as**, with no element chosen): only when shown (by a
 script or a button), the **title screen**, the **pause menu**, **settings**, or **game over**

@@ -61,6 +61,10 @@ InputMap InputMap::defaults() {
     InputMap m;
     for (const Binding& b : kDefaults) m.add(b);
     m.set_context("descend", "flying");  // (the rest count always)
+    for (const char* axis : {"move_x", "move_y", "look_x", "look_y", "zoom"})
+        m.set_info(axis, {"axis", true});
+    for (const char* fixed : {"look_x", "look_y", "zoom", "menu"})
+        m.set_info(fixed, {m.info(fixed).kind, false});
     return m;
 }
 InputMap InputMap::load(const std::filesystem::path& database) {
@@ -99,6 +103,17 @@ InputMap InputMap::load(const std::filesystem::path& database) {
         sqlite3_finalize(stmt);
     }
     m.set_context("descend", "flying");
+    for (const char* axis : {"move_x", "move_y", "look_x", "look_y", "zoom"})
+        m.set_info(axis, {"axis", true});
+    for (const char* fixed : {"look_x", "look_y", "zoom", "menu"})
+        m.set_info(fixed, {m.info(fixed).kind, false});
+    if (version >= 22 &&
+        sqlite3_prepare_v2(db.get(), "SELECT id, kind, rebindable FROM input_action", -1, &stmt,
+                           nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+            m.set_info(text(0), {text(1), sqlite3_column_int(stmt, 2) != 0});
+        sqlite3_finalize(stmt);
+    }
     if (version >= 23 && sqlite3_prepare_v2(db.get(), "SELECT id, context FROM input_action", -1,
                                             &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) m.set_context(text(0), text(1));
@@ -111,17 +126,108 @@ void InputMap::add(const Binding& binding) {
     bindings_.push_back(binding);
 }
 
+namespace {
+// A binding pushing one way (a key or button on an axis: |scale| <= 1), or any with sign 0.
+bool pushes(const Binding& b, int sign) {
+    return sign == 0 || (std::abs(b.scale) <= 1.0f && (b.scale > 0.0f) == (sign > 0));
+}
+}  // namespace
+
 void InputMap::rebind(const std::string& action, const std::string& device,
-                      const std::string& control) {
-    std::erase_if(bindings_,
-                  [&](const Binding& b) { return b.action == action && b.device == device; });
-    bindings_.push_back({action, device, control, 1.0f});
+                      const std::string& control, int sign) {
+    std::erase_if(bindings_, [&](const Binding& b) {
+        return b.action == action && b.device == device && pushes(b, sign);
+    });
+    bindings_.push_back({action, device, control, sign < 0 ? -1.0f : 1.0f});
 }
 
-std::string InputMap::control(const std::string& action, const std::string& device) const {
+std::string InputMap::control(const std::string& action, const std::string& device,
+                              int sign) const {
     for (const Binding& b : bindings_)
-        if (b.action == action && b.device == device) return b.control;
+        if (b.action == action && b.device == device && pushes(b, sign)) return b.control;
     return {};
+}
+
+InputMap::Info InputMap::info(const std::string& action) const {
+    const auto it = info_.find(action);
+    return it == info_.end() ? Info{} : it->second;
+}
+
+std::vector<ControlSlot> InputMap::rebindable_slots() const {
+    std::vector<std::string> actions;  // (in the bindings' order: Midgard's, then the game's)
+    for (const Binding& b : bindings_)
+        if (std::find(actions.begin(), actions.end(), b.action) == actions.end())
+            actions.push_back(b.action);
+    std::vector<ControlSlot> out;
+    for (const std::string& a : actions) {
+        const Info i = info(a);
+        if (!i.rebindable) continue;
+        if (i.kind == "axis") {
+            out.push_back({"keyboard", a, 1});
+            out.push_back({"keyboard", a, -1});
+        } else {
+            out.push_back({"keyboard", a, 0});
+            out.push_back({"gamepad", a, 0});
+        }
+    }
+    return out;
+}
+
+std::optional<ControlSlot> control_slot(const std::string& binds) {
+    ControlSlot s;
+    std::string rest;
+    if (binds.starts_with("key:")) {
+        s.device = "keyboard";
+        rest = binds.substr(4);
+    } else if (binds.starts_with("pad:")) {
+        s.device = "gamepad";
+        rest = binds.substr(4);
+    } else {
+        return std::nullopt;
+    }
+    if (rest.ends_with(":+") || rest.ends_with(":-")) {
+        s.sign = rest.back() == '+' ? 1 : -1;
+        rest.resize(rest.size() - 2);
+    }
+    if (rest.empty() || rest.find(':') != std::string::npos) return std::nullopt;
+    s.action = rest;
+    return s;
+}
+
+std::string slot_key(const ControlSlot& slot) {
+    return slot.action + (slot.sign > 0 ? ":+" : slot.sign < 0 ? ":-" : "");
+}
+
+std::string control_label(const std::string& device, const std::string& control) {
+    if (device == "gamepad") {
+        static const std::map<std::string, std::string> pad = {{"a", "A"},
+                                                               {"b", "B"},
+                                                               {"x", "X"},
+                                                               {"y", "Y"},
+                                                               {"leftshoulder", "LB"},
+                                                               {"rightshoulder", "RB"},
+                                                               {"lefttrigger", "LT"},
+                                                               {"righttrigger", "RT"},
+                                                               {"leftstick", "L3"},
+                                                               {"rightstick", "R3"},
+                                                               {"dpup", "D-pad up"},
+                                                               {"dpdown", "D-pad down"},
+                                                               {"dpleft", "D-pad left"},
+                                                               {"dpright", "D-pad right"},
+                                                               {"back", "Back"},
+                                                               {"start", "Start"},
+                                                               {"guide", "Guide"}};
+        const auto it = pad.find(control);
+        return it == pad.end() ? control : it->second;
+    }
+    if (device == "mouse") {
+        static const std::map<std::string, std::string> mouse = {
+            {"left", "Left click"}, {"right", "Right click"}, {"middle", "Middle click"},
+            {"x1", "Mouse back"},   {"x2", "Mouse forward"},  {"wheel", "Mouse wheel"}};
+        const auto it = mouse.find(control);
+        return it == mouse.end() ? control : it->second;
+    }
+    return control;
 }
 
 void InputMap::set_context(const std::string& action, const std::string& context) {

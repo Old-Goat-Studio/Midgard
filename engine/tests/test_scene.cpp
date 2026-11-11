@@ -4890,6 +4890,94 @@ TEST_CASE("screens: from the database; buttons close, open and quit; scripts hea
     CHECK(report.errors.front().find("video") != std::string::npos);
 }
 
+TEST_CASE("controls: keys and gamepad buttons rebound, an axis's ways, swaps and Reset") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [3, 0.5, 4]},
+                                         "player": {}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [0, 2, 6]},
+                                         "camera": {}}')"}});
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, R"(INSERT INTO screen (id, name, position, screen) VALUES
+        ('scr_controls', 'Controls', 0, '{"role": "settings", "elements": [
+            {"id": "jump_key", "kind": "button", "text": "Jump", "binds": "key:jump"},
+            {"id": "jump_pad", "kind": "button", "text": "Jump", "binds": "pad:jump"},
+            {"id": "use_key", "kind": "button", "text": "Use", "binds": "key:use"},
+            {"id": "ahead", "kind": "button", "text": "Forward", "binds": "key:move_y:+"},
+            {"id": "back", "kind": "button", "text": "Back", "binds": "key:move_y:-"},
+            {"id": "reset", "kind": "button", "action": {"do": "reset_controls"}}]}'))");
+    sqlite3_close(db);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+    midgard::Game game(pkg.dir);
+    game.use_profile(pkg.dir / "profile" / "profile.json");
+    midgard::hud::HudState& hud = game.hud();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    game.hud().show_screen("scr_controls");
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_controls/jump_pad") == "Jump: A");
+    CHECK(hud.texts.at("scr_controls/ahead") == "Forward: W");
+    CHECK(hud.texts.at("scr_controls/back") == "Back: S");
+    // A gamepad button: the next one pressed.
+    game.ui_click("scr_controls", "jump_pad");
+    CHECK(game.rebinding_device() == "gamepad");
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_controls/jump_pad") == "Press a button");
+    CHECK(game.control_chosen("rightshoulder"));
+    CHECK(game.take_controls_changed());
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_controls/jump_pad") == "Jump: RB");
+    // One way of an axis: Back becomes Down, Forward stays W.
+    game.ui_click("scr_controls", "back");
+    CHECK(game.control_chosen("Down"));
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_controls/back") == "Back: Down");
+    CHECK(hud.texts.at("scr_controls/ahead") == "Forward: W");
+    // Laid over the game's: Down goes back, W still forward, S nothing.
+    midgard::Actions mine(midgard::InputMap::defaults());
+    for (const auto& c : game.player_controls())
+        mine.rebind(c.slot.action, c.slot.device, c.control, c.slot.sign);
+    mine.set("keyboard", "Down", 1.0f);
+    CHECK(mine.axis("move_y") == doctest::Approx(-1.0f));
+    mine.set("keyboard", "Down", 0.0f);
+    mine.set("keyboard", "W", 1.0f);
+    CHECK(mine.axis("move_y") == doctest::Approx(1.0f));
+    mine.set("keyboard", "W", 0.0f);
+    mine.set("keyboard", "S", 1.0f);
+    CHECK(mine.axis("move_y") == doctest::Approx(0.0f));
+    mine.set("gamepad", "rightshoulder", 1.0f);
+    CHECK(mine.down("jump"));
+    // A key Use has: they swap (Jump takes E, Use takes Space), so none does two things.
+    game.ui_click("scr_controls", "jump_key");
+    CHECK(game.control_chosen("E"));
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_controls/jump_key") == "Jump: E");
+    CHECK(hud.texts.at("scr_controls/use_key") == "Use: Space");
+    // Esc gives up: nothing changes.
+    game.ui_click("scr_controls", "use_key");
+    CHECK_FALSE(game.control_chosen(""));
+    CHECK(game.rebinding().empty());
+    // Reset: the game's own again.
+    game.take_controls_changed();
+    game.ui_click("scr_controls", "reset");
+    CHECK(game.take_controls_changed());
+    CHECK(game.player_controls().empty());
+    game.update(actions, 1.0f / 60.0f);
+    CHECK(hud.texts.at("scr_controls/jump_key") == "Jump: Space");
+    CHECK(hud.texts.at("scr_controls/jump_pad") == "Jump: A");
+    // The rebindable slots, from the game's input map: buttons' key and pad, axes' two ways.
+    const auto slots = game.input_map().rebindable_slots();
+    const auto has = [&](const char* binds) {
+        const auto s = midgard::control_slot(binds);
+        return std::any_of(slots.begin(), slots.end(), [&](const midgard::ControlSlot& x) {
+            return x.device == s->device && x.action == s->action && x.sign == s->sign;
+        });
+    };
+    CHECK(has("key:jump"));
+    CHECK(has("pad:jump"));
+    CHECK(has("key:move_x:-"));
+    CHECK_FALSE(has("key:look_x:+"));  // (looking: the mouse's)
+    CHECK_FALSE(has("key:menu"));
+}
+
 TEST_CASE("screens: the title, pause, settings and game over do their jobs by themselves") {
     TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [3, 0.5, 4]},
                                          "player": {}}')"},
@@ -4939,7 +5027,7 @@ TEST_CASE("screens: the title, pause, settings and game over do their jobs by th
     // The key button shows the key, waits for one when clicked, and keeps it.
     CHECK(hud.texts.at("scr_settings/jump") == "Jump: Space");
     game.ui_click("scr_settings", "jump");
-    CHECK(game.rebinding() == "jump");
+    CHECK(game.rebinding() == "key:jump");
     frame();
     CHECK(hud.texts.at("scr_settings/jump") == "Press a key");
     CHECK(game.key_chosen("J") == "jump");

@@ -62,9 +62,18 @@ const std::vector<std::string>& screen_anchors() {
     return anchors;
 }
 
+// A button's control to rebind (midgard/input.h's control_slot): key:<action>, pad:<action>,
+// or one way of an axis, key:<action>:+ or key:<action>:-.
+bool rebinds(const std::string& binds) {
+    if (!binds.starts_with("key:") && !binds.starts_with("pad:")) return false;
+    std::string rest = binds.substr(4);
+    if (rest.ends_with(":+") || rest.ends_with(":-")) rest.resize(rest.size() - 2);
+    return !rest.empty() && rest.find(':') == std::string::npos;
+}
+
 const std::vector<std::string>& screen_actions() {
-    static const std::vector<std::string> actions = {"none", "close",   "open",
-                                                     "quit", "respawn", "event"};
+    static const std::vector<std::string> actions = {"none",    "close", "open",          "quit",
+                                                     "respawn", "event", "reset_controls"};
     return actions;
 }
 
@@ -186,11 +195,11 @@ ScreenDef screen_from_json(const std::string& id, const std::string& name,
         if (!el.binds.empty()) {
             const bool volume = el.binds.starts_with("volume:") && el.kind == "slider" &&
                                 known(screen_buses(), el.binds.substr(7));
-            const bool key =
-                el.binds.starts_with("key:") && el.kind == "button" && el.binds.size() > 4;
+            const bool key = el.kind == "button" && rebinds(el.binds);
             if (!volume && !key)
                 throw ScreenError(in + ": it can't be bound to '" + el.binds +
-                                  "' (a slider to volume:<bus>, a button to key:<action>)");
+                                  "' (a slider to volume:<bus>, a button to key:<action> or "
+                                  "pad:<action>, an axis's way to key:<action>:+ or :-)");
         }
         el.group = string(e, "group", "", in);
         if (e.contains("style")) {

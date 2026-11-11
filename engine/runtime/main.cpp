@@ -327,6 +327,12 @@ public:
         return {};
     }
     virtual std::map<std::string, std::string> player_keys() const { return {}; }
+    // (6.1 step 4) The player's controls laid over the game's input map; a waiting button's
+    // device; a gamepad button chosen; whether the player's controls changed since asked.
+    virtual void apply_player_controls(midgard::Actions&) const {}
+    virtual std::string rebinding_device() const { return {}; }
+    virtual bool control_chosen(const std::string&) { return false; }
+    virtual bool take_controls_changed() { return false; }
     // An Asset Library font's files (by its "ui:" folder): names and bytes.
     virtual std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
         const std::string& folder) const {
@@ -752,6 +758,15 @@ public:
     std::string rebinding() const override { return game_.rebinding(); }
     std::string key_chosen(const std::string& key) override { return game_.key_chosen(key); }
     std::map<std::string, std::string> player_keys() const override { return game_.player_keys(); }
+    void apply_player_controls(midgard::Actions& actions) const override {
+        for (const auto& c : game_.player_controls())
+            actions.rebind(c.slot.action, c.slot.device, c.control, c.slot.sign);
+    }
+    std::string rebinding_device() const override { return game_.rebinding_device(); }
+    bool control_chosen(const std::string& control) override {
+        return game_.control_chosen(control);
+    }
+    bool take_controls_changed() override { return game_.take_controls_changed(); }
     std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
         const std::string& folder) const override {
         auto found = midgard::package_fonts(
@@ -1909,9 +1924,17 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
             hud.reset();
         }
         midgard::Actions actions(source.input_map());
-        // The player's own keys (a settings screen's key buttons; kept in the profile).
-        for (const auto& [action, key] : source.player_keys())
-            actions.rebind(action, "keyboard", key);
+        // The player's own controls (a Controls screen's buttons; kept in the profile), laid
+        // over the game's: from the start, and again whenever they change (a choice, a swap,
+        // Reset).
+        source.apply_player_controls(actions);
+        const auto refresh_controls = [&] {
+            if (!source.take_controls_changed()) return;
+            const std::string context = actions.context();
+            actions = midgard::Actions(source.input_map());
+            source.apply_player_controls(actions);
+            actions.set_context(context);
+        };
         // Mouse-look captures the mouse. Under the editor the game starts with the mouse free
         // (so the editor's panels stay reachable): a click in the game captures it, and Esc,
         // Shift+F1 or switching away frees it. An exported game captures it from the start.
@@ -1968,12 +1991,23 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
                 // The UI first: a menu takes everything, the HUD what is aimed at it. (Android's
                 // Back button is a menu's Escape.)
                 // A settings screen's key button waits for a key: this one (Esc gives up).
-                if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && !source.rebinding().empty()) {
-                    const std::string key = e.key.scancode == SDL_SCANCODE_ESCAPE
-                                                ? std::string()
-                                                : SDL_GetScancodeName(e.key.scancode);
-                    const std::string action = source.key_chosen(key);
-                    if (!action.empty()) actions.rebind(action, "keyboard", key);
+                const std::string waiting = source.rebinding_device();
+                if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && !waiting.empty()) {
+                    // (a key for a key's button; for a gamepad's, Esc gives up too)
+                    const bool give_up = e.key.scancode == SDL_SCANCODE_ESCAPE;
+                    if (waiting == "keyboard" || give_up)
+                        source.control_chosen(give_up ? std::string()
+                                                      : SDL_GetScancodeName(e.key.scancode));
+                    refresh_controls();
+                    continue;
+                }
+                if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && waiting == "gamepad") {
+                    // (the gamepad's Back gives up)
+                    const auto button = SDL_GamepadButton(e.gbutton.button);
+                    const char* name = SDL_GetGamepadStringForButton(button);
+                    source.control_chosen(button == SDL_GAMEPAD_BUTTON_BACK || !name ? std::string()
+                                                                                     : name);
+                    refresh_controls();
                     continue;
                 }
                 // The menu action's keys and buttons (Esc, a phone's Back, Start): back from a
@@ -2200,6 +2234,7 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
                 source.set_frozen(screens && screens->pauses());
                 actions.set_context(source.input_context());
                 source.update(actions, dt);
+                refresh_controls();  // (a Controls screen's Reset)
             }
             const float t = std::chrono::duration<float>(now - start).count();
             const float aspect = float(renderer.width()) / float(renderer.height());
@@ -2345,6 +2380,7 @@ int dump_api() {
 // written to --record-audio's WAV.
 int run_simulation(const Options& opt, Source& source) {
     midgard::Actions actions(source.input_map());
+    source.apply_player_controls(actions);
     midgard::audio::MixerOptions offline;
     offline.device = false;
     midgard::audio::Mixer mixer(offline);
@@ -2362,6 +2398,12 @@ int run_simulation(const Options& opt, Source& source) {
         actions.set_context(source.input_context());
         source.update(actions, 1.0f / 60.0f);
         source.settle();
+        if (source.take_controls_changed()) {  // (a choice or Reset: laid over again)
+            const std::string context = actions.context();
+            actions = midgard::Actions(source.input_map());
+            source.apply_player_controls(actions);
+            actions.set_context(context);
+        }
         mixer.mix(block);
         if (opt.record_audio) recorded.insert(recorded.end(), block.begin(), block.end());
     }

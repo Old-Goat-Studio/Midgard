@@ -102,6 +102,32 @@ def touch_problems(project: Project) -> list[str]:
     return found
 
 
+# The player's rebinding (6.1 step 4; midgard/input.h's ControlSlot): a screen's button bound
+# to "key:<action>" (a key), "pad:<action>" (a gamepad button), or one way of an axis,
+# "key:<action>:+" / ":-". An axis's ways, by name (the rest: the action's name, + and -).
+AXIS_WAYS = {"move_x": ("Move right", "Move left"), "move_y": ("Move forward", "Move back"),
+             "zoom": ("Zoom out", "Zoom in")}
+SLOT_PATTERN = re.compile(r"^(key|pad):[a-z][a-z0-9_]*(:[+-])?$")
+
+
+def rebind_slots(project: Project) -> list[tuple[str, str, str]]:
+    """What a player may rebind, in the actions' order: (binds, the control's name, which
+    device: "Key" or "Gamepad button"). A button's key and gamepad button; each way of an
+    axis's keys."""
+    out = []
+    for a in load_all(project):
+        if not a["rebindable"]:
+            continue
+        if a["kind"] == "axis":
+            plus, minus = AXIS_WAYS.get(a["id"], (f"{a['name']} +", f"{a['name']} −"))
+            out.append((f"key:{a['id']}:+", plus, "Key"))
+            out.append((f"key:{a['id']}:-", minus, "Key"))
+        else:
+            out.append((f"key:{a['id']}", a["name"], "Key"))
+            out.append((f"pad:{a['id']}", a["name"], "Gamepad button"))
+    return out
+
+
 # Continuous controls: their scale is a rate, not a direction.
 RATES = {("mouse", "delta_x"), ("mouse", "delta_y"), ("touch", "drag_x"), ("touch", "drag_y")}
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,39}$")

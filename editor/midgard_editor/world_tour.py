@@ -27,7 +27,8 @@ rock and snow, the Planet's biomes their own, and a cobbled path painted from wh
 (the world type's first paint layer, "Path").
 
 Milestone 6.0's exit: it opens at its title screen (New game, Settings, Quit) and has the
-ready-made pause menu, settings (volume, music, the Jump and Use keys) and game over screens,
+ready-made pause menu, settings (volume, music, and Controls: every key and gamepad button
+the player may change) and game over screens,
 with the HUD's health and stamina bars, score and compass. Five coins in the hub raise the
 score with a note each; the hub's fire pit burns health away, and at none the game over screen
 offers Try again (back where you arrived, refilled).
@@ -200,7 +201,8 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
 ## Playing (press F5)
 
 - [ ] It opens at its **title screen**: New game, Settings, Quit. **Settings**: volume, music, and
-      the Jump and Use keys (click one, press a key). **New game** starts.
+      **Controls** (every key and gamepad button: click one, press the new key or button;
+      **Reset** puts them all back). **New game** starts.
 - [ ] **Coins:** five gold coins round the hub. Walk through one: **Score** goes up 10 and a note
       says so.
 - [ ] **The fire pit** (the red glow beside the hub): stand in it and **Health** burns away; at

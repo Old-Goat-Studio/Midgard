@@ -285,3 +285,32 @@ def test_the_editors_default_touch_layout_is_the_engines():
         pytest.skip("needs the engine module")
     engines = json.loads(engine.module().default_touch_layout())["buttons"]
     assert engines == ia.DEFAULT_TOUCH
+
+
+def test_the_controls_screen_lists_what_players_may_rebind(project, panel):
+    from midgard_editor import menus
+    panel.new_action("Honk")
+    panel.add_binding("keyboard", "H")
+    slots = {b: (name, device) for b, name, device in ia.rebind_slots(project)}
+    assert slots["key:move_y:+"] == ("Move forward", "Key")
+    assert slots["key:move_y:-"] == ("Move back", "Key")
+    assert slots["pad:jump"] == ("Jump", "Gamepad button")
+    assert slots["key:honk"] == ("Honk", "Key")
+    assert not any(b.startswith(("key:look_x", "key:menu", "pad:menu")) for b in slots)
+    # Not rebindable: left out.
+    panel.choose("honk")
+    panel.rebindable.setChecked(False)
+    assert "key:honk" not in {b for b, _n, _d in ia.rebind_slots(project)}
+    panel.rebindable.setChecked(True)
+    screens = menus.from_template(project, "controls")
+    made = screens[-1]
+    assert made["name"] == "Controls" and menus.is_controls(made["screen"])
+    elements = {e["id"]: e for e in made["screen"]["elements"]}
+    assert elements["move_forward_key"]["binds"] == "key:move_y:+"
+    assert "move_forward_pad" not in elements  # (an axis's way: keys only)
+    assert elements["jump_pad"]["binds"] == "pad:jump"
+    assert elements["honk_key"]["binds"] == "key:honk"
+    assert elements["reset"]["action"] == {"do": "reset_controls"}
+    assert elements["back"]["action"] == {"do": "close"}
+    menus.save_all(project, screens)
+    assert menus.problems(project) == []

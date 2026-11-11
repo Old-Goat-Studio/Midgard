@@ -274,6 +274,24 @@ public:
     // The key pressed (SDL's scancode name; "" to give up): the action's keyboard control from
     // now on, kept in the player's profile. Returns the action ("" if none was waiting).
     std::string key_chosen(const std::string& key);
+    // (6.1 step 4) The control a waiting button gets (a key's name, or a gamepad button's: ""
+    // gives up), kept in the profile; another rebindable action that had it (counting at the
+    // same time) takes this one's old control, so none does two things. True if changed.
+    bool control_chosen(const std::string& control);
+    // The device a waiting button wants ("keyboard", "gamepad"; "" none waiting).
+    std::string rebinding_device() const;
+    // The player's controls (their slot and control), to lay over the game's input map.
+    struct PlayerControl {
+        ControlSlot slot;
+        std::string control;
+    };
+    std::vector<PlayerControl> player_controls() const;
+    // A slot's control now: the player's, else the game's.
+    std::string control_of(const ControlSlot& slot) const;
+    // Every control back to the game's own (a Controls screen's Reset).
+    void reset_controls();
+    // The player's controls changed since asked (the runtime lays them over its actions again).
+    bool take_controls_changed() { return std::exchange(controls_changed_, false); }
     // The player's keys (profile), by action: the runtime rebinds its input with them.
     std::map<std::string, std::string> player_keys() const;
     // The player's volume for a bus (0 to 1; the profile's, else 1), and setting it.
@@ -605,7 +623,8 @@ private:
     hud::HudState hud_;
     std::vector<std::string> finished_timers_;
     std::vector<hud::UiEvent> ui_events_;
-    std::string rebinding_;  // an action waiting for its new key
+    std::string rebinding_;  // a button's binds waiting for its new control ("key:jump")
+    bool controls_changed_ = false;
     GameSettings settings_;
     bool frozen_ = false;
     std::string script_context_;  // the input context a script chose ("": the game's)
@@ -615,8 +634,8 @@ private:
         glm::dvec3 position;
         glm::vec3 rotation;
     };
-    std::optional<Place> respawn_at_;      // where the player arrived in this scene
-    std::optional<InputMap> input_cache_;  // the package's controls, for key buttons
+    std::optional<Place> respawn_at_;              // where the player arrived in this scene
+    mutable std::optional<InputMap> input_cache_;  // the package's controls (read once)
     audio::Mixer* mixer_ = nullptr;
     void apply_volumes();
     void save_settings();

@@ -671,20 +671,83 @@ void Game::respawn() {
 }
 
 std::string Game::key_chosen(const std::string& key) {
-    const std::string action = std::exchange(rebinding_, {});
-    if (action.empty() || key.empty()) return {};
-    profile_.other["keys"][action] = key;
+    const auto slot = control_slot(rebinding_);
+    return slot && control_chosen(key) ? slot->action : std::string();
+}
+
+namespace {
+// The profile's object for a device's controls: "keys" (the keyboard's), "pads" (gamepads').
+const char* profile_group(const std::string& device) {
+    return device == "gamepad" ? "pads" : "keys";
+}
+}  // namespace
+
+std::string Game::rebinding_device() const {
+    const auto slot = control_slot(rebinding_);
+    return slot ? slot->device : std::string();
+}
+
+std::string Game::control_of(const ControlSlot& slot) const {
+    const auto group = profile_.other.find(profile_group(slot.device));
+    if (group != profile_.other.end() && group->is_object()) {
+        const auto it = group->find(slot_key(slot));
+        if (it != group->end() && it->is_string()) return it->get<std::string>();
+    }
+    if (!input_cache_) input_cache_ = input_map();  // (read once)
+    return input_cache_->control(slot.action, slot.device, slot.sign);
+}
+
+bool Game::control_chosen(const std::string& control) {
+    const auto slot = control_slot(std::exchange(rebinding_, {}));
+    if (!slot || control.empty()) return false;
+    if (!input_cache_) input_cache_ = input_map();
+    const std::string before = control_of(*slot);
+    if (before == control) return false;
+    // Another slot with it, counting at the same time: it takes this one's old control.
+    const std::string& mine = input_cache_->context(slot->action);
+    for (const ControlSlot& other : input_cache_->rebindable_slots()) {
+        if (other.device != slot->device ||
+            (other.action == slot->action && other.sign == slot->sign))
+            continue;
+        const std::string& theirs = input_cache_->context(other.action);
+        const bool overlap = mine == theirs || mine == kAlwaysContext || theirs == kAlwaysContext;
+        if (overlap && control_of(other) == control)
+            profile_.other[profile_group(other.device)][slot_key(other)] = before;
+    }
+    profile_.other[profile_group(slot->device)][slot_key(*slot)] = control;
+    controls_changed_ = true;
     save_settings();
-    return action;
+    return true;
+}
+
+std::vector<Game::PlayerControl> Game::player_controls() const {
+    std::vector<PlayerControl> out;
+    for (const char* device : {"keyboard", "gamepad"}) {
+        const auto group = profile_.other.find(profile_group(device));
+        if (group == profile_.other.end() || !group->is_object()) continue;
+        for (const auto& [key, control] : group->items()) {
+            const auto slot =
+                control_slot(std::string(device == std::string("gamepad") ? "pad:" : "key:") + key);
+            if (slot && control.is_string() && !control.get<std::string>().empty())
+                out.push_back({*slot, control.get<std::string>()});
+        }
+    }
+    return out;
 }
 
 std::map<std::string, std::string> Game::player_keys() const {
     std::map<std::string, std::string> out;
-    const auto keys = profile_.other.find("keys");
-    if (keys != profile_.other.end() && keys->is_object())
-        for (const auto& [action, key] : keys->items())
-            if (key.is_string()) out[action] = key.get<std::string>();
+    for (const PlayerControl& c : player_controls())
+        if (c.slot.device == "keyboard" && c.slot.sign == 0) out[c.slot.action] = c.control;
     return out;
+}
+
+void Game::reset_controls() {
+    profile_.other.erase("keys");
+    profile_.other.erase("pads");
+    rebinding_.clear();
+    controls_changed_ = true;
+    save_settings();
 }
 
 double Game::player_volume(const std::string& bus) const {
@@ -754,19 +817,16 @@ void Game::update_screens() {
         for (const ScreenElement& e : s->elements) {
             if (e.binds.starts_with("volume:")) {
                 hud_.values[id + "/" + e.id] = player_volume(e.binds.substr(7));
-            } else if (e.binds.starts_with("key:")) {
-                const std::string action = e.binds.substr(4);
-                std::string key;
-                if (rebinding_ == action) {  // (just that: it fits a narrow button)
-                    hud_.texts[id + "/" + e.id] = "Press a key";
+            } else if (const auto slot = control_slot(e.binds)) {
+                if (rebinding_ == e.binds) {  // (just that: it fits a narrow button)
+                    hud_.texts[id + "/" + e.id] =
+                        slot->device == "gamepad" ? "Press a button" : "Press a key";
                     continue;
-                } else {
-                    const auto mine = player_keys();
-                    const auto it = mine.find(action);
-                    if (!input_cache_) input_cache_ = input_map();  // (read once)
-                    key = it != mine.end() ? it->second : input_cache_->control(action, "keyboard");
                 }
-                hud_.texts[id + "/" + e.id] = e.text + ": " + (key.empty() ? "(none)" : key);
+                const std::string control = control_of(*slot);
+                hud_.texts[id + "/" + e.id] =
+                    e.text + ": " +
+                    (control.empty() ? "(none)" : control_label(slot->device, control));
             }
         }
     }
@@ -797,7 +857,8 @@ bool Game::ui_click(const std::string& screen_id, const std::string& element) {
     const ScreenElement* e = s ? s->find(element) : nullptr;
     hud_.post({screen_id, element, "click", 0.0});
     if (!e) return false;
-    if (e->binds.starts_with("key:")) rebinding_ = e->binds.substr(4);  // (the next key)
+    if (control_slot(e->binds)) rebinding_ = e->binds;  // (the next key or button)
+    if (e->action == "reset_controls") reset_controls();
     if (e->action == "respawn") respawn();
     if (e->action == "close") hud_.hide_screen(screen_id);
     // (Opening another puts it on top: closing that one comes back to this, as Settings goes

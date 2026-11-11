@@ -385,10 +385,12 @@ def test_buttons_checks_options_and_sliders_have_a_picture_for_each_state(editor
 
 
 def test_ready_made_screens_work_as_they_are(editor, project):
-    # A title screen brings the settings screen its Settings button opens.
+    # A title screen brings the settings screen its Settings button opens, and the controls
+    # screen that one's Controls button opens.
     title = editor.new_from_template("title")
     screens = menus.load_all(project)
-    assert [s["screen"].get("role") for s in screens] == ["title", "settings"]
+    assert [s["screen"].get("role") for s in screens] == ["title", "settings", None]
+    assert menus.is_controls(screens[2]["screen"])
     assert editor.chosen_screen_id() == title
     settings = screens[1]["id"]
     assert element(project, title, "settings")["action"] == {"do": "open", "screen": settings}
@@ -398,14 +400,16 @@ def test_ready_made_screens_work_as_they_are(editor, project):
     over = editor.new_from_template("game_over")
     assert element(project, over, "again")["action"] == {"do": "respawn"}
     assert menus.load(project, over)["screen"]["stat"] == "health"
-    assert len(menus.load_all(project)) == 4
+    assert len(menus.load_all(project)) == 5
     # A second pause menu is a spare: only one screen is the pause menu.
     spare = editor.new_from_template("pause")
     assert "role" not in menus.load(project, spare)["screen"]
     assert menus.problems(project) == []
-    # The settings: sliders tied to volumes, buttons to keys.
+    # The settings: sliders tied to volumes, and Controls opening the controls screen.
     assert element(project, settings, "music")["binds"] == "volume:music"
-    assert element(project, settings, "jump")["binds"] == "key:jump"
+    controls = screens[2]["id"]
+    assert element(project, settings, "controls")["action"] == {"do": "open",
+                                                                 "screen": controls}
     editor.choose_screen(settings)
     editor.choose_element("music")
     assert editor.form.isRowVisible(editor.binds)
@@ -413,8 +417,11 @@ def test_ready_made_screens_work_as_they_are(editor, project):
     editor.binds.setCurrentIndex(editor.binds.findData("volume:effects"))
     editor.binds.activated.emit(editor.binds.currentIndex())
     assert element(project, settings, "music")["binds"] == "volume:effects"
-    editor.choose_element("use")
-    assert editor.binds.findData("key:descend") >= 0
+    editor.choose_screen(controls)
+    editor.choose_element("jump_key")
+    assert editor.binds.currentData() == "key:jump"
+    assert editor.binds.findData("pad:descend") >= 0
+    assert editor.binds.findData("key:move_y:-") >= 0
     # The screen's role, and game over's stat, in its settings.
     editor.choose_screen(over)
     editor.choose_element("")

@@ -705,8 +705,9 @@ class MenuEditor(QWidget):
                     for bus, label in menus.BUSES.items():
                         self.binds.addItem(label, f"volume:{bus}")
                 elif kind == "button":
-                    for action in menus.input_actions(self.project):
-                        self.binds.addItem(f"Key for {action}", f"key:{action}")
+                    from .. import input_actions
+                    for binds, name, device in input_actions.rebind_slots(self.project):
+                        self.binds.addItem(f"{device} for {name}", binds)
                 if e.get("binds") and self.binds.findData(e["binds"]) < 0:
                     self.binds.addItem(e["binds"], e["binds"])
                 self.binds.setCurrentIndex(max(0, self.binds.findData(e.get("binds", ""))))
