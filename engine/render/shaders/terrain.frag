@@ -43,7 +43,8 @@ layout(set = 1, binding = 3) uniform sampler2DArray ground_occlusion;   // R
 layout(set = 1, binding = 4) uniform sampler2DArray ground_emissive;    // sRGB
 
 const float kPi = 3.14159265;
-const int kGrass = 0, kDryGrass = 1, kSand = 2, kRock = 3, kSnow = 4;
+const int kGrass = 0, kDryGrass = 1, kSand = 2, kRock = 3, kSnow = 4, kPaint1 = 5,
+          kPaint2 = 6, kBiomes = 7;
 
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
@@ -294,9 +295,9 @@ void main() {
                             in_range(moisture + detail * 0.03, r.z, r.w, 0.04);
             if (w <= 0.0) continue;
             const Ground b =
-                mixg(layer(5 + 2 * i + 1, frame.biome_dry[i].rgb, n),
-                     moisture > 0.0 ? layer(5 + 2 * i, frame.biome_color[i].rgb, n)
-                                    : layer(5 + 2 * i + 1, frame.biome_dry[i].rgb, n),
+                mixg(layer(kBiomes + 2 * i + 1, frame.biome_dry[i].rgb, n),
+                     moisture > 0.0 ? layer(kBiomes + 2 * i, frame.biome_color[i].rgb, n)
+                                    : layer(kBiomes + 2 * i + 1, frame.biome_dry[i].rgb, n),
                      moisture);
             sum.albedo += b.albedo * w;
             sum.normal += b.normal * w;
@@ -329,6 +330,12 @@ void main() {
     // Painted sand and rock (sculpt and paint).
     g = over(g, kSand, sand, n, smoothstep(0.0, 0.6, -painted + detail * 0.05));
     g = over(g, kRock, rock, n, smoothstep(0.0, 0.6, painted + detail * 0.05));
+    // The world type's paint layers (6.0b): a path's earth, paving's grey, or their textures.
+    const float layers = clamp(v_tangent.y, -1.0, 1.0);
+    g = over(g, kPaint1, linear(vec3(0.45, 0.36, 0.25)), n,
+             smoothstep(0.0, 0.6, layers + detail * 0.05));
+    g = over(g, kPaint2, linear(vec3(0.52, 0.51, 0.48)), n,
+             smoothstep(0.0, 0.6, -layers + detail * 0.05));
     // Snow above the snow line, which comes down to the shore in deep winter; it doesn't lie
     // on the steepest rock.
     // With a climate, snow lies where it is below freezing (colder in winter) instead.

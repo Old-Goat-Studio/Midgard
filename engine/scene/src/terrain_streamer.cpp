@@ -81,11 +81,12 @@ render::MeshData ground_mesh_data(const ChunkMesh& mesh) {
     render::MeshData out;
     out.vertices.reserve(mesh.positions.size());
     for (size_t i = 0; i < mesh.positions.size(); ++i) {
-        const glm::vec3 b = i < mesh.biome.size() ? mesh.biome[i] : glm::vec3(0.5f, 0.0f, 0.0f);
+        const glm::vec4 b =
+            i < mesh.biome.size() ? mesh.biome[i] : glm::vec4(0.5f, 0.0f, 0.0f, 0.0f);
         render::Vertex v = vertex(mesh.positions[i], mesh.normals[i], glm::vec2(b.x, b.y));
         // ("Up" the shader works out from the world's shape: TerrainLook.)
         v.tangent[0] = i < mesh.temperatures.size() ? mesh.temperatures[i] : 0.0f;
-        v.tangent[1] = 0.0f;
+        v.tangent[1] = b.w;  // the paint layers: -1 paint layer 2 to 1 paint layer 1
         v.tangent[2] = b.z;  // painted ground: -1 sand to 1 rock
         v.tangent[3] = float(mesh.heights[i]);
         out.vertices.push_back(v);
@@ -191,11 +192,11 @@ render::TerrainLook TerrainStreamer::look() const {
                               {g.map("base_color"), g.map("metallic_roughness"), g.map("normal"),
                                g.map("occlusion"), g.map("emissive")}});
     };
-    const std::pair<const char*, int> layers[] = {{"grass", render::kGroundSlotGrass},
-                                                  {"dry_grass", render::kGroundSlotDryGrass},
-                                                  {"sand", render::kGroundSlotSand},
-                                                  {"rock", render::kGroundSlotRock},
-                                                  {"snow", render::kGroundSlotSnow}};
+    const std::pair<const char*, int> layers[] = {
+        {"grass", render::kGroundSlotGrass},   {"dry_grass", render::kGroundSlotDryGrass},
+        {"sand", render::kGroundSlotSand},     {"rock", render::kGroundSlotRock},
+        {"snow", render::kGroundSlotSnow},     {"paint_1", render::kGroundSlotPaint1},
+        {"paint_2", render::kGroundSlotPaint2}};
     for (const auto& [name, slot] : layers)
         if (const auto it = t.ground.find(name); it != t.ground.end()) add(slot, it->second);
     for (size_t i = 0; i < t.biomes.size() && i < size_t(render::kMaxTerrainBiomes); ++i) {

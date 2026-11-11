@@ -600,7 +600,9 @@ the Viewport:
 - **Raise** / **Lower**: build hills or dig valleys.
 - **Smooth**: soften bumps.
 - **Flatten**: level the ground where you start the stroke (good for building sites).
-- **Paint**: **Lush grass**, **Dry grass**, **Sand**, **Rock**, or **Clear paint**.
+- **Paint**: **Lush grass**, **Dry grass**, **Sand**, **Rock**, the world type's two paint layers
+  (by the names you give them, below: a path, paving…), or **Clear paint**. The last paint
+  wins: a path painted over rock replaces it, and rock painted over a path replaces that.
 
 Each stroke is one Undo step.
 
@@ -614,7 +616,7 @@ brushes.
 **Picture textures**: open them with **World ▸ Ground Textures…**, or the **Ground
 Textures…** button in the **Terrain** panel. Both open the **World Types** panel on its
 **Ground Textures** tab (the third tab along its top), with your scene's world type chosen. It lists every ground layer (**Grass**, **Dry grass**, **Sand**, **Rock**,
-**Snow**) and each biome's lush and dry ground. Double-click a row (or **Choose Texture Set…**)
+**Snow**), the two **paint layers**, and each biome's lush and dry ground. Double-click a row (or **Choose Texture Set…**)
 to pick a **texture set** from your Asset Library's Textures: each set's whole material is
 shown on a sphere, a cube or a plane as you pick it. The layer takes all of the set's maps:
 its colour, **normal** map, **metal and roughness**, **ambient occlusion (AO)** and **emissive**
@@ -639,8 +641,14 @@ smaller (512 pixels against 1024) and drawn more simply, to keep the game smooth
 starts, the ground shows its plain colours for a moment while its textures are made ready, then
 its textures.
 
-For a special patch (a stone courtyard), place a textured **Plane** or flattened **Cube** on
-the ground.
+**Paint layers** are ground of your own, laid only where you paint it: a path across the
+grass, cobbles in a village, a ploughed field. Type a name in the row (say **Path**), give it
+a texture set, then in the **Terrain** panel choose **Paint** and your layer by its name, and
+drag over the ground. Without a texture set, the first paints bare earth and the second grey
+paving. Each stroke is one Undo step, and the game walks on them as stone.
+
+For a special patch (a stone courtyard), you can also place a textured **Plane** or flattened
+**Cube** on the ground.
 
 ---
 

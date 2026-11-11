@@ -174,7 +174,7 @@ std::vector<std::uint8_t> map_pixels(const Terrain& terrain, int width, int heig
             if (above < 0.0f) {
                 c = lerp3(shallow, deep, -above / 30.0f);
             } else {
-                const glm::vec3 b = terrain.biome_at(p.face, p.u, p.v);
+                const glm::vec4 b = terrain.biome_at(p.face, p.u, p.v);
                 const float moisture = std::clamp(b.x, 0.0f, 1.0f);
                 c = lerp3(glm::vec3(0.55f, 0.50f, 0.28f), glm::vec3(0.27f, 0.42f, 0.16f), moisture);
                 const int biome = terrain.biome_index(p.face, p.u, p.v, h);

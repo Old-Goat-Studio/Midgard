@@ -225,7 +225,7 @@ TEST_CASE("a chunk's material data: up at each point, moisture and detail in ran
         CHECK(std::abs(m.biome[i].y) <= 1.0f);
     }
     // The same point from two chunks: the same biome (it comes from the surface position).
-    const glm::vec3 a = habitat().biome_at(0, 0.0, 0.4), b = habitat().biome_at(0, 1.0, 0.4);
+    const glm::vec4 a = habitat().biome_at(0, 0.0, 0.4), b = habitat().biome_at(0, 1.0, 0.4);
     CHECK(a == b);
     midgard::TerrainSettings t;
     t.snow_line = 40.0;
@@ -297,6 +297,31 @@ TEST_CASE("sculpting: raise, lower, flatten, smooth and paint, and the strokes' 
     const auto lush = with(R"({"tool": "paint", "paint": "lush", "radius": 10, "strength": 1,
                                "points": [[0.4, 0.45]]})");
     CHECK(lush.biome_at(0, u, v).x == doctest::Approx(1.0f));
+    // The world type's paint layers (6.0b): 1 the first, -1 the second; each the last painted
+    // wins over sand and rock (and they over it), and clear takes it away.
+    const auto path = with(R"({"tool": "paint", "paint": "paint_1", "radius": 10, "strength": 1,
+                               "points": [[0.4, 0.45]]})");
+    CHECK(path.biome_at(0, u, v).w == doctest::Approx(1.0f));
+    CHECK(plain.biome_at(0, u, v).w == 0.0f);
+    const auto paving = with(R"({"tool": "paint", "paint": "paint_2", "radius": 10,
+                                 "strength": 1, "points": [[0.4, 0.45]]})");
+    CHECK(paving.biome_at(0, u, v).w == doctest::Approx(-1.0f));
+    const auto both = [&](const char* first, const char* then) {
+        const auto stroke = [](const char* paint) {
+            return midgard::stamp_from_json(json{{"tool", "paint"},
+                                                 {"paint", paint},
+                                                 {"radius", 10},
+                                                 {"strength", 1},
+                                                 {"points", {{0.4, 0.45}}}});
+        };
+        const midgard::Terrain t(plain.body(), plain.settings(), {stroke(first), stroke(then)});
+        return t.biome_at(0, u, v);
+    };
+    CHECK(both("rock", "paint_1").z == doctest::Approx(0.0f));
+    CHECK(both("rock", "paint_1").w == doctest::Approx(1.0f));
+    CHECK(both("paint_1", "sand").w == doctest::Approx(0.0f));
+    CHECK(both("paint_2", "clear").w == doctest::Approx(0.0f));
+    CHECK(std::string(midgard::paint_layer_name(midgard::PaintLayer::Paint2)) == "paint_2");
     // A stroke across a cylinder's join reaches both sides.
     const midgard::Terrain h = habitat();
     const midgard::Terrain hs(h.body(), h.settings(),

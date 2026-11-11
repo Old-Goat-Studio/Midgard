@@ -19,7 +19,9 @@ TOOLS = {  # tool: (label, what strength means, default strength, its range)
     "paint": ("Paint", "0 to 1", 0.8, (0.0, 1.0)),
 }
 PAINTS = {"lush": "Lush grass", "dry": "Dry grass", "sand": "Sand", "rock": "Rock",
-          "clear": "Clear paint"}
+          "paint_1": "Paint layer 1", "paint_2": "Paint layer 2", "clear": "Clear paint"}
+# (paint_1 and paint_2: the world type's own paint layers, 6.0b: named and textured on its
+# Ground Textures tab; world_types.paint_layer_names says what it calls them.)
 
 
 def load(project: Project, scene: str | None = None) -> list[tuple[int, dict[str, Any]]]:

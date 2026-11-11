@@ -79,7 +79,10 @@ def resolved_settings(project: Project, settings: dict[str, Any]) -> dict[str, A
 #     "terrain": {"ground": {"grass": {"textures": {"base_color": "tex:...", ...}, "tile": 4}},
 #                 "biomes": [{..., "texture": {...}, "dry_texture": {...}}]}
 GROUND_LAYERS = {"grass": "Grass", "dry_grass": "Dry grass", "sand": "Sand", "rock": "Rock",
-                 "snow": "Snow"}
+                 "snow": "Snow", "paint_1": "Paint layer 1", "paint_2": "Paint layer 2"}
+# The two paint layers: only painted (the Terrain panel's brush), each with a name of its own
+# ("name", say "Path") and its texture set; untextured, earth and grey paving.
+PAINT_LAYERS = ("paint_1", "paint_2")
 GROUND_SLOTS = ("base_color", "normal", "metallic_roughness", "occlusion", "emissive")
 # Each map's short name, for the tick boxes that switch one off ("off": a list of slots; the map
 # is kept but neither drawn nor packed).
@@ -104,6 +107,14 @@ def ground_textures(recipe: dict[str, Any]) -> list[str]:
             if isinstance(t, str) and t and t not in out:
                 out.append(t)
     return out
+
+
+def paint_layer_names(project: Project, scene: str | None = None) -> dict[str, str]:
+    """What the scene's world type calls its two paint layers ("Paint layer 1" unnamed)."""
+    world = scene_world(project, scene)
+    found = recipe(project, world["world_type"], world.get("version", 1)) if world else None
+    ground = ((found or {}).get("terrain") or {}).get("ground") or {}
+    return {k: (ground.get(k) or {}).get("name") or GROUND_LAYERS[k] for k in PAINT_LAYERS}
 
 
 def send_ground_textures(view, project: Project, settings: dict[str, Any],

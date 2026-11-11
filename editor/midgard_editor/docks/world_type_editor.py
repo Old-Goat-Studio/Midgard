@@ -773,6 +773,20 @@ class WorldTypePanel(QWidget):
         for row, (key, label) in enumerate(zip(keys, labels, strict=True)):
             g = self._ground_texture(key) or {}
             slots = g.get("textures", {})
+            if key[0] == "ground" and key[1] in world_types.PAINT_LAYERS:
+                # A paint layer: named here (the Terrain panel's Paint list shows the name).
+                if g.get("name"):
+                    label = f"{g['name']} ({label.lower()})"
+                name = QLineEdit(g.get("name", ""))
+                name.setPlaceholderText(f"{world_types.GROUND_LAYERS[key[1]]}: name it "
+                                        "(a path, paving…)")
+                name.setToolTip("What the Terrain panel's Paint list calls this layer. Paint it "
+                                "with the Terrain panel's brush (Paint, this layer)")
+                name.editingFinished.connect(
+                    lambda k=key, box=name: self.set_paint_layer_name(k[1], box.text()))
+                table.setCellWidget(row, 0, name)
+            else:
+                table.removeCellWidget(row, 0)
             table.setItem(row, 0, QTableWidgetItem(label))
             set_item = QTableWidgetItem("(its colour)")
             asset = None
@@ -858,8 +872,24 @@ class WorldTypePanel(QWidget):
             slots = material_textures(self.project, asset)
             new = {"textures": {s: slots[s] for s in world_types.GROUND_SLOTS if s in slots},
                    "tile": old.get("tile", world_types.DEFAULT_TILE)}
+        if old.get("name"):  # (a paint layer keeps its name)
+            new = {**(new or {}), "name": old["name"]}
         self._put_ground_texture(key, new, f"Set the {self._key_label(key)} texture" if new
                                  else f"Clear the {self._key_label(key)} texture")
+
+    def set_paint_layer_name(self, layer: str, name: str) -> None:
+        """A paint layer's name ("" back to "Paint layer 1")."""
+        key = ("ground", layer)
+        old = self._ground_texture(key) or {}
+        name = name.strip()
+        if name == old.get("name", ""):
+            return
+        new = {k: v for k, v in old.items() if k != "name"}
+        if name:
+            new["name"] = name
+        self._put_ground_texture(key, new or None,
+                                 f"Name {world_types.GROUND_LAYERS[layer].lower()} '{name}'"
+                                 if name else f"Unname {world_types.GROUND_LAYERS[layer].lower()}")
 
     def _set_tile(self, key: tuple, tile: float) -> None:
         old = self._ground_texture(key)

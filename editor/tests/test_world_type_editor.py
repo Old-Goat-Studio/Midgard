@@ -418,3 +418,49 @@ def test_a_layers_maps_can_be_left_out_and_used_again(panel, project, tmp_path):
     panel.set_ground_texture(("ground", "sand"), flat)
     sand = panel.ground_textures.cellWidget(panel._ground_keys.index(("ground", "sand")), 2)
     assert sand.boxes["base_color"].isChecked() and not sand.boxes["normal"].isEnabled()
+
+
+def test_the_world_types_paint_layers_are_named_textured_and_painted(panel, project, tmp_path,
+                                                                     qtbot):
+    from test_world_types import HABITAT
+
+    from midgard_editor import terrain_stamps
+    from midgard_editor.docks.terrain_panel import TerrainPanel
+    keys = panel._ground_keys
+    assert ("ground", "paint_1") in keys and ("ground", "paint_2") in keys
+    row = keys.index(("ground", "paint_1"))
+    name = panel.ground_textures.cellWidget(row, 0)
+    name.setText("Cobbles")
+    name.editingFinished.emit()
+    assert latest(project)["terrain"]["ground"]["paint_1"] == {"name": "Cobbles"}
+    # A texture set: the name kept; cleared: the name still kept.
+    rock = a_full_texture_set(project, tmp_path)
+    panel.set_ground_texture(("ground", "paint_1"), rock)
+    g = latest(project)["terrain"]["ground"]["paint_1"]
+    assert g["name"] == "Cobbles" and len(g["textures"]) == 5
+    assert panel.ground_textures.item(row, 0).text() == "Cobbles (paint layer 1)"
+    # The scene made with it: the Terrain panel's Paint list calls it so, and paints it.
+    settings = project.scene_settings()
+    settings["body"] = HABITAT
+    settings["terrain"] = {"world_type": "wt_hills", "version": 1, "seed": 5}
+    project.set_scene_settings(settings)
+    assert world_types.paint_layer_names(project) == {"paint_1": "Cobbles",
+                                                      "paint_2": "Paint layer 2"}
+    terrain = TerrainPanel()
+    qtbot.addWidget(terrain)
+    terrain.set_project(project)
+    i = terrain.paint.findData("paint_1")
+    assert terrain.paint.itemText(i) == "Cobbles"
+    terrain.tool.setCurrentIndex(terrain.tool.findData("paint"))
+    terrain.paint.setCurrentIndex(i)
+    terrain.sculpt.setChecked(True)
+    assert terrain.brush()["paint"] == "paint_1"
+    project.undo_stack.push(terrain_stamps.StampCommand(project, {
+        **terrain.brush(), "face": 0, "points": [[0.5, 0.5]]}))
+    assert terrain_stamps.load(project)[-1][1]["paint"] == "paint_1"
+    # Unnamed again: "Paint layer 1".
+    name = panel.ground_textures.cellWidget(row, 0)
+    name.setText("")
+    name.editingFinished.emit()
+    assert "name" not in latest(project)["terrain"]["ground"]["paint_1"]
+    assert world_types.paint_layer_names(project)["paint_1"] == "Paint layer 1"

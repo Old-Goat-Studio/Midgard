@@ -75,6 +75,7 @@ inline constexpr const char* kGroundSlots[] = {"base_color", "normal", "metallic
 struct GroundTexture {
     std::string base_color, normal, metallic_roughness, occlusion, emissive;
     double tile = 4.0;  // metres
+    std::string name;   // a paint layer's, as the Terrain panel lists it ("": "Paint layer 1")
     // Maps switched off (kGroundSlots' names): named, but not used (nor packed) until switched
     // on again, for a set whose glow or shine doesn't suit the ground.
     std::vector<std::string> off;
@@ -88,7 +89,9 @@ struct GroundTexture {
     bool operator==(const GroundTexture&) const = default;
 };
 // The ground layers that aren't a biome's (the 5.9 ground, and what lies over any biome).
-inline constexpr const char* kGroundLayers[] = {"grass", "dry_grass", "sand", "rock", "snow"};
+// paint_1 and paint_2: the world type's own paint layers (PaintLayer::Paint1 and Paint2).
+inline constexpr const char* kGroundLayers[] = {"grass", "dry_grass", "sand",   "rock",
+                                                "snow",  "paint_1",   "paint_2"};
 
 // A biome: ground of its own colours where the temperature and moisture are in its ranges
 // (blended a little across its edges with its neighbours'); dry_color where the moisture is
@@ -184,12 +187,14 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t);
 //   smooth        towards the average round each point, by `strength` (0 to 1)
 //   flatten       towards `height` metres, by `strength` (0 to 1)
 //   paint         the ground's material: lush or dry (its moisture), sand or rock, or clear
-//                 (back to as generated), by `strength` (0 to 1)
+//                 (back to as generated), by `strength` (0 to 1); or one of the world type's two
+//                 paint layers (6.0b: a path, paving: whatever texture sets it gives them)
 // World types will place stamps too, and players' changes will use the same mechanism.
 enum class StampTool { Raise, Lower, Smooth, Flatten, Paint };
-enum class PaintLayer { Clear, Lush, Dry, Sand, Rock };
-const char* stamp_tool_name(StampTool tool);     // "raise", "lower", "smooth", "flatten", "paint"
-const char* paint_layer_name(PaintLayer layer);  // "clear", "lush", "dry", "sand", "rock"
+enum class PaintLayer { Clear, Lush, Dry, Sand, Rock, Paint1, Paint2 };
+const char* stamp_tool_name(StampTool tool);  // "raise", "lower", "smooth", "flatten", "paint"
+// "clear", "lush", "dry", "sand", "rock", "paint_1", "paint_2"
+const char* paint_layer_name(PaintLayer layer);
 
 struct TerrainStamp {
     StampTool tool = StampTool::Raise;
@@ -226,9 +231,9 @@ struct ChunkMesh {
     std::vector<double> heights;  // as generated (before edges were matched)
     // For the terrain's material: "up" at each point, and its biome: x moisture (0 dry to 1
     // lush, over kilometres), y fine detail (-1 to 1, over metres), z painted ground (-1 sand,
-    // 0 as generated, 1 rock).
+    // 0 as generated, 1 rock), w the paint layers (6.0b: -1 paint layer 2, 1 paint layer 1).
     std::vector<glm::vec3> ups;
-    std::vector<glm::vec3> biome;
+    std::vector<glm::vec4> biome;
     std::vector<float> temperatures;  // degrees Celsius at each point (with a climate only)
 };
 
@@ -290,7 +295,7 @@ public:
 
     // The biome at a point: x moisture (0 dry to 1 lush), y fine detail (-1 to 1), z painted
     // ground (-1 sand to 1 rock), with the paint stamps.
-    glm::vec3 biome_at(int face, double u, double v) const;
+    glm::vec4 biome_at(int face, double u, double v) const;
     // The temperature (degrees Celsius, before the seasons) at a point `height` metres up, from
     // the climate; 0 without one.
     double temperature_at(int face, double u, double v, double height) const;

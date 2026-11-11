@@ -338,7 +338,7 @@
     },
     {
       "name": "terrain_textured",
-      "_about": "The ground's picture textures (6.0b) on a hillside: grass, dry grass and a painted patch of rock, each layer's texture set laid triplanar and lit as a material (rock: slabs with its normal, metal/roughness and occlusion maps, and glowing cracks from its emissive map). Textures seen at a slant are filtered a little differently by each driver, so up to 4% of pixels may differ.",
+      "_about": "The ground's picture textures (6.0b) on a hillside: grass, dry grass, a painted patch of rock and a cobbled path painted across the grass (the world type's first paint layer, 6.0b step 4), each layer's texture set laid triplanar and lit as a material (rock: slabs with its normal, metal/roughness and occlusion maps, and glowing cracks from its emissive map). Textures seen at a slant are filtered a little differently by each driver, so up to 4% of pixels may differ.",
       "args": ["--size", "480x270", "--scene", "terrain_textured"],
       "max_bad": 0.04
     },

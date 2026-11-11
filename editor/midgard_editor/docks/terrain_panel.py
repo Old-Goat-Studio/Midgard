@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from .. import terrain_stamps
 from ..project import Project
 from ..terrain_stamps import PAINTS, TOOLS, ClearStampsCommand
+from .fresh_combo import FreshComboBox
 
 
 class TerrainPanel(QWidget):
@@ -42,7 +43,7 @@ class TerrainPanel(QWidget):
         for key, (label, _unit, _default, _range) in TOOLS.items():
             self.tool.addItem(label, key)
         self.tool.currentIndexChanged.connect(lambda _i: self._tool_chosen())
-        self.paint = QComboBox()
+        self.paint = FreshComboBox(self._name_paint_layers)  # (the paint layers' names)
         for key, label in PAINTS.items():
             self.paint.addItem(label, key)
         self.radius = QDoubleSpinBox()
@@ -112,11 +113,22 @@ class TerrainPanel(QWidget):
             self.status.setText("No terrain in this scene: turn it on in World ▸ World Shape… "
                                 "(bounded areas and cylinders).")
             return
+        self._name_paint_layers()
         count = len(terrain_stamps.load(self.project))
         self.status.setText(f"{count} stroke{'s' if count != 1 else ''}. "
                             + ("Drag over the terrain in the viewport."
                                if self.sculpt.isChecked() else "Turn on Sculpt to draw."))
         self.clear.setEnabled(count > 0)
+
+    def _name_paint_layers(self) -> None:
+        """The world type's paint layers listed by their names (its Ground Textures tab's)."""
+        if self.project is None or not self.has_terrain():
+            return
+        from .. import world_types
+        for key, name in world_types.paint_layer_names(self.project).items():
+            i = self.paint.findData(key)
+            if i >= 0:
+                self.paint.setItemText(i, name)
 
     def _tool_chosen(self) -> None:
         key = self.tool.currentData()

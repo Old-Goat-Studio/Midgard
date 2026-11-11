@@ -102,10 +102,11 @@ struct TerrainBiome {
 // through set_ground_reader, into one texture array per kind of map: triplanar, so the same on
 // every world shape, slopes and the cube-sphere's faces alike.
 inline constexpr int kGroundSlotGrass = 0, kGroundSlotDryGrass = 1, kGroundSlotSand = 2,
-                     kGroundSlotRock = 3, kGroundSlotSnow = 4;
-inline constexpr int kGroundSlots = 5 + 2 * kMaxTerrainBiomes;
+                     kGroundSlotRock = 3, kGroundSlotSnow = 4, kGroundSlotPaint1 = 5,
+                     kGroundSlotPaint2 = 6;
+inline constexpr int kGroundSlots = 7 + 2 * kMaxTerrainBiomes;
 constexpr int ground_slot_biome(int biome, bool dry) {
-    return 5 + 2 * biome + (dry ? 1 : 0);
+    return 7 + 2 * biome + (dry ? 1 : 0);
 }
 struct GroundLayerLook {
     int slot = 0;

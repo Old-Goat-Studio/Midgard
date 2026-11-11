@@ -38,6 +38,8 @@ std::string terrain_ground(const Terrain& terrain, const Body& body, const glm::
     if (slope > 0.30) ground = "rock";
     if (painted < -0.3) ground = "sand";
     if (painted > 0.3) ground = "rock";
+    // A paint layer (6.0b): a path or paving, stepped on as stone.
+    if (std::abs(terrain.biome_at(p.face, p.u, p.v).w) > 0.3) ground = "rock";
     const bool cold =
         s.climate ? terrain.temperature_at(p.face, p.u, p.v, h) < 0.0 : h > s.snow_line;
     if (cold && slope < 0.525 && above >= 0.0) ground = "snow";

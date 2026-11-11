@@ -800,6 +800,20 @@ std::unordered_map<std::string, std::vector<uint8_t>> ground_test_textures() {
         const float lava = 1.0f - std::min(crack(u, v) * 30.0f, 1.0f);
         return glm::vec4(glm::vec3(1.0f, 0.35f, 0.05f) * lava, 1.0f);
     });
+    // A path of cobbles (paint layer 1): round stones in a grid, set in dark earth.
+    const auto cobble = [=](float u, float v) {
+        const float cu = u * 4.0f - std::floor(u * 4.0f) - 0.5f;
+        const float cv = v * 4.0f + (int(std::floor(u * 4.0f)) % 2 ? 0.5f : 0.0f);
+        const float fv = cv - std::floor(cv) - 0.5f;
+        return std::clamp(1.0f - std::sqrt(cu * cu + fv * fv) * 2.2f, 0.0f, 1.0f);
+    };
+    out["tex:test/cobble_color.png"] = make(true, [=](float u, float v) {
+        const float c = cobble(u, v);
+        return glm::vec4(glm::mix(glm::vec3(0.18f, 0.13f, 0.09f), glm::vec3(0.62f, 0.58f, 0.52f),
+                                  std::min(c * 3.0f, 1.0f)),
+                         1.0f);
+    });
+    out["tex:test/cobble_normal.png#linear"] = normal_of(cobble, 0.25f);
     out["tex:test/snow_color.png"] = make(true, [=](float u, float v) {
         return glm::vec4(glm::vec3(0.86f, 0.9f, 0.96f) + 0.06f * drifts(u, v), 1.0f);
     });
@@ -825,6 +839,8 @@ nlohmann::json ground_test_layers() {
                               "normal": "tex:test/rock_normal.png#linear",
                               "occlusion": "tex:test/rock_ao.png#linear",
                               "emissive": "tex:test/rock_glow.png"}, "tile": 4.0},
+        "paint_1": {"name": "Cobbles", "textures": {"base_color": "tex:test/cobble_color.png",
+                                  "normal": "tex:test/cobble_normal.png#linear"}, "tile": 1.5},
         "snow": {"textures": {"base_color": "tex:test/snow_color.png",
                               "metallic_roughness": "tex:test/snow_mr.png#linear",
                               "normal": "tex:test/snow_normal.png#linear"}, "tile": 3.0}})");
@@ -1023,7 +1039,11 @@ public:
         if (textured && which == "placed")  // (a patch of rock painted in front: its maps seen)
             streamer_->set_stamps({stamp_from_json(nlohmann::json::parse(R"({"tool": "paint",
                 "paint": "rock", "radius": 14, "strength": 1, "face": 0,
-                "points": [[0.343, 0.37], [0.333, 0.35]]})"))});
+                "points": [[0.343, 0.37], [0.333, 0.35]]})")),
+                                   // (and a cobbled path across the grass: paint layer 1)
+                                   stamp_from_json(nlohmann::json::parse(R"({"tool": "paint",
+                "paint": "paint_1", "radius": 2.5, "strength": 1, "face": 0,
+                "points": [[0.3605, 0.3712], [0.3555, 0.3625], [0.3495, 0.3575]]})"))});
         up_ = glm::vec3(scene_.settings.body->up(eye_));
         if (which == "hollow_far" || which == "planet_biomes") far_ = 20000.0f;
         if (which == "space") {  // (the whole planet, from 6 km over its ground)

@@ -113,6 +113,10 @@ GroundTexture ground_texture_from_json(const nlohmann::json& j) {
         if (!j.at("tile").is_number()) throw std::runtime_error("ground: \"tile\" is metres");
         g.tile = j.at("tile").get<double>();
     }
+    if (j.contains("name")) {
+        if (!j.at("name").is_string()) throw std::runtime_error("ground: \"name\" is text");
+        g.name = j.at("name").get<std::string>();
+    }
     if (j.contains("textures")) {
         const nlohmann::json& m = j.at("textures");
         if (!m.is_object())
@@ -155,6 +159,7 @@ nlohmann::json ground_texture_to_json(const GroundTexture& g) {
         if (!values[i]->empty()) maps[kGroundSlots[i]] = *values[i];
     nlohmann::json out{{"textures", maps}, {"tile", g.tile}};
     if (!g.off.empty()) out["off"] = g.off;
+    if (!g.name.empty()) out["name"] = g.name;
     return out;
 }
 }  // namespace
@@ -451,7 +456,8 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
         if (std::find_if(std::begin(kGroundLayers), std::end(kGroundLayers),
                          [&](const char* n) { return layer == n; }) == std::end(kGroundLayers))
             out.push_back("ground: '" + layer +
-                          "' isn't a layer (grass, dry_grass, sand, rock or snow)");
+                          "' isn't a layer (grass, dry_grass, sand, rock, snow, paint_1 or "
+                          "paint_2)");
         texture_problems("ground '" + layer + "': ", g);
     }
     for (const Biome& b : t.biomes) {
@@ -503,6 +509,10 @@ const char* paint_layer_name(PaintLayer layer) {
             return "sand";
         case PaintLayer::Rock:
             return "rock";
+        case PaintLayer::Paint1:
+            return "paint_1";
+        case PaintLayer::Paint2:
+            return "paint_2";
     }
     return "clear";
 }
@@ -521,8 +531,8 @@ TerrainStamp stamp_from_json(const nlohmann::json& j) {
     if (!known) throw std::runtime_error("terrain stamp: no tool '" + tool + "'");
     const std::string paint = j.value("paint", std::string("lush"));
     known = false;
-    for (PaintLayer l :
-         {PaintLayer::Clear, PaintLayer::Lush, PaintLayer::Dry, PaintLayer::Sand, PaintLayer::Rock})
+    for (PaintLayer l : {PaintLayer::Clear, PaintLayer::Lush, PaintLayer::Dry, PaintLayer::Sand,
+                         PaintLayer::Rock, PaintLayer::Paint1, PaintLayer::Paint2})
         if (paint == paint_layer_name(l)) {
             s.paint = l;
             known = true;
@@ -1031,7 +1041,7 @@ std::vector<TerrainPlacement> Terrain::placements_in(const ChunkKey& tile) const
     return out;
 }
 
-glm::vec3 Terrain::biome_at(int face, double u, double v) const {
+glm::vec4 Terrain::biome_at(int face, double u, double v) const {
     const glm::dvec3 q = noise_position(face, u, v);
     const double moist = double(det::fbm(seed_ ^ det::tag("moisture"), q.x / 1500.0, q.y / 1500.0,
                                          q.z / 1500.0, 4)) /
@@ -1040,7 +1050,7 @@ glm::vec3 Terrain::biome_at(int face, double u, double v) const {
         double(det::gradient_noise(seed_ ^ det::tag("detail"), q.x / 7.0, q.y / 7.0, q.z / 7.0)) /
         65536.0;
     const double natural = std::clamp(0.5 + 0.7 * moist, 0.0, 1.0);
-    double moisture = natural, ground = 0.0;
+    double moisture = natural, ground = 0.0, layers = 0.0;  // (layers: the paint layers)
     for (size_t i = 0; i < stamps_.size(); ++i) {
         const TerrainStamp& s = stamps_[i];
         double w = 0.0;
@@ -1065,19 +1075,30 @@ glm::vec3 Terrain::biome_at(int face, double u, double v) const {
             case PaintLayer::Dry:
                 moisture -= moisture * w;
                 break;
-            case PaintLayer::Sand:
+            case PaintLayer::Sand:  // (over a paint layer: it goes)
                 ground += (-1.0 - ground) * w;
+                layers -= layers * w;
                 break;
             case PaintLayer::Rock:
                 ground += (1.0 - ground) * w;
+                layers -= layers * w;
+                break;
+            case PaintLayer::Paint1:  // (over sand or rock: they go)
+                layers += (1.0 - layers) * w;
+                ground -= ground * w;
+                break;
+            case PaintLayer::Paint2:
+                layers += (-1.0 - layers) * w;
+                ground -= ground * w;
                 break;
             case PaintLayer::Clear:
                 moisture += (natural - moisture) * w;
                 ground -= ground * w;
+                layers -= layers * w;
                 break;
         }
     }
-    return {float(moisture), float(std::clamp(detail, -1.0, 1.0)), float(ground)};
+    return {float(moisture), float(std::clamp(detail, -1.0, 1.0)), float(ground), float(layers)};
 }
 
 bool Terrain::flipped(const ChunkKey& k) const {
