@@ -40,6 +40,8 @@ struct CompassMark {
 struct MapMarkRow {
     Rml::String kind, label;
     float left = 0.0f, top = 0.0f;  // % of the minimap
+    float dy = 0.0f;                // the label moved down (dp), clear of the others' (full map)
+    bool flip = false;              // its label on its left (near the full map's right edge)
     bool operator==(const MapMarkRow&) const = default;
 };
 
@@ -106,6 +108,13 @@ struct Hud::Impl {
     Rml::Vector<CompassMark> marks = compass_marks();
     Rml::Vector<MapMarkRow> map_marks;
     std::uint64_t ground_version = ~std::uint64_t(0);
+    // The full map.
+    bool bigmap = false, bigmap_ready = false, bigmap_ground = false;
+    float bigmap_left = 0.0f, bigmap_top = 0.0f, bigmap_width = 100.0f, bigmap_height = 100.0f,
+          bigmap_player_left = 50.0f, bigmap_player_top = 50.0f, bigmap_arrow = 0.0f;
+    Rml::Vector<MapMarkRow> bigmap_marks;
+    Rml::String bigmap_hint;
+    std::uint64_t worldmap_version = ~std::uint64_t(0);
 
     explicit Impl(Ui& u) : ui(u) {}
 
@@ -155,6 +164,8 @@ Hud::Hud(Ui& ui) : impl_(std::make_unique<Impl>(ui)) {
         s.RegisterMember("label", &MapMarkRow::label);
         s.RegisterMember("left", &MapMarkRow::left);
         s.RegisterMember("top", &MapMarkRow::top);
+        s.RegisterMember("dy", &MapMarkRow::dy);
+        s.RegisterMember("flip", &MapMarkRow::flip);
     }
     model.RegisterArray<Rml::Vector<CompassMark>>();
     model.RegisterArray<Rml::Vector<MapMarkRow>>();
@@ -168,6 +179,18 @@ Hud::Hud(Ui& ui) : impl_(std::make_unique<Impl>(ui)) {
     model.Bind("ground_top", &h.ground_top);
     model.Bind("ground_width", &h.ground_width);
     model.Bind("map_marks", &h.map_marks);
+    model.Bind("bigmap", &h.bigmap);
+    model.Bind("bigmap_ready", &h.bigmap_ready);
+    model.Bind("bigmap_ground", &h.bigmap_ground);
+    model.Bind("bigmap_left", &h.bigmap_left);
+    model.Bind("bigmap_top", &h.bigmap_top);
+    model.Bind("bigmap_width", &h.bigmap_width);
+    model.Bind("bigmap_height", &h.bigmap_height);
+    model.Bind("bigmap_marks", &h.bigmap_marks);
+    model.Bind("bigmap_player_left", &h.bigmap_player_left);
+    model.Bind("bigmap_player_top", &h.bigmap_player_top);
+    model.Bind("bigmap_arrow", &h.bigmap_arrow);
+    model.Bind("bigmap_hint", &h.bigmap_hint);
     model.Bind("visible", &h.visible);
     model.Bind("touch", &h.touch);
     model.Bind("crosshair", &h.crosshair);
@@ -270,6 +293,80 @@ void Hud::show(const HudData& data) {
                             float(50.0 - k.north / r * 50.0)});
         h.set(h.map_marks, std::move(rows), "map_marks");
     }
+
+    // The full map: its picture (loaded again only when the game made it again), fitted in
+    // its panel in its own proportions, and the marks and the player on it.
+    const HudData::WorldMap& w = data.world_map;
+    h.set(h.bigmap, w.shown, "bigmap");
+    if (!w.shown) return;
+    const bool picture = w.ground && w.width > 0 && w.height > 0 && !w.ground->empty();
+    if (picture && w.version != h.worldmap_version) {
+        h.ui.set_image("worldmap", uint32_t(w.width), uint32_t(w.height), *w.ground);
+        h.worldmap_version = w.version;
+    }
+    h.set(h.bigmap_ready, w.ready, "bigmap_ready");
+    h.set(h.bigmap_ground, picture, "bigmap_ground");
+    // The panel's room for it (as laid out; before then, 3/4 of the window less its title).
+    float room_w = 0.0f, room_h = 0.0f;
+    if (h.document)
+        if (Rml::Element* area = h.document->GetElementById("bigmap-area")) {
+            const Rml::Vector2f size = area->GetBox().GetSize(Rml::BoxArea::Content);
+            room_w = size.x;
+            room_h = size.y;
+        }
+    if (room_w <= 1.0f || room_h <= 1.0f) {
+        const Rml::Vector2i window = h.ui.context()->GetDimensions();
+        const float dp = h.ui.context()->GetDensityIndependentPixelRatio();
+        room_w = std::max(1.0f, float(window.x) * 0.75f - 24.0f * dp);
+        room_h = std::max(1.0f, float(window.y) * 0.75f - 48.0f * dp);
+    }
+    const float room = room_w / room_h;
+    const float aspect = float(w.aspect > 0.0 ? w.aspect : 1.0);
+    float width = 100.0f, height = 100.0f;
+    if (aspect > room)
+        height = room / aspect * 100.0f;  // wider than the room: full width
+    else
+        width = aspect / room * 100.0f;  // taller: full height
+    const auto tenth = [](float v) { return std::round(v * 10.0f) / 10.0f; };
+    h.set(h.bigmap_width, tenth(width), "bigmap_width");
+    h.set(h.bigmap_height, tenth(height), "bigmap_height");
+    h.set(h.bigmap_left, tenth((100.0f - width) / 2.0f), "bigmap_left");
+    h.set(h.bigmap_top, tenth((100.0f - height) / 2.0f), "bigmap_top");
+    h.set(h.bigmap_player_left, tenth(float(w.player_x * 100.0)), "bigmap_player_left");
+    h.set(h.bigmap_player_top, tenth(float(w.player_y * 100.0)), "bigmap_player_top");
+    h.set(h.bigmap_arrow, std::round(float(w.heading) * 2.0f) / 2.0f, "bigmap_arrow");
+    // The marks, their labels moved a line up or down where they would overlap (doors side
+    // by side): each label's box guessed from its length, in dp.
+    const float dp = std::max(h.ui.context()->GetDensityIndependentPixelRatio(), 0.01f);
+    const float box_w = room_w * width / 100.0f / dp, box_h = room_h * height / 100.0f / dp;
+    struct Box {
+        float x0, y0, x1, y1;
+    };
+    std::vector<Box> taken;
+    Rml::Vector<MapMarkRow> rows;
+    for (const HudData::WorldMap::Mark& k : w.marks) {
+        MapMarkRow row{k.kind, k.label, tenth(float(k.x * 100.0)), tenth(float(k.y * 100.0))};
+        if (!k.label.empty()) {
+            const float wide = 7.5f * float(k.label.size()) + 4.0f;
+            row.flip = float(k.x) * box_w + 16.0f + wide > box_w;
+            const float x = row.flip ? float(k.x) * box_w - 9.0f - wide : float(k.x) * box_w + 9.0f;
+            const float y = float(k.y) * box_h - 10.0f;
+            for (const int step : {0, 1, -1, 2, -2, 3, -3, 4, -4}) {
+                const Box b{x, y + 17.0f * float(step), x + wide, y + 17.0f * float(step) + 16.0f};
+                const bool clear = std::none_of(taken.begin(), taken.end(), [&](const Box& o) {
+                    return b.x0 < o.x1 && o.x0 < b.x1 && b.y0 < o.y1 && o.y0 < b.y1;
+                });
+                if (clear || step == -4) {
+                    row.dy = 17.0f * float(step);
+                    taken.push_back(b);
+                    break;
+                }
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    h.set(h.bigmap_marks, std::move(rows), "bigmap_marks");
+    h.set(h.bigmap_hint, Rml::String(w.hint), "bigmap_hint");
 }
 
 }  // namespace midgard::ui

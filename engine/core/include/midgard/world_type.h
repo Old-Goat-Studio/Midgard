@@ -105,6 +105,6 @@ const std::vector<SampleWorldType>& sample_world_types();
 // The world_hash of each sample's world, hashed together: kSampleWorldTypesFingerprint on every
 // target. The self-test checks it on devices.
 std::uint64_t sample_world_types_fingerprint();
-inline constexpr std::uint64_t kSampleWorldTypesFingerprint = 0x516da30c1ea420fcULL;
+inline constexpr std::uint64_t kSampleWorldTypesFingerprint = 0xff9a7210eeb28d31ULL;
 
 }  // namespace midgard

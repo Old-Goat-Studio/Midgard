@@ -16,6 +16,13 @@
 //   ground_left, ground_top     where its ground picture (midgard://image/minimap) sits (%)
 //   ground_width                its width (and height), % of the minimap's
 //   map_marks                   {kind ("exit", "mark"), label, left, top (%)}
+//   bigmap, bigmap_ready        the full map shows (3/4 of the window); its picture is made
+//   bigmap_ground               it has a picture (midgard://image/worldmap; none: flat ground)
+//   bigmap_left, bigmap_top,    where the map sits in its panel, in its own proportions (%)
+//   bigmap_width, bigmap_height
+//   bigmap_marks                {kind, label, left, top (% of the map)}
+//   bigmap_player_left/top      the player (% of the map); bigmap_arrow, their heading
+//   bigmap_hint                 how to close it ("M or Esc to close")
 #pragma once
 
 #include <cstdint>
@@ -80,6 +87,27 @@ struct HudData {
         std::vector<Mark> marks;
     };
     Map map;
+    // The full map (the "map" action): the whole world, north up, with the player and marks
+    // as shares of its width and height (0 to 1, from the top left).
+    struct WorldMap {
+        bool shown = false;
+        bool ready = false;  // its picture is made (else "Drawing the map...")
+        // Its picture (none: flat ground, the marks alone): width x height RGBA8 pixels;
+        // `version` changes when it does.
+        const std::vector<uint8_t>* ground = nullptr;
+        int width = 0, height = 0;
+        std::uint64_t version = 0;
+        double aspect = 1.0;  // width over height
+        double player_x = 0.5, player_y = 0.5;
+        double heading = 0.0;  // degrees clockwise from the map's top
+        struct Mark {
+            std::string kind, label;  // kind: "exit" or "mark"
+            double x = 0.5, y = 0.5;
+        };
+        std::vector<Mark> marks;
+        std::string hint;  // how to close it
+    };
+    WorldMap world_map;
 };
 
 // A timer's seconds as the HUD writes them: "0:07", "1:05", "1:02:03".

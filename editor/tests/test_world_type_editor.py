@@ -12,6 +12,7 @@ from PySide6.QtCore import QPointF
 from midgard_editor import engine, world_types
 from midgard_editor.docks.world_type_editor import (
     MAP_BOX,
+    PLACEMENT_COLUMNS,
     SPECS,
     WorldTypePanel,
     classic_graph,
@@ -492,3 +493,110 @@ def test_the_graph_zooms_and_fits_without_shrinking_past_reading(panel, qtbot):
     assert view.zoom() == pytest.approx(1.25)
     qtbot.keyClick(view, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
     assert view.zoom() == 1.0
+
+
+def test_a_placement_rule_places_a_model_from_the_asset_library(panel, project, tmp_path):
+    """Choosing a library model (previewed in the picker) makes it one of the project's objects
+    and the rule's; the table shows its name; the cook packs it and the viewports get it."""
+    from midgard_editor import asset_library as lib
+    from midgard_editor import meshes
+    from midgard_editor.cook import cook
+    model = tmp_path / "Pine Tree.glb"
+    model.write_bytes(meshes.to_glb(meshes.cube()))
+    asset = lib.import_asset(project, [model], "models", "Pine Tree")
+    picker = panel.library_picker()
+    names = [panel_item.text() for panel_item in
+             (picker.list.item(i) for i in range(picker.list.count()))]
+    assert any("Pine Tree" in n for n in names)  # (offered, with its preview beside)
+    file = next(p for a, p in picker.choices if a.name == asset.name)
+    object_id = panel.object_from_library(file)
+    obj = project.object(object_id)
+    assert obj is not None and obj.source.endswith(".glb")
+    assert panel.object_from_library(file) == object_id  # (the same model: the same object)
+    panel.add_rule(object_id)
+    assert latest(project)["terrain"]["placements"][0]["object"] == object_id
+    assert panel.placements.item(0, 0).text() == obj.name  # (by name, not typed)
+    # Another object for the rule.
+    other = panel.object_from_library(model)
+    panel.set_rule_object(0, other)
+    assert latest(project)["terrain"]["placements"][0]["object"] == other
+    panel.set_rule_object(0, object_id)
+    # Placed objects are the game's too: a scene made with this world type cooks the object.
+    settings = project.scene_settings()
+    settings["body"] = {"id": "world", "shape": "bounded_area", "width": 2000,
+                        "length": 2000, "gravity": 9.81, "origin": [0.0, 0.0, 0.0]}
+    settings["terrain"] = {"world_type": panel.world_type, "version":
+                           world_types.load_all(project)[0]["version"], "seed": 1}
+    project.set_scene_settings(settings)
+    assert ("World type 'Hills'", object_id) in world_types.used_placement_objects(project)
+    import sqlite3
+    out = cook(project, tmp_path / "pkg").out_dir
+    con = sqlite3.connect(out / f"{project.name}.db")
+    try:
+        parts = con.execute("SELECT parts FROM object WHERE id = ?", (object_id,)).fetchone()
+    finally:
+        con.close()
+    assert parts and json.loads(parts[0])  # (its parts, made from the model, for the game)
+
+
+def test_add_rule_and_choose_object_drop_down_their_own_menus(panel, project):
+    """Add Rule and Choose Object are buttons with menus of their own (dropping down from
+    them): a model from the Asset Library first, then the project's objects."""
+    from midgard_editor.objects import ObjectDef
+    from midgard_editor.undo import AddObjectCommand
+    project.undo_stack.push(AddObjectCommand(project, ObjectDef("obj_rock", "Rock", "", {}, [])))
+    for button, menu in ((panel.add_rule_button, panel.add_rule_menu),
+                         (panel.choose_object_button, panel.choose_object_menu)):
+        assert button.menu() is menu
+        menu.aboutToShow.emit()
+        texts = [a.text() for a in menu.actions() if not a.isSeparator() and a.text()]
+        assert texts[0] == "Model from the Asset Library…"
+        assert "Rock" in texts
+    # Choosing Rock from Add Rule's menu adds a rule placing it.
+    panel.add_rule_menu.aboutToShow.emit()
+    next(a for a in panel.add_rule_menu.actions() if a.text() == "Rock").trigger()
+    assert latest(project)["terrain"]["placements"][0]["object"] == "obj_rock"
+    assert panel.placements.item(0, 0).text() == "Rock"
+
+
+def test_the_3d_view_is_drawn_in_the_background(panel, project, qtbot):
+    """A change doesn't wait for the 3D view: it comes when drawn (the editor goes on)."""
+    if engine.module() is None:
+        pytest.skip("needs the engine module")
+    panel.view_image.clear()
+    panel.update_preview()
+    qtbot.waitUntil(lambda: panel.view_image.pixmap() is not None and
+                    not panel.view_image.pixmap().isNull() or
+                    panel.view_image.text().startswith("No view"), timeout=60000)
+    if panel.view_image.text().startswith("No view"):
+        pytest.skip(panel.view_image.text())
+    assert panel.view_image.pixmap().width() > 0
+
+
+def test_a_rule_sets_its_objects_into_the_ground_by_a_share_of_their_height(panel, project):
+    """Sink %: that share of the object's height into the ground (the metres worked out from the
+    object, for the engine); none: as before."""
+    from PySide6.QtWidgets import QTableWidgetItem
+
+    from midgard_editor.objects import ObjectDef
+    from midgard_editor.undo import AddObjectCommand
+    post = ObjectDef("obj_post", "Post", "", {}, [{"name": "post", "components": {
+        "transform": {"position": [0, 1, 0], "scale": [0.5, 2, 0.5]},
+        "mesh": {"asset": "builtin:cube"}}}])
+    project.undo_stack.push(AddObjectCommand(project, post))
+    assert panel.object_height("obj_post") == 2.0
+    panel.add_rule("obj_post")
+    rule = latest(project)["terrain"]["placements"][0]
+    assert "sink" not in rule and "sink_depth" not in rule
+    sink = PLACEMENT_COLUMNS.index("Sink %")
+    panel.placements.setItem(0, sink, QTableWidgetItem("25"))
+    rule = latest(project)["terrain"]["placements"][0]
+    assert rule["sink"] == 25 and rule["sink_depth"] == 0.5
+    panel.placements.setItem(0, sink, QTableWidgetItem("150"))  # (at most all of it)
+    assert latest(project)["terrain"]["placements"][0]["sink"] == 100
+    # The engine reads it (and finds nothing wrong).
+    m = engine.module()
+    if m is not None:
+        problems = m.recipe_problems(json.dumps(latest(project)), json.dumps(
+            {"id": "a", "shape": "bounded_area", "width": 2000, "length": 2000, "seed": 1}))
+        assert not any("ground" in p for p in problems), problems

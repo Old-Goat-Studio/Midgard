@@ -8,12 +8,15 @@ Every edit is one undoable step, saved over the world type's latest version, or 
 version once that one has shipped. The preview is the engine's own: a map of the whole world and
 a view of its ground for any seed, on any shape and size it suits, with the ground's cost and
 what the cook would say."""
+import contextlib
 import copy
 import json
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -78,6 +81,7 @@ SHAPE_KEYS = ["bounded_area", "flat_cylinder", "curved_cylinder", "sphere_outsid
 # The recipe's ground settings shown (the hills' own come from the graph).
 GROUND_FIELDS = {"sea_level": ("Sea level", -2000, 2000, 0, " m"),
                  "snow_line": ("Snow line (no climate)", -2000, 5000, 90, " m"),
+                 "beach": ("Beach (a gentle shore)", 0, 500, 0, " m"),
                  "ocean_band": ("Ocean round an area", 0, 50_000, 300, " m"),
                  "ocean_depth": ("Ocean depth", 0, 5000, 30, " m"),
                  "end_ramp": ("Rising to a cylinder's ends", 0, 20_000, 150, " m"),
@@ -93,7 +97,7 @@ PROJECTIONS = {"top_down": "From above", "unrolled": "Unrolled",
                "equirectangular": "Latitude and longitude", "cube_faces": "Cube faces"}
 VIEW_SIZE = (320, 180)
 PLACEMENT_COLUMNS = ["Object", "Spacing", "Chance", "Slope from", "to", "Height from", "to",
-                     "Biomes", "Size from", "to", "Lean", "Distance"]
+                     "Biomes", "Size from", "to", "Lean", "Distance", "Sink %"]
 
 
 # ---- the graph: the engine's JSON and the widget's ------------------------------------------
@@ -209,11 +213,33 @@ class _GraphSaver:
         self.panel._graph_edited(command.text(), command.moved)
 
 
+class _Calls:
+    """What would be sent to an engine view, kept to send it later (from the thread drawing
+    the view): set_texture, set_mesh, set_object."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, tuple]] = []
+
+    def __getattr__(self, name: str):
+        return lambda *args: self.calls.append((name, args))
+
+
 class WorldTypePanel(QWidget):
     """The World Types dock."""
 
+    # A view of the ground drawn in the background: its picture (or why not) and which.
+    view_drawn = Signal(object, int)
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
+        # The 3D view is drawn in the background (a big world takes a moment: the editor goes
+        # on meanwhile); one at a time, the latest settings next.
+        self._view_lock = threading.Lock()
+        self._view_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="world_view")
+        self._view_busy = False
+        self._view_next: dict | None = None
+        self._view_count = 0
+        self.view_drawn.connect(self._view_ready)
         self.project = None
         self.world_type: str | None = None
         self.recipe: dict[str, Any] = {}
@@ -364,12 +390,33 @@ class WorldTypePanel(QWidget):
         self.placements = QTableWidget(0, len(PLACEMENT_COLUMNS))
         self.placements.setHorizontalHeaderLabels(PLACEMENT_COLUMNS)
         self.placements.itemChanged.connect(lambda _item: self._placements_changed())
+        # (the object: chosen, not typed; double-click it to choose another)
+        self.placements.cellDoubleClicked.connect(
+            lambda r, c: self.choose_object(r) if c == 0 else None)
         placements_layout.addWidget(self.placements, 1)
         row = QHBoxLayout()
-        for text, slot in (("Add Rule", self.add_rule), ("Remove Rule", self.remove_rule)):
-            b = QPushButton(text)
-            b.clicked.connect(lambda _=False, s=slot: s())
-            row.addWidget(b)
+        # Add Rule and Choose Object: a menu dropping down from each (a model from the Asset
+        # Library, or one of the project's objects).
+        self.add_rule_button = QPushButton("Add Rule")
+        self.add_rule_button.setToolTip("A new rule: choose what it places (a model from the "
+                                        "Asset Library, or one of your objects)")
+        self.add_rule_menu = QMenu(self.add_rule_button)
+        self.add_rule_menu.aboutToShow.connect(
+            lambda: self._fill_object_menu(self.add_rule_menu, self.add_rule))
+        self.add_rule_button.setMenu(self.add_rule_menu)
+        row.addWidget(self.add_rule_button)
+        self.choose_object_button = QPushButton("Choose Object")
+        self.choose_object_button.setToolTip("What the selected rule places")
+        self.choose_object_menu = QMenu(self.choose_object_button)
+        self.choose_object_menu.aboutToShow.connect(lambda: self._fill_object_menu(
+            self.choose_object_menu,
+            lambda object_id: self.set_rule_object(self.placements.currentRow(), object_id)))
+        self.choose_object_button.setMenu(self.choose_object_menu)
+        row.addWidget(self.choose_object_button)
+        remove = QPushButton("Remove Rule")
+        remove.setToolTip("Take the selected rule out")
+        remove.clicked.connect(lambda _=False: self.remove_rule())
+        row.addWidget(remove)
         row.addStretch(1)
         placements_layout.addLayout(row)
         self.tabs.addTab(placements, "Placements")
@@ -980,10 +1027,36 @@ class WorldTypePanel(QWidget):
         scale = rule.get("scale", [1, 1])
         values = [rule.get("object", ""), rule.get("spacing", 8), rule.get("chance", 1),
                   slope[0], slope[1], height[0], height[1], ", ".join(rule.get("biomes", [])),
-                  scale[0], scale[1], rule.get("align", 0), rule.get("distance", 200)]
+                  scale[0], scale[1], rule.get("align", 0), rule.get("distance", 200),
+                  rule.get("sink", 0)]
         for col, value in enumerate(values):
             self.placements.setItem(row, col, QTableWidgetItem(f"{value:g}" if isinstance(
                 value, float) else str(value)))
+        self._show_object(row, rule.get("object", ""))
+
+    def object_height(self, object_id: str) -> float:
+        """How tall an object is (metres, at size 1, from the bottom of what it takes up to the
+        top): what a rule's Sink % is a share of. 0 for one that can't be read."""
+        from ..objects import ObjectError, object_content
+        obj = self.project.object(object_id) if self.project is not None else None
+        if obj is None:
+            return 0.0
+        try:
+            bounds = object_content(self.project, obj).bounds
+        except ObjectError:
+            return 0.0
+        return max(float(bounds[4]) - float(bounds[1]), 0.0)
+
+    def _show_object(self, row: int, object_id: str) -> None:
+        """The rule's object by name (its id kept with it), chosen rather than typed."""
+        obj = self.project.object(object_id) if self.project is not None and object_id else None
+        item = QTableWidgetItem(obj.name if obj else f"{object_id or '(none)'} (missing)")
+        item.setData(Qt.ItemDataRole.UserRole, object_id)
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item.setToolTip("Double-click (or Choose Object…) to choose what this rule places")
+        was = self.placements.blockSignals(True)
+        self.placements.setItem(row, 0, item)
+        self.placements.blockSignals(was)
 
     def _placements_changed(self) -> None:
         if self._loading:
@@ -993,10 +1066,16 @@ class WorldTypePanel(QWidget):
             for row in range(self.placements.rowCount()):
                 cells = [self.placements.item(row, c).text()
                          for c in range(len(PLACEMENT_COLUMNS))]
+                cells[0] = self.placements.item(row, 0).data(Qt.ItemDataRole.UserRole) or ""
+
                 num = [0.0 if c in (0, 7) else float(text) for c, text in enumerate(cells)]
                 rule = {"object": cells[0], "spacing": num[1], "chance": num[2],
                         "slope": [num[3], num[4]], "height": [num[5], num[6]],
                         "scale": [num[8], num[9]], "align": num[10], "distance": num[11]}
+                if num[12]:  # set into the ground: that share of the object's height
+                    sink = min(max(num[12], 0.0), 100.0)
+                    rule["sink"] = sink
+                    rule["sink_depth"] = round(sink / 100.0 * self.object_height(cells[0]), 4)
                 biomes = [b.strip() for b in cells[7].split(",") if b.strip()]
                 if biomes:
                     rule["biomes"] = biomes
@@ -1011,14 +1090,76 @@ class WorldTypePanel(QWidget):
         self.save({**self.recipe, "terrain": ground}, "Change the placements")
 
     def add_rule(self, object_id: str | None = None) -> None:
-        if object_id is None and self.project is not None:
-            ids = [o["id"] for o in self.project.objects()] if hasattr(self.project,
-                                                                        "objects") else []
-            object_id = ids[0] if ids else "obj_"
+        """A new rule placing `object_id` (none given: Add Rule's menu, to choose it)."""
+        if self.project is None:
+            return
+        if not object_id:
+            self.add_rule_button.showMenu()
+            return
         self.placements.blockSignals(True)
-        self._rule_row({"object": object_id or "obj_"})
+        self._rule_row({"object": object_id})
         self.placements.blockSignals(False)
+        self.placements.setCurrentCell(self.placements.rowCount() - 1, 0)
         self._placements_changed()
+
+    def choose_object(self, row: int) -> None:
+        """Another object for the rule in `row` (a double-click on its object): the menu of
+        objects, under the cell."""
+        if self.project is None or not 0 <= row < self.placements.rowCount():
+            return
+        self.placements.setCurrentCell(row, 0)
+        menu = QMenu(self)
+        self._fill_object_menu(menu, lambda object_id: self.set_rule_object(row, object_id))
+        rect = self.placements.visualItemRect(self.placements.item(row, 0))
+        menu.popup(self.placements.viewport().mapToGlobal(rect.bottomLeft()))
+
+    def set_rule_object(self, row: int, object_id: str) -> None:
+        if not 0 <= row < self.placements.rowCount() or not object_id:
+            return
+        self._show_object(row, object_id)
+        self._placements_changed()
+
+    def _fill_object_menu(self, menu: QMenu, chosen) -> None:
+        """What a rule can place: a model from the Asset Library (each previewed as it is
+        picked; it becomes one of the project's objects), or one of the project's objects.
+        `chosen` is told the object's id."""
+        menu.clear()
+        if self.project is None:
+            return
+        menu.addAction("Model from the Asset Library…",
+                       lambda: self._object_from_picker(chosen))
+        objects = sorted(self.project.objects(), key=lambda o: o.name.lower())
+        if objects:
+            menu.addSection("Your objects")
+        for obj in objects:
+            menu.addAction(obj.name, lambda object_id=obj.id: chosen(object_id))
+
+    def _object_from_picker(self, chosen) -> None:
+        picker = self.library_picker()
+        if picker.exec() and picker.chosen is not None:
+            chosen(self.object_from_library(picker.chosen))
+
+    def library_picker(self):
+        from .. import asset_library
+        from .asset_window import LibraryPicker
+        return LibraryPicker(self.project, "A Model to Place from the Library",
+                             ("models", "objects"), asset_library.MODEL_SUFFIXES, self)
+
+    def object_from_library(self, file) -> str:
+        """A library model as one of the project's objects (copied into objects/, as the
+        Objects panel's Import does; the same model again is the same object). Its id."""
+        from pathlib import Path
+
+        from ..objects import copy_model, object_for_model
+        from ..undo import AddObjectCommand
+        relative = copy_model(Path(file), self.project.objects_dir)
+        objects = self.project.objects()
+        existing = next((o for o in objects if o.source == relative), None)
+        if existing is not None:
+            return existing.id
+        obj = object_for_model(objects, relative)
+        self.project.undo_stack.push(AddObjectCommand(self.project, obj))
+        return obj.id
 
     def remove_rule(self) -> None:
         row = self.placements.currentRow()
@@ -1039,7 +1180,7 @@ class WorldTypePanel(QWidget):
                 return None
         world_type = world_types.new_id(self.project, name)
         if recipe is None:
-            recipe = {"terrain": {}, "graph": classic_graph({})}
+            recipe = {"terrain": {"beach": 30}, "graph": classic_graph({})}
         self.project.undo_stack.push(world_types.SaveRecipeCommand(
             self.project, world_type, copy.deepcopy(recipe), name.strip()))
         self._reload(keep=world_type)
@@ -1163,7 +1304,7 @@ class WorldTypePanel(QWidget):
         except (ValueError, RuntimeError) as e:
             self.problems.addItem(str(e))
             return
-        self.render_view(settings)
+        self.render_view_later(settings)
 
     def save_map(self, path: str, long_side: int) -> bool:
         """The preview's world's map as an image file (PNG by its name), its longer side
@@ -1189,18 +1330,72 @@ class WorldTypePanel(QWidget):
 
     def render_view(self, settings: dict) -> None:
         """A view of the ground at the scene's origin from above, through the engine's own
-        renderer (the game's look)."""
+        renderer (the game's look), drawn now."""
+        try:
+            image = self.draw_view(self._view_content(settings), settings)
+        except RuntimeError as e:  # no Vulkan driver
+            self.view_image.setText(f"No view: {e}")
+            return
+        self.view_image.setPixmap(QPixmap.fromImage(image))
+
+    def render_view_later(self, settings: dict) -> None:
+        """The view drawn in the background; shown when it's ready (the one before it stays
+        till then). Asked again meanwhile: the latest is drawn next."""
+        self._view_next = settings
+        if not self._view_busy:
+            self._start_view()
+
+    def _start_view(self) -> None:
+        settings, self._view_next = self._view_next, None
+        if settings is None:
+            return
+        self._view_busy = True
+        self._view_count += 1
+        count = self._view_count
+        calls = self._view_content(settings)  # (read here: the project is the editor's)
+
+        def done(future) -> None:  # (in the drawing thread)
+            with contextlib.suppress(RuntimeError):  # (the panel may have gone)
+                self.view_drawn.emit(future, count)
+
+        self._view_pool.submit(self.draw_view, calls, settings).add_done_callback(done)
+
+    def _view_ready(self, future, _count: int) -> None:
+        self._view_busy = False
+        try:
+            image = future.result()
+        except RuntimeError as e:  # no Vulkan driver
+            self.view_image.setText(f"No view: {e}")
+        else:
+            if self._view_next is None:  # (else a newer one is drawn next)
+                self.view_image.setPixmap(QPixmap.fromImage(image))
+        self._start_view()
+
+    def _view_content(self, settings: dict) -> list[tuple[str, tuple]]:
+        """What the view needs for these settings that it hasn't had: the objects placement
+        rules place, the ground's textures (read here, sent where the view is drawn)."""
+        if not hasattr(self, "_view_sent"):
+            self._view_sent: dict[str, int] = {}
+        calls = _Calls()
+        if self.project is not None:
+            world_types.send_placement_objects(calls, self.project, settings, self._view_sent)
+            world_types.send_ground_textures(calls, self.project, settings, self._view_sent)
+        return calls.calls
+
+    def draw_view(self, calls: list[tuple[str, tuple]], settings: dict) -> QImage:
+        """The view's picture (in any thread, one at a time). RuntimeError without Vulkan."""
         midgard = engine.module()
         width, height = VIEW_SIZE
-        try:
+        with self._view_lock:
             if self._view is None:
-                self._view = midgard.Viewport()
-                self._view.attach_offscreen(width, height)
-                self._view_sent: dict[str, int] = {}
+                view = midgard.Viewport()
+                view.attach_offscreen(width, height)  # (RuntimeError without Vulkan)
+                self._view = view
+            for name, args in calls:
+                if name in ("set_mesh", "set_texture", "set_object"):
+                    with contextlib.suppress(RuntimeError):  # (drawn without it)
+                        getattr(self._view, name)(*args)
             self._view.set_settings(json.dumps(settings))
-            if self.project is not None:  # (the ground's textures, 6.0b)
-                world_types.send_ground_textures(self._view, self.project, settings,
-                                                 self._view_sent)
             ground = self._view.terrain_ground([0.0, 0.0, 0.0])
             base, up = (list(ground[1]), list(ground[2])) if ground else ([0.0] * 3, [0, 1, 0])
             base[1] = max(base[1], settings["terrain"].get("sea_level", 0.0))
@@ -1208,13 +1403,12 @@ class WorldTypePanel(QWidget):
             # Looking along +X and down a little (the shapes' surfaces run along X there).
             target = [eye[0] + 400.0, eye[1] - 120.0, eye[2] + 150.0]
             self._view.set_camera(eye, target, 60.0)
-            self._view.render()
+            # (placed objects join the view as a frame is drawn and show on the next, a few
+            # tiles at a time: with placement rules, a few frames)
+            for _ in range(4 if settings["terrain"].get("placements") else 1):
+                self._view.render()
             pixels = self._view.read_pixels()
-            image = QImage(pixels, width, height, QImage.Format.Format_RGBA8888).copy()
-            self.view_image.setPixmap(QPixmap.fromImage(image))
-        except RuntimeError as e:  # no Vulkan driver
-            self._view = None
-            self.view_image.setText(f"No view: {e}")
+            return QImage(pixels, width, height, QImage.Format.Format_RGBA8888).copy()
 
 def _spin(low: float, high: float, value: float, suffix: str) -> QDoubleSpinBox:
     box = QDoubleSpinBox()

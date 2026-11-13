@@ -257,6 +257,115 @@ TEST_CASE("terrain stamps match the shared table") {
     CHECK(checked == 30);
 }
 
+TEST_CASE("beaches match the shared table") {
+    std::ifstream in(fs::path(MIDGARD_SCHEMA_DIR) / "tests" / "terrain_beaches.json");
+    REQUIRE(in);
+    const json t = json::parse(in);
+    const midgard::TerrainSettings settings = midgard::terrain_from_json(t.at("settings"));
+    CHECK(settings.beach == 40.0);
+    int checked = 0;
+    for (const json& c : t.at("cases")) {
+        CAPTURE(c.dump());
+        json b = t.at("bodies").at(c.at("body").get<std::string>());
+        b["id"] = c.at("body");
+        const midgard::Terrain tr(midgard::body_from_json(b), settings);
+        if (c.contains("hash")) {
+            const json& k = c.at("key");
+            CHECK(hex(tr.chunk_hash({k[0].get<int>(), k[1].get<int>(), k[2].get<int>(),
+                                     k[3].get<int>()})) == c.at("hash").get<std::string>());
+        } else {
+            CHECK(tr.height(0, c.at("u").get<double>(), c.at("v").get<double>()) ==
+                  c.at("height").get<double>());
+        }
+        ++checked;
+    }
+    CHECK(checked == 36);
+}
+
+TEST_CASE("a beach: a gentle shelf where the ground meets the sea, however steep the land") {
+    const midgard::Body body = midgard::body_from_json(json::parse(
+        R"({"id": "a", "shape": "bounded_area", "width": 3000, "length": 2000, "seed": 7})"));
+    // How steep the ground is where it crosses the sea's level (sorted).
+    const auto shore_slopes = [&](const json& settings) {
+        const midgard::Terrain t(body, midgard::terrain_from_json(settings));
+        std::vector<double> out;
+        const double su = 1.0 / 3000.0, sv = 1.0 / 2000.0;  // a metre each way
+        for (int j = 0; j < 120; ++j)
+            for (int i = 0; i < 120; ++i) {
+                const double u = 0.1 + 0.8 * i / 120.0, v = 0.1 + 0.8 * j / 120.0;
+                if (std::abs(t.height(0, u, v)) > 0.5) continue;  // (only at the water's edge)
+                const double du = t.height(0, u + su, v) - t.height(0, u - su, v);
+                const double dv = t.height(0, u, v + sv) - t.height(0, u, v - sv);
+                out.push_back(std::sqrt(du * du + dv * dv) / 2.0);
+            }
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    const auto median = [](const std::vector<double>& v) { return v[v.size() / 2]; };
+    const auto most = [](const std::vector<double>& v) { return v[v.size() * 9 / 10]; };
+    // Rolling hills (80 m, 400 m across): from 1 in 3 at the water to under 1 in 14 (the
+    // shelf rises 1 in 16); and more ground near the water's level.
+    json hills = json::parse(R"({"base": 0, "height_scale": 80, "feature_size": 400,
+                                 "octaves": 5, "ocean_band": 100})");
+    const std::vector<double> before = shore_slopes(hills);
+    hills["beach"] = 40;
+    const std::vector<double> after = shore_slopes(hills);
+    REQUIRE(before.size() > 100);
+    CHECK(after.size() > 2 * before.size());
+    CHECK(median(before) > 0.3);
+    CHECK(median(after) < 0.07);
+    CHECK(most(after) < 0.16);  // (nine in ten under 1 in 6: no hollow is left to hold a pond)
+    // Steep, rough land (200 m hills 120 m across): still five times gentler at the water (the
+    // shelf shapes only the ground within 16 m of the sea's level).
+    json rough = json::parse(R"({"base": -5, "height_scale": 200, "feature_size": 120,
+                                 "octaves": 4, "ocean_band": 100})");
+    const double steep = median(shore_slopes(rough));
+    rough["beach"] = 40;
+    CHECK(median(shore_slopes(rough)) < steep / 5.0);
+    // Far from the sea, the land is as it was; and settings without a beach save as before.
+    const midgard::Terrain bare(body, midgard::terrain_from_json(json::parse(
+                                          R"({"base": 0, "height_scale": 80, "feature_size": 400,
+                                              "octaves": 5, "ocean_band": 100})")));
+    const midgard::Terrain beach(body, midgard::terrain_from_json(hills));
+    int far = 0;
+    for (int i = 0; i < 400; ++i) {
+        const double u = 0.1 + 0.04 * (i % 20), v = 0.1 + 0.04 * (i / 20);
+        if (std::abs(bare.base_height(0, u, v)) < 60.0) continue;
+        CHECK(beach.height(0, u, v) == bare.height(0, u, v));
+        ++far;
+    }
+    CHECK(far > 0);
+    // No ponds behind a beach: ground the world made above the sea stays above it.
+    int dry = 0, sunk = 0;
+    for (int j = 0; j < 150; ++j)
+        for (int i = 0; i < 150; ++i) {
+            const double u = 0.1 + 0.8 * i / 150.0, v = 0.1 + 0.8 * j / 150.0;
+            if (beach.generated_height(0, u, v) <= 0.0) continue;
+            ++dry;
+            if (beach.height(0, u, v) < 0.0) ++sunk;
+        }
+    CHECK(dry > 1000);
+    CHECK(sunk == 0);
+    // Gentle land near the sea (a flat meadow 2 m up) stays as it was: no beach is cut in it.
+    const midgard::Terrain meadow_bare(body, midgard::terrain_from_json(json::parse(
+                                                 R"({"base": 2, "height_scale": 1,
+                                                     "feature_size": 400, "ocean_band": 0})")));
+    const midgard::Terrain meadow(body, midgard::terrain_from_json(json::parse(
+                                            R"({"base": 2, "height_scale": 1, "feature_size": 400,
+                                                "ocean_band": 0, "beach": 40})")));
+    for (const double u : {0.3, 0.5, 0.7})
+        CHECK(meadow.height(0, u, 0.5) ==
+              doctest::Approx(meadow_bare.height(0, u, 0.5)).epsilon(0.02));
+    CHECK(midgard::terrain_to_json(beach.settings()).at("beach") == 40.0);
+    CHECK_FALSE(midgard::terrain_to_json(bare.settings()).contains("beach"));
+    // From 0 to 500 m.
+    midgard::TerrainSettings wrong = beach.settings();
+    wrong.beach = -1.0;
+    CHECK_FALSE(midgard::terrain_problems(wrong).empty());
+    wrong.beach = 501.0;
+    CHECK_FALSE(midgard::terrain_problems(wrong).empty());
+}
+
 TEST_CASE("sculpting: raise, lower, flatten, smooth and paint, and the strokes' reach") {
     const midgard::Terrain plain = area();
     const auto with = [&](const char* text) {

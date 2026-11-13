@@ -125,12 +125,13 @@ void PlacedObjects::update(Scene& scene, const glm::dvec3& around, int max_tiles
                 glm::angleAxis(float(glm::radians(p.yaw)), glm::vec3(0.0f, 1.0f, 0.0f));
             const glm::vec3 rotation = euler_degrees(lean * turn);
             const float scale = float(p.scale);
-            const nlohmann::json components = {
-                {"transform",
-                 {{"position", {p.position.x, p.position.y, p.position.z}},
-                  {"rotation", {rotation.x, rotation.y, rotation.z}},
-                  {"scale", {scale, scale, scale}}}},
-                {"object", {{"id", rule.object}}}};
+            // (set into the ground by the rule's depth at its size, along its up)
+            const glm::dvec3 at = p.position - p.up * (rule.sink_depth * p.scale);
+            const nlohmann::json components = {{"transform",
+                                                {{"position", {at.x, at.y, at.z}},
+                                                 {"rotation", {rotation.x, rotation.y, rotation.z}},
+                                                 {"scale", {scale, scale, scale}}}},
+                                               {"object", {{"id", rule.object}}}};
             const std::string id = tile_name(k.face, k.level, k.x, k.y) + std::to_string(i);
             const entt::entity e = scene.put_entity(id, rule.object, "", components);
             ids.push_back(id);

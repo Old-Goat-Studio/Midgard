@@ -168,6 +168,13 @@ class ProjectPage(QScrollArea):
         self.pointer.setToolTip("The mouse pointer over menus (from the GUI section; its tip is "
                                 "the picture's top left corner, best 32 x 32). Without one, the "
                                 "system's")
+        self.window_mode = QComboBox()
+        self.window_mode.addItem("In a window", "windowed")
+        self.window_mode.addItem("Full screen", "fullscreen")
+        self.window_mode.setToolTip("How the game starts on a computer (phones are always full "
+                                    "screen). Players switch with F11 or Alt+Enter")
+        self.window_mode.activated.connect(
+            lambda _i: self._set_game("window", self.window_mode.currentData()))
         self.menu_music = FreshComboBox(self.show_game_settings)
         self.menu_music.setToolTip("A playlist (the Audio panel's) that plays while a menu shows, "
                                    "over the scene's music; a screen can keep it off")
@@ -183,6 +190,7 @@ class ProjectPage(QScrollArea):
         screens.addRow("Crosshair size", self.crosshair_size)
         screens.addRow("Menu pointer", self.pointer)
         screens.addRow("Menu music", self.menu_music)
+        screens.addRow("Starts", self.window_mode)
         layout = QVBoxLayout(body)
         layout.addWidget(self.heading)
         layout.addLayout(form)
@@ -268,13 +276,15 @@ class ProjectPage(QScrollArea):
         self.crosshair_views.setCurrentIndex(max(0, self.crosshair_views.findData(
             settings.get("crosshair_views", "first"))))
         self.crosshair_size.setValue(int(settings.get("crosshair_size", 32)))
+        self.window_mode.setCurrentIndex(max(0, self.window_mode.findData(
+            settings.get("window", "windowed"))))
 
     def _set_game(self, key: str, value) -> None:
         """One of the game's screen settings: one undo step."""
         if self.project is None:
             return
         settings = menus.game_settings(self.project)
-        defaults = {"crosshair_views": "first", "crosshair_size": 32}
+        defaults = {"crosshair_views": "first", "crosshair_size": 32, "window": "windowed"}
         if value in ("", None) or defaults.get(key) == value:
             if key not in settings:
                 return
@@ -285,7 +295,7 @@ class ProjectPage(QScrollArea):
             settings[key] = value
         names = {"crosshair": "crosshair", "pointer": "menu pointer",
                  "menu_music": "menu music", "crosshair_views": "when the crosshair shows",
-                 "crosshair_size": "crosshair size"}
+                 "crosshair_size": "crosshair size", "window": "window"}
         self.project.undo_stack.push(menus.SetGameSettingsCommand(
             self.project, settings, f"Set the {names[key]}"))
 

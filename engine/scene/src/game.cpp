@@ -18,6 +18,7 @@
 #include "midgard/gltf.h"
 #include "midgard/survival.h"
 #include "midgard/terrain_collision.h"
+#include "midgard/world_map.h"
 #include "midgard/world_surface.h"
 
 namespace midgard {
@@ -157,6 +158,12 @@ void Game::use_world(const std::filesystem::path& folder) {
     }
     if (const auto s = world_->value("stats"))  // (the player's stats as they left them)
         stats_.restore(nlohmann::json::parse(*s, nullptr, false));
+    if (const auto p = world_->value("portals")) {  // (the names the player gave portals)
+        const nlohmann::json j = nlohmann::json::parse(*p, nullptr, false);
+        if (j.is_object())
+            for (const auto& [id, name] : j.items())
+                if (name.is_string()) portal_names_[id] = name.get<std::string>();
+    }
     // The scene it starts in, as the player left it (before it is left for theirs, below:
     // what it remembers is then this), with their player.
     if (const auto room = rooms_.find(scene_.id);
@@ -211,6 +218,7 @@ void Game::save_world() {
     }
     state["weather"] = weather.dump();
     state["stats"] = stats_.save().dump();
+    state["portals"] = nlohmann::json(portal_names_).dump();
     world_->save_values(state);
     const entt::entity player = camera_->player();
     if (player != entt::null && scene_.registry.valid(player)) {
@@ -252,7 +260,7 @@ std::string Game::input_context() const {
 }
 
 bool Game::frozen() const {
-    if (frozen_) return true;
+    if (frozen_ || !portal_open_.empty()) return true;
     for (const std::string& id : hud_.screens())
         if (const ScreenDef* s = screen(id); s && s->pauses) return true;
     return false;
@@ -282,6 +290,9 @@ void Game::update(const Actions& actions, float dt) {
     camera_->follow(scene_, dt, camera_sweep());
     update_triggers();
     update_exits(actions);
+    if (actions.pressed("map") && !frozen() && !change_) set_world_map_open(!world_map_open_);
+    if (actions.pressed("use") && !frozen() && !change_)
+        if (const std::string here = portal_here(); !here.empty()) open_portal(here);
     load_characters();  // (new ones from live edits; read once each)
     characters_.set_player(physics_->player());
     if (const physics::Character* c = physics_->character())  // (flying: no body, as grounded)
@@ -302,6 +313,7 @@ void Game::update(const Actions& actions, float dt) {
     ui_events_ = hud_.take_events();
     update_screens();
     update_minimap();
+    update_world_map();
     update_weather_look(dt);
     update_falling(dt);
     update_ground_cover(dt);
@@ -602,6 +614,117 @@ std::string Game::stat_text(const stats::StatDef& stat) const {
     return {};
 }
 
+void Game::set_world_map_open(bool open) {
+    world_map_open_ = open;
+    update_world_map();  // (its picture starts now)
+}
+
+void Game::wait_for_world_map() {
+    if (world_map_job_) world_map_job_->pixels.wait();
+    update_world_map();
+}
+
+void Game::update_world_map() {
+    // One made in the background, ready: kept (if it is of this scene).
+    if (world_map_job_ &&
+        world_map_job_->pixels.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        std::vector<std::uint8_t> pixels = world_map_job_->pixels.get();
+        if (world_map_job_->scene == scene_.id) {
+            world_map_pixels_ = std::move(pixels);
+            world_map_width_ = world_map_job_->width;
+            world_map_height_ = world_map_job_->height;
+            world_map_scene_ = scene_.id;
+            ++world_map_version_;
+        }
+        world_map_job_.reset();
+    }
+    if (!world_map_open_ || !terrain_ || world_map_job_) return;
+    if (world_map_scene_ == scene_.id && !world_map_pixels_.empty()) return;
+    // Made once a scene, the first time the map opens (it takes a moment: in the background).
+    const Terrain* terrain = &terrain_->terrain();
+    const MapProjection projection = map_projections(terrain->body().shape.kind()).front();
+    const double aspect = map_aspect(*terrain, projection);
+    int width = kWorldMapSize, height = kWorldMapSize;
+    if (aspect >= 1.0)
+        height = std::max(1, int(std::lround(kWorldMapSize / aspect)));
+    else
+        width = std::max(1, int(std::lround(kWorldMapSize * aspect)));
+    world_map_pixels_.clear();
+    world_map_job_ =
+        WorldMapJob{scene_.id, width, height,
+                    std::async(std::launch::async, [terrain, width, height, projection] {
+                        return world_map(*terrain, width, height, projection);
+                    })};
+}
+
+Game::WorldMapView Game::world_map_view() const {
+    WorldMapView m;
+    m.open = world_map_open_;
+    m.heading = heading();
+    const glm::dvec3 here = player_position();
+    // Everything it marks: the scene's exits and what scripts marked.
+    struct Place {
+        std::string kind, label;
+        glm::dvec3 at;
+    };
+    std::vector<Place> places;
+    for (const entt::entity e : scene_.registry.view<const SceneExit>()) {
+        const EntityInfo* info = scene_.registry.try_get<EntityInfo>(e);
+        places.push_back(
+            {"exit", info ? info->name : std::string(), glm::dvec3(scene_.world_matrix(e)[3])});
+    }
+    if (!scene_.registry.view<const Portal>().empty()) {  // (by the names the player gave)
+        std::map<std::string, std::string> names;
+        for (const PortalPlace& p : portals()) names[p.id] = p.name;
+        for (const entt::entity e : scene_.registry.view<const Portal, const EntityInfo>()) {
+            const std::string& id = scene_.registry.get<EntityInfo>(e).id;
+            places.push_back({"portal", names.contains(id) ? names[id] : id,
+                              glm::dvec3(scene_.world_matrix(e)[3])});
+        }
+    }
+    if (!hud_.marks.empty()) {
+        for (const entt::entity e : scene_.registry.view<const EntityInfo>()) {
+            const auto it = hud_.marks.find(scene_.registry.get<EntityInfo>(e).id);
+            if (it != hud_.marks.end())
+                places.push_back({"mark", it->second, glm::dvec3(scene_.world_matrix(e)[3])});
+        }
+    }
+    if (terrain_) {
+        const Terrain& t = terrain_->terrain();
+        const MapProjection projection = map_projections(t.body().shape.kind()).front();
+        m.aspect = map_aspect(t, projection);
+        const bool made = world_map_scene_ == scene_.id && !world_map_pixels_.empty();
+        m.ready = made;
+        if (made) {
+            m.pixels = &world_map_pixels_;
+            m.width = world_map_width_;
+            m.height = world_map_height_;
+            m.version = world_map_version_;
+        }
+        m.player = world_map_point(t.body().surface(here), projection);
+        for (const Place& p : places)
+            m.marks.push_back(
+                {p.kind, p.label, world_map_point(t.body().surface(p.at), projection)});
+        return m;
+    }
+    // No terrain: a square of flat ground round the player and every mark (x east, -z north),
+    // at least 100 m across.
+    m.ready = true;
+    glm::dvec2 lo(here.x, here.z), hi = lo;
+    for (const Place& p : places) {
+        lo = glm::min(lo, glm::dvec2(p.at.x, p.at.z));
+        hi = glm::max(hi, glm::dvec2(p.at.x, p.at.z));
+    }
+    const double side = std::max(100.0, std::max(hi.x - lo.x, hi.y - lo.y) * 1.25);
+    const glm::dvec2 corner = (lo + hi) * 0.5 - glm::dvec2(side * 0.5);
+    const auto share = [&](const glm::dvec3& p) {
+        return glm::dvec2((p.x - corner.x) / side, (p.z - corner.y) / side);
+    };
+    m.player = share(here);
+    for (const Place& p : places) m.marks.push_back({p.kind, p.label, share(p.at)});
+    return m;
+}
+
 glm::dvec2 Game::minimap_offset() const {
     return east_north(bearing_at(scene_.settings.body, minimap_.centre), minimap_.centre,
                       player_position());
@@ -618,6 +741,7 @@ std::vector<Game::MapMark> Game::map_marks(double radius) const {
         out.push_back({std::move(kind), std::move(label), en.x, en.y});
     };
     for (const entt::entity e : scene_.registry.view<const SceneExit>()) place(e, "exit", "");
+    for (const entt::entity e : scene_.registry.view<const Portal>()) place(e, "portal", "");
     if (!hud_.marks.empty()) {
         for (const entt::entity e : scene_.registry.view<const EntityInfo>()) {
             const auto it = hud_.marks.find(scene_.registry.get<EntityInfo>(e).id);
@@ -785,6 +909,14 @@ void Game::set_screen_text(const std::string& screen, const std::string& element
                            const std::string& text) {
     written_texts_[screen + "/" + element] = text;
     hud_.texts[screen + "/" + element] = expand_prompts(text);
+}
+
+void Game::set_window_mode(const std::string& mode) {
+    if (mode != "fullscreen" && mode != "windowed") return;
+    const auto it = profile_.other.find("window");
+    if (it != profile_.other.end() && *it == mode) return;
+    profile_.other["window"] = mode;
+    save_settings();
 }
 
 void Game::reset_controls() {
@@ -1567,6 +1699,8 @@ void Game::reload_scene_settings() {
 void Game::rebuild_terrain() {
     nav_world_.reset();    // (its jobs read the terrain)
     minimap_job_.reset();  // (so does the minimap's: its future waits for it)
+    world_map_job_.reset();
+    world_map_pixels_.clear();  // (made again from the new terrain when it next opens)
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
     place_again();  // (none without terrain)
@@ -2289,9 +2423,26 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     std::optional<glm::dmat4> at;
     if (!arrival.empty() && !to_space) {  // (into space, it's the way back in)
         const entt::entity a = next.find(arrival);
-        if (a == entt::null || !next.registry.all_of<Arrival>(a))
+        if (a == entt::null ||
+            !(next.registry.all_of<Arrival>(a) || next.registry.all_of<Portal>(a)))
             throw SceneError("scene '" + id + "' has no arrival '" + arrival + "'");
         at = next.world_matrix(a);
+        if (!next.registry.all_of<Arrival>(a)) {  // a portal: just beyond its front, facing out
+            const Portal& portal = next.registry.get<Portal>(a);
+            const glm::dvec3 z((*at)[2]);
+            const double depth = glm::length(z);
+            if (depth > 0.0) {
+                const glm::dvec3 ahead = -z / depth;
+                // (in the third person, far enough out that the camera behind the player is
+                // in front of the portal too, never behind it looking through it)
+                const double camera =
+                    camera_ && camera_->active() && camera_->view() == CameraView::Third
+                        ? double(camera_->distance()) + 1.0
+                        : 0.0;
+                const double step = double(portal.size.z) * 0.5 * depth + kPortalStep + camera;
+                (*at)[3] += glm::dvec4(ahead * step, 0.0);
+            }
+        }
     }
     const bool had_camera = camera_ && camera_->active();
     const CameraRig::State view = had_camera ? camera_->state() : CameraRig::State{};
@@ -2329,6 +2480,7 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
     stop_sources();
     nav_world_.reset();
     minimap_job_.reset();  // (it reads the terrain: its future waits for it)
+    world_map_job_.reset();
     if (terrain_ && terrain_renderer_) terrain_->release(*terrain_renderer_);
     terrain_.reset();
     placed_.reset();
@@ -2360,8 +2512,17 @@ void Game::load_scene(const std::string& id, const std::string& arrival) {
         Transform& t = scene_.registry.get<Transform>(player);
         t.position = glm::dvec3(glm::inverse(parent) * (*at)[3]);
         const glm::dvec3 ahead = -glm::dvec3((*at)[2]);
-        const glm::vec3 turn = look_rotation(glm::vec3(0.0f), glm::vec3(ahead));
-        t.rotation = {0.0f, turn.y, 0.0f};
+        const glm::dvec3 up = scene_.settings.body ? scene_.settings.body->up(glm::dvec3((*at)[3]))
+                                                   : glm::dvec3(0.0, 1.0, 0.0);
+        const glm::dvec3 level = ahead - glm::dot(ahead, up) * up;
+        if (up.y < 0.9999 && glm::length(level) > 1e-6) {
+            // (round a planet or inside a cylinder "up" isn't +Y: upright on the ground there,
+            // facing the way the arrival does along it)
+            t.rotation = upright_rotation(glm::vec3(glm::normalize(level)), glm::vec3(up));
+        } else {
+            const glm::vec3 turn = look_rotation(glm::vec3(0.0f), glm::vec3(ahead));
+            t.rotation = {0.0f, turn.y, 0.0f};
+        }
     }
     rebuild_physics();
     // Coming down from space: below where the ship came down (flying, just under the ceiling;
@@ -2416,6 +2577,105 @@ bool Game::take_exit(entt::entity exit) {
     return true;
 }
 
+std::vector<Game::PortalPlace> Game::portals() const {
+    if (!portal_places_) {  // (read once: the package doesn't change)
+        portal_places_.emplace();
+        sqlite3* db = nullptr;
+        const std::u8string u8 = (package_.root / package_.manifest.database).u8string();
+        if (sqlite3_open_v2(std::string(u8.begin(), u8.end()).c_str(), &db, SQLITE_OPEN_READONLY,
+                            nullptr) == SQLITE_OK) {
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(db,
+                                   "SELECT e.id, e.scene, e.name, e.components, s.name_key "
+                                   "FROM entity e JOIN scene s ON s.id = e.scene "
+                                   "WHERE e.components LIKE '%\"portal\"%' "
+                                   "ORDER BY s.rowid, e.rowid",
+                                   -1, &st, nullptr) == SQLITE_OK) {
+                const auto column = [&](int i) {
+                    const auto* t = sqlite3_column_text(st, i);
+                    return std::string(t ? reinterpret_cast<const char*>(t) : "");
+                };
+                while (sqlite3_step(st) == SQLITE_ROW) {
+                    const nlohmann::json c = nlohmann::json::parse(column(3), nullptr, false);
+                    if (!c.is_object() || !c.contains("portal") || !c["portal"].is_object())
+                        continue;
+                    std::string name = c["portal"].value("name", std::string());
+                    if (name.empty()) name = column(2);
+                    portal_places_->push_back({column(0), column(1), text(column(4)), name});
+                }
+                sqlite3_finalize(st);
+            }
+        }
+        sqlite3_close(db);
+    }
+    std::vector<PortalPlace> out = *portal_places_;
+    for (PortalPlace& p : out)
+        if (const auto it = portal_names_.find(p.id); it != portal_names_.end())
+            p.name = it->second;
+    return out;
+}
+
+std::string Game::portal_here() const {
+    entt::entity player = entt::null;
+    for (entt::entity e : scene_.registry.view<const Player>()) player = e;
+    if (player == entt::null) return "";
+    const glm::dvec3 p = scene_.world_position(player);
+    for (entt::entity e : scene_.registry.view<const Portal, const EntityInfo>()) {
+        const Portal& portal = scene_.registry.get<Portal>(e);
+        const glm::dvec3 local =
+            glm::dvec3(glm::inverse(scene_.world_matrix(e)) * glm::dvec4(p, 1.0));
+        const glm::dvec3 half = glm::dvec3(portal.size) * 0.5;
+        if (std::abs(local.x) <= half.x && std::abs(local.y) <= half.y &&
+            std::abs(local.z) <= half.z)
+            return scene_.registry.get<EntityInfo>(e).id;
+    }
+    return "";
+}
+
+void Game::open_portal(const std::string& id) {
+    for (const PortalPlace& p : portals())
+        if (p.id == id) {
+            world_map_open_ = false;  // (the menu instead)
+            portal_open_ = id;
+            return;
+        }
+}
+
+bool Game::rename_portal(const std::string& id, const std::string& name) {
+    std::string trimmed = name;
+    const auto space = [](unsigned char ch) { return std::isspace(ch) != 0; };
+    while (!trimmed.empty() && space(trimmed.back())) trimmed.pop_back();
+    size_t start = 0;
+    while (start < trimmed.size() && space(trimmed[start])) ++start;
+    trimmed = trimmed.substr(start);
+    if (trimmed.size() > 40) {  // (whole UTF-8 characters: back to a character's first byte)
+        size_t cut = 40;
+        while (cut > 0 && (static_cast<unsigned char>(trimmed[cut]) & 0xC0) == 0x80) --cut;
+        trimmed.resize(cut);
+    }
+    if (trimmed.empty()) return false;
+    for (const PortalPlace& p : portals())
+        if (p.id == id) {
+            portal_names_[id] = trimmed;
+            return true;
+        }
+    return false;
+}
+
+bool Game::travel_to_portal(const std::string& id) {
+    for (const PortalPlace& p : portals()) {
+        if (p.id != id) continue;
+        float fade = 0.8f;
+        if (const entt::entity e = scene_.find(portal_open_);
+            e != entt::null && scene_.registry.all_of<Portal>(e))
+            fade = scene_.registry.get<Portal>(e).fade;
+        portal_open_.clear();
+        change_scene(p.scene, p.id, fade);
+        return true;
+    }
+    return false;
+}
+
 bool Game::has_scene(const std::string& scene) const {
     bool found = false;
     sqlite3* db = nullptr;
@@ -2460,7 +2720,7 @@ std::string Game::arrival_problem(const std::string& scene, const std::string& a
                 const auto* text = sqlite3_column_text(st, 0);
                 const nlohmann::json c = nlohmann::json::parse(
                     text ? reinterpret_cast<const char*>(text) : "", nullptr, false);
-                found = c.is_object() && c.contains("arrival");
+                found = c.is_object() && (c.contains("arrival") || c.contains("portal"));
             }
             sqlite3_finalize(st);
         }

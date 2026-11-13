@@ -9,7 +9,8 @@
 //                                       N frames of gameplay and scripts, no window (tests);
 //                                       its sound mixed offline, and written to a WAV if asked;
 //                                       --hold holds a key ("W", "Left Ctrl") from frame FROM up
-//                                       to frame TO, as a player would (repeatable)
+//                                       to frame TO, as a player would (repeatable); with
+//                                       --screenshot, a picture of where it got to
 //   midgard_runtime --package <dir> --headless --editor-link host:port
 //                                       play under the editor without a window or GPU (tests, CI)
 //   midgard_runtime [--package <dir>] [--frames N] [--size WxH] [--editor-link host:port]
@@ -34,7 +35,10 @@
 //   --hud-test                          the HUD (6.0) with made-up stats, notes, a timer, a
 //                                       prompt and the crosshair, in a window or a screenshot;
 //                                       --show-hud puts a game's own HUD in a screenshot (which
-//                                       otherwise shows the world alone, for picture tests)
+//                                       otherwise shows the world alone, for picture tests);
+//                                       --show-map, its full map open too (its picture made);
+//                                       --show-portal <entity id>, the portal menu open at that
+//                                       portal (checked as the UI test screen is)
 //   --quality desktop|phone             the renderer's quality tier (by default phone on phones,
 //                                       desktop elsewhere), for a window, a screenshot or the
 //                                       self-test
@@ -114,9 +118,11 @@
 #include "midgard/input.h"
 #include "midgard/link.h"
 #include "midgard/manifest.h"
+#include "midgard/player_profile.h"
 #include "midgard/profile.h"
 #include "midgard/render/renderer.h"
 #include "midgard/ui/hud.h"
+#include "midgard/ui/portal_menu.h"
 #include "midgard/ui/screens.h"
 #include "midgard/ui/touch.h"
 #include "midgard/ui/ui.h"
@@ -165,8 +171,10 @@ struct Options {
     bool ui_touch = false;  // a screenshot's screen checks include a finger's (target sizes)
     float ui_scale = 1.0f;  // the player's UI scale, on top of the display's density
     std::optional<midgard::ui::Insets> safe_area;  // a pretend safe area, in pixels
-    bool hud_test = false;        // the HUD with made-up stats, notes, a timer and a prompt
-    bool show_hud = false;        // a screenshot of a game with its HUD (a window always has it)
+    bool hud_test = false;  // the HUD with made-up stats, notes, a timer and a prompt
+    bool show_hud = false;  // a screenshot of a game with its HUD (a window always has it)
+    bool show_map = false;  // and its full map open
+    std::optional<std::string> show_portal;  // or the portal menu open at this portal
     bool touch_controls = false;  // the touch controls from the start, the mouse a finger
     std::string screen_test;      // a screen (Menu editor JSON) to draw and check, in a screenshot
 };
@@ -179,7 +187,9 @@ int usage() {
         "                       [--profile out.json] [--player-profile <dir>] [--world <dir>]\n"
         "                       [--quality desktop|phone] [--ui-test [--ui-touch]]\n"
         "                       [--ui-scale S] [--safe-area l,t,r,b] [--hud-test]\n"
-        "                       [--show-hud] [--touch-controls] [--screen-test file.json]\n"
+        "                       [--show-hud] [--show-map] [--show-portal <id>]\n"
+        "                       [--touch-controls]\n"
+        "                       [--screen-test file.json]\n"
         "       midgard_runtime --selftest [--show] [--quality desktop|phone]");
     return 2;
 }
@@ -317,6 +327,20 @@ public:
     // action waiting for a new key, that key ("" to give up; returns the action), and the
     // player's keys.
     virtual bool menu() { return false; }
+    // Esc closes the full map or the portal menu first, if one is open (true: it was).
+    virtual bool close_map() { return false; }
+    // The portal menu (midgard/scene.h's Portal): the portal it is open at ("": closed), what
+    // it shows, and what the player chose there.
+    virtual std::string portal_open() const { return ""; }
+    struct PortalMenuInfo {
+        std::string name;
+        std::vector<midgard::ui::PortalMenu::Destination> destinations;
+    };
+    virtual std::optional<PortalMenuInfo> portal_menu() const { return std::nullopt; }
+    virtual bool portal_rename(const std::string&) { return false; }  // false: not a name
+    virtual std::string portal_name() const { return ""; }
+    virtual void portal_travel(const std::string&) {}
+    virtual void portal_close() {}
     virtual bool has_pause_menu() const { return false; }
     // The game's settings (the Project Page's), and freezing the world under a pausing screen.
     virtual const midgard::GameSettings* game_settings() const { return nullptr; }
@@ -335,6 +359,8 @@ public:
     virtual bool take_controls_changed() { return false; }
     // The device the player is using now (prompts follow it).
     virtual void set_input_device(const std::string&) {}
+    // How the player left the window ("fullscreen", "windowed"), kept for the next time.
+    virtual void set_window_mode(const std::string&) {}
     // An Asset Library font's files (by its "ui:" folder): names and bytes.
     virtual std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
         const std::string& folder) const {
@@ -348,6 +374,10 @@ public:
     }
     // A HUD is shown from now on (the game makes what only it needs: the minimap's ground).
     virtual void hud_shown() {}
+    // The full map open, its picture made (a screenshot's --show-map).
+    virtual void show_map_now() {}
+    // The portal menu open at a portal (a screenshot's --show-portal).
+    virtual void open_portal_now(const std::string&) {}
     // How dark the picture is (a scene change fading out and in): 0 clear, 1 black.
     virtual float fade() const { return 0.0f; }
     // The player's profile file: used from now on, and saved when the game ends.
@@ -637,25 +667,28 @@ public:
                 {"forecast", forecast},
                 {"changes", game.weather_changes().size()}};
         }
-        return nlohmann::json{{"entities", entities},
-                              {"scene", game_.scene().id},
-                              {"world_hash", world_hash},
-                              {"camera", view_name(game_.camera_rig().view())},
-                              {"sky", {sky.x, sky.y, sky.z}},
-                              {"time", game_.time().now()},
-                              {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},
-                              {"sun", sun},
-                              {"season", game_.scene().sun_clock.season},
-                              {"audio", audio},
-                              {"weather", weather},
-                              {"stats", game_.stats().save()},
-                              {"hud", game_.hud().dump()},
-                              // Rooms and space (milestone 5.16): how high, and where space is.
-                              {"rooms",
-                               {{"previous", game_.previous_scene()},
-                                {"space_from", game_.space_from()},
-                                {"altitude", game_.altitude()},
-                                {"ceiling", game_.ceiling()}}}}
+        return nlohmann::json{
+            {"entities", entities},
+            {"scene", game_.scene().id},
+            {"world_hash", world_hash},
+            {"camera", view_name(game_.camera_rig().view())},
+            {"sky", {sky.x, sky.y, sky.z}},
+            {"time", game_.time().now()},
+            {"solar_phase", phase ? nlohmann::json(*phase) : nlohmann::json()},
+            {"sun", sun},
+            {"season", game_.scene().sun_clock.season},
+            {"audio", audio},
+            {"weather", weather},
+            {"stats", game_.stats().save()},
+            {"hud", game_.hud().dump()},
+            // Portals: the one the player is at, and the menu open at one.
+            {"portals", {{"here", game_.portal_here()}, {"open", game_.portal_open()}}},
+            // Rooms and space (milestone 5.16): how high, and where space is.
+            {"rooms",
+             {{"previous", game_.previous_scene()},
+              {"space_from", game_.space_from()},
+              {"altitude", game_.altitude()},
+              {"ceiling", game_.ceiling()}}}}
             .dump();
     }
     std::vector<std::string> status() const override {
@@ -741,9 +774,38 @@ public:
             for (const auto& m : game_.map_marks(midgard::Game::kMinimapRadius * 1.5))
                 d.map.marks.push_back({m.kind, m.label, m.east, m.north});
         }
+        // At a portal: how to use it (unless a script says something else).
+        if (d.prompt.empty() && game_.portal_open().empty() && !game_.portal_here().empty())
+            d.prompt = "Press " + game_.prompt("use") + " to use the portal";
+        // The full map (M), over the game while it isn't paused.
+        if (game_.world_map_open() && !game_.frozen()) {
+            const midgard::Game::WorldMapView v = game_.world_map_view();
+            auto& w = d.world_map;
+            w.shown = true;
+            w.ready = v.ready;
+            w.ground = v.pixels;
+            w.width = v.width;
+            w.height = v.height;
+            w.version = v.version;
+            w.aspect = v.aspect;
+            w.player_x = v.player.x;
+            w.player_y = v.player.y;
+            w.heading = v.heading;
+            for (const auto& m : v.marks) w.marks.push_back({m.kind, m.label, m.at.x, m.at.y});
+            w.hint = game_.prompt("map") + " or Esc to close";
+        }
         return d;
     }
     void hud_shown() override { game_.want_minimap(); }
+    void open_portal_now(const std::string& id) override { game_.open_portal(id); }
+    void show_map_now() override {
+        // (past the title: a screen that pauses the game hides the map)
+        for (const std::string id : game_.hud().screens())
+            if (const midgard::ScreenDef* s = game_.screen(id); s && s->pauses)
+                game_.hud().hide_screen(id);
+        game_.set_world_map_open(true);
+        game_.wait_for_world_map();
+    }
     bool wants_mouse_look() const override { return game_.camera_rig().active(); }
     const std::vector<midgard::ScreenDef>* screen_defs() const override { return &game_.screens(); }
     const midgard::hud::HudState* hud_state() const override { return &game_.hud(); }
@@ -754,6 +816,39 @@ public:
         game_.ui_change(screen, element, value);
     }
     bool menu() override { return game_.menu(); }
+    bool close_map() override {
+        if (!game_.portal_open().empty()) {
+            game_.close_portal();
+            return true;
+        }
+        if (!game_.world_map_open()) return false;
+        game_.set_world_map_open(false);
+        return true;
+    }
+    std::string portal_open() const override { return game_.portal_open(); }
+    std::optional<PortalMenuInfo> portal_menu() const override {
+        const std::string& here = game_.portal_open();
+        if (here.empty()) return std::nullopt;
+        PortalMenuInfo info;
+        for (const midgard::Game::PortalPlace& p : game_.portals()) {
+            if (p.id == here)
+                info.name = p.name;
+            else
+                info.destinations.push_back(  // (its world named only when it says more)
+                    {p.id, p.name, p.scene_name == p.name ? std::string() : p.scene_name});
+        }
+        return info;
+    }
+    bool portal_rename(const std::string& name) override {
+        return game_.rename_portal(game_.portal_open(), name);
+    }
+    std::string portal_name() const override {
+        for (const midgard::Game::PortalPlace& p : game_.portals())
+            if (p.id == game_.portal_open()) return p.name;
+        return "";
+    }
+    void portal_travel(const std::string& id) override { game_.travel_to_portal(id); }
+    void portal_close() override { game_.close_portal(); }
     bool has_pause_menu() const override { return game_.screen_for("pause") != nullptr; }
     const midgard::GameSettings* game_settings() const override { return &game_.game_settings(); }
     void set_frozen(bool frozen) override { game_.set_frozen(frozen); }
@@ -770,6 +865,7 @@ public:
     }
     bool take_controls_changed() override { return game_.take_controls_changed(); }
     void set_input_device(const std::string& device) override { game_.set_input_device(device); }
+    void set_window_mode(const std::string& mode) override { game_.set_window_mode(mode); }
     std::vector<std::pair<std::string, std::vector<uint8_t>>> ui_fonts(
         const std::string& folder) const override {
         auto found = midgard::package_fonts(
@@ -1089,8 +1185,12 @@ void feed(midgard::Actions& actions, const SDL_Event& e) {
                 actions.set("mouse", kButtons[e.button.button], down ? 1.0f : 0.0f);
             break;
         }
-        case SDL_EVENT_GAMEPAD_ADDED:
-            SDL_OpenGamepad(e.gdevice.which);
+        case SDL_EVENT_GAMEPAD_ADDED:  // (plugged in while playing)
+            if (!SDL_GetGamepadFromID(e.gdevice.which)) {
+                SDL_Gamepad* pad = SDL_OpenGamepad(e.gdevice.which);
+                const char* name = pad ? SDL_GetGamepadName(pad) : nullptr;
+                std::printf("Gamepad: %s\n", name ? name : "?");
+            }
             break;
         case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
             float v = float(e.gaxis.value) / 32767.0f;
@@ -1107,6 +1207,21 @@ void feed(midgard::Actions& actions, const SDL_Event& e) {
             break;
         default:
             break;
+    }
+}
+
+// Every gamepad plugged in now, opened (SDL tells of those at hand once, as it starts: whatever
+// was showing then, such as the splash, may have had the news; the game opens them itself).
+void open_gamepads() {
+    int count = 0;
+    if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
+        for (int i = 0; i < count; ++i) {
+            SDL_Gamepad* pad = SDL_GetGamepadFromID(ids[i]);
+            if (!pad) pad = SDL_OpenGamepad(ids[i]);
+            const char* name = pad ? SDL_GetGamepadName(pad) : nullptr;
+            std::printf("Gamepad: %s%s\n", name ? name : "?", pad ? "" : " (couldn't be opened)");
+        }
+        SDL_free(ids);
     }
 }
 
@@ -1531,6 +1646,7 @@ int run_screenshot(const Options& opt, Source& source) {
     if (hud_data) {
         hud = std::make_unique<midgard::ui::Hud>(*ui);
         if (!opt.hud_test) source.hud_shown();
+        if (opt.show_map) source.show_map_now();
         hud->show(opt.hud_test ? *hud_data : *source.hud());  // (with the minimap's ground)
         if (opt.touch_controls) {                             // (as a phone shows them, at rest)
             touch = std::make_unique<midgard::ui::TouchControls>(*ui, source.touch_layout());
@@ -1538,6 +1654,23 @@ int run_screenshot(const Options& opt, Source& source) {
             touch->update();
             hud->set_touch(true);
         }
+    }
+    std::unique_ptr<midgard::ui::PortalMenu> portal_menu;  // (after the UI: it goes first)
+    if (opt.show_portal && ui) {
+        source.open_portal_now(*opt.show_portal);
+        const auto info = source.portal_menu();
+        if (!info) {
+            std::fprintf(stderr, "error: there is no portal '%s'\n", opt.show_portal->c_str());
+            return 1;
+        }
+        portal_menu =
+            std::make_unique<midgard::ui::PortalMenu>(*ui, info->name, info->destinations);
+        ui->update(0.0);
+        const auto problems = ui->check(portal_menu->document(), false);
+        for (const auto& p : problems)
+            std::fprintf(stderr, "UI %s: %s: %s\n", p.kind.c_str(), p.element.c_str(),
+                         p.message.c_str());
+        if (!problems.empty()) return 1;
     }
     if (opt.ui_test) {
         Rml::ElementDocument* screen = midgard::ui::open_test_screen(*ui);
@@ -1723,6 +1856,29 @@ void set_window_icon(SDL_Window* window, const std::filesystem::path& file) {
 // used as the splash), else its name over black;
 // drawn again and again (the window answering the system) until `ready` says the game has
 // loaded and it has shown as long as the Project Page says. Its UI goes before the game's.
+// F11, or Alt+Enter: the window full screen, or windowed again (not on phones, always full).
+bool toggles_full_screen(const SDL_Event& e) {
+    return e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
+           (e.key.scancode == SDL_SCANCODE_F11 ||
+            (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT) != 0));
+}
+
+void toggle_full_screen(SDL_Window* window) {
+#ifndef __ANDROID__
+    const bool full = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+    SDL_SetWindowFullscreen(window, !full);
+#else
+    (void)window;
+#endif
+}
+
+std::optional<std::filesystem::path> player_profile_dir(const Options& opt, bool windowed,
+                                                        const std::string& game);
+
+const char* window_mode(SDL_Window* window) {
+    return (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0 ? "fullscreen" : "windowed";
+}
+
 void show_splash(SDL_Window* window, render::Renderer& renderer, const Options& opt,
                  const std::filesystem::path& package_dir, const std::string& title,
                  const std::function<bool()>& ready) {
@@ -1784,6 +1940,8 @@ void show_splash(SDL_Window* window, render::Renderer& renderer, const Options& 
                 renderer.resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
                 if (ui) ui->resize(uint32_t(e.window.data1), uint32_t(e.window.data2));
             }
+            if (toggles_full_screen(e)) toggle_full_screen(window);
+            if (e.type == SDL_EVENT_GAMEPAD_ADDED) SDL_OpenGamepad(e.gdevice.which);
         }
         if (ui) {
             ui->update(t);
@@ -1814,6 +1972,31 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 #ifdef __ANDROID__
     flags |= SDL_WINDOW_FULLSCREEN;
+#else
+    // Windowed or full screen: as the player last left it (kept in their profile), else the
+    // game's own setting (the Project Page's Starts).
+    if (opt.package_dir) {
+        std::string mode;
+        try {
+            if (const auto folder = player_profile_dir(opt, true, title)) {
+                const midgard::PlayerProfile kept =
+                    midgard::PlayerProfile::load(*folder / "profile.json");
+                if (const auto it = kept.other.find("window");
+                    it != kept.other.end() && it->is_string())
+                    mode = it->get<std::string>();
+            }
+        } catch (const std::exception&) {  // (a damaged profile: as the game says)
+        }
+        try {
+            if (mode.empty()) {
+                const std::filesystem::path dir(*opt.package_dir);
+                const auto manifest = midgard::load_manifest(dir / "manifest.json");
+                mode = midgard::load_game_settings(dir / manifest.database).window;
+            }
+        } catch (const std::exception&) {  // (the game itself says what's wrong, later)
+        }
+        if (mode == "fullscreen") flags |= SDL_WINDOW_FULLSCREEN;
+    }
 #endif
     SDL_Window* window = SDL_CreateWindow(title.c_str(), int(opt.width), int(opt.height), flags);
     if (!window) {
@@ -1865,6 +2048,14 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
             if (const auto icon = owned->icon()) set_window_icon(window, *icon);
         }
         Source& source = *owned;
+        // (as it is now: F11 during the splash counts too)
+        source.set_window_mode(window_mode(window));
+        // At the end, however it ends: kept for next time.
+        struct KeepWindowMode {
+            Source& source;
+            SDL_Window* window;
+            ~KeepWindowMode() { source.set_window_mode(window_mode(window)); }
+        } keep_window_mode{source, window};
         // Sound (milestone 5.14): the system's audio device, or silence without one.
         std::unique_ptr<midgard::audio::Mixer> sound;
         try {
@@ -1890,6 +2081,9 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
         std::unique_ptr<midgard::ui::Ui> ui;
         std::unique_ptr<midgard::ui::Hud> hud;  // (after the UI: it goes first)
         std::unique_ptr<midgard::ui::TouchControls> touch;
+        std::unique_ptr<midgard::ui::PortalMenu> portal_menu;  // (after the UI: it goes first)
+        std::string portal_shown;                              // the portal it is open at
+        open_gamepads();  // (those already plugged in: the game reads them alongside the keys)
         std::unique_ptr<midgard::ui::Screens> screens;  // the Menu editor's, as the game shows
         // The touch controls: on a phone without a controller, or asked for (with the mouse as
         // a finger). A finger shows them; a key, a mouse click or a controller hides them.
@@ -1903,8 +2097,14 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
 #endif
         try {
             midgard::ui::Options uo;
-            uo.width = desc.width;
-            uo.height = desc.height;
+            {  // (as the window is now: it may have gone full screen while the splash showed)
+                int w = 0, h = 0;
+                SDL_GetWindowSizeInPixels(window, &w, &h);
+                uo.width = uint32_t(std::max(w, 1));
+                uo.height = uint32_t(std::max(h, 1));
+                if (uo.width != renderer.width() || uo.height != renderer.height())
+                    renderer.resize(uo.width, uo.height);
+            }
             uo.density = SDL_GetWindowDisplayScale(window);
             uo.scale = opt.ui_scale;
             uo.safe_area = opt.safe_area.value_or(window_safe_area(window));
@@ -2016,6 +2216,14 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
                 // Back button is a menu's Escape.)
                 // A settings screen's key button waits for a key: this one (Esc gives up).
                 const std::string waiting = source.rebinding_device();
+                if (toggles_full_screen(e) && waiting.empty()) {
+                    toggle_full_screen(window);
+                    continue;
+                }
+                if (e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ||
+                    e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN)
+                    source.set_window_mode(
+                        e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ? "fullscreen" : "windowed");
                 if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && !waiting.empty()) {
                     // (a key for a key's button; for a gamepad's, Esc gives up too)
                     const bool give_up = e.key.scancode == SDL_SCANCODE_ESCAPE;
@@ -2042,6 +2250,7 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
                                         e.key.scancode == SDL_SCANCODE_AC_BACK)) ||
                                       (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
                                        e.gbutton.button == SDL_GAMEPAD_BUTTON_START);
+                if (menu_key && source.close_map()) continue;
                 if (menu_key && screens && source.menu()) {
                     if (link) capture(false);
                     continue;
@@ -2198,6 +2407,41 @@ int run_window(const Options& opt, std::unique_ptr<Source>& owned,
                 if (const midgard::hud::HudState* h = source.hud_state())
                     screens->sync(*source.screen_defs(), h->screens(), h->texts, h->values,
                                   h->enabled);
+            }
+            // The portal menu: open while the game has it open (at the portal it says), and
+            // what the player chose there passed on (after the UI's events: nothing closes it
+            // while it handles one).
+            if (ui) {
+                const std::string open = source.portal_open();
+                if (open != portal_shown) {
+                    portal_menu.reset();
+                    portal_shown = open;
+                    if (const auto info = source.portal_menu()) {
+                        try {
+                            portal_menu = std::make_unique<midgard::ui::PortalMenu>(
+                                *ui, info->name, info->destinations);
+                        } catch (const std::exception& e) {
+                            warn("%s\n", e.what());
+                            source.portal_close();
+                        }
+                    }
+                }
+                if (portal_menu)
+                    if (const auto choice = portal_menu->take()) {
+                        using Kind = midgard::ui::PortalMenu::Choice::Kind;
+                        if (choice->kind == Kind::Rename) {
+                            if (source.portal_rename(choice->value)) {
+                                portal_menu->set_name(source.portal_name());
+                                portal_menu->say("Renamed.");
+                            } else {
+                                portal_menu->say("A portal's name can't be empty.");
+                            }
+                        } else if (choice->kind == Kind::Travel) {
+                            source.portal_travel(choice->value);
+                        } else {
+                            source.portal_close();
+                        }
+                    }
             }
             // A menu (the UI test screen) frees the mouse while it is up; closing it gives the
             // mouse back to the game as it was.
@@ -2445,6 +2689,39 @@ int run_simulation(const Options& opt, Source& source) {
     return 0;
 }
 
+// Every game controller SDL sees, and whether it is a gamepad (one SDL knows the buttons of:
+// the game reads those), for finding why a controller does nothing.
+int list_controllers() {
+    if (!SDL_Init(SDL_INIT_GAMEPAD)) {
+        std::printf("No controllers: %s\n", SDL_GetError());
+        return 1;
+    }
+    SDL_UpdateJoysticks();
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetJoysticks(&count);
+    std::printf("%d controller(s)\n", count);
+    for (int i = 0; i < count; ++i) {
+        const char* name = SDL_GetJoystickNameForID(ids[i]);
+        const bool pad = SDL_IsGamepad(ids[i]);
+        char guid[64] = {};
+        SDL_GUIDToString(SDL_GetJoystickGUIDForID(ids[i]), guid, int(sizeof(guid)));
+        std::printf("  %s: %s (guid %s, vendor %04x product %04x)\n", name ? name : "?",
+                    pad ? "a gamepad" : "NOT a gamepad (SDL has no button layout for it)", guid,
+                    SDL_GetJoystickVendorForID(ids[i]), SDL_GetJoystickProductForID(ids[i]));
+        if (pad) {
+            if (SDL_Gamepad* g = SDL_OpenGamepad(ids[i])) {
+                char* mapping = SDL_GetGamepadMapping(g);
+                std::printf("    mapping: %s\n", mapping ? mapping : "?");
+                SDL_free(mapping);
+                SDL_CloseGamepad(g);
+            }
+        }
+    }
+    SDL_free(ids);
+    SDL_Quit();
+    return 0;
+}
+
 int check_python() {
 #ifdef MIDGARD_HAS_SCRIPTING
     try {
@@ -2528,6 +2805,9 @@ int main(int argc, char** argv) {
                         midgard::kVersion, midgard::kEngineAbi, midgard::kFormatMajor,
                         midgard::kSchemaMin, midgard::kSchemaMax);
             return 0;
+        } else if (arg == "--controllers") {
+            attach_parent_console();
+            return list_controllers();
         } else if (arg == "--check-python") {
             return check_python();
         } else if (arg == "--dump-api") {
@@ -2588,6 +2868,12 @@ int main(int argc, char** argv) {
             opt.hud_test = true;
         } else if (arg == "--show-hud") {
             opt.show_hud = true;
+        } else if (arg == "--show-map") {
+            opt.show_hud = true;
+            opt.show_map = true;
+        } else if (arg == "--show-portal" && has_value) {
+            opt.show_hud = true;
+            opt.show_portal = argv[++i];
         } else if (arg == "--touch-controls") {
             opt.touch_controls = true;
         } else if (arg == "--screen-test" && has_value) {
@@ -2656,9 +2942,11 @@ int main(int argc, char** argv) {
         } else {
             source = std::make_unique<DemoSource>(opt.origin_offset);
         }
-        if (opt.simulate >= 0)
+        if (opt.simulate >= 0) {
             result = run_simulation(opt, *source);
-        else if (opt.headless)
+            // (--screenshot too: a picture of where the simulation got to)
+            if (result == 0 && opt.screenshot) result = run_screenshot(opt, *source);
+        } else if (opt.headless)
             result = run_headless(opt, *source);
         else
             result = opt.screenshot ? run_screenshot(opt, *source) : run_window(opt, source, load);

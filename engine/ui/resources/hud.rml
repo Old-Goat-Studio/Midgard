@@ -62,6 +62,7 @@
                 margin-top: -5dp; border-radius: 5dp; background-color: #ffd27a;
                 border: 1dp #000000a0; }
         .mark.exit { background-color: #6fb6ff; border-radius: 2dp; }
+        .mark.portal { background-color: #b07aff; }
         .mark-label { position: absolute; left: 12dp; top: -4dp; width: 120dp;
                       font-size: 12dp; }
         #arrow { position: absolute; left: 50%; top: 50%; width: 24dp; height: 24dp;
@@ -72,6 +73,36 @@
                        background-color: #ffffff; border: 1dp #000000c0; border-radius: 6dp; }
         #north { position: absolute; left: 50%; top: 2dp; width: 16dp; margin-left: -8dp;
                  text-align: center; font-size: 12dp; color: #ffffffc0; }
+
+        /* The full map: 3/4 of the window, the map in its own proportions inside. */
+        #bigmap { position: absolute; left: 12.5%; top: 12.5%; width: 75%; height: 75%;
+                  background-color: #0c1018e8; border: 2dp #ffffff60; border-radius: 6dp; }
+        #bigmap-title { position: absolute; left: 12dp; right: 12dp; top: 0; height: 36dp;
+                        line-height: 36dp; font-size: 20dp; }
+        #bigmap-hint { position: absolute; right: 0; top: 0; font-size: 14dp; color: #c8d0dc; }
+        #bigmap-area { position: absolute; left: 12dp; right: 12dp; top: 40dp; bottom: 12dp; }
+        /* (not clipped: a mark at its edge, such as a planet's pole, shows whole) */
+        #bigmap-box { position: absolute; background-color: #24311f; border: 1dp #ffffff40; }
+        #worldmap { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+        .bigmark { position: absolute; width: 14dp; height: 14dp; margin-left: -7dp;
+                   margin-top: -7dp; border-radius: 7dp; background-color: #ffd27a;
+                   border: 2dp #000000b0; }
+        .bigmark.exit { background-color: #6fb6ff; border-radius: 3dp; }
+        .bigmark.portal { background-color: #b07aff; border-color: #ffffffd0; }
+        .bigmark-label { position: absolute; left: 16dp; width: 240dp; font-size: 14dp; }
+        .bigmark-label.flip { left: -250dp; text-align: right; }
+        #bigmap-player { position: absolute; width: 30dp; height: 30dp; margin-left: -15dp;
+                         margin-top: -15dp; }
+        #bigmap-player .nose { position: absolute; left: 11dp; top: 0; width: 8dp; height: 17dp;
+                               background-color: #ff5a4a; border: 1dp #000000c0;
+                               border-radius: 4dp; }
+        #bigmap-player .body { position: absolute; left: 7dp; top: 11dp; width: 16dp;
+                               height: 16dp; background-color: #ffffff; border: 2dp #ff5a4a;
+                               border-radius: 8dp; }
+        #bigmap-north { position: absolute; left: 50%; top: 4dp; width: 20dp; margin-left: -10dp;
+                        text-align: center; font-size: 14dp; color: #ffffffd0; }
+        #bigmap-wait { position: absolute; left: 0; right: 0; top: 45%; text-align: center;
+                       font-size: 18dp; color: #d8dee8; }
 
         /* A phone held upright: the two sides share the width. */
         @media (orientation: portrait) {
@@ -119,11 +150,12 @@
             </div>
             <div id="needle"></div>
         </div>
-        <div id="minimap" data-if="minimap">
+        <div id="minimap" data-if="minimap &amp;&amp; !bigmap">
             <img id="ground" src="midgard://image/minimap" data-if="has_ground"
                  data-style-left="ground_left + '%'" data-style-top="ground_top + '%'"
                  data-style-width="ground_width + '%'" data-style-height="ground_width + '%'"/>
             <div class="mark" data-for="k : map_marks" data-class-exit="k.kind == 'exit'"
+                 data-class-portal="k.kind == 'portal'"
                  data-style-left="k.left + '%'" data-style-top="k.top + '%'">
                 <div class="mark-label shadow" data-if="k.label != ''">{{k.label}}</div>
             </div>
@@ -131,6 +163,31 @@
                 <div class="nose"></div><div class="body"></div>
             </div>
             <div id="north" class="shadow">N</div>
+        </div>
+        <div id="bigmap" data-if="bigmap">
+            <div id="bigmap-title" class="shadow">Map<span id="bigmap-hint">{{bigmap_hint}}</span></div>
+            <div id="bigmap-area">
+                <div id="bigmap-box" data-style-left="bigmap_left + '%'"
+                     data-style-top="bigmap_top + '%'" data-style-width="bigmap_width + '%'"
+                     data-style-height="bigmap_height + '%'">
+                    <img id="worldmap" src="midgard://image/worldmap" data-if="bigmap_ground"/>
+                    <div class="bigmark" data-for="k : bigmap_marks"
+                         data-class-exit="k.kind == 'exit'"
+                         data-class-portal="k.kind == 'portal'"
+                         data-style-left="k.left + '%'" data-style-top="k.top + '%'">
+                        <div class="bigmark-label shadow" data-if="k.label != ''"
+                             data-class-flip="k.flip"
+                             data-style-top="(k.dy - 3) + 'dp'">{{k.label}}</div>
+                    </div>
+                    <div id="bigmap-player" data-style-left="bigmap_player_left + '%'"
+                         data-style-top="bigmap_player_top + '%'"
+                         data-style-transform="'rotate(' + bigmap_arrow + 'deg)'">
+                        <div class="nose"></div><div class="body"></div>
+                    </div>
+                    <div id="bigmap-north" class="shadow">N</div>
+                </div>
+                <p id="bigmap-wait" class="shadow" data-if="!bigmap_ready">Drawing the map&#8230;</p>
+            </div>
         </div>
     </div>
 </body>

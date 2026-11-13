@@ -186,9 +186,20 @@ std::vector<render::DebugLine> collider_outlines(const Scene& scene, const glm::
         const auto* exit = reg.try_get<SceneExit>(e);
         const auto* arrival = reg.try_get<Arrival>(e);
         const auto* zone = reg.try_get<ReverbZone>(e);
-        if (!shape && !trigger && !player && !exit && !arrival && !zone) continue;
+        const auto* portal = reg.try_get<Portal>(e);
+        if (!shape && !trigger && !player && !exit && !arrival && !zone && !portal) continue;
         const Placement p(scene.world_matrix(e));
         if (exit) box(lines, p, glm::vec3(0.0f), exit->size, kExit);
+        if (portal) {  // its box, and an arrow out of its front (-Z) where players arrive
+            box(lines, p, glm::vec3(0.0f), portal->size, kExit);
+            const glm::dvec3 at = glm::dvec3(p.m[3]);
+            const glm::dvec3 ahead = -p.axis[2], side = p.axis[0];  // (unit lengths)
+            const glm::dvec3 tip =
+                at + ahead * (double(portal->size.z) * 0.5 * p.scale.z + kPortalStep);
+            lines.add(at, tip, kExit);
+            lines.add(tip, tip - 0.3 * ahead + 0.25 * side, kExit);
+            lines.add(tip, tip - 0.3 * ahead - 0.25 * side, kExit);
+        }
         if (zone) box(lines, p, glm::vec3(0.0f), zone->size, kReverb);
         if (arrival) {  // a post a metre and a half tall, and an arrow along -Z at its foot
             const glm::dvec3 at = glm::dvec3(p.m[3]);

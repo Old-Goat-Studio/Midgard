@@ -690,3 +690,41 @@ def test_a_pausing_screen_stops_what_scripts_move(project, tmp_path):
     walker = next(e for e in dumped["entities"] if e["name"] == "Walker")
     assert walker["position"][0] == pytest.approx(0.0)
     assert dumped["hud"]["screens"] == ["scr_pause"]
+
+
+def test_the_game_starts_windowed_or_full_screen(qtbot, project):
+    from midgard_editor.docks.project_page import ProjectPage
+    page = ProjectPage()
+    qtbot.addWidget(page)
+    page.set_project(project)
+    assert page.window_mode.currentData() == "windowed"
+    page.window_mode.setCurrentIndex(page.window_mode.findData("fullscreen"))
+    page.window_mode.activated.emit(page.window_mode.currentIndex())
+    assert menus.game_settings(project)["window"] == "fullscreen"
+    project.undo_stack.undo()
+    assert "window" not in menus.game_settings(project)  # (windowed: the default)
+
+
+def test_a_fresh_play_keeps_the_players_window(tmp_path):
+    import json
+
+    from midgard_editor.main_window import _kept_window
+    profile = tmp_path / "profile.json"
+    assert _kept_window(profile) == ""
+    profile.write_text(json.dumps({"view": "third", "window": "fullscreen"}), encoding="utf-8")
+    assert _kept_window(profile) == "fullscreen"
+    profile.write_text(json.dumps({"window": "huge"}), encoding="utf-8")
+    assert _kept_window(profile) == ""
+    profile.write_text("not json", encoding="utf-8")
+    assert _kept_window(profile) == ""
+
+
+def test_changing_starts_forgets_the_players_window(tmp_path):
+    import json
+
+    from midgard_editor.main_window import _forget_window
+    profile = tmp_path / "profile.json"
+    profile.write_text(json.dumps({"view": "third", "window": "fullscreen"}), encoding="utf-8")
+    _forget_window(profile)
+    assert json.loads(profile.read_text(encoding="utf-8")) == {"view": "third"}
+    _forget_window(tmp_path / "none.json")  # (nothing there: nothing to do)

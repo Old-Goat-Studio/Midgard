@@ -12,6 +12,7 @@
 #include "midgard/render/renderer.h"
 #include "midgard/ui/fonts.h"
 #include "midgard/ui/hud.h"
+#include "midgard/ui/portal_menu.h"
 #include "midgard/ui/ui.h"
 
 namespace render = midgard::render;
@@ -411,6 +412,80 @@ TEST_CASE("the HUD shows the game's stats, timers, notes and prompt, and follows
     CHECK_FALSE(shown("bar-health"));
 }
 
+TEST_CASE("the full map covers 3/4 of the window, in its own proportions, with its marks") {
+    auto renderer = offscreen(1280, 720);
+    if (!renderer) return;
+    ui::Ui u(*renderer, sized(1280, 720));
+    ui::Hud hud(u);
+    const std::vector<uint8_t> ground(64 * 32 * 4, 180);
+    ui::HudData d;
+    hud.show(d);
+    u.update(0.0);
+    Rml::ElementDocument* doc = hud.document();
+    const auto shown = [&](const char* id) {
+        Rml::Element* e = doc->GetElementById(id);
+        return e && e->IsVisible(true);
+    };
+    CHECK_FALSE(shown("bigmap"));
+    // A map twice as wide as high (a cylinder unrolled), the player in the middle facing
+    // east, an exit at the top left quarter, a script's mark at the bottom right.
+    d.world_map.shown = true;
+    d.world_map.ready = true;
+    d.world_map.ground = &ground;
+    d.world_map.width = 64;
+    d.world_map.height = 32;
+    d.world_map.version = 1;
+    d.world_map.aspect = 2.0;
+    d.world_map.heading = 90.0;
+    d.world_map.marks = {{"exit", "Blue Door", 0.25, 0.25}, {"mark", "Shrine", 0.75, 0.75}};
+    d.world_map.hint = "M or Esc to close";
+    for (int i = 0; i < 2; ++i) {  // (the second: fitted to its laid-out panel)
+        hud.show(d);
+        u.update(0.1 * (i + 1));
+    }
+    REQUIRE(shown("bigmap"));
+    CHECK_FALSE(shown("bigmap-wait"));
+    CHECK(shown("worldmap"));
+    Rml::Element* panel = doc->GetElementById("bigmap");
+    const Rml::Vector2f panel_size = panel->GetBox().GetSize(Rml::BoxArea::Border);
+    CHECK(panel_size.x == doctest::Approx(1280.0f * 0.75f).epsilon(0.03));
+    CHECK(panel_size.y == doctest::Approx(720.0f * 0.75f).epsilon(0.03));
+    Rml::Element* box = doc->GetElementById("bigmap-box");
+    const Rml::Vector2f size = box->GetBox().GetSize(Rml::BoxArea::Padding);
+    CHECK(size.x / size.y == doctest::Approx(2.0f).epsilon(0.03));
+    const Rml::Vector2f at = box->GetAbsoluteOffset(Rml::BoxArea::Padding);
+    const auto centre = [&](Rml::Element* e) {
+        return e->GetAbsoluteOffset(Rml::BoxArea::Border) +
+               e->GetBox().GetSize(Rml::BoxArea::Border) * 0.5f;
+    };
+    Rml::ElementList all, marks;
+    doc->GetElementsByClassName(all, "bigmark");
+    for (Rml::Element* e : all)
+        if (e->IsVisible(true)) marks.push_back(e);
+    REQUIRE(marks.size() == 2);
+    CHECK(centre(marks[0]).x == doctest::Approx(at.x + size.x * 0.25f).epsilon(0.02));
+    CHECK(centre(marks[0]).y == doctest::Approx(at.y + size.y * 0.25f).epsilon(0.03));
+    CHECK(marks[0]->GetInnerRML().find("Blue Door") != std::string::npos);
+    CHECK(centre(marks[1]).x == doctest::Approx(at.x + size.x * 0.75f).epsilon(0.02));
+    Rml::Element* player = doc->GetElementById("bigmap-player");
+    CHECK(centre(player).x == doctest::Approx(at.x + size.x * 0.5f).epsilon(0.02));
+    CHECK(centre(player).y == doctest::Approx(at.y + size.y * 0.5f).epsilon(0.02));
+    CHECK(doc->GetElementById("bigmap-title")->GetInnerRML().find("M or Esc to close") !=
+          std::string::npos);
+    // While its picture is made: a word saying so.
+    d.world_map.ready = false;
+    d.world_map.ground = nullptr;
+    hud.show(d);
+    u.update(0.3);
+    CHECK(shown("bigmap-wait"));
+    CHECK_FALSE(shown("worldmap"));
+    // Closed: gone.
+    d.world_map.shown = false;
+    hud.show(d);
+    u.update(0.4);
+    CHECK_FALSE(shown("bigmap"));
+}
+
 TEST_CASE("the HUD's compass slides to the heading, and the minimap places its marks") {
     auto renderer = offscreen(1280, 720);
     if (!renderer) return;
@@ -523,4 +598,59 @@ TEST_CASE("the HUD's crosshair: Midgard's dot, or the game's own picture at its 
     hud.show(d);
     u.update(0.2);
     CHECK_FALSE(picture->IsVisible(true));
+}
+
+TEST_CASE("the portal menu: rename this portal, choose another, or close it") {
+    auto renderer = offscreen(1280, 720);
+    if (!renderer) return;
+    ui::Ui u(*renderer, sized(1280, 720));
+    using Choice = ui::PortalMenu::Choice;
+    {
+        ui::PortalMenu menu(u, "Gate", {{"e2_hub", "Hub", "Main"}, {"e9_deep", "Deep <Cave>", ""}});
+        u.update(0.0);
+        Rml::ElementDocument* doc = menu.document();
+        REQUIRE(doc);
+        CHECK(u.modal());  // (it takes the input: the mouse is the player's)
+        Rml::Element* name = doc->GetElementById("name");
+        CHECK(name->GetAttribute<Rml::String>("value", "") == "Gate");
+        Rml::ElementList buttons;
+        doc->GetElementById("list")->GetElementsByTagName(buttons, "button");
+        REQUIRE(buttons.size() == 2);
+        CHECK(buttons[0]->GetInnerRML().find("Hub") != std::string::npos);
+        CHECK(buttons[0]->GetInnerRML().find("Main") != std::string::npos);
+        CHECK(buttons[1]->GetInnerRML().find("Deep &lt;Cave&gt;") != std::string::npos);
+        CHECK_FALSE(menu.take());
+        // A destination: travel there.
+        click(u, buttons[1]);
+        u.update(0.1);
+        auto chosen = menu.take();
+        REQUIRE(chosen);
+        CHECK(chosen->kind == Choice::Kind::Travel);
+        CHECK(chosen->value == "e9_deep");
+        CHECK_FALSE(menu.take());  // (taken)
+        // Rename: what the field says now.
+        name->SetAttribute("value", "Front Gate");
+        click(u, doc->GetElementById("rename"));
+        u.update(0.2);
+        chosen = menu.take();
+        REQUIRE(chosen);
+        CHECK(chosen->kind == Choice::Kind::Rename);
+        CHECK(chosen->value == "Front Gate");
+        menu.say("Renamed.");
+        CHECK(doc->GetElementById("said")->GetInnerRML() == "Renamed.");
+        // Escape (and a gamepad's B): close.
+        CHECK(u.handle(named(T::KeyDown, "Escape")));
+        chosen = menu.take();
+        REQUIRE(chosen);
+        CHECK(chosen->kind == Choice::Kind::Close);
+        click(u, doc->GetElementById("close"));
+        chosen = menu.take();
+        REQUIRE(chosen);
+        CHECK(chosen->kind == Choice::Kind::Close);
+    }
+    CHECK_FALSE(u.modal());  // (gone with the menu)
+    // No other portals: it says so.
+    ui::PortalMenu alone(u, "Lonely", {});
+    u.update(0.3);
+    CHECK(alone.document()->GetElementById("none"));
 }

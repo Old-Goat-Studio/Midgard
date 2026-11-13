@@ -3,8 +3,10 @@
 one of each shape, each the engine's own sample world type at its own size and seed
 (midgard/world_type.h), so the ground is the one the engine's tests know:
 
-    Hub          a paved square; four doors (walk in) and a pad home in each world
-    Archipelago  a bounded area 3 km square: islands in a sea, temperate (Archipelago)
+    Hub          a paved square; four doors (walk in), and a portal: every world has one too,
+                 named for it, and each portal leads to every other
+    Archipelago  a bounded area 3 km square: a chain of volcanic islands round a lagoon,
+                 temperate (Archipelago)
     Habitat      inside a cylinder 1 km in radius and 5 km long: farmland, a dock out to space
     Planet       a planet 2 km in radius: climate bands, snow at the poles, a launch pad (a
                  jetpack) up through the atmosphere's ceiling into space and back
@@ -18,7 +20,7 @@ kind of ground; another strolls round the hub. The sounds are Midgard's own CC0 
 Sound's footsteps and ambiences, yd's Desert Theme), put in the project's Asset Library.
 
 Where you arrive in a world, the ground is flattened round you at its own height there (kept
-above the sea), with the pad home behind you.
+above the sea), with the world's portal beside you.
 
 Milestone 6.0b's exit: the worlds' ground is textured, every layer a texture set made with
 Midgard's own texture generator (colour, normal, ambient occlusion, metal and roughness; the
@@ -182,7 +184,8 @@ A hub and four worlds, one of each shape Midgard makes, each its own size, with 
 night, seasons, weather and sounds. Tick each box as you try it.
 
 **Controls:** W A S D walk · mouse looks · hold Left Shift to run · Space jumps · V changes the
-view (behind, through her eyes, from above) · mouse wheel zooms · E uses a pad · F3 shows the
+view (behind, through her eyes, from above) · mouse wheel zooms · E uses a portal or a pad ·
+M shows the map · F3 shows the
 information overlay · Escape ends the game. **Flying** (the Planet's launch pad): Space climbs,
 Left Ctrl sinks, W A S D go where you look, Shift goes faster.
 
@@ -219,14 +222,27 @@ Left Ctrl sinks, W A S D go where you look, Shift goes faster.
 - [ ] **Esc** (or a controller's Start) opens the **pause menu**; Esc again goes back.
 - [ ] **The hub:** a paved square, four coloured doorways, birdsong by day; another walker
       strolls round. Walk into a doorway to go to that world.
-- [ ] Wherever you arrive, the **glowing pad** behind you takes you back to the hub (stand on
-      it, press E). The first time you arrive, the sky is clear for an hour; then the world's
+- [ ] **Portals**: wherever you arrive, the world's **portal** (a glowing purple veil in a
+      frame, named for the world) stands ahead and to your left as you arrive (the Planet's is
+      on its equator, by a beach: take it from another portal); the hub's, **Hub**, is to the
+      right of the doors. Walk up to one: *Press E to use the portal*.
+      Press **E**: a list of every other portal (Hub, Archipelago, Habitat, Planet, Hollow
+      World, less this one). Click one: you
+      fade out and arrive in front of that portal. At the top, the portal's **name**: type a
+      new one and click **Rename** (or press Enter): every other portal's list shows the new
+      name (kept for this world). **Close**, **Esc** or a gamepad's **B** closes the list.
+- [ ] The first time you arrive in a world, the sky is clear for an hour; then the world's
       own weather comes in.
 - [ ] **The ground** in every world is textured: grass, sand on the shore, rock on the steep
       slopes, snow up high, each with its bumps catching the sun. A **cobbled path** leads
       away from where you arrive.
-- [ ] **Archipelago** (blue door): islands in a sea, and the sound of the sea. Walk to the
-      shore: sand underfoot sounds different from grass.
+- [ ] **Archipelago** (blue door): a chain of volcanic islands round a lagoon, and the sound
+      of the sea. You arrive on the shore of the middle island; look round: other islands
+      across the water, each with its volcano, a beach all round each. Walk to the shore: sand
+      underfoot sounds different from grass.
+- [ ] **The map**: press **M** in any world: the whole world's map, the red arrow where you
+      are, the purple squares the portals (by the names you gave them), the blue ones the doors
+      and pads. **M** or **Esc** closes it.
 - [ ] **Habitat** (yellow door): inside a spinning cylinder. Look up: the land curves up both
       sides and meets overhead. Walk across it and all the way round: you come back where you
       started. The **Dock** (the pale pad: stand on it, press E) takes you outside into space,
@@ -462,6 +478,79 @@ class _Builder:
             "transform": {"position": [x, y + 1.0, z]},
             "scene_exit": {"scene": leads_to, "arrival": arrival, "activation": "use",
                            "size": [2.2, 4.0, 2.2], "fade": 0.8}})
+
+    def portal(self, scene, parent, name, at, yaw, color) -> str:
+        """A portal named `name`: a frame in `color` round a glowing veil, standing on the
+        ground at `at` and facing along yaw (its front, -Z turned by yaw). Every portal leads to
+        every other: press Use (E) in front of it for the list."""
+        x, y, z = at
+        return self.portal_at(scene, parent, name, [x, y + 1.6, z], [0.0, yaw, 0.0], color)
+
+    def portal_at(self, scene, parent, name, centre, rotation, color) -> str:
+        """The portal with its middle at `centre`, turned by `rotation` (Euler degrees: its
+        local +Y is up)."""
+        gate = self.put(scene, name, parent, {
+            "transform": {"position": list(centre), "rotation": list(rotation)},
+            "portal": {"name": name, "size": [2.4, 3.2, 3.0], "fade": 0.8}})
+        veil = (0.62, 0.42, 1.0)
+        for part, position, scale in (("Post", [-1.3, 0.0, 0.0], [0.3, 3.4, 0.3]),
+                                      ("Post", [1.3, 0.0, 0.0], [0.3, 3.4, 0.3]),
+                                      ("Lintel", [0.0, 1.7, 0.0], [2.9, 0.3, 0.3])):
+            self.box(scene, gate, f"{name} {part}", position, scale, color, glow=0.4)
+        self.box(scene, gate, f"{name} Veil", [0.0, 0.0, 0.0], [2.3, 3.1, 0.06], veil,
+                 solid=False, glow=1.6)
+        self.put(scene, f"{name} Glow", gate, {
+            "transform": {"position": [0.0, 0.0, -1.0]},
+            "light": {"type": "point", "color": list(veil), "intensity": 2.0, "range": 7.0}})
+        return gate
+
+    def equator_portal(self, scene: str, world: str, name: str, color) -> str:
+        """A planet's portal on its equator: on the flattest land a few metres above the sea
+        found on the side of it in daylight when the game begins (longitudes 40 to 140); the
+        ground there flattened, the portal standing up from the ground (its up the planet's)
+        and facing along the equator, its lamp beside it."""
+        import math
+        settings = self.p.scene_settings(scene)
+        body = settings["body"]
+        radius = float(body["radius"])
+        centre = body["origin"]
+        view = engine.module().Viewport()
+        view.set_settings(json.dumps(world_types.resolved_settings(self.p, settings)))
+
+        def at(longitude: float, metres: float = 0.0) -> list[float]:  # (on the equator)
+            d = (math.sin(math.radians(longitude)), 0.0, math.cos(math.radians(longitude)))
+            return [centre[i] + d[i] * (radius + metres) for i in range(3)]
+
+        def height(longitude: float) -> float | None:
+            found = view.terrain_ground(at(longitude))
+            return None if found is None else -float(found[0])
+
+        best = None
+        step = math.degrees(15.0 / radius)  # (15 m along the equator)
+        for i in range(40, 141):  # (the side in daylight when the game begins)
+            lon = float(i)
+            h = height(lon)
+            if h is None or not ABOVE_SEA + 1.0 <= h <= 40.0:
+                continue
+            around = [height(lon + k * step) for k in (-2, -1, 1, 2)]
+            if any(a is None or a < ABOVE_SEA for a in around):
+                continue
+            rough = max(abs(a - h) for a in around)
+            if best is None or rough < best[0]:
+                best = (rough, lon, h)
+        _rough, lon, h = best if best else (0.0, 90.0, ABOVE_SEA)
+        h = round(h, 1)
+        face, u, v, _ = engine.module().Body(json.dumps(body)).surface(*at(lon))
+        stamp = {"tool": "flatten", "radius": 22.0, "strength": 1.0, "height": h,
+                 "face": face, "points": [[u, v]]}
+        with self.p.connect() as con:
+            con.execute("INSERT INTO terrain_stamp (scene, stamp) VALUES (?, ?)",
+                        (scene, json.dumps(stamp)))
+        # Up is outwards (+X turned to the longitude): roll -90 about Z, then turn about Y.
+        gate = self.portal_at(scene, world, name, at(lon, h + 1.6), [0.0, lon - 90.0, -90.0],
+                              color)
+        self.lamp(scene, gate, "Portal Lamp", [2.6, -1.6, -1.2])
+        return gate
 
     def lamp(self, scene, parent, name, at, color=(1.0, 0.85, 0.6)) -> None:
         x, y, z = at
@@ -709,7 +798,6 @@ class _Builder:
             world = self.world_folder(scene)
             height = self.world(scene, sample_id,
                                 ceiling=PLANET_CEILING if name == "Planet" else None)
-            back = self.arrival(MAIN_SCENE, hub, f"From the {name}", [x, 0.5, -9.0])
             there = self.arrival(scene, world, "From the Hub", [0.0, height + 1.0, 3.0])
             self.door(MAIN_SCENE, hub, f"{name} Door", [x, 0.0, -12.0], scene, there, color)
             self.lamp(MAIN_SCENE, hub, f"{name} Lamp", [x + 1.9, 0.0, -11.3])
@@ -719,8 +807,11 @@ class _Builder:
             self.ambience(scene, name)
             if "controlled" not in WEATHER[name]:  # (the habitat's is set by its keepers)
                 self.welcome(scene, world)
-            self.pad(scene, world, "Pad Home", [0.0, height, -3.0], MAIN_SCENE, back, color)
-            self.lamp(scene, world, "Pad Lamp", [2.5, height, -3.0])
+            if name == "Planet":  # (its portal on the equator, not at the pole you land at)
+                self.equator_portal(scene, world, name, color)
+            else:  # ahead and to the left of where you arrive, turned to face you
+                self.portal(scene, world, name, [-7.0, height, -6.0], -142.0, color)
+                self.lamp(scene, world, "Portal Lamp", [-9.6, height, -4.2])
             if name in ("Habitat", "Hollow World"):  # a way out into space
                 exit_name = "Dock" if name == "Habitat" else "Exit Site"
                 back_in = self.arrival(scene, world, f"Back in by the {exit_name}",
@@ -729,6 +820,9 @@ class _Builder:
                          (0.95, 0.9, 0.5))
             if name == "Planet":  # a jetpack up through the atmosphere into space
                 self.pad_launch(scene, world, height)
+        # The hub's portal: from any world's portal, back here (or on to another world).
+        self.portal(MAIN_SCENE, hub, "Hub", [13.0, 0.0, -6.0], 90.0, (0.75, 0.75, 0.8))
+        self.lamp(MAIN_SCENE, hub, "Portal Lamp", [13.0, 0.0, -3.4])
         self.coins_and_fire(hub)
         self.bell(hub)
         self.screens()

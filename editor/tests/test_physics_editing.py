@@ -77,10 +77,9 @@ def test_adding_physics_components_in_the_inspector(qtbot, project):
     assert project.entity("e000050").components["physics_material"] == {
         "friction": 0.5, "bounciness": 0.8}
     offered = [a.text() for a in form.add_component.menu().actions()]
-    assert offered == ["Script", "Trigger", "Scene exit", "Arrival point",
+    assert offered == ["Script", "Trigger", "Scene exit", "Arrival point", "Portal",
                        "Character", "Sound", "Reverb zone", "Footsteps",
                        "Heat source"]  # (physics: all there)
-
     # Every change is one undo step.
     project.undo_stack.undo()
     assert project.entity("e000050").components["physics_material"]["bounciness"] == 0.0
@@ -317,3 +316,23 @@ def test_world_shape_chooses_how_day_and_night_work_on_a_planet(qtbot, project):
     assert not again.form.isRowVisible(again.sun_mode)  # shades on a cylinder: no choice
     again.accept()
     assert "sun_mode" not in project.scene_settings()
+
+
+def test_a_portal_in_the_inspector(qtbot, project):
+    """A portal: its name (the entity's to begin with), its box and its fade, each undoable."""
+    project.put_entity(Entity("e000051", "Gate", None, {"transform": {}}))
+    form = form_for(qtbot, project, "e000051")
+    form.add("portal")
+    form = form_for(qtbot, project, "e000051")
+    assert project.entity("e000051").components["portal"] == {
+        "name": "Gate", "size": [2.4, 3.0, 3.0], "fade": 0.8}
+    form.portal_name.setText("North Gate")
+    form.portal_name.editingFinished.emit()
+    form.portal_size.boxes[2].setValue(4.0)
+    form.portal_fade.setValue(1.5)
+    assert project.entity("e000051").components["portal"] == {
+        "name": "North Gate", "size": [2.4, 3.0, 4.0], "fade": 1.5}
+    project.undo_stack.undo()
+    assert project.entity("e000051").components["portal"]["fade"] == 0.8
+    project.undo_stack.undo()
+    assert project.entity("e000051").components["portal"]["size"] == [2.4, 3.0, 3.0]

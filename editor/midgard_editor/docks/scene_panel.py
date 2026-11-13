@@ -136,6 +136,8 @@ class ScenePanel(QWidget):
         add_menu.insertAction(self.add_sky_action,
                               add_menu.addAction("📍  Arrival Point", self.add_arrival))
         add_menu.insertAction(self.add_sky_action,
+                              add_menu.addAction("🌀  Portal", self.add_portal))
+        add_menu.insertAction(self.add_sky_action,
                               add_menu.addAction("🏛  Reverb Zone", self.add_reverb_zone))
         for kind, icon in (("point", "💡"), ("spot", "🔦")):
             add_menu.insertAction(self.add_sky_action, add_menu.addAction(
@@ -319,6 +321,19 @@ class ScenePanel(QWidget):
                         {"transform": {"position": [1.5 * count, 1.25, -3.0]},
                          "scene_exit": {"scene": "", "arrival": "", "activation": "enter",
                                         "size": [2.0, 2.5, 1.0], "fade": 0.5}})
+        self._add(entity)
+        return entity.id
+
+    def add_portal(self) -> str | None:
+        """Adds a portal: every portal in the game leads to every other. Players press Use
+        inside its box for the list, and arrive in front of it (its -Z). Name it in the
+        Inspector; give it a look with a model or shapes."""
+        if self.project is None:
+            return None
+        name, count = self._unique_name("Portal")
+        entity = Entity(self.project.next_entity_id(), name, self.target_folder(),
+                        {"transform": {"position": [1.5 * count, 1.5, -3.0]},
+                         "portal": {"name": name, "size": [2.4, 3.0, 3.0], "fade": 0.8}})
         self._add(entity)
         return entity.id
 

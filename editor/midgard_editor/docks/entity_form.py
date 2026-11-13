@@ -118,7 +118,7 @@ class EntityForm(QWidget):
 
     ADDABLE = {"script": "Script", "trigger": "Trigger", "collider": "Collider",
                "rigidbody": "Rigid body", "physics_material": "Physics material",
-               "scene_exit": "Scene exit", "arrival": "Arrival point",
+               "scene_exit": "Scene exit", "arrival": "Arrival point", "portal": "Portal",
                "character": "Character", "sound": "Sound", "reverb_zone": "Reverb zone",
                "footsteps": "Footsteps", "heat_source": "Heat source"}
     # What footsteps sound like on things (physics materials') and on the ground (the terrain's
@@ -341,6 +341,7 @@ class EntityForm(QWidget):
             form.addRow("Trigger size", _row(self.trigger, _remove_button(
                 "Remove the trigger", lambda: self.remove_component("trigger"))))
         self._build_scene_exit(entity, form)
+        self._build_portal(entity, form)
         self._build_character(entity, form)
         self.object = None
         if "object" in entity.components:
@@ -694,6 +695,7 @@ class EntityForm(QWidget):
             self.trigger.set_value(entity.components["trigger"].get("size", [1.0, 1.0, 1.0]))
         self._refresh_physics(entity)
         self._refresh_scene_exit(entity)
+        self._refresh_portal(entity)
         self._refresh_character(entity)
         self._refresh_sound(entity)
         self._refresh_footsteps(entity)
@@ -802,6 +804,9 @@ class EntityForm(QWidget):
                                                "size": [2.0, 2.5, 1.0], "fade": 0.5}
         elif kind == "arrival":
             entity.components["arrival"] = {"name": entity.name}
+        elif kind == "portal":
+            entity.components["portal"] = {"name": entity.name, "size": [2.4, 3.0, 3.0],
+                                           "fade": 0.8}
         elif kind == "footsteps":
             entity.components["footsteps"] = {"event": "step", "every": 0.0, "sounds": {}}
         elif kind == "reverb_zone":
@@ -1107,6 +1112,55 @@ class EntityForm(QWidget):
             self.exit_fade.valueChanged.connect(lambda v: self._set_value(
                 "scene_exit", "fade", round(v, 2), "fade"))
             form.addRow("Fade", self.exit_fade)
+
+    # ---- portals: each leads to every other ---------------------------------------------
+    def _build_portal(self, entity, form: QFormLayout) -> None:
+        self.portal_name = self.portal_size = self.portal_fade = None
+        if "portal" not in entity.components:
+            return
+        portal = entity.components["portal"]
+        self.portal_name = QLineEdit(portal.get("name", ""))
+        self.portal_name.setMaxLength(40)
+        self.portal_name.setPlaceholderText(entity.name)
+        self.portal_name.setToolTip(
+            "What the portal is called in every other portal's list (players can rename it in "
+            "the game). Pressing Use (E) inside its box shows the list; players arrive in front "
+            "of it (its -Z, along the arrow), facing out.")
+        self.portal_name.editingFinished.connect(lambda: self._set_value(
+            "portal", "name", self.portal_name.text().strip(), "portal name"))
+        form.addRow("Portal", _row(self.portal_name, _remove_button(
+            "No longer a portal", lambda: self.remove_component("portal"))))
+        self.portal_size = Vec3Editor(0.1, 0.01)
+        self.portal_size.set_value(portal.get("size", [2.4, 3.0, 3.0]))
+        for box in self.portal_size.boxes:
+            box.valueChanged.connect(lambda _v: self._portal_size_edited())
+        form.addRow("Portal size", self.portal_size)
+        self.portal_fade = QDoubleSpinBox()
+        self.portal_fade.setRange(0.0, 10.0)
+        self.portal_fade.setSingleStep(0.1)
+        self.portal_fade.setSuffix(" s")
+        self.portal_fade.setValue(float(portal.get("fade", 0.8)))
+        self.portal_fade.setKeyboardTracking(False)
+        self.portal_fade.valueChanged.connect(lambda v: self._set_value(
+            "portal", "fade", round(v, 2), "fade"))
+        form.addRow("Portal fade", self.portal_fade)
+
+    def _refresh_portal(self, entity) -> None:
+        if self.portal_name is None or "portal" not in entity.components:
+            return
+        portal = entity.components["portal"]
+        self.portal_name.setText(portal.get("name", ""))
+        self.portal_size.set_value(portal.get("size", [2.4, 3.0, 3.0]))
+        self.portal_fade.blockSignals(True)
+        self.portal_fade.setValue(float(portal.get("fade", 0.8)))
+        self.portal_fade.blockSignals(False)
+
+    def _portal_size_edited(self) -> None:
+        entity = self._entity()
+        size = self.portal_size.value()
+        if entity.components["portal"].get("size") != size:
+            entity.components["portal"] = {**entity.components["portal"], "size": size}
+            self._push(entity, "portal size")
 
     def _refresh_scene_exit(self, entity) -> None:
         """The arrival and scene exit rows as the entity has them (after an undo, say)."""

@@ -22,7 +22,7 @@ from PySide6.QtGui import QUndoCommand
 from .project import Project
 
 BUILT_IN = ("move_x", "move_y", "look_x", "look_y", "zoom", "jump", "run", "view", "use",
-            "menu", "descend")
+            "menu", "descend", "map")
 KINDS = {"button": "Button (pressed or not)", "axis": "Axis (from -1 to 1)"}
 # Contexts (6.1 step 2; migration 23): an action counts only while its context is the game's.
 # The game is in "menu" while a menu shows, "flying" while the player flies, else "on_foot"; a

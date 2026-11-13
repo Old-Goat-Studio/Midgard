@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """The Midgard main window: "Midgard - {project}", dockable panels across monitors, menus."""
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -136,6 +137,32 @@ class StartPage(QWidget):
         self.summary.setText(f"<h2>{project.game_title}</h2>{tagline}<p>Version "
                              f"{project.config.get('game_version')} · {project.root}</p>")
         self.stack.setCurrentIndex(1)
+
+
+def _kept_window(profile: Path) -> str:
+    """How a play's player left the window ("fullscreen", "windowed"; "" not known)."""
+    try:
+        found = json.loads(profile.read_text(encoding="utf-8")).get("window", "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return found if found in ("fullscreen", "windowed") else ""
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _forget_window(profile: Path) -> None:
+    """A play's profile without the player's window (the game's Starts decides again)."""
+    try:
+        kept = json.loads(profile.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(kept, dict) and kept.pop("window", None) is not None:
+        profile.write_text(json.dumps(kept), encoding="utf-8")
 
 
 class MainWindow(QMainWindow):
@@ -1011,9 +1038,22 @@ class MainWindow(QMainWindow):
         if package is None:
             return
         folder = self.play_folder()
+        profile = folder / "profile" / "profile.json"
+        # The window as the player left it (full screen or not: a player's preference, as in an
+        # exported game), unless the Project Page's Starts changed since: then as it says.
+        from . import menus
+        starts = menus.game_settings(self.project).get("window", "windowed")
+        changed = _read_text(folder / "starts") not in ("", starts)
+        window = "" if changed else _kept_window(profile)
         if fresh or not self.can_continue():
             shutil.rmtree(folder, ignore_errors=True)  # the scene's start, the calendar's start
+        elif changed:
+            _forget_window(profile)
         folder.mkdir(parents=True, exist_ok=True)
+        (folder / "starts").write_text(starts, encoding="utf-8")
+        if window and not profile.exists():
+            profile.parent.mkdir(parents=True, exist_ok=True)
+            profile.write_text(json.dumps({"window": window}), encoding="utf-8")
         extra = ["--world", str(folder / "world"), "--player-profile", str(folder / "profile")]
         if self.touch_action.isChecked():
             extra.append("--touch-controls")

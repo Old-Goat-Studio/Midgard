@@ -2,9 +2,12 @@
 #include "midgard/terrain.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include <stdexcept>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
@@ -193,6 +196,7 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
     number("wall_height", t.wall_height);
     number("spacing", t.spacing);
     number("snow_line", t.snow_line);
+    number("beach", t.beach);
     if (j.contains("wall")) {
         const std::string wall = j.at("wall").is_string() ? j.at("wall").get<std::string>() : "";
         if (wall == "cliff")
@@ -288,6 +292,8 @@ TerrainSettings terrain_from_json(const nlohmann::json& j) {
             range("scale", rule.scale_min, rule.scale_max);
             number("align", rule.align);
             number("distance", rule.distance);
+            number("sink", rule.sink);
+            number("sink_depth", rule.sink_depth);
             rule.salt = r.value("salt", std::string());
             if (r.contains("biomes")) {
                 if (!r.at("biomes").is_array())
@@ -320,6 +326,7 @@ nlohmann::json terrain_to_json(const TerrainSettings& t) {
                      {"wall", wall_look_name(t.wall)},
                      {"spacing", t.spacing},
                      {"snow_line", t.snow_line}};
+    if (t.beach > 0.0) j["beach"] = t.beach;  // (none: as before beaches)
     if (t.seed) j["seed"] = *t.seed;
     if (!t.graph.empty()) j["graph"] = nlohmann::json::parse(t.graph);
     if (t.climate)
@@ -330,17 +337,23 @@ nlohmann::json terrain_to_json(const TerrainSettings& t) {
                         {"season_swing", t.climate->season_swing}};
     if (!t.placements.empty()) {
         j["placements"] = nlohmann::json::array();
-        for (const PlacementRule& r : t.placements)
-            j["placements"].push_back({{"object", r.object},
-                                       {"spacing", r.spacing},
-                                       {"chance", r.chance},
-                                       {"slope", {r.slope_min, r.slope_max}},
-                                       {"height", {r.height_min, r.height_max}},
-                                       {"biomes", r.biomes},
-                                       {"scale", {r.scale_min, r.scale_max}},
-                                       {"align", r.align},
-                                       {"salt", r.salt},
-                                       {"distance", r.distance}});
+        for (const PlacementRule& r : t.placements) {
+            nlohmann::json rule = {{"object", r.object},
+                                   {"spacing", r.spacing},
+                                   {"chance", r.chance},
+                                   {"slope", {r.slope_min, r.slope_max}},
+                                   {"height", {r.height_min, r.height_max}},
+                                   {"biomes", r.biomes},
+                                   {"scale", {r.scale_min, r.scale_max}},
+                                   {"align", r.align},
+                                   {"salt", r.salt},
+                                   {"distance", r.distance}};
+            if (r.sink != 0.0 || r.sink_depth != 0.0) {  // (none: as before sinking)
+                rule["sink"] = r.sink;
+                rule["sink_depth"] = r.sink_depth;
+            }
+            j["placements"].push_back(std::move(rule));
+        }
     }
     if (!t.biomes.empty()) {
         j["biomes"] = nlohmann::json::array();
@@ -398,7 +411,8 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
     std::vector<std::string> out;
     const auto finite = [](double v) { return std::isfinite(v); };
     if (!finite(t.base) || !finite(t.height_scale) || !finite(t.sea_level) ||
-        !finite(t.ocean_depth) || !finite(t.wall_height) || !finite(t.snow_line))
+        !finite(t.ocean_depth) || !finite(t.wall_height) || !finite(t.snow_line) ||
+        !finite(t.beach))
         out.push_back("terrain: heights are numbers");
     if (!(t.height_scale >= 0.0 && t.height_scale <= 5000.0))
         out.push_back("terrain: the height scale is from 0 to 5000 m");
@@ -407,6 +421,8 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
     if (t.octaves < 1 || t.octaves > 12) out.push_back("terrain: octaves are from 1 to 12");
     if (!(t.ocean_band >= 0.0)) out.push_back("terrain: the ocean band can't be negative");
     if (!(t.ocean_depth >= 0.0)) out.push_back("terrain: the ocean's depth can't be negative");
+    if (!(t.beach >= 0.0 && t.beach <= 500.0))
+        out.push_back("terrain: the beach is from 0 to 500 m wide");
     if (!(t.end_ramp >= 0.0)) out.push_back("terrain: the end ramp can't be negative");
     if (!(t.spacing >= 0.25 && t.spacing <= 64.0))
         out.push_back("terrain: the grid spacing is from 0.25 to 64 m");
@@ -443,6 +459,10 @@ std::vector<std::string> terrain_problems(const TerrainSettings& t) {
         if (!(r.align >= 0.0 && r.align <= 1.0)) out.push_back(who + "align is 0 to 1");
         if (!(r.distance >= 10.0 && r.distance <= 2000.0))
             out.push_back(who + "the distance is from 10 to 2000 m");
+        if (!(r.sink >= 0.0 && r.sink <= 100.0))
+            out.push_back(who + "how far it's set into the ground is 0 to 100%");
+        if (!(r.sink_depth >= 0.0 && r.sink_depth <= 1000.0))
+            out.push_back(who + "how deep it's set into the ground is 0 to 1000 m");
     }
     // The ground's textures (6.0b): known layers, sensible tiles, content ids.
     const auto texture_problems = [&](const std::string& who, const GroundTexture& g) {
@@ -596,6 +616,7 @@ Terrain::Terrain(const Body& body, const TerrainSettings& settings,
       settings_(settings),
       stamps_(std::move(stamps)),
       seed_(settings.seed.value_or(body.seed)) {
+    if (settings_.beach > 0.0) lattice_ = std::make_shared<ShoreLattice>();
     if (!settings_.graph.empty())
         graph_ = std::make_shared<const WorldGraph>(
             WorldGraph::from_json(nlohmann::json::parse(settings_.graph)));
@@ -883,7 +904,107 @@ std::optional<glm::dvec3> Terrain::raycast(const glm::dvec3& origin, const glm::
     return std::nullopt;
 }
 
+// The beach's lattice: generated heights at its nodes, kept as they are made (any thread; in
+// shards, each with its lock; a shard that grows past its share is emptied: its heights are
+// made again the same when asked).
+struct Terrain::ShoreLattice {
+    struct Key {
+        int face, i, j;
+        bool operator==(const Key&) const = default;
+    };
+    struct KeyHash {
+        size_t operator()(const Key& k) const {
+            std::uint64_t h = std::uint64_t(std::uint32_t(k.i)) * 0x9E3779B97F4A7C15ULL;
+            h ^= std::uint64_t(std::uint32_t(k.j)) + 0x632BE59BD9B4E019ULL + (h << 6) + (h >> 2);
+            return size_t(h ^ (std::uint64_t(k.face) << 59));
+        }
+    };
+    struct Shard {
+        std::mutex lock;
+        std::unordered_map<Key, double, KeyHash> heights;
+    };
+    static constexpr size_t kShards = 64;
+    static constexpr size_t kMostEach = 1 << 16;  // (about 4 million heights in all)
+    std::array<Shard, kShards> shards;
+};
+
+double Terrain::lattice_height(int face, double u, double v) const {
+    const glm::dvec2 size = body_.shape.face_size();
+    const double cu = settings_.beach / 3.0 / size.x, cv = settings_.beach / 3.0 / size.y;
+    const double x = u / cu, y = v / cv;
+    const double fi = std::floor(x), fj = std::floor(y);
+    const int i = int(fi), j = int(fj);
+    const auto node = [&](int ni, int nj) {
+        const ShoreLattice::Key key{face, ni, nj};
+        ShoreLattice::Shard& shard =
+            lattice_->shards[ShoreLattice::KeyHash{}(key) % ShoreLattice::kShards];
+        {
+            std::lock_guard<std::mutex> hold(shard.lock);
+            if (const auto it = shard.heights.find(key); it != shard.heights.end())
+                return it->second;
+        }
+        const double h = generated_height(face, double(ni) * cu, double(nj) * cv);
+        std::lock_guard<std::mutex> hold(shard.lock);
+        if (shard.heights.size() >= ShoreLattice::kMostEach) shard.heights.clear();
+        shard.heights.emplace(key, h);
+        return h;
+    };
+    const double fx = x - fi, fy = y - fj;
+    const double a = node(i, j), b = node(i + 1, j), c = node(i, j + 1), d = node(i + 1, j + 1);
+    const double top = a + (b - a) * fx, bottom = c + (d - c) * fx;
+    return top + (bottom - top) * fy;
+}
+
 double Terrain::base_height(int face, double u, double v) const {
+    const TerrainSettings& t = settings_;
+    const double h = generated_height(face, u, v);
+    if (!(t.beach > 0.0)) return h;
+    // The shore: a gentle shelf where the ground meets the sea (terrain.h has the formula).
+    const double d0 = h - t.sea_level;
+    if (std::abs(d0) >= 16.0) return h;  // (only ground near the sea's level is shaped)
+    const glm::dvec2 size = body_.shape.face_size();
+    const double du = t.beach / size.x, dv = t.beach / size.y;
+    const double eu = du * 0.7071067811865476, ev = dv * 0.7071067811865476;
+    // (from the lattice: each costs a few lookups, not a whole height of its own)
+    const double east = lattice_height(face, u + du, v);
+    const double west = lattice_height(face, u - du, v);
+    const double north = lattice_height(face, u, v + dv);
+    const double south = lattice_height(face, u, v - dv);
+    const double north_east = lattice_height(face, u + eu, v + ev);
+    const double north_west = lattice_height(face, u - eu, v + ev);
+    const double south_east = lattice_height(face, u + eu, v - ev);
+    const double south_west = lattice_height(face, u - eu, v - ev);
+    const double around =
+        (east + west + north + south + north_east + north_west + south_east + south_west) * 0.125;
+    const double dl = around - t.sea_level;
+    // The shelf rises 1 in 16 (land gentler than that stays as it is).
+    const double gx = (east - west) / (2.0 * t.beach), gz = (north - south) / (2.0 * t.beach);
+    const double slope = std::sqrt(gx * gx + gz * gz);
+    const double k = slope > 0.0 ? std::min(1.0, 0.06 / slope) : 1.0;
+    // (ground below the sea with land round it keeps the shelf's full weight longer, so the
+    // shelf reaches it and no strip of water is left between a beach and the land)
+    const double reach = dl > 0.0 ? dl * std::clamp(1.0 + d0 / 0.1, 0.0, 1.0) : -dl;
+    // (and ground within a metre or so of the sea's level is all beach: no hollow of the
+    // world's own is left at that height to hold a pond)
+    const double w = std::max(
+        (1.0 - smooth01((reach - 3.0) / 10.0)) * (1.0 - smooth01((std::abs(d0) - 8.0) / 8.0)),
+        1.0 - smooth01((std::abs(d0) - 1.0) / 3.0));
+    // (the larger of the two: land above the sea stays above it, never a pond behind a beach)
+    // (and the beach 0.4 m up, so where it meets the sea it slopes into it, never lying flat
+    // at the sea's level in a ripple of shallow puddles)
+    // (not where the land is already gentle: k is 1 there)
+    const double shelf = h + (t.sea_level + 0.4 * (1.0 - k) + k * std::max(dl, 0.25 * d0) - h) * w;
+    // A dip with ground on both sides of it (along any of the four ways across) is filled to
+    // just above the sea: no pond or sliver of water narrower than the beach is wide. (Only low
+    // ground: the fill reaches 0.3 m above the sea at most; and it fades as the shelf does.)
+    const double rim =
+        std::max(std::max(std::min(east, west), std::min(north, south)),
+                 std::max(std::min(north_east, south_west), std::min(north_west, south_east)));
+    const double fill = std::min(rim, t.sea_level + 0.3) - (1.0 - w) * 1000.0;
+    return std::max(shelf, fill);
+}
+
+double Terrain::generated_height(int face, double u, double v) const {
     const TerrainSettings& t = settings_;
     // A world type's graph, or the 5.9 hills; then the shape's edges shape it.
     double h = graph_ ? graph_->evaluate(body_.shape, seed_, {face, u, v})

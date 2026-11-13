@@ -184,15 +184,17 @@ def _cook_objects(project: Project, warnings: list[str]) -> CookedObjects:
     library = {o.id: o for o in project.objects()}
     cooked = CookedObjects()
     done: set[str] = set()
-    for entity in project.all_entities():
-        object_id = entity.components.get("object", {}).get("id")
+    # (and those the world types' placement rules place over the ground)
+    users = [(f"Entity '{e.name}'", e.components.get("object", {}).get("id"))
+             for e in project.all_entities()] + world_types.used_placement_objects(project)
+    for who, object_id in users:
         if not object_id or object_id in done:
             continue
         done.add(object_id)
         obj = library.get(object_id)
         if obj is None:
-            warnings.append(f"Entity '{entity.name}' places object '{object_id}', which is not "
-                            "in the project; nothing will be shown.")
+            warnings.append(f"{who} places object '{object_id}', which is not in the project; "
+                            "nothing will be shown.")
             continue
         if not obj.source:
             continue

@@ -2,6 +2,7 @@
 """The World Tour sample (milestone 5.18 step 1): a hub and one world of each shape, each the
 engine's own sample world type at its own size and seed."""
 import json
+import math
 
 import pytest
 
@@ -42,13 +43,20 @@ def test_a_hub_and_a_world_of_each_shape_at_the_samples_sizes(tour):
             assert settings["body"].get(key) == body.get(key), (name, key)
         shapes.add(settings["body"]["shape"])
         assert settings["weather"]  # (each its own)
-        # The arrival stands on the ground, above the sea, with the pad home behind it.
+        # The arrival stands on the ground, above the sea, with the world's portal (named for
+        # it) beside it on the same ground.
         entities = by_name(tour, scene)
         arrival = entities["From the Hub"].components["transform"]["position"]
-        pad = entities["Pad Home"].components
+        portal = entities[name].components
         assert arrival[1] >= world_tour.ABOVE_SEA + 1.0
-        assert pad["scene_exit"]["scene"] == MAIN_SCENE
-        assert abs(pad["transform"]["position"][1] - arrival[1]) < 0.01
+        assert portal["portal"]["name"] == name
+        if name == "Planet":  # on the equator: level with the planet's middle, on land
+            centre = settings["body"]["origin"]
+            at = [portal["transform"]["position"][i] - centre[i] for i in range(3)]
+            assert abs(at[1]) < 0.01
+            assert math.dist(at, [0, 0, 0]) - settings["body"]["radius"] > world_tour.ABOVE_SEA
+        else:  # beside where the doors bring you, on the same ground
+            assert abs(portal["transform"]["position"][1] - 1.6 - (arrival[1] - 1.0)) < 0.01
         assert entities["Sun"].components["light"]["follows_clock"] is True
     assert shapes == {"bounded_area", "curved_cylinder", "sphere_outside", "sphere_inside"}
     assert tour.scene_settings(scenes.load_all(tour)[0]["id"]) is not None
@@ -70,7 +78,10 @@ def test_every_door_and_pad_leads_to_an_arrival_there(tour):
             exits += 1
             target = s["id"] if leads["scene"] == "@space" else leads["scene"]
             assert leads["arrival"] in arrivals[target], (s["name"], e.name)
-    assert exits == 4 + 4 + 2  # (four doors, four pads home, the dock and the exit site)
+    assert exits == 4 + 2  # (four doors, the dock and the exit site; the portals have none)
+    portals = sorted(e.components["portal"]["name"] for s in scenes.load_all(tour)
+                     for e in tour.entities(s["id"]) if "portal" in e.components)
+    assert portals == ["Archipelago", "Habitat", "Hollow World", "Hub", "Planet"]
     planet = next(s["id"] for s in scenes.load_all(tour) if s["name"] == "Planet")
     assert tour.scene_settings(planet)["ceiling"] == world_tour.PLANET_CEILING
     assert "player.flying = True" in (tour.root / "scripts" / "launch_pad.py").read_text("utf-8")
@@ -435,3 +446,48 @@ def test_the_exit_of_6_1_the_tours_own_action_its_prompt_and_controls(tmp_path):
     dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
     assert dump["hud"]["texts"]["scr_bell_hint/hint"] == "Press R to ring the bell"
     assert "Ding! The bell rings (1)" in dump["hud"]["notes"]
+
+
+PORTAL_TESTER = """
+import midgard
+
+s = {"frame": 0}
+
+
+def on_start(entity):
+    if "scr_title" in midgard.ui.screens:
+        midgard.ui.click("scr_title", "play")
+
+
+def on_update(entity, dt):
+    s["frame"] += 1
+    if s["frame"] == 2:  # (in front of the hub's portal: it faces -X, at x = 13)
+        midgard.player().position = (11.5, 1.0, -6.0)
+"""
+
+
+def test_portals_every_world_and_the_hub_have_one_and_e_opens_its_list(tmp_path):
+    """Walking up to the hub's portal shows how to use it; E opens its list (the game waits)."""
+    import subprocess
+
+    from midgard_editor import about
+    from midgard_editor.scene_model import Entity
+    if engine.module() is None or not about.runtime_candidates():
+        pytest.skip("needs the engine module and the runtime")
+    tour = world_tour.make_world_tour(tmp_path / "portals")
+    tour.put_entity(Entity(tour.next_entity_id(), "Portal Tester", None, {
+        "transform": {}, "script": {"module": "portal_tester"}}), MAIN_SCENE)
+    (tour.root / "scripts" / "portal_tester.py").write_text(PORTAL_TESTER, encoding="utf-8")
+    out = cook(tour, tmp_path / "pkg").out_dir
+    hub = next(e.id for e in tour.entities(MAIN_SCENE) if e.components.get("portal"))
+    runtime = str(about.runtime_candidates()[0])
+    run = subprocess.run([runtime, "--package", str(out), "--simulate", "30", "--dump-scene"],
+                         capture_output=True, text=True, timeout=180)
+    assert run.returncode == 0, run.stderr
+    dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
+    assert dump["portals"] == {"here": hub, "open": ""}
+    run = subprocess.run([runtime, "--package", str(out), "--simulate", "40", "--dump-scene",
+                          "--hold", "E:20:24"], capture_output=True, text=True, timeout=180)
+    assert run.returncode == 0, run.stderr
+    dump = json.loads(run.stdout[run.stdout.rindex("\n{") + 1:])
+    assert dump["portals"]["open"] == hub

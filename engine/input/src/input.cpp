@@ -20,7 +20,7 @@ std::string key(const std::string& device, const std::string& control) {
 
 InputMap InputMap::defaults() {
     // The same defaults as schema/migrations/0003_input.sql, 0007_camera_view.sql,
-    // 0008_run.sql, 0013_use.sql and 0020_touch.sql, for older packages.
+    // 0008_run.sql, 0013_use.sql, 0020_touch.sql and 0024_map.sql, for older packages.
     // (A plain array: MSVC 19.40 crashes on a range-for over a braced initializer list here.)
     static const Binding kDefaults[] = {
         {"move_x", "keyboard", "D", 1.0f},
@@ -46,6 +46,8 @@ InputMap InputMap::defaults() {
         {"use", "gamepad", "x", 1.0f},
         {"descend", "keyboard", "Left Ctrl", 1.0f},
         {"descend", "gamepad", "b", 1.0f},
+        {"map", "keyboard", "M", 1.0f},
+        {"map", "gamepad", "back", 1.0f},
         // The on-screen touch controls (midgard/ui/touch.h): the stick, dragging to look (dp),
         // and the buttons.
         {"move_x", "touch", "stick_x", 1.0f},
@@ -76,7 +78,8 @@ InputMap InputMap::defaults() {
         {"view", "Change view"},
         {"run", "Run"},
         {"use", "Use"},
-        {"descend", "Go down (flying)"}};
+        {"descend", "Go down (flying)"},
+        {"map", "Map"}};
     for (const auto& [id, name] : kNames) {
         Info i = m.info(id);
         i.name = name;

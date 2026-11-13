@@ -15,6 +15,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <tuple>
 
 #if defined(_WIN32)
@@ -5124,6 +5125,22 @@ TEST_CASE("game settings: the splash, crosshair, pointer and menu music; frozen 
     CHECK(s.pointer == "ui:p.png");
     CHECK(s.menu_music == "mus_menu");
     CHECK(midgard::game_settings_from_json("[]").crosshair_views == "first");
+    // How the game starts on a computer: windowed unless the settings say full screen.
+    CHECK(s.window == "windowed");
+    CHECK(midgard::game_settings_from_json(R"({"window": "fullscreen"})").window == "fullscreen");
+    CHECK(midgard::game_settings_from_json(R"({"window": "huge"})").window == "windowed");
+    {  // The player's own choice, kept in their profile for the next time.
+        TestPackage kept({{"e1_player", R"(NULL, '{"transform": {}, "player": {}}')"}});
+        midgard::Game game(kept.dir);
+        const fs::path file = kept.dir / "profile" / "profile.json";
+        game.use_profile(file);
+        game.set_window_mode("fullscreen");
+        CHECK(midgard::PlayerProfile::load(file).other.at("window") == "fullscreen");
+        game.set_window_mode("huge");  // (not a mode: kept as it was)
+        CHECK(midgard::PlayerProfile::load(file).other.at("window") == "fullscreen");
+        game.set_window_mode("windowed");
+        CHECK(midgard::PlayerProfile::load(file).other.at("window") == "windowed");
+    }
 
     std::vector<PackageFile> files = {
         {"snd:menu", "audio/menu.wav", tone_wav(330.0, 2.0, 0.3f)},
@@ -5299,4 +5316,243 @@ TEST_CASE("the ground's textures are read once each, prepared on workers, and pu
     CHECK(renderer->ground_stats().sets == 0);
     CHECK(renderer->ground_stats().missing.empty());
     CHECK(renderer->render_frame({}, {}, {}, glm::vec4(0.0f)));  // (draws with the placeholders)
+}
+
+TEST_CASE("the full map: M opens it, with the player and the exits on the whole world") {
+    // A bounded area 3 km square: the player 750 m east of its middle, a door 600 m west and
+    // 300 m south (z is south).
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [750, 80, 0]},
+                                         "player": {}}')"},
+                     {"e2_door", R"(NULL, '{"transform": {"position": [-600, 80, 300]},
+                                       "scene_exit": {"scene": "scn_main"}}')"}},
+                    R"({"body": {"shape": "bounded_area", "width": 3000, "length": 3000,
+                                 "seed": 7},
+                        "terrain": {"height_scale": 25, "beach": 30}})");
+    midgard::Game game(pkg.dir);
+    midgard::Actions actions(midgard::InputMap::defaults());
+    const auto press = [&](const char* key) {
+        actions.set("keyboard", key, 1.0f);
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+        actions.set("keyboard", key, 0.0f);
+        game.update(actions, 1.0f / 60.0f);
+        actions.begin_frame();
+    };
+    game.update(actions, 1.0f / 60.0f);
+    CHECK_FALSE(game.world_map_open());
+    press("M");
+    REQUIRE(game.world_map_open());
+    midgard::Game::WorldMapView v = game.world_map_view();
+    CHECK(v.open);
+    CHECK(v.aspect == 1.0);
+    CHECK(v.player.x == doctest::Approx(0.75).epsilon(0.002));
+    CHECK(v.player.y == doctest::Approx(0.5).epsilon(0.002));
+    REQUIRE(v.marks.size() == 1);
+    CHECK(v.marks[0].kind == "exit");
+    CHECK(v.marks[0].label == "e2_door");
+    CHECK(v.marks[0].at.x == doctest::Approx(0.3).epsilon(0.002));
+    CHECK(v.marks[0].at.y == doctest::Approx(0.6).epsilon(0.002));
+    // Its picture is made in the background, then kept.
+    for (int i = 0; i < 1000 && !game.world_map_view().ready; ++i) {
+        game.update(actions, 1.0f / 60.0f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    v = game.world_map_view();
+    REQUIRE(v.ready);
+    REQUIRE(v.pixels);
+    CHECK(v.width == midgard::Game::kWorldMapSize);
+    CHECK(v.height == midgard::Game::kWorldMapSize);
+    CHECK(v.pixels->size() == size_t(v.width) * size_t(v.height) * 4);
+    CHECK((*v.pixels)[3] == 255);
+    CHECK((*v.pixels)[2] > (*v.pixels)[0]);  // (the ocean round the edge: blue)
+    const std::uint64_t version = v.version;
+    // M again closes it; opened again, the same picture (not made again).
+    press("M");
+    CHECK_FALSE(game.world_map_open());
+    press("M");
+    CHECK(game.world_map_open());
+    CHECK(game.world_map_view().ready);
+    CHECK(game.world_map_view().version == version);
+    game.set_world_map_open(false);  // (Esc)
+    CHECK_FALSE(game.world_map_open());
+}
+
+TEST_CASE("the full map of a flat scene: the marks alone, round the player") {
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {}, "player": {}}')"},
+                     {"e2_pad", R"(NULL, '{"transform": {"position": [40, 0, -30]},
+                                      "scene_exit": {"scene": "scn_main"}}')"}});
+    midgard::Game game(pkg.dir);
+    game.set_world_map_open(true);
+    const midgard::Game::WorldMapView v = game.world_map_view();
+    CHECK(v.ready);
+    CHECK_FALSE(v.pixels);
+    REQUIRE(v.marks.size() == 1);
+    // The pad is east (right) and north (up) of the player, 50 m away on a square at least
+    // 100 m across.
+    const glm::dvec2 d = v.marks[0].at - v.player;
+    CHECK(d.x > 0.0);
+    CHECK(d.y < 0.0);
+    CHECK(d.x / -d.y == doctest::Approx(40.0 / 30.0));
+    CHECK(glm::length(d) <= 0.5 + 1e-9);
+    for (const glm::dvec2& p : {v.player, v.marks[0].at}) {
+        CHECK(p.x >= 0.0);
+        CHECK(p.x <= 1.0);
+        CHECK(p.y >= 0.0);
+        CHECK(p.y <= 1.0);
+    }
+}
+
+TEST_CASE(
+    "portals: each leads to every other, in any scene; Use opens the menu; a rename is kept") {
+    // A gate in the main scene (facing -Z, the way it faces), a pad beside it, and a portal in
+    // the cave.
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 10]},
+                                         "player": {}}')"},
+                     {"e2_gate", R"(NULL, '{"transform": {"position": [0, 1.5, 0]},
+                                       "portal": {"name": "Gate", "size": [2.4, 3, 3]}}')"},
+                     {"e3_pad", R"(NULL, '{"transform": {"position": [20, 1.5, 0]},
+                                      "portal": {}}')"}});
+    {
+        sqlite3* db = nullptr;
+        sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+        exec(db, "INSERT INTO string VALUES ('scn_cave.name', 'Cave', '')");
+        exec(db,
+             "INSERT INTO scene (id, name_key, settings) VALUES ('scn_cave', 'scn_cave.name', "
+             "'{}')");
+        exec(db,
+             "INSERT INTO entity (id, scene, name, parent, components) VALUES ('e9_deep', "
+             "'scn_cave', 'Deep', NULL, '{\"transform\": {\"position\": [5, 1.5, 5], "
+             "\"rotation\": [0, 90, 0]}, \"portal\": {\"name\": \"Deep Cave\", \"fade\": 0}}')");
+        sqlite3_close(db);
+    }
+    const fs::path world = pkg.dir / "worlds" / "w1";
+    {
+        midgard::Game game(pkg.dir);
+        game.use_world(world);
+        // Every portal, in the scenes' order; one without a name has its entity's.
+        const auto all = game.portals();
+        REQUIRE(all.size() == 3);
+        CHECK(all[0].name == "Gate");
+        CHECK(all[0].scene_name == "Main");
+        CHECK(all[1].name == "e3_pad");
+        CHECK(all[2].id == "e9_deep");
+        CHECK(all[2].name == "Deep Cave");
+        CHECK(all[2].scene_name == "Cave");
+        // Use away from a portal does nothing; in front of the gate (in its box) opens the
+        // menu, and the game stands still under it.
+        midgard::Actions actions(midgard::InputMap::defaults());
+        const auto press = [&](const char* key) {
+            actions.set("keyboard", key, 1.0f);
+            game.update(actions, 1.0f / 60.0f);
+            actions.begin_frame();
+            actions.set("keyboard", key, 0.0f);
+            game.update(actions, 1.0f / 60.0f);
+            actions.begin_frame();
+        };
+        press("E");
+        CHECK(game.portal_open().empty());
+        midgard::Scene& scene = game.scene();
+        const entt::entity player = scene.find("e1_player");
+        scene.registry.get<midgard::Transform>(player).position = {0.0, 1.0, -1.0};  // (moved)
+        CHECK(game.portal_here() == "e2_gate");
+        press("E");
+        CHECK(game.portal_open() == "e2_gate");
+        CHECK(game.frozen());
+        // Renamed (trimmed); an empty name is refused.
+        CHECK(game.rename_portal("e2_gate", "  Front Gate "));
+        CHECK_FALSE(game.rename_portal("e2_gate", "   "));
+        CHECK(game.portals()[0].name == "Front Gate");
+        CHECK(game.rename_portal("e2_gate", std::string(60, 'x')));
+        CHECK(game.portals()[0].name.size() == 40);
+        CHECK(game.rename_portal("e2_gate", "Front Gate"));
+        // Closed: the game goes on.
+        game.close_portal();
+        CHECK_FALSE(game.frozen());
+        // To the cave's portal: the menu closes, and the player arrives just beyond its front
+        // (its -Z: turned 90 degrees, -X), facing out.
+        game.open_portal("e2_gate");
+        CHECK(game.travel_to_portal("e9_deep"));
+        CHECK(game.portal_open().empty());
+        for (int i = 0; i < 300 && game.scene().id != "scn_cave"; ++i)
+            game.update(actions, 1.0f / 60.0f);
+        REQUIRE(game.scene().id == "scn_cave");
+        const glm::dvec3 at = game.scene().world_position(game.scene().find("e1_player"));
+        CHECK(at.x == doctest::Approx(5.0 - 1.5 - midgard::kPortalStep).epsilon(0.01));
+        CHECK(at.z == doctest::Approx(5.0).epsilon(0.01));
+        CHECK(game.portal_here().empty());  // (out of its box: Use doesn't open it at once)
+        CHECK_FALSE(game.travel_to_portal("e8_nowhere"));
+        game.save_world();
+    }
+    // The player's name for the gate is kept in their world.
+    midgard::Game again(pkg.dir);
+    again.use_world(world);
+    CHECK(again.portals()[0].name == "Front Gate");
+    midgard::Game fresh(pkg.dir);  // (another world: the game's own name)
+    CHECK(fresh.portals()[0].name == "Gate");
+}
+
+TEST_CASE("portals: arriving in the third person, the camera is in front of the portal") {
+    // The player and a camera behind them (third person); a portal at the far end facing -Z.
+    TestPackage pkg({{"e1_player", R"(NULL, '{"transform": {"position": [0, 1, 10]},
+                                         "player": {}}')"},
+                     {"e2_camera", R"(NULL, '{"transform": {"position": [0, 3, 16]},
+                                         "camera": {}}')"},
+                     {"e3_here", R"(NULL, '{"transform": {"position": [0, 1.5, 0]},
+                                      "portal": {"name": "Here"}}')"},
+                     {"e4_there", R"(NULL, '{"transform": {"position": [40, 1.5, -40],
+                                       "rotation": [0, 180, 0]},
+                                       "portal": {"name": "There", "fade": 0}}')"}});
+    midgard::Game game(pkg.dir);
+    REQUIRE(game.camera_rig().active());
+    REQUIRE(game.camera_rig().view() == midgard::CameraView::Third);
+    const double distance = game.camera_rig().distance();
+    midgard::Actions actions(midgard::InputMap::defaults());
+    game.open_portal("e3_here");
+    REQUIRE(game.travel_to_portal("e4_there"));
+    for (int i = 0; i < 120; ++i) game.update(actions, 1.0f / 60.0f);
+    // "There" faces +Z (turned round): the player stands out beyond its box by the camera's
+    // distance and more, and the camera, behind them, is in front of the portal's box too.
+    const glm::dvec3 player = game.scene().world_position(game.scene().find("e1_player"));
+    CHECK(player.z - (-40.0) >= 1.5 + midgard::kPortalStep + distance);
+    const glm::dvec3 eye = game.camera(1.0f).origin;
+    CHECK(eye.z > -40.0 + 1.5);  // (in front of the box: nothing of the portal in the way)
+    CHECK(eye.z < player.z);     // (behind the player, looking at them)
+}
+
+TEST_CASE("a world type's objects can be set into the ground: by the rule's depth at their size") {
+    // Posts 2 m tall, set half way in (50%: 1 m at size 1), sized 1 to 2.
+    TestPackage pkg(
+        {{"e1_player", R"(NULL, '{"transform": {"position": [0, 30, 0]}, "player": {}}')"}},
+        R"({"body": {"shape": "bounded_area", "width": 3000, "length": 3000, "seed": 7},
+            "terrain": {"world_type": "wt_posts", "version": 1}})",
+        {{"obj_post", R"([{"name": "post", "components": {
+              "transform": {"position": [0, 1, 0]}, "mesh": {"asset": "builtin:cube"}}}])"}});
+    sqlite3* db = nullptr;
+    sqlite3_open(utf8(pkg.dir / "Game.db").c_str(), &db);
+    exec(db, "INSERT INTO world_type (id, name, version) VALUES ('wt_posts', 'Posts', 1)");
+    exec(db, R"(INSERT INTO world_type_version (world_type, version, recipe) VALUES ('wt_posts', 1,
+        '{"terrain": {"placements": [{"object": "obj_post", "spacing": 12, "chance": 0.35,
+          "slope": [0, 90], "height": [-1000, 1000], "distance": 60, "scale": [1, 2],
+          "sink": 50, "sink_depth": 1.0}]}}'))");
+    sqlite3_close(db);
+    CHECK(midgard::validate_package(pkg.dir).errors.empty());
+    midgard::Game game(pkg.dir);
+    REQUIRE(game.placed() != nullptr);
+    const midgard::Terrain& t = game.terrain()->terrain();
+    CHECK(t.settings().placements[0].sink == 50.0);
+    CHECK(t.settings().placements[0].sink_depth == 1.0);
+    int checked = 0;
+    for (entt::entity e : game.scene().registry.view<const midgard::ObjectRef>()) {
+        const std::string& id = game.scene().registry.get<midgard::EntityInfo>(e).id;
+        if (!midgard::PlacedObjects::is_placed(id)) continue;
+        const glm::dvec3 p = game.scene().world_position(e);
+        const double size = game.scene().registry.get<midgard::Transform>(e).scale.x;
+        CHECK(t.above_ground(p) == doctest::Approx(-1.0 * size).epsilon(1e-3));  // (upright)
+        ++checked;
+    }
+    CHECK(checked > 5);
+    // Out of range: a problem the cook reports.
+    midgard::TerrainSettings wrong = t.settings();
+    wrong.placements[0].sink = 120.0;
+    CHECK_FALSE(midgard::terrain_problems(wrong).empty());
 }

@@ -32,6 +32,9 @@ GameSettings game_settings_from_json(const std::string& text) {
     if (j.contains("menu_music") && j["menu_music"].is_string())
         s.menu_music = j["menu_music"].get<std::string>();
     if (j.contains("touch")) s.touch = touch_layout_from_json(j["touch"]);
+    if (j.contains("window") && j["window"].is_string() &&
+        (j["window"] == "windowed" || j["window"] == "fullscreen"))
+        s.window = j["window"].get<std::string>();
     return s;
 }
 

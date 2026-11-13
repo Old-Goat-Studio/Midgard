@@ -220,6 +220,12 @@ void add_component(entt::registry& reg, entt::entity e, const std::string& name,
         x.size = glm::max(vec3(c, "size", x.size), glm::vec3(0.01f));
         x.fade = std::clamp(c.value("fade", x.fade), 0.0f, 10.0f);
         reg.emplace_or_replace<SceneExit>(e, x);
+    } else if (name == "portal") {
+        Portal p;
+        p.name = c.value("name", std::string());
+        p.size = glm::max(vec3(c, "size", p.size), glm::vec3(0.01f));
+        p.fade = std::clamp(c.value("fade", p.fade), 0.0f, 10.0f);
+        reg.emplace_or_replace<Portal>(e, p);
     } else if (name == "sky") {
         reg.emplace_or_replace<Sky>(e, vec3(c, "color", SceneSettings{}.sky),
                                     vec3(c, "ambient", SceneSettings{}.ambient),
@@ -360,6 +366,8 @@ void remove_component(entt::registry& reg, entt::entity e, const std::string& na
         reg.remove<CharacterRef>(e);
     else if (name == "scene_exit")
         reg.remove<SceneExit>(e);
+    else if (name == "portal")
+        reg.remove<Portal>(e);
     else if (name == "sky")
         reg.remove<Sky>(e);
     else if (name == "rigidbody")
@@ -378,8 +386,8 @@ void add_components(entt::registry& reg, entt::entity e, const json& c) {
     if (!c.is_object()) throw SceneError("components must be a JSON object");
     reg.remove<Transform, MeshRef, Material, CameraLens, DirectionalLight, LocalLightSource, Player,
                ScriptRef, Trigger, Arrival, SceneExit, CharacterRef, Sky, RigidBody, ColliderShape,
-               PhysicsMaterial, Group, ObjectRef, SoundSource, ReverbZone, Footsteps, HeatSource>(
-        e);
+               PhysicsMaterial, Group, ObjectRef, SoundSource, ReverbZone, Footsteps, HeatSource,
+               Portal>(e);
     reg.emplace<Transform>(e);
     for (const auto& [name, value] : c.items()) add_component(reg, e, name, value);
 }

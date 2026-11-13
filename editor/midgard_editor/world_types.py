@@ -109,6 +109,63 @@ def ground_textures(recipe: dict[str, Any]) -> list[str]:
     return out
 
 
+def placement_objects(recipe: dict[str, Any]) -> list[str]:
+    """The objects a recipe's placement rules place (each once, in order)."""
+    terrain = recipe.get("terrain", {}) if isinstance(recipe, dict) else {}
+    out: list[str] = []
+    for rule in terrain.get("placements", []) or []:
+        object_id = rule.get("object") if isinstance(rule, dict) else None
+        if isinstance(object_id, str) and object_id and object_id not in out:
+            out.append(object_id)
+    return out
+
+
+def used_placement_objects(project: Project) -> list[tuple[str, str]]:
+    """(who, object id) for the objects the placement rules of the world types the scenes are
+    made with place."""
+    out = []
+    for world_type, version in sorted(used_versions(project)):
+        found = recipe(project, world_type, version)
+        name = next((t["name"] for t in load_all(project) if t["id"] == world_type), world_type)
+        for object_id in placement_objects(found or {}):
+            out.append((f"World type '{name}'", object_id))
+    return out
+
+
+def send_placement_objects(view, project: Project, settings: dict[str, Any],
+                           sent: dict[str, int]) -> None:
+    """The objects resolved scene settings' placement rules place, sent to an engine view
+    (their meshes and textures, then their parts; once each, again when they change: `sent`
+    remembers), so the view shows them over the ground."""
+    from .objects import ObjectError, object_content
+    for object_id in placement_objects({"terrain": settings.get("terrain") or {}}):
+        obj = project.object(object_id)
+        if obj is None:
+            continue
+        try:
+            content = object_content(project, obj)
+        except ObjectError:
+            continue
+        for content_id, (_path, data) in content.files.items():
+            if sent.get(content_id) == hash(data):
+                continue
+            try:
+                if data[:4] == b"glTF":
+                    view.set_mesh(content_id, data)
+                else:
+                    view.set_texture(content_id, data)
+            except RuntimeError:
+                continue
+            sent[content_id] = hash(data)
+        parts = json.dumps(content.parts)
+        if sent.get("object:" + object_id) != hash(parts):
+            try:
+                view.set_object(object_id, parts)
+            except RuntimeError:
+                continue
+            sent["object:" + object_id] = hash(parts)
+
+
 def paint_layer_names(project: Project, scene: str | None = None) -> dict[str, str]:
     """What the scene's world type calls its two paint layers ("Paint layer 1" unnamed)."""
     world = scene_world(project, scene)

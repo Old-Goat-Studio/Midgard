@@ -396,9 +396,17 @@ class ViewportPanel(QWidget):
             self.view.show_navigation = show
             self.request_render()
 
+    def _send_placement_objects(self, settings: dict) -> None:
+        """The objects the ground's placement rules place (as entities' objects are sent)."""
+        for object_id in world_types.placement_objects({"terrain": settings.get("terrain")
+                                                        or {}}):
+            if object_id not in self._sent_objects:
+                self._send_object(object_id)
+
     def _settings_changed(self, scene: str) -> None:
         if self.project is not None and scene == self.project.scene:
             settings = world_types.resolved_settings(self.project, self.project.scene_settings())
+            self._send_placement_objects(settings)
             self.view.set_settings(json.dumps(settings))
             world_types.send_ground_textures(self.view, self.project, settings,
                                              self._sent_content)
@@ -409,6 +417,7 @@ class ViewportPanel(QWidget):
         if self.project is not None:
             # The fallback for a scene without a Sky entity, as in the game.
             settings = world_types.resolved_settings(self.project, self.project.scene_settings())
+            self._send_placement_objects(settings)
             self.view.set_settings(json.dumps(settings))
             world_types.send_ground_textures(self.view, self.project, settings,
                                              self._sent_content)

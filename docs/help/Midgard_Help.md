@@ -128,7 +128,9 @@ editor can be undone with **Ctrl+Z**.
 (a second copy gets a number on its name, so yours is never replaced):
 
 - **World Tour**: a paved hub with four doorways, each into a world of a different shape:
-  - **Archipelago**: islands in a sea, 3 km across, with an edge.
+  - **Archipelago**: a chain of volcanic islands in a sea 3 km across, with an edge: five
+    islands of different shapes and sizes round a sheltered lagoon, with bays, beaches and a
+    volcano on each (a crater at the top).
   - **Habitat**: inside a spinning cylinder 1 km in radius and 5 km long. The land curves
     up on both sides and meets overhead. A **Dock** pad takes you outside into space.
   - **Planet**: a small planet 2 km in radius, cold at the poles and warmer towards its
@@ -202,6 +204,7 @@ The **Add** button at the top of the **Scene** panel offers:
 - **Group**: a set of parts that move as one (a cart made of a box and four wheels). Move the
   group and all its parts come along.
 - **Scene Exit** and **Arrival Point**: doors between scenes (section 17).
+- **Portal**: a gateway to every other portal in the game, in any scene (section 17).
 - **Point Light** and **Spot Light**: lamps (section 11).
 - **Reverb Zone**: a place that echoes (section 12).
 - **Object**: one of your reusable objects (section 8).
@@ -606,7 +609,36 @@ Terrain is the ground of a large world. It's made in three layers:
    **100%** (Ctrl+0) for its own size and **Fit** for the whole graph as big as can be read;
    hold the **middle mouse button** and drag to move round a big graph. Drag the divider
    between the graph and its settings to give either more room.
+   **New ▸ From Sample** starts you from one of Midgard's own: the **Archipelago** sample
+   makes a small chain of volcanic islands (usually 3 to 7, each seed different) with bays
+   and a crater at the top of each volcano. To change it: the **blobs** node's *size* sets
+   how big the islands are, the number added in **shape** (−0.62) how much is land (nearer 0:
+   more and bigger islands), **bays** how ragged the coasts are, and **peak** how high the
+   volcanoes rise.
+   **Placements** (a tab of the World Types panel) scatter objects over the ground: forests,
+   rocks, bushes. **Add Rule** drops down a menu of what the rule can place: **Model from
+   the Asset Library…** opens the library's models, each shown turning in the preview as you
+   pick it (the model is then one of your objects, in the **Objects** panel too), or choose
+   one of your objects from the list. In the table, each rule's **Spacing** (metres between them), **Chance** (0 to 1),
+   the **Slope** and **Height** they grow on, the **Biomes** (names, with commas; empty: every
+   one), **Size** from and to, **Lean** (0 upright, 1 leaning with the ground) and
+   **Distance** (how far from the camera they're shown), and **Sink %**: how much of each is
+   set into the ground, as a share of its own height (0: standing on it; 30: the bottom
+   third buried, for rocks half in the earth or trees with their roots hidden; bigger and
+   smaller ones in the same rule sink in proportion). **Choose Object** (or a
+   double-click on a rule's object) changes what it places; **Remove Rule** takes it out. The
+   3D view, the Viewport and the game show them.
+   The 3D view is drawn in the background: on a big world it can take a moment to change,
+   and you can carry on meanwhile.
 3. **Terrain brushes** (the **Terrain** panel): your own hand-made changes on top.
+
+**Beaches.** A world type's **Beach** setting (on its **Recipe** tab; **World ▸ World Shape…**
+has it too, for ground without a world type) makes a gentle shelf wherever the ground meets the
+sea: sand at the water's edge rising about 1 in 16, and shallow water in front of it, however
+steep the land is behind (a cliff gets a beach at its foot). The number is how wide, in metres,
+the stretch of coast is that it smooths: 30 to 45 suits most worlds; 0 turns it off (the ground
+exactly as the recipe makes it). Land already gentler than a beach stays as it is. Midgard's
+sample world types all have beaches, and so does a new world type.
 
 ### Sculpting and painting
 
@@ -1042,12 +1074,20 @@ smoothing.
 | Jump | Space | A | **Jump** |
 | Change view | V | Y | **View** |
 | Zoom | Mouse wheel | | |
-| Use (doors, switches) | E | X | **Use** |
+| Use (doors, portals, switches) | E | X | **Use** |
 | Descend (when flying) | Left Ctrl | B | **Down** |
+| Map (the whole world) | M | Back (View) | |
 | Menu | Escape | Start | The phone's Back button |
 | Show colliders | F4 | | |
 
 Walking is relative to the camera, and the player turns to face the way it walks.
+
+The keyboard and mouse and a gamepad work together, with nothing to choose: pick up the gamepad
+and play, put it down and use the keys. A gamepad plugged in before the game starts, or while
+it plays, is ready at once (the game's output says *Gamepad:* and its name). The hints the game
+shows ("Press E to use the portal") name the control on whichever you used last. If a
+controller does nothing, `midgard_runtime --controllers` (in a terminal, from Midgard's folder)
+lists the controllers Windows has and whether each is a gamepad the game can read.
 
 ### The Input editor: your game's actions and their keys
 
@@ -1189,6 +1229,16 @@ Every game shows a **HUD** over the game by itself:
   arrow in the middle, pointing the way the camera faces. Blue squares are scene exits (doors to
   other scenes); gold dots are things your scripts mark (a quest's goal), with their labels.
   Scenes without terrain show the marks on a plain background.
+- **The full map**: press **M** (a gamepad's **Back**) and the whole world's map covers three
+  quarters of the window, north at the top: the sea, beaches, grass, rock and snow, as the World
+  Type editor's map shows them. The player is the red arrow, pointing the way the camera faces;
+  purple squares are portals, by the names the player gave them; blue squares are the scene's
+  other exits (doors, teleport pads), each with its name; gold dots are what your scripts
+  mark. A planet's map is laid out by latitude and longitude
+  (the north pole along the top); a cylinder's is unrolled. The first time it opens in a
+  scene it says *Drawing the map…* for a moment. Press **M** again, or **Esc**, to close it.
+  The game carries on underneath; a pause menu hides it. Players can give it another key on
+  the Controls screen.
 
 **North on every world shape.** On flat ground north is -Z, the way everything faces (section 6). On a planet or inside a hollow world, north points
 towards the world's north pole (the +Y pole, the one its latitude counts from), so walking
@@ -1349,6 +1399,12 @@ clicked, waits for a new one. **Respawn the player** is one more thing a button 
   whose **Plays the menu music** tick is off (in the Menu editor, with nothing chosen) keeps the
   scene's music instead. The menu music's playlist only ever plays for menus: the world never
   chooses it by itself.
+- **Starts**: **In a window** or **Full screen**, how the game opens on a computer the first
+  time (phones are always full screen). **F11** (or **Alt+Enter**) switches between the two
+  while playing, even during the splash screen; the menus, the HUD and the minimap fit the new
+  size. The game remembers how the player left it (in their profile): quit full screen and it
+  starts full screen next time; quit in a window and it starts in a window. Under the editor,
+  Play remembers it too.
 
 All their pictures come from the **GUI** section of the Asset Library, and the cook packs them.
 
@@ -1436,6 +1492,34 @@ How wet they are, the weather a script has forced, and the time all carry on too
 **Scenes remember.** Leave a scene and come back, and it is as you left it: the crates you
 knocked over still lie where they fell, and what a script moved or took away stays moved or
 gone. A saved game remembers this too. (Things a script *made* aren't remembered yet.)
+
+### Portals: every one leads to every other
+
+A **portal** joins every place that has one: from any portal the player can go to any other,
+in this scene or another, with nothing to wire up.
+
+1. **Add ▸ Portal** (in the Scene panel): a box, outlined in the Viewport with an arrow out of
+   its front (its -Z). Give it a look of its own: put shapes or a model inside it, or make it
+   the parent of a frame.
+2. In the Inspector, give it a **Portal** name (it shows in every other portal's list), its
+   **Portal size** (the box where Use works) and how long the picture **fades**. Any entity
+   can be a portal: **Add Component ▸ Portal**.
+
+In the game, walking into a portal's box shows *Press E to use the portal* (the control for
+the device in use). Pressing **Use** (E, a gamepad's X) opens its menu, and the game waits:
+
+- At the top, the portal's **Name**. Type a new one and click **Rename** (or press Enter): every
+  other portal's list shows it from then on. A player's names are kept in their saved world, so
+  each player can name their own portals; the names you gave are where everyone starts.
+- **Travel to**: every other portal, by name (and its world, when that's a different name).
+  Choose one: the picture fades, and the player arrives just in front of that portal, facing
+  out of it.
+- **Close**, **Esc** or a gamepad's **B** goes back to the game.
+
+The **World Tour** has one in every world, named for it (Archipelago, Habitat, Planet, Hollow
+World), and one in the hub, **Hub**. The Planet's stands on its equator, a quarter of the way
+round from the pole the hub's door brings you to. Scripts can travel too:
+`midgard.rooms.portals` lists every portal, and `midgard.rooms.travel(portal_id)` goes there.
 
 ### Space above a planet
 

@@ -18,6 +18,27 @@
 //        h = -ocean_depth + (h + ocean_depth) s
 //   cylinders: e = the distance to the nearer end, t = clamp(1 - e / end_ramp, 0, 1),
 //        s = t t (3 - 2 t), h = h + (wall_height - h) s
+//   a beach (beach > 0; 6.2's shores): where the ground meets the sea it becomes a gentle
+//        shelf, however steep the land behind. With r = beach (metres), d0 = h - sea_level and
+//        |d0| < 16: the heights round the point come from a lattice of h (as above) every r / 3
+//        metres (cu = r / 3 / face width, cv = r / 3 / face length; node (i, j) at u = i cu,
+//        v = j cv), read between its nodes: x = u / cu, y = v / cv, i = floor(x),
+//        j = floor(y), fx = x - i, fy = y - j, a b c d the nodes (i, j) (i+1, j) (i, j+1)
+//        (i+1, j+1), top = a + (b - a) fx, bottom = c + (d - c) fx, H = top + (bottom - top)
+//        fy. L = the mean of H at the 8 places r metres away (east, west, north, south:
+//        u +- r / face width, v +- r / face length; and the 4 diagonals, at
+//        0.7071067811865476 of those), dl = L - sea_level; the land's slope at that scale
+//        g = sqrt(((h east - h west) / 2r)^2 + ((h north - h south) / 2r)^2) and
+//        k = min(1, 0.06 / g) (1 where g is 0): a shelf rising 1 in 16, and gentle land as it
+//        was; reach = dl clamp(1 + d0 / 0.1, 0, 1) where dl > 0, else -dl (ground below the
+//        sea with land round it has the shelf's full weight),
+//        w = max((1 - S((reach - 3) / 10)) (1 - S((|d0| - 8) / 8)), 1 - S((|d0| - 1) / 3))
+//        with S(t) = smooth01 (ground near the sea's level is all beach),
+//        s = h + (sea_level + 0.4 (1 - k) + k max(dl, 0.25 d0) - h) w (the larger: ground above
+//        the sea stays
+//        above it); then a dip with ground on both sides is filled to just above the sea:
+//        rim = the largest of min(east, west), min(north, south) and the two diagonals' mins,
+//        h = max(s, min(rim, sea_level + 0.3) - (1 - w) 1000)
 //
 // Chunks: each face is cut into roots about kRootSize metres across, and each root into a
 // quadtree: a chunk at level L is a root's 2^L x 2^L part, a grid of kChunkQuads x kChunkQuads
@@ -125,6 +146,12 @@ struct PlacementRule {
     double align = 0.0;  // 0 upright, 1 along the ground
     std::string salt;    // a name: rules with the same settings but different salts differ
     double distance = 200.0;
+    // How far each is set into the ground: `sink` per cent of its object's height (the
+    // editor's figure), `sink_depth` the metres that comes to at its own size (the editor works
+    // it out from the object); each instance goes down by sink_depth times its size, along its
+    // up.
+    double sink = 0.0;
+    double sink_depth = 0.0;
     bool operator==(const PlacementRule&) const = default;
 };
 
@@ -153,7 +180,10 @@ struct TerrainSettings {
     double wall_height = 120.0;  // cylinders: how high it rises, to meet the end walls
     WallLook wall = WallLook::Cliff;
     double snow_line = 90.0;  // metres: snow lies above this all year (lower in winter)
-    double spacing = 2.0;     // metres between grid points at the finest level, at most
+    // metres: how wide the gentle shelf (a beach, and shallows) where the ground meets the sea
+    // is made, whatever the land behind it does (0: none, the ground as generated)
+    double beach = 0.0;
+    double spacing = 2.0;  // metres between grid points at the finest level, at most
     // How the ground's height is made, a world type's graph (midgard/worldgen.h) as JSON: in
     // place of base + height_scale * noise. Empty: those (the 5.9 hills).
     std::string graph;
@@ -280,6 +310,8 @@ public:
     glm::dvec3 noise_position(int face, double u, double v) const;  // relative to the body
     double height(int face, double u, double v) const;              // with the stamps
     double base_height(int face, double u, double v) const;         // as generated
+    // As the graph (or the 5.9 hills) and the shape's edges make it: before the beach.
+    double generated_height(int face, double u, double v) const;
     // How much a stamp applies at a point: 1 on its line, falling to 0 at its radius.
     double stamp_weight(const TerrainStamp& s, int face, double u, double v) const;
     // Where a ray first meets the ground (within `distance` metres), or none.
@@ -322,6 +354,11 @@ public:
 
 private:
     std::shared_ptr<const WorldGraph> graph_;  // settings_.graph, compiled
+    // The beach's lattice of generated heights (made as it is needed, shared by copies: the
+    // heights are the world's own), and a height read between its nodes.
+    struct ShoreLattice;
+    std::shared_ptr<ShoreLattice> lattice_;
+    double lattice_height(int face, double u, double v) const;
     // Whether the grid's u then v turn the other way to a flat map's, seen from above (the
     // outside of a sphere): normals and triangles are turned over to face up.
     bool flipped(const ChunkKey& key) const;

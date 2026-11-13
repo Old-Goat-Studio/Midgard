@@ -680,6 +680,15 @@ class Rooms:
         """Takes a scene exit (an entity with a scene_exit), whatever its activation: how a door
         set to "Only from a script" opens. ValueError if the entity isn't one."""
 
+    portals: list[dict]
+    """Every portal in the game, in every scene, in the scenes' order: dicts with "id" (its
+    entity id), "scene", "scene_name" and "name" (as the player named it) (read-only)."""
+
+    def travel(self, portal: str) -> None:
+        """Takes the player to a portal (its entity id), as choosing it in a portal's list does:
+        the picture fades, and they arrive in front of it, facing out. ValueError if the game has
+        no such portal."""
+
     def enter_space(self, fade: float = 1.0) -> None:
         """Into space: above the planet the player is on (from where they are), or outside the
         habitat or hollow world. ValueError on a world with no outside (a bounded area, a

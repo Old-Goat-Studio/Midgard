@@ -91,7 +91,8 @@ def test_an_old_world_generates_the_same_after_its_world_type_changes(panel, pro
                                                                        tmp_path):
     made = panel.new_from_sample("wt_sample_archipelago")
     preview = panel.preview_settings()
-    use_world(project, preview["body"], made, 1, 23)
+    seed = preview["terrain"]["seed"]  # (the sample's own)
+    use_world(project, preview["body"], made, 1, seed)
     before = game_world_hash(project, tmp_path / "before")
     assert before == world_hash(preview)
     world_types.mark_shipped(project)  # an export: version 1 is kept from now on
@@ -106,5 +107,5 @@ def test_an_old_world_generates_the_same_after_its_world_type_changes(panel, pro
     assert world_hash(resolved) == before
     assert game_world_hash(project, tmp_path / "after") == before
     # A world made with version 2 is the changed one.
-    use_world(project, changed["body"], made, 2, 23)
+    use_world(project, changed["body"], made, 2, seed)
     assert game_world_hash(project, tmp_path / "v2") == world_hash(changed)

@@ -9,8 +9,10 @@
 //    "pointer": "ui:...",                       the mouse pointer over menus ("": the system's)
 //    "menu_music": "mus_menu",                  a playlist that plays while a menu shows ("":
 //                                               none; a screen can say not to)
-//    "touch": {"buttons": [...]}}               the touch controls' buttons (6.1;
+//    "touch": {"buttons": [...]},               the touch controls' buttons (6.1;
 //                                               midgard/touch_layout.h); none: Midgard's
+//    "window": "windowed"}                      how the game starts on a computer: "windowed"
+//                                               or "fullscreen" (F11 or Alt+Enter switches)
 //
 // Pictures are "ui:" content (PNG or JPEG from the Asset Library's GUI section), packed in
 // game.pak. The splash is a screen (midgard/screen.h's role "splash"): the runtime reads it,
@@ -38,6 +40,7 @@ struct GameSettings {
     std::string pointer;
     std::string menu_music;
     TouchLayout touch = default_touch_layout();
+    std::string window = "windowed";  // or "fullscreen"
 };
 
 inline constexpr const char* kGameSettingsKey = "game.settings";

@@ -52,5 +52,8 @@ std::vector<std::uint8_t> map_pixels(const Terrain& terrain, int width, int heig
 // corners of the cube's cross).
 std::optional<SurfacePoint> world_map_place(const Terrain& terrain, int width, int height, int x,
                                             int y, MapProjection p);
+// The other way: where a place on the world (face, u, v) is on the map, as shares of its width
+// and height from its top left (0 to 1; the game's map screen marks the player and exits so).
+glm::dvec2 world_map_point(const SurfacePoint& place, MapProjection p);
 
 }  // namespace midgard

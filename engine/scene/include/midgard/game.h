@@ -301,6 +301,9 @@ public:
     // prompts shown for the device in use.
     void set_screen_text(const std::string& screen, const std::string& element,
                          const std::string& text);
+    // How the player last left the window: "fullscreen" or "windowed" (kept in the profile;
+    // the game's own setting until they choose).
+    void set_window_mode(const std::string& mode);
     // Every control back to the game's own (a Controls screen's Reset).
     void reset_controls();
     // The player's controls changed since asked (the runtime lays them over its actions again).
@@ -352,6 +355,36 @@ public:
     // quarter of the way to its edge, so running never shows past it while the next is made.
     static constexpr double kMinimapGroundRadius = 2.0 * kMinimapRadius;
     static constexpr int kMinimapSize = 256;  // its ground's pixels across
+
+    // ---- the full map (the "map" action: M, a gamepad's Back) ----
+    // The whole world's map (midgard/world_map.h, in its shape's usual projection, north up)
+    // with the player and the scene's exits on it. Its picture is made in the background the
+    // first time it opens in a scene (a flat scene without terrain has none: its marks alone,
+    // over the ground they span).
+    struct WorldMapView {
+        bool open = false;
+        bool ready = false;  // its picture is made (or, without terrain, never needed)
+        const std::vector<std::uint8_t>* pixels = nullptr;  // RGBA8, top row first
+        int width = 0, height = 0;
+        std::uint64_t version = 0;  // goes up each time it is made again
+        double aspect = 1.0;        // width over height
+        glm::dvec2 player{0.5};     // where the player is: shares of its width and height
+        double heading = 0.0;       // the way they face, degrees clockwise from its top
+        struct Mark {
+            std::string kind;  // "exit" (a scene exit: a door, a portal, a pad) or "mark"
+            std::string label;
+            glm::dvec2 at{0.5};
+        };
+        std::vector<Mark> marks;
+    };
+    WorldMapView world_map_view() const;
+    bool world_map_open() const { return world_map_open_; }
+    // Opens or closes it (the map action does, as does Esc while it is open).
+    void set_world_map_open(bool open);
+    // Waits for its picture, if it is being made (a screenshot of it).
+    void wait_for_world_map();
+    // Its picture's longest side, in pixels.
+    static constexpr int kWorldMapSize = 768;
 
     // ---- weather (milestone 5.15) ----
     // The world's weather (midgard/weather_sim.h), from the scene's weather settings or its
@@ -456,6 +489,30 @@ public:
     // Takes a scene exit (an entity with a scene_exit, whatever its activation: a script's
     // choice). False if the entity isn't one.
     bool take_exit(entt::entity exit);
+
+    // ---- portals (midgard/scene.h's Portal) ----
+    // Every portal in the game, in every scene (in the scenes' order), by the name the player
+    // gave it (kept in their world), else its own.
+    struct PortalPlace {
+        std::string id;          // its entity's id
+        std::string scene;       // its scene's id
+        std::string scene_name;  // and name
+        std::string name;
+    };
+    std::vector<PortalPlace> portals() const;
+    // The portal whose box the player is in (its entity id), or "".
+    std::string portal_here() const;
+    // The portal menu: open at a portal (pressing Use there opens it; the game pauses under
+    // it), or "" when closed.
+    const std::string& portal_open() const { return portal_open_; }
+    void open_portal(const std::string& id);
+    void close_portal() { portal_open_.clear(); }
+    // The player names a portal (kept in their world; up to 40 characters, trimmed). False for
+    // an empty name or a portal that isn't one.
+    bool rename_portal(const std::string& id, const std::string& name);
+    // Closes the menu and takes the player to that portal (fading out and in, arriving in
+    // front of it); false if it isn't one.
+    bool travel_to_portal(const std::string& id);
     // Whether the package has a scene with this id.
     bool has_scene(const std::string& scene) const;
     // Why a change to this scene and arrival can't be made, or empty if it can.
@@ -668,6 +725,24 @@ private:
     // it reads goes; as a member after terrain_, it goes first when the game does)
     std::optional<MinimapJob> minimap_job_;
     void update_minimap(bool now = false);
+    // Portals: the menu open at one (its id), the names the player gave them, and every
+    // portal in the package (read once).
+    std::string portal_open_;
+    std::map<std::string, std::string> portal_names_;
+    mutable std::optional<std::vector<PortalPlace>> portal_places_;
+    // The full map: open or not, its picture (of `world_map_scene_`) and the job making it.
+    bool world_map_open_ = false;
+    std::vector<std::uint8_t> world_map_pixels_;
+    int world_map_width_ = 0, world_map_height_ = 0;
+    std::uint64_t world_map_version_ = 0;
+    std::string world_map_scene_;
+    struct WorldMapJob {
+        std::string scene;
+        int width = 0, height = 0;
+        std::future<std::vector<std::uint8_t>> pixels;
+    };
+    std::optional<WorldMapJob> world_map_job_;  // (reset before the terrain goes, as above)
+    void update_world_map();
     struct Forced {
         std::string weather;
         std::optional<std::int64_t> until;  // none: until released

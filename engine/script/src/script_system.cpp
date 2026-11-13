@@ -800,6 +800,31 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
             "Takes a scene exit (an entity with a scene_exit), whatever its activation: the way "
             "an exit set to 'script' is taken.")
         .def_property_readonly(
+            "portals",
+            [](const RoomsHandle&) {
+                py::list out;
+                for (const Game::PortalPlace& p : current_game().portals()) {
+                    py::dict d;
+                    d["id"] = p.id;
+                    d["scene"] = p.scene;
+                    d["scene_name"] = p.scene_name;
+                    d["name"] = p.name;
+                    out.append(d);
+                }
+                return out;
+            },
+            "Every portal in the game, in every scene: dicts of id, scene, scene_name and name "
+            "(as the player named it).")
+        .def(
+            "travel",
+            [](const RoomsHandle&, const std::string& portal) {
+                if (!current_game().travel_to_portal(portal))
+                    throw py::value_error("there is no portal '" + portal + "' in the game");
+            },
+            py::arg("portal"),
+            "Takes the player to a portal (its entity id), as choosing it in a portal's list "
+            "does: arriving in front of it.")
+        .def_property_readonly(
             "current", [](const RoomsHandle&) { return current_game().scene().id; },
             "The scene the player is in (its id).")
         .def_property_readonly(
@@ -1591,9 +1616,7 @@ PYBIND11_EMBEDDED_MODULE(midgard, m) {
         "The sky colour (r, g, b).");
     m.def(
         "set_sky",
-        [](float r, float g, float b) {
-            current_game().scene().settings.sky = {r, g, b};
-        },
+        [](float r, float g, float b) { current_game().scene().settings.sky = {r, g, b}; },
         py::arg("r"), py::arg("g"), py::arg("b"), "Changes the sky colour.");
 }
 

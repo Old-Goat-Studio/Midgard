@@ -27,7 +27,7 @@ MAX_LEVEL = 12
 TWO_PI = 6.283185307179586
 DEFAULTS = {"base": 8.0, "height_scale": 60.0, "feature_size": 500.0, "octaves": 6,
             "sea_level": 0.0, "ocean_band": 300.0, "ocean_depth": 30.0, "end_ramp": 150.0,
-            "wall_height": 120.0, "wall": "cliff", "spacing": 2.0}
+            "wall_height": 120.0, "wall": "cliff", "spacing": 2.0, "beach": 0.0}
 KINDS = {"bounded_area": shapes.BOUNDED_AREA, "flat_cylinder": shapes.FLAT_CYLINDER,
          "curved_cylinder": shapes.CURVED_CYLINDER, "sphere_outside": shapes.SPHERE_OUTSIDE,
          "sphere_inside": shapes.SPHERE_INSIDE}
@@ -223,7 +223,70 @@ class Terrain:
         return h
 
     def base_height(self, face: int, u: float, v: float) -> float:
-        """As generated: a world type's graph, or the 5.9 hills; then the shape's edges."""
+        """As generated, then the beach: a gentle shelf where the ground meets the sea."""
+        t = self.settings
+        h = self.generated_height(face, u, v)
+        if not t["beach"] > 0.0:
+            return h
+        d0 = h - t["sea_level"]
+        if abs(d0) >= 16.0:
+            return h
+        su, sv = face_size(self.shape)
+        du, dv = t["beach"] / su, t["beach"] / sv
+        eu, ev = du * 0.7071067811865476, dv * 0.7071067811865476
+        g = self.lattice_height
+        east, west = g(face, u + du, v), g(face, u - du, v)
+        north, south = g(face, u, v + dv), g(face, u, v - dv)
+        north_east, north_west = g(face, u + eu, v + ev), g(face, u - eu, v + ev)
+        south_east, south_west = g(face, u + eu, v - ev), g(face, u - eu, v - ev)
+        around = (east + west + north + south + north_east + north_west + south_east +
+                  south_west) * 0.125
+        dl = around - t["sea_level"]
+        # The shelf rises 1 in 16 (land gentler than that stays as it is).
+        gx = (east - west) / (2.0 * t["beach"])
+        gz = (north - south) / (2.0 * t["beach"])
+        slope = math.sqrt(gx * gx + gz * gz)
+        k = min(1.0, 0.06 / slope) if slope > 0.0 else 1.0
+        # (ground below the sea with land round it keeps the shelf's full weight longer)
+        reach = dl * min(max(1.0 + d0 / 0.1, 0.0), 1.0) if dl > 0.0 else -dl
+        # (and ground within a metre or so of the sea's level is all beach)
+        w = max((1.0 - smooth01((reach - 3.0) / 10.0)) *
+                (1.0 - smooth01((abs(d0) - 8.0) / 8.0)),
+                1.0 - smooth01((abs(d0) - 1.0) / 3.0))
+        # (the larger of the two: land above the sea stays above it, never a pond behind a
+        # beach)
+        shelf = h + (t["sea_level"] + 0.4 * (1.0 - k) + k * max(dl, 0.25 * d0) - h) * w
+        # A dip with ground on both sides of it (along any of the four ways across) is filled
+        # to just above the sea: no pond narrower than the beach is wide.
+        rim = max(max(min(east, west), min(north, south)),
+                  max(min(north_east, south_west), min(north_west, south_east)))
+        fill = min(rim, t["sea_level"] + 0.3) - (1.0 - w) * 1000.0
+        return max(shelf, fill)
+
+    def lattice_height(self, face: int, u: float, v: float) -> float:
+        """A height read between the nodes of the beach's lattice of generated heights (every
+        beach / 3 metres; terrain.h has how)."""
+        t = self.settings
+        su, sv = face_size(self.shape)
+        cu, cv = t["beach"] / 3.0 / su, t["beach"] / 3.0 / sv
+        x, y = u / cu, v / cv
+        i, j = math.floor(x), math.floor(y)
+        cache = self.__dict__.setdefault("_lattice", {})
+
+        def node(ni: int, nj: int) -> float:
+            key = (face, ni, nj)
+            if key not in cache:
+                cache[key] = self.generated_height(face, float(ni) * cu, float(nj) * cv)
+            return cache[key]
+
+        fx, fy = x - float(i), y - float(j)
+        a, b, c, d = node(i, j), node(i + 1, j), node(i, j + 1), node(i + 1, j + 1)
+        top = a + (b - a) * fx
+        bottom = c + (d - c) * fx
+        return top + (bottom - top) * fy
+
+    def generated_height(self, face: int, u: float, v: float) -> float:
+        """A world type's graph, or the 5.9 hills; then the shape's edges."""
         t = self.settings
         if t.get("graph"):
             from .worldgen import Graph  # (worldgen uses this module's helpers)
@@ -323,6 +386,30 @@ def make_stamp_table() -> dict:
     return {"_about": "Terrain sculpting: heights and a chunk hash with stamps "
                       "(tools/reference/terrain.py).",
             "bodies": BODIES, "stamps": STAMPS, "cases": cases}
+
+
+BEACH = {"base": -5.0, "height_scale": 200.0, "feature_size": 120.0, "octaves": 4,
+         "ocean_band": 100.0, "end_ramp": 400.0, "seed": 1234, "beach": 40.0}
+
+
+def make_beach_table() -> dict:
+    """The shared table schema/tests/terrain_beaches.json (made once, then fixed): heights
+    near the shore, where the beach shapes the ground, and a chunk hash there."""
+    cases = []
+    for name in ("area", "strip", "habitat", "planet"):
+        t = Terrain(BODIES[name], BEACH)
+        near = [((i + 0.5) / 40.0, (j + 0.5) / 40.0) for j in range(40) for i in range(40)]
+        near = [(u, v) for u, v in near if abs(t.generated_height(0, u, v)) < 25.0][:8]
+        for u, v in near:
+            cases.append({"body": name, "u": u, "v": v, "height": t.height(0, u, v)})
+        u, v = near[0]
+        level = 2
+        key = (0, level, min(int(u * (t.roots_u << level)), (t.roots_u << level) - 1),
+               min(int(v * (t.roots_v << level)), (t.roots_v << level) - 1))
+        cases.append({"body": name, "key": list(key), "hash": f"{t.chunk_hash(key):016x}"})
+    return {"_about": "Beaches: heights near the shore and a chunk hash there "
+                      "(tools/reference/terrain.py).",
+            "bodies": BODIES, "settings": BEACH, "cases": cases}
 
 
 def make_table() -> dict:
@@ -446,6 +533,8 @@ if __name__ == "__main__":
         out, table = TABLES / "terrain_stamps.json", make_stamp_table()
     elif which == "sphere_stamps":
         out, table = TABLES / "terrain_sphere_stamps.json", make_sphere_stamp_table()
+    elif which == "beaches":
+        out, table = TABLES / "terrain_beaches.json", make_beach_table()
     elif which == "spheres":
         out, table = TABLES / "terrain_spheres.json", make_sphere_table()
     else:

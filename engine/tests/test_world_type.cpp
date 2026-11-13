@@ -169,6 +169,23 @@ TEST_CASE("a world's map: projections for each shape, coloured by the ground") {
         midgard::world_map(planet, 40, 30, MapProjection::CubeFaces);
     CHECK(cross[3] == 0);                                 // a corner: transparent
     CHECK(cross[(size_t(15) * 40 + 15) * 4 + 3] == 255);  // +Z's cell
+    // And back: a place on the world to its point on the map, for every projection.
+    const auto back = [](const midgard::Terrain& t, int x, int y, MapProjection p) {
+        const auto place = midgard::world_map_place(t, 400, 300, x, y, p);
+        REQUIRE(place);
+        const glm::dvec2 f = midgard::world_map_point(*place, p);
+        CHECK(f.x * 400.0 == doctest::Approx(x + 0.5).epsilon(1e-6));
+        CHECK(f.y * 300.0 == doctest::Approx(y + 0.5).epsilon(1e-6));
+    };
+    for (const auto& [x, y] : {std::pair{0, 0}, std::pair{123, 77}, std::pair{399, 299}}) {
+        back(area, x, y, MapProjection::TopDown);
+        back(habitat, x, y, MapProjection::Unrolled);
+    }
+    for (const auto& [x, y] : {std::pair{37, 150}, std::pair{150, 150}, std::pair{250, 120},
+                               std::pair{330, 160}, std::pair{150, 40}, std::pair{150, 260}})
+        back(planet, x, y, MapProjection::CubeFaces);
+    for (const auto& [x, y] : {std::pair{37, 150}, std::pair{200, 80}, std::pair{330, 220}})
+        back(planet, x, y, MapProjection::Equirectangular);
 }
 
 TEST_CASE("the sample world types: sound, suited to their worlds, the same on every target") {

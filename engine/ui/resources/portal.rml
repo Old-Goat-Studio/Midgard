@@ -1,0 +1,54 @@
+<rml>
+<head>
+    <title>Portal</title>
+    <link type="text/rcss" href="midgard://base.rcss"/>
+    <style>
+        /* The portal menu: this portal's name (to rename it), then every other portal. */
+        body { background-color: #0a0d14b0; font-size: 16dp; }
+        #panel {
+            box-sizing: border-box;
+            position: absolute;
+            left: 50%;
+            top: 8%;
+            width: 460dp;
+            max-width: 94%;
+            margin-left: -230dp;
+            max-height: 84%;
+            padding: 16dp;
+            display: flex;
+            flex-direction: column;
+            background-color: #161b28f2;
+            border: 2dp #b07aff;
+            border-radius: 8dp;
+        }
+        h1 { font-size: 24dp; color: #d8c2ff; margin-bottom: 10dp; }
+        .row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6dp; }
+        .label { width: 74dp; color: #b8c4d8; }
+        /* (a gamepad: down from the name to Rename, as the field keeps left and right) */
+        #name { flex: 1 1 auto; nav-down: #rename; }
+        #rename { margin-left: 8dp; nav-up: #name; nav-left: #name; }
+        #said { color: #9fd49f; font-size: 14dp; height: 18dp; margin-bottom: 6dp; }
+        h2 { font-size: 17dp; color: #ffd27a; margin: 6dp 0dp; }
+        #list { flex: 1 1 auto; overflow-y: auto; min-height: 60dp; border: 1dp #3a4660;
+                padding: 2dp; }
+        #list button { display: block; margin: 3dp; text-align: left; }
+        .place { color: #9aa6bc; font-size: 14dp; }
+        #none { color: #9aa6bc; padding: 10dp; }
+        #close { margin-top: 10dp; }
+    </style>
+</head>
+<body>
+    <div id="panel">
+        <h1>Portal</h1>
+        <div class="row">
+            <span class="label">Name</span>
+            <input type="text" id="name" maxlength="40" value=""/>
+            <button id="rename">Rename</button>
+        </div>
+        <p id="said"></p>
+        <h2>Travel to</h2>
+        <div id="list"></div>
+        <button id="close">Close</button>
+    </div>
+</body>
+</rml>

@@ -286,6 +286,19 @@ struct SceneExit {
     float fade = 0.5f;                 // seconds to fade out, and in again
 };
 
+// A portal: each of the game's portals leads to every other, in any scene. Pressing Use inside
+// its box shows the others by name (midgard/game.h: the portal menu), and the player can rename
+// this one there; choosing one takes them to it. Its front is its -Z (the way it faces, as an
+// arrival's): players arrive kPortalStep metres beyond the front of its box, facing away (in
+// the third person, further by the camera's distance and a metre, so the camera behind them
+// is in front of the portal too).
+struct Portal {
+    std::string name;                  // empty: the entity's name
+    glm::vec3 size{2.4f, 3.0f, 3.0f};  // the box, centred on the entity (in its local units)
+    float fade = 0.8f;                 // seconds to fade out, and in again
+};
+inline constexpr double kPortalStep = 1.5;
+
 // How the entity moves in the physics world. An entity with a collider and no rigid body is
 // static scenery.
 struct RigidBody {

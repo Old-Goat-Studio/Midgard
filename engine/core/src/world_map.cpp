@@ -113,6 +113,28 @@ std::optional<SurfacePoint> world_map_place(const Terrain& terrain, int width, i
     }
 }
 
+glm::dvec2 world_map_point(const SurfacePoint& place, MapProjection p) {
+    switch (p) {
+        case MapProjection::Equirectangular: {
+            const glm::dvec3 d = glm::normalize(cube_direction(place.face, place.u, place.v));
+            const double longitude = std::atan2(d.x, d.z);
+            const double latitude = std::asin(std::clamp(d.y, -1.0, 1.0));
+            return {longitude / (2.0 * kPi) + 0.5, 0.5 - latitude / kPi};
+        }
+        case MapProjection::CubeFaces: {
+            const glm::dvec3 d = cube_direction(place.face, place.u, place.v);
+            const CrossCell* best = &kCross[0];
+            for (const CrossCell& c : kCross)
+                if (glm::dot(d, c.normal) > glm::dot(d, best->normal)) best = &c;
+            const double n = glm::dot(d, best->normal);
+            const double s = glm::dot(d, best->right) / n, t = glm::dot(d, best->top) / n;
+            return {(best->col + (s + 1.0) * 0.5) / 4.0, (best->row + (1.0 - t) * 0.5) / 3.0};
+        }
+        default:
+            return {place.u - std::floor(place.u), place.v};  // (a flat cylinder's u wraps)
+    }
+}
+
 std::vector<std::uint8_t> world_map(const Terrain& terrain, int width, int height) {
     return world_map(terrain, width, height, map_projections(terrain.body().shape.kind())[0]);
 }
